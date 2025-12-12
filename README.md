@@ -24,7 +24,7 @@
 ## 🎯 What is ai4RAG?
 
 `ai4RAG` is an **optimization engine for RAG Templates** that is LLM and Vector Database provider agnostic. 
-It accepts variety of RAG Templates and search space definition. Returns initialised RAG Template with optimal parameters' values.  
+It accepts variety of RAG Templates and search space definition. Returns initialised RAG Template with optimal parameters' values (called RAG Pattern).  
 
 ## How to use
 TBD
