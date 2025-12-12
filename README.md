@@ -41,17 +41,6 @@ Pull requests are very welcome! Make sure your patches are well tested. Ideally 
 
 See more details in [contributing section](contributing.md).
 
-## License
-All source files must include a Copyright and License header. The SPDX license header is preferred because it can be easily scanned.
-
-If you would like to see the detailed LICENSE click here.
-
-```python
-#
-# Copyright IBM Corp. {Year project was created} - {Current Year}
-# SPDX-License-Identifier: Apache-2.0
-#
-```
 
 
 
