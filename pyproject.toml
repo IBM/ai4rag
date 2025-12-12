@@ -1,0 +1,89 @@
+[build-system]
+requires = ["setuptools", "wheel", "build"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai4rag"
+description = "Automatic and optimised RAG Pattern generator"
+authors = [{ name = "IBM"}]
+maintainers = [
+    { name = "Jakub Walaszczyk", email = "jakub.walaszczyk@ibm.com" },
+    { name = "Michal Steczko", email = "michal.steczko@ibm.com" },
+]
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Natural Language :: English",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: POSIX :: Linux",
+]
+keywords = [
+    "AI",
+    "RAG",
+    "LLM",
+    "GenAI"
+]
+dynamic = ["version"]
+
+dependencies = [
+    "black",                       # for asset generator formatting
+    "scikit-learn==1.6.*",
+    "unitxt~=1.26.1",
+    "pandas==2.2.*",
+    "pydantic==2.11.0",
+    "pypdf>=6.1.0",
+    "scipy==1.14.*",               # Lock on 1.14.* to avoid issues with pytest (since 1.15)
+    "llama-stack-client==0.3.0",
+    "jinja2==3.1.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ai4rag[test]",
+    "ai4rag[code_check]",
+    "pypdf",               # reading data from pdf
+    "beautifulsoup4",      # reading data from html
+    "ipykernel",
+]
+
+test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
+
+code_check = ["pylint"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ai4rag.__version__" }
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "dev_utils*"]
+namespaces = false
+
+
+[tool.pytest.ini_options]
+python_files = ["tests/*.py"]
+log_cli = false
+log_level = "INFO"
+markers = [
+    "autorag_params: pass additonal params to AI4RAGExperiment constructor created as part of fixture `exp_base`",
+]
+
+[tool.coverage.run]
+# Skipping function templates for notebooks
+omit = [
+    "ai4rag/core/ai_service/templates/*.py",
+    "ai4rag/search_space/prepare/validation_error_decoder.py",
+    "ai4rag/core/ai_service/nodes/*.py"
+]
+
+[tool.black]
+line-length = 120
+
+[tool.pylint]
+disable = ["missing-module-docstring", "too-few-public-methods"]
+max-line-length = 120
+max-module-lines = 1200
+max-args = 6
+max-positional-arguments = 6
+max-attributes = 10
+max-branches = 16  # temporary fix after pylint 4.0.0 release
