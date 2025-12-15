@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 from typing import Literal, Sequence, Any, Iterable
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
