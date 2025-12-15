@@ -33,7 +33,7 @@ function shouldCheck() {
 for filename in $(git ls-tree -r --name-only HEAD .); do
     shouldCheck "$filename"
     if [[ $? -eq 0 ]]; then
-      copyrightFile="scripts/copyrights.py"
+      copyrightFile="scripts/copyrights.txt"
 
       copyrightYear=$(cat $filename | grep -m1 "Copyright IBM" | sed -En "s/.*Copyright IBM Corp\. ([0-9]+[-]){0,1}[-]?([0-9]+){0,1}.*$/\2/p")
       creationDate=$(git log --follow --format="%cd" --date=short -- $filename | tail -1)

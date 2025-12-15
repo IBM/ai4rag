@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2025
-# SPDX-License-Identifier: Apache-2.0
-#
 from collections import Counter
 
 from ai4rag.utils.event_handler import BaseEventHandler, LogLevel

@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2025
-# SPDX-License-Identifier: Apache-2.0
-#
 import os
 from dotenv import load_dotenv, find_dotenv
 

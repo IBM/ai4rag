@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2025
-# SPDX-License-Identifier: Apache-2.0
-#
 from abc import ABC, abstractmethod
 from typing import Any, Literal, Annotated
 from string import Formatter
@@ -89,6 +85,21 @@ class FoundationModel(ABC):
         self.model_id = model_id
         self.model_params = model_params
 
+    def __repr__(self) -> str:
+        return self.model_id
+
+    def __str__(self) -> str:
+        return repr(self)
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, FoundationModel):
+            return NotImplemented
+
+        return self.model_id == other.model_id
+
+    def __hash__(self):
+        return hash(self.model_id)
+
     @abstractmethod
     def chat(self, system_message: str, user_message: str) -> str:
         """Docstring here"""
@@ -108,6 +119,7 @@ class LlamaStackFoundationModel(FoundationModel):
         self._model_params = model_params
         self._system_message_text = kwargs.pop("system_message_text", None)
         self._user_message_text = kwargs.pop("user_message_text", None)
+        self._context_template_text = kwargs.pop("context_template_text", None)
 
     @property
     def ls_client(self) -> LlamaStackClient:

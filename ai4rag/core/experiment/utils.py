@@ -1,7 +1,3 @@
-#
-# Copyright IBM Corp. 2025
-# SPDX-License-Identifier: Apache-2.0
-#
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any, Callable, Literal, TypeAlias, TypedDict, TypeVar
