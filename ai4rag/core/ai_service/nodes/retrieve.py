@@ -1,7 +1,7 @@
-#
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 from ai4rag.core.ai_service.states import AI4RAGState
 
 

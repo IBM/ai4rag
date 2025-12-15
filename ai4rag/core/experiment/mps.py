@@ -1,7 +1,7 @@
-# 
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 from typing import Any
 
 from langchain_core.documents import Document
@@ -27,10 +27,6 @@ from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.utils import (
     query_inference_service,
     build_evaluation_data,
-    get_hybrid_ranker_settings,
-    cast_hybrid_search_params_to_correct_type,
-    RAGRankerParamsType,
-    RAGRetrievalParamsType,
 )
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store

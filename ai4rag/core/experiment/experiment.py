@@ -1,7 +1,7 @@
-#
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 import time
 from datetime import datetime
 from typing import Any, Sequence
