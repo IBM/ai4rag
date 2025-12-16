@@ -1,7 +1,6 @@
 
 
 ### Setup custom image with docling
-
 Generate yaml pipeline definition
 ```commandline
 python process_bucket_pipeline.py
