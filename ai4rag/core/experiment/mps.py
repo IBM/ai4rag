@@ -6,8 +6,7 @@ from typing import Any
 
 from langchain_core.documents import Document
 
-from ibm_watsonx_ai.foundation_models.extensions.rag.chunker import LangChainChunker
-from ibm_watsonx_ai import APIClient
+from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ibm_watsonx_ai.foundation_models.extensions.rag import Retriever
 from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores import VectorStore
 from ibm_watsonx_ai.wml_client_error import WMLClientError
