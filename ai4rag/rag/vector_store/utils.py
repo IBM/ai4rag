@@ -85,12 +85,13 @@ def merge_window_into_a_document(window: list[Document]) -> Document:
 
         Parameters
         ----------
+        texts : list[str]
+            Ordered list of text strings to be merged.
 
-        :param texts: ordered list of text strings to be merged
-        :type texts: List[str]
-
-        :return: single string that contains the merged text
-        :rtype: str
+        Returns
+        -------
+        str
+            Single string that contains the merged text.
         """
         merged_text = ""
         for text in texts:

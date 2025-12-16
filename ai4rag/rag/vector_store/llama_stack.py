@@ -1,13 +1,19 @@
 from llama_stack_client import LlamaStackClient
 
 from .base_vector_store import BaseVectorStore
-from ai4rag.rag.embedding.llama_stack import EmbeddingModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 
 
 class LlamaStackVectorStore(BaseVectorStore):
     """LLamaStack client wrapper used for communication with vector store (single index/collection)."""
 
-    def __init__(self, embedding_model: EmbeddingModel, collection_name: str, distance_metric: str, ls_client: LlamaStackClient):
+    def __init__(
+        self,
+        embedding_model: BaseEmbeddingModel,
+        collection_name: str,
+        distance_metric: str,
+        ls_client: LlamaStackClient,
+    ):
         super().__init__(embedding_model, collection_name, distance_metric)
         self.ls_client = ls_client
 
