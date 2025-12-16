@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 from llama_stack_client import LlamaStackClient
 
 from .base_vector_store import BaseVectorStore
