@@ -18,13 +18,34 @@ from ai4rag import logger
 
 
 class ChromaVectorStore(BaseVectorStore):
+    """
+    Class representing single index in the chroma vector database.
+
+    Parameters
+    ----------
+    embedding_model : BaseEmbeddingModel
+        Instance used for embedding documents and user's queries.
+
+    collection_name : str, default="default_collection"
+        Name of the collection that will be created as a vector store.
+
+    distance_metric : str, default="cosine"
+        Metric that will be used to calculate similarity score between vectors.
+
+    document_name_field : str, default="document_id"
+        Default document ID field name.
+
+    chunk_sequence_number_field : str, default="chunk_sequence_number"
+        Default chunk sequence number field name.
+    """
+
     _supported_distance_metrics = ("cosine", "l2")
 
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        collection_name: str,
-        distance_metric: str,
+        collection_name: str = "default_collection",
+        distance_metric: str = "cosine",
         document_name_field: str = "document_id",
         chunk_sequence_number_field: str = "sequence_number",
         **kwargs,
@@ -37,7 +58,16 @@ class ChromaVectorStore(BaseVectorStore):
         self._vector_store = self._get_chroma_client(**kwargs)
 
     def _get_chroma_client(self, **kwargs) -> Chroma:
-        """Create chroma client based on the given settings"""
+        """
+        Create chroma client based on the given settings.
+
+        ^kwargs are passed from the __init__ as parameters for Chroma client.
+
+        Returns
+        -------
+        Chroma
+            Client instance created based on the given settings.
+        """
 
         chroma_client = Chroma(
             collection_name=self.collection_name,
@@ -54,33 +84,45 @@ class ChromaVectorStore(BaseVectorStore):
 
     @distance_metric.setter
     def distance_metric(self, value: str) -> None:
+        """Set value of the distance metric.
+
+        Raises
+        ------
+        ValueError
+            If the distance metric is not supported.
+        """
         if value not in self._supported_distance_metrics:
             raise ValueError(f"Invalid distance metric: {value}. Use one of: {self._supported_distance_metrics}.")
         self._distance_metric = value
 
-    def get_client(self) -> Chroma:
-        return self._vector_store
-
     def clear(self) -> None:
-        client = self.get_client()
-        all_docs_ids = client.get()["ids"]
+        all_docs_ids = self._vector_store.get()["ids"]
         if len(all_docs_ids) > 0:
             self.delete(all_docs_ids)
 
     def count(self) -> int:
-        client = self.get_client()
-        return len(client.get()["ids"])
+        """Count the number of shards in the vector store.
+
+        Returns
+        -------
+        int
+            Number of shards in the vector store.
+        """
+        return len(self._vector_store.get()["ids"])
 
     @staticmethod
-    def _as_langchain_documents(content: list[str] | list[dict] | list) -> list[Document]:
+    def _as_langchain_documents(content: list) -> list[Document]:
         """Creates a LangChain ``Document`` list from a list of potentially unstructured data.
 
-        :param content: list of unstructured data to be parsed
-        :type content: list[str] | list[dict] | list
+        Parameters
+        ----------
+        content : list
+            Unstructured data to be parsed.
 
-        :raises AttributeError: raised when data does not fit the required schema
-        :return: list of LangChain Documents
-        :rtype: list[langchain_core.documents.Document]
+        Returns
+        -------
+        list[Document]
+            List of `Document` instances.
         """
         result = []
         for doc in content:
@@ -111,16 +153,22 @@ class ChromaVectorStore(BaseVectorStore):
 
         return result
 
-    def _process_documents(self, content: list[str] | list[dict] | list) -> tuple[list[str], list[Document]]:
-        """Processes arbitrary list of data to produce two lists: one with unique IDs, and one with LangChain documents.
+    def _process_documents(self, content: list) -> tuple[list[str], list[Document]]:
+        """
+        Processes arbitrary list of data to produce two lists:
+        one with unique IDs, and one with LangChain documents.
 
         Handles duplicate documents.
 
-        :param content: arbitrary data
-        :type content: list[str] | list[dict] | list
+        Parameters
+        ----------
+        content : list
+            Arbitrary data.
 
-        :return: lists with IDs and docs
-        :rtype: tuple[list[str], list[langchain_core.documents.Document]
+        Returns
+        -------
+        tuple[list[str], list[Document]]
+            Lists with IDs and docs
         """
         docs = self._as_langchain_documents(content)
         if docs:
@@ -136,7 +184,20 @@ class ChromaVectorStore(BaseVectorStore):
         else:
             return [], []
 
-    def add_documents(self, content: list[str] | list[dict] | list, **kwargs: Any) -> list[str]:
+    def add_documents(self, content: list, **kwargs: Any) -> list[str]:
+        """
+        Embed and add documents to the vector store.
+
+        Parameters
+        ----------
+        content : list
+            Documents to be embedded and added to the vector store.
+
+        Returns
+        -------
+        list[str]
+            List of documents IDs.
+        """
         max_batch_size = kwargs.get("max_batch_size")
         if max_batch_size is None:
             try:
@@ -165,14 +226,18 @@ class ChromaVectorStore(BaseVectorStore):
         Receives a document ID and a list of chunks' sequence_numbers,
         and searches the vector store according to the metadata.
 
-        :param doc_id: ID of document
-        :type doc_id: str
+        Parameters
+        ----------
+        doc_id : str
+            ID of document.
 
-        :param seq_nums_window: list of sequence numbers
-        :type seq_nums_window: list[int]
+        seq_nums_window : list[int]
+            Sequence numbers of chunks.
 
-        :return: list of documents from that document with these sequence_numbers
-        :rtype: list[Document]
+        Returns
+        -------
+        list[Document]
+            Documents from that document with these sequence_numbers.
         """
         expr = {
             "$and": [
@@ -198,9 +263,8 @@ class ChromaVectorStore(BaseVectorStore):
     def search(
         self,
         query: str,
-        k: int,
+        k: int = 5,
         include_scores: bool = False,
-        verbose: bool = False,
         **kwargs: Any,
     ) -> list[Document] | list[tuple[Document, float]]:
         """Searches for documents most similar to the query.
@@ -209,22 +273,22 @@ class ChromaVectorStore(BaseVectorStore):
         Therefore, additional search parameters passed in ``kwargs`` should be consistent with those methods,
         and can be found in the LangChain documentation.
 
-        :param query: text query
-        :type query: str
+        Parameters
+        ----------
+        query : str
+            Query for which grounding documents will be searched for.
 
-        :param k: number of documents to retrieve
-        :type k: int
+        k : int, default=5
+            Number of documents to retrieve
 
-        :param include_scores: whether similarity scores of found documents should be returned, defaults to False
-        :type include_scores: bool
+        include_scores : bool, default=False
+            Whether similarity scores of found documents should be returned.
 
-        :param verbose: whether to display a table with the found documents, defaults to False
-        :type verbose: bool
-
-        :return: list of found documents
-        :rtype: list
+        Returns
+        -------
+        list[Document] | list[tuple[Document, float]]
+            Found documents with or without scores.
         """
-        result: list[Document] | list[tuple[Document, float]]
         if include_scores:
             result = self._vector_store.similarity_search_with_score(query, k=k, **kwargs)
         else:
@@ -235,37 +299,39 @@ class ChromaVectorStore(BaseVectorStore):
     def window_search(
         self,
         query: str,
-        k: int,
+        k: int = 5,
         include_scores: bool = False,
-        verbose: bool = False,
         window_size: int = 2,
         **kwargs: Any,
     ) -> list:
-        """Searches for documents most similar to the query and extend a document (a chunk) to its adjacent chunks (if they exist) from the same origin document.
+        """
+        Searches for documents most similar to the query and extend a document (a chunk)
+        to its adjacent chunks (if they exist) from the same origin document.
 
         The method is designed as a wrapper for respective LangChain VectorStores' similarity search methods.
         Therefore, additional search parameters passed in ``kwargs`` should be consistent with those methods,
         and can be found in the LangChain documentation.
 
-        :param query: text query
-        :type query: str
+        Parameters
+        ----------
+        query : str
+            Query for which grounding documents will be searched for.
 
-        :param k: number of documents to retrieve
-        :type k: int
+        k : int, default=5
+            Number of documents to retrieve
 
-        :param include_scores: whether similarity scores of found documents should be returned, defaults to False
-        :type include_scores: bool
+        include_scores : bool, default=False
+            Whether similarity scores of found documents should be returned.
 
-        :param verbose: whether to display a table with the found documents, defaults to False
-        :type verbose: bool
+        window_size : int, default=2
+            Number of chunks from right and left side of the original chunk.
 
-        :param window_size: number of chunks
-        :type window_size: int, optional
-
-        :return: list of found documents
-        :rtype: list
+        Returns
+        -------
+        list
+            Found documents with or without scores.
         """
-        documents = self.search(query, k, include_scores, verbose, **kwargs)
+        documents = self.search(query, k, include_scores, **kwargs)
         if window_size <= 0:
             return documents
 
@@ -292,14 +358,18 @@ class ChromaVectorStore(BaseVectorStore):
         and merges intersecting text between them (if it exists).
         This requires chunks to have "document_id" and "sequence_number" in their metadata.
 
-        :param document: document (chunk) to be extended to its window and merged
-        :type document: Document
+        Parameters
+        ----------
+        document : Document
+            Chunk / document to be extended to its window and merged.
 
-        :param window_size: number of adjacent chunks to retrieve before and after the center, according to the sequence_number
-        :type window_size: int
+        window_size : int
+            Number of adjacent chunks to retrieve before and after the center, according to the sequence_number.
 
-        :return: merged window
-        :rtype: Document
+        Returns
+        -------
+        Document
+            Chunk / document after extending and merging.
         """
         if "document_id" not in document.metadata:
             raise ValueError('document must have "document_id" in its metadata')
