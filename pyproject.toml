@@ -28,31 +28,30 @@ keywords = [
 dynamic = ["version"]
 
 dependencies = [
-    "black",                       # for asset generator formatting
-    "unitxt~=1.26.1",
-    "pandas==2.2.*",
-    "pydantic==2.11.0",
-    "pypdf>=6.1.0",
-    "scipy==1.14.*",               # Lock on 1.14.* to avoid issues with pytest (since 1.15)
     "langchain==1.1.3",
+    "langchain_chroma",
     "langchain-text-splitters",
     "langgraph>=1.0.4",
     "llama-stack-client==0.3.0",
+    "pandas==2.2.*",
+    "pydantic==2.11.0",
+    "pypdf>=6.1.0",
+    "unitxt~=1.26.1",
 ]
 
 [project.optional-dependencies]
 dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
+    "beautifulsoup4",      # reading data from html
     "dotenv",
     "pypdf",               # reading data from pdf
-    "beautifulsoup4",      # reading data from html
     "ipykernel",
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
 
-code_check = ["pylint"]
+code_check = ["pylint", "black"]
 
 [tool.setuptools.dynamic]
 version = { attr = "ai4rag.__version__" }

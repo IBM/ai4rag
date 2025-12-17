@@ -394,7 +394,6 @@ class AI4RAGConstraints:
 
         return embedding_models
 
-
     @model_validator(mode="after")
     def cast_to_parameter(self):
         """

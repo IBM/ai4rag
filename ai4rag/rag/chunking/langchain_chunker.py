@@ -73,9 +73,7 @@ class LangChainChunker(BaseChunker[Document]):
 
             case _:
                 raise ValueError(
-                    "Chunker method '{}' is not supported. Use one of {}".format(
-                        self.method, self.supported_methods
-                    )
+                    "Chunker method '{}' is not supported. Use one of {}".format(self.method, self.supported_methods)
                 )
 
         return text_splitter
@@ -131,9 +129,7 @@ class LangChainChunker(BaseChunker[Document]):
             List of updated chunks, sorted by document_id and sequence_number.
         """
         # sort chunks by start_index for each document_id
-        sorted_chunks = sorted(
-            chunks, key=lambda x: (x.metadata["document_id"], x.metadata["start_index"])
-        )
+        sorted_chunks = sorted(chunks, key=lambda x: (x.metadata["document_id"], x.metadata["start_index"]))
 
         document_sequence: dict[str, int] = {}
         for chunk in sorted_chunks:

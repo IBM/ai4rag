@@ -208,9 +208,7 @@ class RAGService:
 
         self.retrieve_node = retrieve_node
 
-        self.inference_service_template, self.inference_service_info = inference_service_templates.get(
-            "single_index"
-        )
+        self.inference_service_template, self.inference_service_info = inference_service_templates.get("single_index")
 
         self.generate_node = chat_node
 

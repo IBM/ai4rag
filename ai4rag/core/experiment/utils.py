@@ -11,6 +11,7 @@ from ibm_watsonx_ai import APIClient
 from ibm_watsonx_ai.deployments import RuntimeContext
 
 from ai4rag import logger
+from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import AI4RAGError, GenerationError
 from ai4rag.evaluator.base_evaluator import EvaluationData
@@ -71,16 +72,13 @@ class RAGRetrievalParamsType(TypedDict):
 
 
 def query_inference_service(
-    api_client: APIClient, rag_service, questions: list[str], max_threads: int = 10
+    rag_service: RAGService, questions: list[str], max_threads: int = 10
 ) -> list[dict[str, Any]]:
     """
     Function to perform parallel queries on RAG inference service.
 
     Parameters
     ----------
-    api_client : APIClient
-        Instance of client used for communication with watsonx.ai services.
-
     rag_service : RAGService
         Instance of the RAGService class to be used for response generation.
 
@@ -96,14 +94,11 @@ def query_inference_service(
     list[dict[str, Any]]
         List of dicts as in the _generate_response.
     """
-    model_id = getattr(rag_service.model, "model_id", None)
-    deployment_id = getattr(rag_service.model, "deployment_id", None)
-
     logger.debug(
         "Starting concurrent inference execution. Limit of concurrent executions: %s for %s calls. Model: %s",
         max_threads,
         len(questions),
-        model_id or deployment_id,
+        rag_service.foundation_model.model_id,
     )
 
     try:
@@ -124,7 +119,7 @@ def query_inference_service(
         ) from exc
 
     except Exception as exc:
-        raise GenerationError(exc, inference_model=model_id, deployment_id=deployment_id) from exc
+        raise GenerationError(exc, model_id=rag_service.foundation_model.model_id) from exc
 
     logger.debug("Finished concurrent inference execution!")
 
@@ -210,39 +205,6 @@ def build_evaluation_data(
         )
 
     return evaluation_data
-
-
-def get_inference_service_data(
-    pattern_name: str,
-    inference_service_function_code: str,
-    vector_store_type: VectorStoreType,
-) -> AIServiceData:
-    """
-    Create instance of AIServiceData containing code and metadata for
-    inference service to be streamed via EventHandler instance.
-
-    Parameters
-    ----------
-    pattern_name : str
-        Name of the rag pattern for which AI service is generated.
-
-    inference_service_function_code : str
-        Function/AI service for which code should be extracted.
-
-    vector_store_type : VectorStoreType
-        Type of vector store to use.
-
-    Returns
-    -------
-    AIServiceData
-        Code and metadata for given AI service.
-    """
-    metadata = get_inference_service_metadata(pattern_name=pattern_name)
-    inference_service_data = AIServiceData(
-        service_metadata=metadata, service_code=inference_service_function_code, vector_store_type=vector_store_type
-    )
-
-    return inference_service_data
 
 
 def _get_chunk_overlap(chunk_size: int, chunk_overlap: int | float) -> int:
