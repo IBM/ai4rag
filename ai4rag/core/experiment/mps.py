@@ -144,9 +144,7 @@ class ModelsPreSelector:
         self.metric = metric
         self.api_client = api_client
 
-        self.evaluator: BaseEvaluator = kwargs.get(
-            "evaluator", UnitxtEvaluator()
-        )
+        self.evaluator: BaseEvaluator = kwargs.get("evaluator", UnitxtEvaluator())
 
         self.retrieval_params = {
             "number_of_chunks": kwargs.get(AI4RAGParamNames.NUMBER_OF_RETRIEVED_CHUNKS, 3),

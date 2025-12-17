@@ -27,7 +27,7 @@ class ChromaVectorStore(BaseVectorStore):
         distance_metric: str,
         document_name_field: str = "document_id",
         chunk_sequence_number_field: str = "sequence_number",
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(
             embedding_model=embedding_model, collection_name=collection_name, distance_metric=distance_metric
@@ -43,7 +43,7 @@ class ChromaVectorStore(BaseVectorStore):
             collection_name=self.collection_name,
             embedding_function=self.embedding_model,
             collection_metadata={"hnsw:space": self.distance_metric},
-            **kwargs
+            **kwargs,
         )
 
         return chroma_client
@@ -92,24 +92,18 @@ class ChromaVectorStore(BaseVectorStore):
 
                 if content_str:
                     if isinstance(metadata, dict):
-                        result.append(
-                            Document(page_content=content_str, metadata=metadata)
-                        )
+                        result.append(Document(page_content=content_str, metadata=metadata))
                     else:
                         logger.warning(
                             f"Document: {doc} is incorrect. Metadata needs to be given with 'metadata' attribute and it needs to be a serializable dict. Skipping."
                         )
                         continue
                 else:
-                    logger.warning(
-                        f"Document: {doc} is incorrect. Field 'content' is required"
-                    )
+                    logger.warning(f"Document: {doc} is incorrect. Field 'content' is required")
                     continue
             else:
                 try:
-                    result.append(
-                        Document(page_content=doc.page_content, metadata=doc.metadata)
-                    )
+                    result.append(Document(page_content=doc.page_content, metadata=doc.metadata))
                 except AttributeError:
                     logger.warning(
                         f"Document: {doc} is not a dict, nor string, nor LangChain Document-like object. Skipping."
@@ -136,14 +130,7 @@ class ChromaVectorStore(BaseVectorStore):
             return tuple(
                 map(
                     list,
-                    zip(
-                        *{
-                            hashlib.sha256(
-                                str(doc).encode(errors="replace")
-                            ).hexdigest(): doc
-                            for doc in docs
-                        }.items()
-                    ),
+                    zip(*{hashlib.sha256(str(doc).encode(errors="replace")).hexdigest(): doc for doc in docs}.items()),
                 )
             )
         else:
@@ -153,9 +140,7 @@ class ChromaVectorStore(BaseVectorStore):
         max_batch_size = kwargs.get("max_batch_size")
         if max_batch_size is None:
             try:
-                max_batch_size = (
-                    self._vector_store._client.get_max_batch_size()
-                )  # type: ignore[attr-defined]
+                max_batch_size = self._vector_store._client.get_max_batch_size()  # type: ignore[attr-defined]
             except AttributeError:
                 max_batch_size = 10_000
 
@@ -202,9 +187,7 @@ class ChromaVectorStore(BaseVectorStore):
             Document(
                 page_content=text,
                 metadata={
-                    self._chunk_sequence_number_field: metadata[
-                        self._chunk_sequence_number_field
-                    ],
+                    self._chunk_sequence_number_field: metadata[self._chunk_sequence_number_field],
                     self._document_name_field: doc_id,
                 },
             )
@@ -243,13 +226,9 @@ class ChromaVectorStore(BaseVectorStore):
         """
         result: list[Document] | list[tuple[Document, float]]
         if include_scores:
-            result = self._vector_store.similarity_search_with_score(
-                query, k=k, **kwargs
-            )
+            result = self._vector_store.similarity_search_with_score(query, k=k, **kwargs)
         else:
-            result = self._vector_store.similarity_search(
-                query, k=k, **kwargs
-            )
+            result = self._vector_store.similarity_search(query, k=k, **kwargs)
 
         return result
 
@@ -292,18 +271,12 @@ class ChromaVectorStore(BaseVectorStore):
 
         if not include_scores:
             documents = cast(list[Document], documents)
-            return [
-                self._window_extend_and_merge(document, window_size)
-                for document in documents
-            ]
+            return [self._window_extend_and_merge(document, window_size) for document in documents]
         else:
             documents_and_scores = cast(list[tuple[Document, float]], documents)
             documents = [t[0] for t in documents_and_scores]
             scores = [t[1] for t in documents_and_scores]
-            extended_documents = [
-                self._window_extend_and_merge(document, window_size)
-                for document in documents
-            ]
+            extended_documents = [self._window_extend_and_merge(document, window_size) for document in documents]
             return list(zip(extended_documents, scores))
 
     def delete(self, ids: list[str], **kwargs: Any) -> None:
@@ -331,16 +304,12 @@ class ChromaVectorStore(BaseVectorStore):
         if "document_id" not in document.metadata:
             raise ValueError('document must have "document_id" in its metadata')
         if "sequence_number" not in document.metadata:
-            raise ValueError(
-                'document must have "sequence_number" in its metadata'
-            )
+            raise ValueError('document must have "sequence_number" in its metadata')
         doc_id = document.metadata["document_id"]
         seq_num = document.metadata["sequence_number"]
         seq_nums_window = [seq_num + i for i in range(-window_size, window_size + 1, 1)]
 
-        window_documents = self._get_window_documents(
-            doc_id, seq_nums_window
-        )
+        window_documents = self._get_window_documents(doc_id, seq_nums_window)
 
         window_documents.sort(key=lambda x: x.metadata["sequence_number"])
         return merge_window_into_a_document(window_documents)
