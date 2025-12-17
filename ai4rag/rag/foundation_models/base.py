@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from typing import Any, Annotated
 from annotated_types import Ge, Le, Gt

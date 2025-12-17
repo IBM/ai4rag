@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 from typing import Any
 
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
