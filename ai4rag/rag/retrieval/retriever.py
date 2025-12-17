@@ -10,6 +10,20 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 
 class Retriever:
+    """Class responsible for retrieving data from given vector store.
+
+    Parameters
+    ----------
+    vector_store : BaseVectorStore
+        Vector store / vector index to retrieve data from.
+
+    method : Literal["simple"]
+        Method describing how data should be retrieved.
+
+    number_of_chunks : int
+        Number of chunks to retrieve.
+    """
+
     def __init__(
         self,
         vector_store: BaseVectorStore,

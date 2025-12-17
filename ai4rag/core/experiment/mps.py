@@ -6,12 +6,6 @@ from typing import Any
 
 from langchain_core.documents import Document
 
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
-from ibm_watsonx_ai.foundation_models.extensions.rag import Retriever
-from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores import VectorStore
-from ibm_watsonx_ai.wml_client_error import WMLClientError
-from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores.adapters.milvus_adapter import MilvusVectorStore
-
 from ai4rag.core.experiment.exception_handler import (
     ExperimentExceptionsHandler,
     IndexingError,
@@ -20,7 +14,12 @@ from ai4rag.core.experiment.exception_handler import (
 )
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
-from ai4rag.search_space.src.models import EmbeddingModels
+from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
+from ai4rag.rag.embedding.get_embeddings import get_embeddings
+from ai4rag.rag.foundation_models.base import FoundationModel
+from ai4rag.rag.retrieval.retriever import Retriever
+from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
+from ai4rag.rag.vector_store.chroma import ChromaVectorStore
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGModel
 from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.utils import (
@@ -28,20 +27,12 @@ from ai4rag.core.experiment.utils import (
     build_evaluation_data,
 )
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
-from ai4rag.rag.vector_store.get_vector_store import get_vector_store
-from ai4rag.rag.embedding import get_embeddings
 from ai4rag.utils.constants import (
-    DEFAULT_WORD_TO_TOKEN_RATIO,
     AI4RAGParamNames,
     ExperimentStep,
     EventsToReport,
-    HybridRankerConstants,
 )
-from ai4rag.utils.knowledge_base_references import (
-    get_vector_stores_from_knowledge_base_references,
-    VectorStoreKnowledgeBaseReference,
-    DatabaseKnowledgeBaseReference,
-)
+
 from ai4rag import logger
 
 
@@ -134,7 +125,6 @@ class ModelsPreSelector:
         benchmark_data: BenchmarkData,
         embedding_models: list[str],
         documents: list[Document] | None = None,
-        api_client: APIClient | None = None,
         **kwargs,
     ):
         self.benchmark_data = benchmark_data
@@ -142,14 +132,12 @@ class ModelsPreSelector:
         self.foundation_models = foundation_models
         self.embedding_models = embedding_models
         self.metric = metric
-        self.api_client = api_client
 
         self.evaluator: BaseEvaluator = kwargs.get("evaluator", UnitxtEvaluator())
 
         self.retrieval_params = {
             "number_of_chunks": kwargs.get(AI4RAGParamNames.NUMBER_OF_RETRIEVED_CHUNKS, 3),
             "method": kwargs.get(AI4RAGParamNames.RETRIEVAL_METHOD, "simple"),
-            "window_size": kwargs.get(AI4RAGParamNames.RETRIEVAL_WINDOW_SIZE, 0),
         }
 
         self.chunking_params = {
@@ -164,7 +152,6 @@ class ModelsPreSelector:
         self.exceptions_handler = ExperimentExceptionsHandler()
         self.experiment_monitor = kwargs.get("experiment_monitor", None)
 
-    # pylint: disable=R0914
     def evaluate_patterns(self):
         """
         Evaluate RAG pattern per each foundation model provided. All settings
@@ -199,7 +186,7 @@ class ModelsPreSelector:
                     raise IndexingError(exc, collection_name, embedding_model) from exc
 
                 retriever = Retriever(vector_store, **self.retrieval_params)
-                self._evaluate_foundation_models(retrievers=[retriever], embedding_model=embedding_model)
+                self._evaluate_foundation_models(retriever=retriever, embedding_model=embedding_model)
 
             except IndexingError as exc:
                 self.exceptions_handler.handle_exception(exc)
@@ -213,44 +200,34 @@ class ModelsPreSelector:
                 f"None of the given models has been successfully evaluated. {msg}"
             )
 
-    def _evaluate_foundation_models(
-        self,
-        retrievers: list[Retriever] | None = None,
-        embedding_model: str | None = None,
-        kbr: bool = False,
-    ):
+    def _evaluate_foundation_models(self, retriever: Retriever, embedding_model: str):
         """
         Evaluates each embedding model with given retriever.
 
         Parameters
         ----------
-        retrievers : BaseRetriever
-            Retriever to be used in retrieval phase.
+        retriever : Retriever
+            Instance to be used in retrieval phase.
 
-        embedding_model: str | None
-            Name of the embedding model used by the retriever,
-            is set to None if knowledge base references were not provided.
-
-        kbr : bool, default=False
-            This flag is set to True when knowledge base references have been used.
+        embedding_model : str
+            Name of embedding model used for collection creation.
         """
         for foundation_model in self.foundation_models:
             try:
-                embedding_model_log = f"and embedding model: {embedding_model}" if embedding_model else ""
                 logger.info(
-                    "Starting pre-evaluation of foundation model: %s %s.", foundation_model, embedding_model_log
+                    "Starting pre-evaluation of foundation model: %s and embedding model: %s.",
+                    foundation_model,
+                    embedding_model,
                 )
 
-                result_scores = self._evaluate_single_pattern(
-                    foundation_model=foundation_model, retrievers=retrievers, databases=databases, kbr=kbr
-                )
+                result_scores = self._evaluate_single_pattern(foundation_model=foundation_model, retriever=retriever)
 
                 self.evaluation_results[(embedding_model, foundation_model)] = result_scores
 
                 logger.debug(
-                    "Finished pre-evaluation of foundation model: %s%s",
+                    "Finished pre-evaluation of foundation model: %s and embedding model: %s",
                     foundation_model,
-                    embedding_model_log,
+                    embedding_model,
                 )
             except (GenerationError, EvaluationError) as exc:
                 self.exceptions_handler.handle_exception(exc)
@@ -258,8 +235,8 @@ class ModelsPreSelector:
                 continue
 
     def _create_vector_store(
-        self, embedding_model: str, chunked_documents: list[Document], collection_name: str = "MPS_collection"
-    ) -> VectorStore:
+        self, embedding_model: str, chunked_documents: list[Document], collection_name: str = "mps_collection"
+    ) -> BaseVectorStore:
         """
         Create instance of vector store with given chunked documents and embedding model.
 
@@ -287,14 +264,11 @@ class ModelsPreSelector:
             When 2 attempts of embedding documents are failing
         """
         logger.info("Building index for pre-evaluation using embedding model: '%s'.", embedding_model)
-        embeddings = get_embeddings(model_name=embedding_model, api_client=self.api_client)
+        embeddings = get_embeddings(provider="llama_stack", model_id=embedding_model)
 
-        distance_metric = EmbeddingModels.get_distance_metric(embedding_model)
-        vector_store = get_vector_store(
-            vs_type="chroma",
-            embeddings=embeddings,
-            distance_metric=distance_metric,
-            index_name=collection_name,
+        vector_store = ChromaVectorStore(
+            embedding_model=embeddings,
+            collection_name=collection_name,
         )
 
         logger.debug("MPS: Embedding documents ...")
@@ -302,11 +276,11 @@ class ModelsPreSelector:
             self.experiment_monitor.on_start_event_info()
         try:
             vector_store.add_documents(chunked_documents)
-        except WMLClientError as err:
+        except Exception as err:
             logger.warning("Failed to create in-memory vector index due to: %s.", repr(err), exc_info=True)
             try:
                 vector_store.add_documents(chunked_documents)
-            except WMLClientError as exc:
+            except Exception as exc:
                 raise PreSelectorError(f"Failed to create in-memory vector index due to: {repr(exc)}.") from exc
         if self.experiment_monitor:
             self.experiment_monitor.on_finish_event_info(
@@ -316,61 +290,30 @@ class ModelsPreSelector:
 
         return vector_store
 
-    def _evaluate_single_pattern(
-        self,
-        foundation_model: AI4RAGModel,
-        databases: list[DatabaseKnowledgeBaseReference] | None,
-        retrievers: list[Retriever] | None,
-        kbr: bool = False,
-    ) -> dict[str, dict]:
+    def _evaluate_single_pattern(self, foundation_model: FoundationModel, retriever: Retriever) -> dict[str, dict]:
         """
         Perform retrieval-augmented generation and evaluate generated response.
 
         Parameters
         ----------
-        foundation_model : str
-            ID of the foundation model to be used RAG.
+        foundation_model : FoundationModel
+            Model to be used for RAG.
 
-        databases : list[DatabaseKnowledgeBaseReference]
-            List of database references to use for evaluation.
-
-        retrievers : Retriever
-            Instances for retrieving documents from vector database.
+        retriever : Retriever
+            Instance for retrieving documents from vector database.
 
         Returns
         -------
         dict[str, dict]
             Evaluation scores per model.
         """
-        generation_params = foundation_model.parameters.to_dict()
-        default_max_sequence_length = (
-            generation_params.pop("max_sequence_length")
-            if generation_params.get("max_sequence_length")
-            else foundation_model.max_sequence_length
-        )
-        model_inference = foundation_model.model_inference(api_client=self.api_client, params=generation_params)
 
-        rag_service = RAGService(
-            agent=self.agent,
-            api_client=self.api_client,
-            model=model_inference,
-            context_template_text=foundation_model.context_template_text,
-            system_message_text=getattr(foundation_model.chat_template_messages, "system_message_text", None),
-            user_message_text=getattr(foundation_model.chat_template_messages, "user_message_text", None),
-            retrievers=retrievers,
-            databases=databases,
-            default_max_sequence_length=default_max_sequence_length,
-            word_to_token_ratio=DEFAULT_WORD_TO_TOKEN_RATIO,
-            ranker_config=self.ranker_config,
-            multiindex_enabled=kbr,
-        )
+        rag_service = RAGService(foundation_model=foundation_model, retriever=retriever)
 
-        # pylint: disable=duplicate-code
         if self.experiment_monitor:
             self.experiment_monitor.on_start_event_info()
 
         inference_response = query_inference_service(
-            api_client=self.api_client,
             rag_service=rag_service,
             questions=list(self.benchmark_data.questions),
         )
@@ -382,7 +325,6 @@ class ModelsPreSelector:
                 model_id=str(foundation_model),
                 retrieved_chunks=self.retrieval_params["number_of_chunks"],
             )
-        # pylint: enable=duplicate-code
 
         result_scores = self._evaluate_response(inference_response=inference_response)
 
@@ -420,9 +362,10 @@ class ModelsPreSelector:
                 seen.add(fm)
                 foundation_models.append(fm)
 
-        ret = {"foundation_models": foundation_models[:n_fm]}
-        if embedding_models:
-            ret["embedding_models"] = embedding_models[:n_em]
+        ret = {
+            "foundation_models": foundation_models[:n_fm],
+            "embedding_models": embedding_models[:n_em],
+        }
 
         return ret
 
