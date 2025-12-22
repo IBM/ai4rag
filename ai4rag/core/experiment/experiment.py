@@ -749,9 +749,7 @@ class AI4RAGExperiment:
         }
 
         if evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE]:
-            retrieval_payload["window_size"] = evaluation_result.inference_params[
-                AI4RAGParamNames.WINDOW_SIZE
-            ]
+            retrieval_payload["window_size"] = evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE]
 
         vector_store_payload = {
             "datasource_type": self.vector_store_type,

@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 from dataclasses import FrozenInstanceError, fields
 from contextlib import nullcontext as does_not_raise
 

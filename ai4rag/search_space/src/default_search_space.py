@@ -48,16 +48,12 @@ def get_default_ai4rag_search_space_parameters() -> list[Parameter]:
             param_type="C",
             values=_default_retrieval_methods,
         ),
-        Parameter(
-            name=AI4RAGParamNames.WINDOW_SIZE,
-            param_type="C",
-            values=_default_window_sizes
-        ),
+        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, param_type="C", values=_default_window_sizes),
         Parameter(
             name=AI4RAGParamNames.NUMBER_OF_CHUNKS,
             param_type="C",
             values=_default_numbers_of_chunks,
-        )
+        ),
     ]
 
     return default_search_space_parameters

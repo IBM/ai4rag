@@ -222,8 +222,8 @@ class AI4RAGSearchSpace(SearchSpace):
 
     @staticmethod
     def _overwrite_default_search_space_with_user_provided_parameters(
-            params: list[Parameter],
-            default_search_space_params: list[Parameter],
+        params: list[Parameter],
+        default_search_space_params: list[Parameter],
     ) -> list[Parameter]:
         """
         User-provided data has higher precedence than the defaults that's why we're overwriting the defaults here.
