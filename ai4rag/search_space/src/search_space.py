@@ -3,21 +3,55 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import itertools
-from functools import cached_property
-
-from pydantic import BaseModel, field_validator
+from typing import Any, Callable
 
 from ai4rag.search_space.src.default_search_space import (
-    create_cartesian_product_of_possible_configurations,
-    get_default_search_space,
+    get_default_ai4rag_search_space_parameters,
 )
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
-from ai4rag.utils import remove_duplicates
 from ai4rag.utils.constants import AI4RAGParamNames
 
-
 __all__ = ["SearchSpace", "AI4RAGSearchSpace"]
+
+
+def _rule_chunk_size_bigger_than_chunk_overlap(combination: dict) -> bool:
+    """Define whether combination passes selected criterion.
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether combination passes selected criterion.
+    """
+    chunk_size = combination.get(AI4RAGParamNames.CHUNK_SIZE)
+    chunk_overlap = combination.get(AI4RAGParamNames.CHUNK_OVERLAP)
+
+    if chunk_size is None or chunk_overlap is None:
+        raise SearchSpaceValueError("Chunk size and chunk overlap are required.")
+
+    return chunk_size > chunk_overlap
+
+
+def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
+    """Define whether combination passes selected criterion."""
+
+    window_size = combination.get(AI4RAGParamNames.WINDOW_SIZE)
+    retrieval_method = combination.get(AI4RAGParamNames.RETRIEVAL_METHOD)
+
+    if retrieval_method is None or window_size is None:
+        raise SearchSpaceValueError("window_size and retrieval_method are required.")
+
+    if window_size == 0 and retrieval_method == "window":
+        return False
+    elif window_size > 0 and retrieval_method == "simple":
+        return False
+
+    return True
 
 
 class SearchSpace:
@@ -30,24 +64,13 @@ class SearchSpace:
         List of Parameters, each of which is a parameter to optimize in hyperparameter optimization process.
     """
 
-    def __init__(self, params: list[Parameter] = None) -> None:
-        self.search_space = [] if params is None else params
+    def __init__(self, params: list[Parameter] = None, rules: list[Callable] | None = None):
+        self.params = params or []
+        self._search_space = {param.name: param for param in self._params}
+        self._rules = rules
 
     def __getitem__(self, item: str) -> Parameter:
-        return self.search_space[item]
-
-    @property
-    def search_space(self) -> dict[str, Parameter]:
-        """Get search space."""
-        return self._search_space
-
-    @search_space.setter
-    def search_space(self, params: list[Parameter]) -> None:
-        """
-        Set _search_space value.
-        """
-        params = self._apply_constraints(params)
-        self._search_space = {param.name: param for param in params}
+        return self._search_space[item]
 
     def as_list(self) -> list[Parameter]:
         """
@@ -58,46 +81,68 @@ class SearchSpace:
         list[Parameter]
             List of parameters composing the search space.
         """
-        return list(self._search_space.values())
+        return list(self.params)
 
-    @staticmethod
-    def _apply_constraints(params: list[Parameter]) -> list[Parameter]:
-        """
-        Modifies parameter list taking into account search space's constraints.
-            - no duplicated params should exist
-            - no different params with the same name should exist
-
-        Parameters
-        ----------
-        params: list[Parameter]
-            list of Parameter objects that this search space holds.
+    def as_dict(self) -> dict[str, Any]:
+        """Return dict representation of the search space.
 
         Returns
         -------
-        list[Parameter]
-            processed list of Parameter objects.
+        dict[str, Any]
+            Dict representation of the search space."""
+        return {param.name: param.all_values() for param in self._params}
 
-        Raises
-        ------
-        SearchSpaceValueError
-            if there are different parameters with the same name.
+    @property
+    def params(self) -> list[Parameter]:
+        return self._params
 
+    @params.setter
+    def params(self, params: list[Parameter]) -> None:
+        if len(params) != len(set([param.name for param in params])):
+            raise SearchSpaceValueError("Parameters must have unique names.")
+
+        self._params = params
+
+    @staticmethod
+    def _apply_rules(combinations: list[dict], rules: list[Callable]) -> list[dict]:
         """
-        deduplicated_params = set(params)
-        if len(set(p.name for p in deduplicated_params)) != len(deduplicated_params):
-            raise SearchSpaceValueError("Search space parameters are invalid.")
-        return list(deduplicated_params)
+        Apply set of rules on the given combinations.
+        Remove all solutions (nodes in the space) that do not meet criteria defined in rules.
 
-    @cached_property
+        Parameters
+        ----------
+        combinations : list[dict]
+            Possible combinations of parameters (nodes in the space of solutions).
+
+        rules : list[Callable]
+            List of rules to apply on the combinations.
+
+        Returns
+        -------
+        list[dict]
+            Filtered combinations of parameters after applying rules.
+        """
+        indexes_to_remove = []
+
+        for idx, combination in enumerate(combinations):
+            for rule in rules:
+                if not rule(combination):
+                    indexes_to_remove.append(idx)
+                    continue
+
+        combinations = [combination for idx, combination in enumerate(combinations) if idx not in indexes_to_remove]
+
+        return combinations
+
+    @property
     def combinations(self) -> list[dict]:
         """Get all possible parameters combinations."""
-        params = self.as_list()
 
-        if any(param.param_type == "R" for param in params):
-            raise TypeError("Cannot calculate max possible combinations for 'R' type parameters.")
-
-        space_params = {param.name: param.all_values() for param in params}
+        space_params = {param.name: param.all_values() for param in self.params}
         combinations = [dict(zip(space_params.keys(), values)) for values in itertools.product(*space_params.values())]
+
+        if self._rules:
+            combinations = self._apply_rules(combinations, self._rules)
 
         return combinations
 
@@ -115,28 +160,6 @@ class SearchSpace:
         return len(self.combinations)
 
 
-_rules_keys_mapping = {"&&": "and", "||": "or", "==": "eq", "!=": "!=", ">": ">", ">=": ">=", "<": "<", "<=": "<="}
-
-
-class Rule(BaseModel):
-    """Class representing single rule constraining the search space."""
-
-    rule_str: str
-
-    @field_validator("rule_str", mode="before")
-    def validate_single_rule(self, rule_str: str) -> str:
-        return rule_str
-
-    def to_python_str_expression(self) -> str:
-        p = self.rule_str.split("IF ")[1]
-        lr = p.split("==>")[0]
-        pr = p.split("==>")[1]
-
-
-class RuleSet(BaseModel):
-    rules: list[Rule]
-
-
 class AI4RAGSearchSpace(SearchSpace):
     """
     Class that represents the search space used for the RAG hyperparameters optimization.
@@ -145,31 +168,73 @@ class AI4RAGSearchSpace(SearchSpace):
     ----------
     params : list[Parameter]
         List of Parameter, each of which is a parameter to optimize in the ai4rag process.
+
+    rules : list[Callable]
+        List of functions - called "rules" - that will be applied on each combination in the search space.
     """
 
-    def __init__(self, params: list[Parameter] = None, **kwargs) -> None:
-        params = [] if params is None else params
+    _rules = (
+        _rule_chunk_size_bigger_than_chunk_overlap,
+        _rule_adjust_window_to_retrieval_method,
+    )
 
-        default_search_space = get_default_search_space()
+    def __init__(self, params: list[Parameter], rules: list[Callable] | None = None):
+        default_search_space_parameters = get_default_ai4rag_search_space_parameters()
+
+        self._validate_user_params(params)
 
         params = self._overwrite_default_search_space_with_user_provided_parameters(
-            params, kwargs.get("default_search_space", default_search_space)
+            params, default_search_space_parameters
         )
-        super().__init__(params)
+
+        _summed_rules = self._rules + rules if rules else self._rules
+        super().__init__(params, _summed_rules)
 
     @staticmethod
-    def _overwrite_default_search_space_with_user_provided_parameters(
-        params: list[Parameter], default_search_space: dict
-    ) -> list[Parameter]:
-        """
-        User-provided data has higher precedence than the defaults that's why we're overwriting the defaults here.
-        Retrieval and chunking's settings might undergo further expansion with
-        the default configurations that the user did not specify.
+    def _validate_user_params(params: list[Parameter]) -> None:
+        """Validate parameters provided by the user, that will be later
+        used for overriding the defaults.
 
         Parameters
         ----------
-        params
+        params : list[Parameter]
+            Parameters provided by the user.
+
+        Raises
+        ------
+        SearchSpaceValueError
+            Raised when some parameters are not recognized or required ones are missing.
+        """
+
+        required_params = (AI4RAGParamNames.FOUNDATION_MODEL, AI4RAGParamNames.EMBEDDING_MODEL)
+        user_params = [param.name for param in params]
+        missing_params = set(required_params) - set(user_params)
+
+        if missing_params:
+            raise SearchSpaceValueError(f"Missing required parameters in the search space: {missing_params}.")
+
+        not_supported_params = [param for param in user_params if param not in AI4RAGParamNames]
+
+        if not_supported_params:
+            raise SearchSpaceValueError(
+                f"Not supported parameters were given to the search space: {not_supported_params}."
+            )
+
+    @staticmethod
+    def _overwrite_default_search_space_with_user_provided_parameters(
+            params: list[Parameter],
+            default_search_space_params: list[Parameter],
+    ) -> list[Parameter]:
+        """
+        User-provided data has higher precedence than the defaults that's why we're overwriting the defaults here.
+
+        Parameters
+        ----------
+        params : list[Parameter]
             List of parameters to build up this search space.
+
+        default_search_space_params : list[Parameter]
+            Default parameters to be considered.
 
         Returns
         -------
@@ -181,93 +246,15 @@ class AI4RAGSearchSpace(SearchSpace):
             When user provided unsupported parameter (not existing in the default search space).
 
         """
-        for p in params:
-            if p.name == "retrieval":
-                expanded_settings = [
-                    _
-                    for user_setting in p.values
-                    for _ in create_cartesian_product_of_possible_configurations(user_setting)
-                ]
-                expanded_settings = remove_duplicates(expanded_settings)
-                p = Parameter(p.name, param_type="C", values=expanded_settings if expanded_settings else p.values)
+        user_params = {param.name: param for param in params}
+        default_params = {param.name: param for param in default_search_space_params}
 
-            if p.name == "chunking":
-                expanded_settings = [
-                    _
-                    for user_setting in p.values
-                    for _ in create_cartesian_product_of_possible_configurations(user_setting)
-                ]
-                expanded_settings = remove_duplicates(expanded_settings)
-                p = Parameter(p.name, param_type="C", values=expanded_settings if expanded_settings else p.values)
+        selected_params = []
 
-            if p.name in (
-                AI4RAGParamNames.AGENT_TYPE,
-                AI4RAGParamNames.INFERENCE_MODEL_ID,
-                AI4RAGParamNames.EMBEDDING_MODEL,
-                AI4RAGParamNames.RETRIEVAL,
-                AI4RAGParamNames.CHUNKING,
-            ):
-                default_search_space[p.name] = p
+        for k, v in default_params.items():
+            if k in user_params.keys():
+                selected_params.append(user_params[k])
             else:
-                # TO-DO change the error message here to more verbose sth like: not in allowed parameters sets
-                raise SearchSpaceValueError("Search space parameters are invalid.")
+                selected_params.append(v)
 
-        return list(default_search_space.values())
-
-    @cached_property
-    def combinations(self) -> list[dict]:
-        """
-        The flow of AutoRAG experiment requires that each combination is a flat mapping
-        (e.g. due to application of OneHot encoding at some stage).
-
-        Returns
-        -------
-            Flattened list of all parameter combinations for this search space.
-        """
-        combinations = list(filter(self.remove_react_combinations_for_byom_and_granite, super().combinations))
-        return AI4RAGSearchSpace.flatten_combinations(combinations)
-
-    @staticmethod
-    def flatten_combinations(data: list[dict]) -> list[dict]:
-        """
-        Flattens each dictionary in the input list of possible parameter combinations for this search space.
-
-        Parameters
-        ----------
-        data: list[dict]
-            List of possible parameter combinations for this search space.
-
-        Returns
-        -------
-            List of flattened possible parameter combinations for this search space.
-
-        Notes
-        -----
-        Current implementation is temporary because it's very naive. The better, shorter
-        and more general version will be provided shortly.
-        """
-        flattened_data = []
-        for comb in data:
-            if "score" in comb:
-                # score is present when we're flattening evaluated data. Don't want to miss it.
-                tmp_dct = {"score": comb["score"]}
-            else:
-                tmp_dct = {}
-            if comb.get("chunking"):
-                chunking = comb["chunking"]
-                tmp_dct["chunking_method"] = chunking["method"]
-                tmp_dct.update(chunking)
-                del tmp_dct["method"]
-                del comb["chunking"]
-            if comb.get("retrieval"):
-                retrieval = comb["retrieval"]
-                tmp_dct["retrieval_method"] = retrieval["method"]
-                tmp_dct["retrieval_window_size"] = retrieval["window_size"]
-                tmp_dct["number_of_retrieved_chunks"] = retrieval["number_of_chunks"]
-                del comb["retrieval"]
-            tmp_dct |= comb
-            flattened_data.append(tmp_dct)
-        return flattened_data
-
-    def __repr__(self) -> str:
-        return f"{self.search_space}"
+        return selected_params

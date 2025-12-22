@@ -77,13 +77,13 @@ class AI4RAGParamNames(metaclass=ConstantMeta):
     CHUNK_OVERLAP = "chunk_overlap"
     EMBEDDING_MODEL = "embedding_model"
     DISTANCE_METRIC = "distance_metric"
-    INFERENCE_MODEL_ID = "inference_model_id"
+    FOUNDATION_MODEL = "foundation_model"
     TRUNCATE_STRATEGY = "truncate_strategy"
     INPUT_SIZE = "input_size"
     RETRIEVAL = "retrieval"
     RETRIEVAL_METHOD = "retrieval_method"
-    RETRIEVAL_WINDOW_SIZE = "retrieval_window_size"
-    NUMBER_OF_RETRIEVED_CHUNKS = "number_of_retrieved_chunks"
+    WINDOW_SIZE = "window_size"
+    NUMBER_OF_CHUNKS = "number_of_chunks"
     GENERATION = "generation"
 
 

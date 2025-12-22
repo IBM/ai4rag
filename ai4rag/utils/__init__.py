@@ -11,7 +11,6 @@ from typing import Sequence
 
 import jinja2
 import pandas as pd
-from ibm_watsonx_ai.metanames import GenChatParamsMetaNames, GenTextParamsMetaNames
 
 
 def get_hashable_repr(dct: dict):
@@ -132,27 +131,6 @@ def datetime_str_to_epoch_time(timestamp: str | int) -> str | int:
     except ValueError:
         return -1
     return int(iso_parseable.timestamp())
-
-
-def create_gen_params_dict(params: dict) -> dict:
-    """
-    Creates dictionary containing generation parameters.
-
-    Parameters
-    ----------
-    params : dict
-        Input parameters from which generation parameters dictionary is created.
-
-    Returns
-    -------
-        Filtered items from input params which are in GenParams.
-    """
-    return {
-        key: value
-        for key, value in params.items()
-        if key.upper() in GenTextParamsMetaNames().get()
-        or key.upper() in GenChatParamsMetaNames().get()  # remove GenText in CPD 5.3.0
-    }
 
 
 def _dedent(value):
