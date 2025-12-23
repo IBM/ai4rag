@@ -5,16 +5,6 @@
 from typing import Any
 
 from langchain_core.documents import Document
-
-<<<<<<< HEAD
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
-from ibm_watsonx_ai.foundation_models.extensions.rag import Retriever
-from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores import VectorStore
-from ibm_watsonx_ai.wml_client_error import WMLClientError
-from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores.adapters.milvus_adapter import MilvusVectorStore
-
-=======
->>>>>>> 31d4ddf (Introduce base RAG components and update pre-selector (#2))
 from ai4rag.core.experiment.exception_handler import (
     ExperimentExceptionsHandler,
     IndexingError,
