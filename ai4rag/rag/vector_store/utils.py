@@ -99,9 +99,7 @@ def merge_window_into_a_document(window: list[Document]) -> Document:
         """
         merged_text = ""
         for text in texts:
-            text_to_add, has_intersection = get_str2_without_intersecting_text(
-                merged_text, text
-            )
+            text_to_add, has_intersection = get_str2_without_intersecting_text(merged_text, text)
             if merged_text and not has_intersection:
                 merged_text += " "  # Add a space between non-overlapping texts (chunks)
             merged_text += text_to_add

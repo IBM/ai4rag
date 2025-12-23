@@ -18,16 +18,37 @@ from ai4rag import logger
 
 
 class ChromaVectorStore(BaseVectorStore):
+    """
+    Class representing single index in the chroma vector database.
+
+    Parameters
+    ----------
+    embedding_model : BaseEmbeddingModel
+        Instance used for embedding documents and user's queries.
+
+    collection_name : str, default="default_collection"
+        Name of the collection that will be created as a vector store.
+
+    distance_metric : str, default="cosine"
+        Metric that will be used to calculate similarity score between vectors.
+
+    document_name_field : str, default="document_id"
+        Default document ID field name.
+
+    chunk_sequence_number_field : str, default="chunk_sequence_number"
+        Default chunk sequence number field name.
+    """
+
     _supported_distance_metrics = ("cosine", "l2")
 
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        collection_name: str,
-        distance_metric: str,
+        collection_name: str = "default_collection",
+        distance_metric: str = "cosine",
         document_name_field: str = "document_id",
         chunk_sequence_number_field: str = "sequence_number",
-        **kwargs
+        **kwargs,
     ) -> None:
         super().__init__(
             embedding_model=embedding_model, collection_name=collection_name, distance_metric=distance_metric
@@ -37,13 +58,22 @@ class ChromaVectorStore(BaseVectorStore):
         self._vector_store = self._get_chroma_client(**kwargs)
 
     def _get_chroma_client(self, **kwargs) -> Chroma:
-        """Create chroma client based on the given settings"""
+        """
+        Create chroma client based on the given settings.
+
+        ^kwargs are passed from the __init__ as parameters for Chroma client.
+
+        Returns
+        -------
+        Chroma
+            Client instance created based on the given settings.
+        """
 
         chroma_client = Chroma(
             collection_name=self.collection_name,
             embedding_function=self.embedding_model,
             collection_metadata={"hnsw:space": self.distance_metric},
-            **kwargs
+            **kwargs,
         )
 
         return chroma_client
@@ -54,33 +84,45 @@ class ChromaVectorStore(BaseVectorStore):
 
     @distance_metric.setter
     def distance_metric(self, value: str) -> None:
+        """Set value of the distance metric.
+
+        Raises
+        ------
+        ValueError
+            If the distance metric is not supported.
+        """
         if value not in self._supported_distance_metrics:
             raise ValueError(f"Invalid distance metric: {value}. Use one of: {self._supported_distance_metrics}.")
         self._distance_metric = value
 
-    def get_client(self) -> Chroma:
-        return self._vector_store
-
     def clear(self) -> None:
-        client = self.get_client()
-        all_docs_ids = client.get()["ids"]
+        all_docs_ids = self._vector_store.get()["ids"]
         if len(all_docs_ids) > 0:
             self.delete(all_docs_ids)
 
     def count(self) -> int:
-        client = self.get_client()
-        return len(client.get()["ids"])
+        """Count the number of shards in the vector store.
+
+        Returns
+        -------
+        int
+            Number of shards in the vector store.
+        """
+        return len(self._vector_store.get()["ids"])
 
     @staticmethod
-    def _as_langchain_documents(content: list[str] | list[dict] | list) -> list[Document]:
+    def _as_langchain_documents(content: list) -> list[Document]:
         """Creates a LangChain ``Document`` list from a list of potentially unstructured data.
 
-        :param content: list of unstructured data to be parsed
-        :type content: list[str] | list[dict] | list
+        Parameters
+        ----------
+        content : list
+            Unstructured data to be parsed.
 
-        :raises AttributeError: raised when data does not fit the required schema
-        :return: list of LangChain Documents
-        :rtype: list[langchain_core.documents.Document]
+        Returns
+        -------
+        list[Document]
+            List of `Document` instances.
         """
         result = []
         for doc in content:
@@ -92,24 +134,18 @@ class ChromaVectorStore(BaseVectorStore):
 
                 if content_str:
                     if isinstance(metadata, dict):
-                        result.append(
-                            Document(page_content=content_str, metadata=metadata)
-                        )
+                        result.append(Document(page_content=content_str, metadata=metadata))
                     else:
                         logger.warning(
                             f"Document: {doc} is incorrect. Metadata needs to be given with 'metadata' attribute and it needs to be a serializable dict. Skipping."
                         )
                         continue
                 else:
-                    logger.warning(
-                        f"Document: {doc} is incorrect. Field 'content' is required"
-                    )
+                    logger.warning(f"Document: {doc} is incorrect. Field 'content' is required")
                     continue
             else:
                 try:
-                    result.append(
-                        Document(page_content=doc.page_content, metadata=doc.metadata)
-                    )
+                    result.append(Document(page_content=doc.page_content, metadata=doc.metadata))
                 except AttributeError:
                     logger.warning(
                         f"Document: {doc} is not a dict, nor string, nor LangChain Document-like object. Skipping."
@@ -117,16 +153,22 @@ class ChromaVectorStore(BaseVectorStore):
 
         return result
 
-    def _process_documents(self, content: list[str] | list[dict] | list) -> tuple[list[str], list[Document]]:
-        """Processes arbitrary list of data to produce two lists: one with unique IDs, and one with LangChain documents.
+    def _process_documents(self, content: list) -> tuple[list[str], list[Document]]:
+        """
+        Processes arbitrary list of data to produce two lists:
+        one with unique IDs, and one with LangChain documents.
 
         Handles duplicate documents.
 
-        :param content: arbitrary data
-        :type content: list[str] | list[dict] | list
+        Parameters
+        ----------
+        content : list
+            Arbitrary data.
 
-        :return: lists with IDs and docs
-        :rtype: tuple[list[str], list[langchain_core.documents.Document]
+        Returns
+        -------
+        tuple[list[str], list[Document]]
+            Lists with IDs and docs
         """
         docs = self._as_langchain_documents(content)
         if docs:
@@ -136,26 +178,30 @@ class ChromaVectorStore(BaseVectorStore):
             return tuple(
                 map(
                     list,
-                    zip(
-                        *{
-                            hashlib.sha256(
-                                str(doc).encode(errors="replace")
-                            ).hexdigest(): doc
-                            for doc in docs
-                        }.items()
-                    ),
+                    zip(*{hashlib.sha256(str(doc).encode(errors="replace")).hexdigest(): doc for doc in docs}.items()),
                 )
             )
         else:
             return [], []
 
-    def add_documents(self, content: list[str] | list[dict] | list, **kwargs: Any) -> list[str]:
+    def add_documents(self, content: list, **kwargs: Any) -> list[str]:
+        """
+        Embed and add documents to the vector store.
+
+        Parameters
+        ----------
+        content : list
+            Documents to be embedded and added to the vector store.
+
+        Returns
+        -------
+        list[str]
+            List of documents IDs.
+        """
         max_batch_size = kwargs.get("max_batch_size")
         if max_batch_size is None:
             try:
-                max_batch_size = (
-                    self._vector_store._client.get_max_batch_size()
-                )  # type: ignore[attr-defined]
+                max_batch_size = self._vector_store._client.get_max_batch_size()  # type: ignore[attr-defined]
             except AttributeError:
                 max_batch_size = 10_000
 
@@ -180,14 +226,18 @@ class ChromaVectorStore(BaseVectorStore):
         Receives a document ID and a list of chunks' sequence_numbers,
         and searches the vector store according to the metadata.
 
-        :param doc_id: ID of document
-        :type doc_id: str
+        Parameters
+        ----------
+        doc_id : str
+            ID of document.
 
-        :param seq_nums_window: list of sequence numbers
-        :type seq_nums_window: list[int]
+        seq_nums_window : list[int]
+            Sequence numbers of chunks.
 
-        :return: list of documents from that document with these sequence_numbers
-        :rtype: list[Document]
+        Returns
+        -------
+        list[Document]
+            Documents from that document with these sequence_numbers.
         """
         expr = {
             "$and": [
@@ -202,9 +252,7 @@ class ChromaVectorStore(BaseVectorStore):
             Document(
                 page_content=text,
                 metadata={
-                    self._chunk_sequence_number_field: metadata[
-                        self._chunk_sequence_number_field
-                    ],
+                    self._chunk_sequence_number_field: metadata[self._chunk_sequence_number_field],
                     self._document_name_field: doc_id,
                 },
             )
@@ -215,9 +263,8 @@ class ChromaVectorStore(BaseVectorStore):
     def search(
         self,
         query: str,
-        k: int,
+        k: int = 5,
         include_scores: bool = False,
-        verbose: bool = False,
         **kwargs: Any,
     ) -> list[Document] | list[tuple[Document, float]]:
         """Searches for documents most similar to the query.
@@ -226,84 +273,76 @@ class ChromaVectorStore(BaseVectorStore):
         Therefore, additional search parameters passed in ``kwargs`` should be consistent with those methods,
         and can be found in the LangChain documentation.
 
-        :param query: text query
-        :type query: str
+        Parameters
+        ----------
+        query : str
+            Query for which grounding documents will be searched for.
 
-        :param k: number of documents to retrieve
-        :type k: int
+        k : int, default=5
+            Number of documents to retrieve
 
-        :param include_scores: whether similarity scores of found documents should be returned, defaults to False
-        :type include_scores: bool
+        include_scores : bool, default=False
+            Whether similarity scores of found documents should be returned.
 
-        :param verbose: whether to display a table with the found documents, defaults to False
-        :type verbose: bool
-
-        :return: list of found documents
-        :rtype: list
+        Returns
+        -------
+        list[Document] | list[tuple[Document, float]]
+            Found documents with or without scores.
         """
-        result: list[Document] | list[tuple[Document, float]]
         if include_scores:
-            result = self._vector_store.similarity_search_with_score(
-                query, k=k, **kwargs
-            )
+            result = self._vector_store.similarity_search_with_score(query, k=k, **kwargs)
         else:
-            result = self._vector_store.similarity_search(
-                query, k=k, **kwargs
-            )
+            result = self._vector_store.similarity_search(query, k=k, **kwargs)
 
         return result
 
     def window_search(
         self,
         query: str,
-        k: int,
+        k: int = 5,
         include_scores: bool = False,
-        verbose: bool = False,
         window_size: int = 2,
         **kwargs: Any,
     ) -> list:
-        """Searches for documents most similar to the query and extend a document (a chunk) to its adjacent chunks (if they exist) from the same origin document.
+        """
+        Searches for documents most similar to the query and extend a document (a chunk)
+        to its adjacent chunks (if they exist) from the same origin document.
 
         The method is designed as a wrapper for respective LangChain VectorStores' similarity search methods.
         Therefore, additional search parameters passed in ``kwargs`` should be consistent with those methods,
         and can be found in the LangChain documentation.
 
-        :param query: text query
-        :type query: str
+        Parameters
+        ----------
+        query : str
+            Query for which grounding documents will be searched for.
 
-        :param k: number of documents to retrieve
-        :type k: int
+        k : int, default=5
+            Number of documents to retrieve
 
-        :param include_scores: whether similarity scores of found documents should be returned, defaults to False
-        :type include_scores: bool
+        include_scores : bool, default=False
+            Whether similarity scores of found documents should be returned.
 
-        :param verbose: whether to display a table with the found documents, defaults to False
-        :type verbose: bool
+        window_size : int, default=2
+            Number of chunks from right and left side of the original chunk.
 
-        :param window_size: number of chunks
-        :type window_size: int, optional
-
-        :return: list of found documents
-        :rtype: list
+        Returns
+        -------
+        list
+            Found documents with or without scores.
         """
-        documents = self.search(query, k, include_scores, verbose, **kwargs)
+        documents = self.search(query, k, include_scores, **kwargs)
         if window_size <= 0:
             return documents
 
         if not include_scores:
             documents = cast(list[Document], documents)
-            return [
-                self._window_extend_and_merge(document, window_size)
-                for document in documents
-            ]
+            return [self._window_extend_and_merge(document, window_size) for document in documents]
         else:
             documents_and_scores = cast(list[tuple[Document, float]], documents)
             documents = [t[0] for t in documents_and_scores]
             scores = [t[1] for t in documents_and_scores]
-            extended_documents = [
-                self._window_extend_and_merge(document, window_size)
-                for document in documents
-            ]
+            extended_documents = [self._window_extend_and_merge(document, window_size) for document in documents]
             return list(zip(extended_documents, scores))
 
     def delete(self, ids: list[str], **kwargs: Any) -> None:
@@ -319,28 +358,28 @@ class ChromaVectorStore(BaseVectorStore):
         and merges intersecting text between them (if it exists).
         This requires chunks to have "document_id" and "sequence_number" in their metadata.
 
-        :param document: document (chunk) to be extended to its window and merged
-        :type document: Document
+        Parameters
+        ----------
+        document : Document
+            Chunk / document to be extended to its window and merged.
 
-        :param window_size: number of adjacent chunks to retrieve before and after the center, according to the sequence_number
-        :type window_size: int
+        window_size : int
+            Number of adjacent chunks to retrieve before and after the center, according to the sequence_number.
 
-        :return: merged window
-        :rtype: Document
+        Returns
+        -------
+        Document
+            Chunk / document after extending and merging.
         """
         if "document_id" not in document.metadata:
             raise ValueError('document must have "document_id" in its metadata')
         if "sequence_number" not in document.metadata:
-            raise ValueError(
-                'document must have "sequence_number" in its metadata'
-            )
+            raise ValueError('document must have "sequence_number" in its metadata')
         doc_id = document.metadata["document_id"]
         seq_num = document.metadata["sequence_number"]
         seq_nums_window = [seq_num + i for i in range(-window_size, window_size + 1, 1)]
 
-        window_documents = self._get_window_documents(
-            doc_id, seq_nums_window
-        )
+        window_documents = self._get_window_documents(doc_id, seq_nums_window)
 
         window_documents.sort(key=lambda x: x.metadata["sequence_number"])
         return merge_window_into_a_document(window_documents)

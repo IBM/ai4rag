@@ -115,20 +115,12 @@ class SearchSpace:
         return len(self.combinations)
 
 
-_rules_keys_mapping = {
-    "&&": "and",
-    "||": "or",
-    "==": "eq",
-    "!=": "!=",
-    ">": ">",
-    ">=": ">=",
-    "<": "<",
-    "<=": "<="
-}
+_rules_keys_mapping = {"&&": "and", "||": "or", "==": "eq", "!=": "!=", ">": ">", ">=": ">=", "<": "<", "<=": "<="}
 
 
 class Rule(BaseModel):
     """Class representing single rule constraining the search space."""
+
     rule_str: str
 
     @field_validator("rule_str", mode="before")
@@ -139,7 +131,6 @@ class Rule(BaseModel):
         p = self.rule_str.split("IF ")[1]
         lr = p.split("==>")[0]
         pr = p.split("==>")[1]
-
 
 
 class RuleSet(BaseModel):
@@ -210,11 +201,11 @@ class AI4RAGSearchSpace(SearchSpace):
                 p = Parameter(p.name, param_type="C", values=expanded_settings if expanded_settings else p.values)
 
             if p.name in (
-                    AI4RAGParamNames.AGENT_TYPE,
-                    AI4RAGParamNames.INFERENCE_MODEL_ID,
-                    AI4RAGParamNames.EMBEDDING_MODEL,
-                    AI4RAGParamNames.RETRIEVAL,
-                    AI4RAGParamNames.CHUNKING,
+                AI4RAGParamNames.AGENT_TYPE,
+                AI4RAGParamNames.INFERENCE_MODEL_ID,
+                AI4RAGParamNames.EMBEDDING_MODEL,
+                AI4RAGParamNames.RETRIEVAL,
+                AI4RAGParamNames.CHUNKING,
             ):
                 default_search_space[p.name] = p
             else:

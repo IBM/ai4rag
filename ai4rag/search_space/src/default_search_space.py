@@ -129,9 +129,7 @@ def get_default_ai4rag_search_space(
     """
 
     default_search_space = {
-        AI4RAGParamNames.AGENT_TYPE: Parameter(
-            name=AI4RAGParamNames.AGENT_TYPE, param_type="C", values=["sequential"]
-        ),
+        AI4RAGParamNames.AGENT_TYPE: Parameter(name=AI4RAGParamNames.AGENT_TYPE, param_type="C", values=["sequential"]),
         AI4RAGParamNames.RETRIEVAL: Parameter(
             name=AI4RAGParamNames.RETRIEVAL,
             param_type="C",
@@ -169,7 +167,7 @@ def get_default_ai4rag_search_space(
                     _default_recursive_chunking_configs, defaults=_default_recursive_chunking_configs
                 ),
             ],
-        )
+        ),
     }
 
     # In case where there are no IBM provided models

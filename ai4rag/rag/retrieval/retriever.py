@@ -10,7 +10,12 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 
 class Retriever:
-    def __init__(self, vector_store: BaseVectorStore, method: Literal["simple"], number_of_chunks: int, ):
+    def __init__(
+        self,
+        vector_store: BaseVectorStore,
+        method: Literal["simple"],
+        number_of_chunks: int,
+    ):
         self._vector_store = vector_store
         self.method = method
         self.number_of_chunks = number_of_chunks
