@@ -3,13 +3,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Any
+from typing import TypeVar, Generic
 
 
-class BaseEmbeddingModel(ABC):
-    def __init__(self, model_id: str, params: dict[str, Any]):
+ClientT = TypeVar("ClientT")
+EmbeddingParamsT = TypeVar("EmbeddingParamsT")
+
+
+class BaseEmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
+    def __init__(self, client: ClientT, model_id: str, params: EmbeddingParamsT):
+        self.client: ClientT = client
         self.model_id = model_id
-        self.params = params
+        self.params: EmbeddingParamsT = params
 
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
