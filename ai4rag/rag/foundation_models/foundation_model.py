@@ -2,40 +2,51 @@
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Any
+from typing import Any, Annotated
+from annotated_types import Gt, Le, Ge
+from pydantic import BaseModel
 
 from llama_stack_client import LlamaStackClient
 from llama_stack_client.types import SystemMessage, UserMessage
 
-from .base import FoundationModel, ModelParameters
+from ai4rag.utils.constants import ChatGenerationConstants
+from ai4rag.rag.foundation_models.base_foundation_model import BaseFoundationModel
+from ai4rag.utils.validators import RAGPromptTemplateString
+from ai4rag.search_space.src.model_props import (
+    get_system_message_text,
+    get_user_message_text,
+)
 
 
-class LlamaStackFoundationModel(FoundationModel):
+class ModelParameters(BaseModel):
+    max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
+    temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
+
+
+class LlamaStackFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
     """Integration point to use any model via Llama-stack API / client"""
+
+    user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")
+    context_template_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="context_template_text")
 
     def __init__(
         self,
         model_id: str,
         model_params: dict[str, Any] | ModelParameters | None,
-        ls_client: LlamaStackClient,
-        **kwargs,
+        client: LlamaStackClient,
+        user_message_text: str,
+        context_template_text: str,
+        system_message_text: str,
     ):
-        super().__init__(model_id, model_params)
-        self._ls_client = ls_client
-        self._model_params = model_params
-        self._system_message_text = kwargs.pop("system_message_text", None)
-        self._user_message_text = kwargs.pop("user_message_text", None)
-        self._context_template_text = kwargs.pop("context_template_text", None)
-
-    @property
-    def ls_client(self) -> LlamaStackClient:
-        return self._ls_client
-
-    @ls_client.setter
-    def ls_client(self, val: LlamaStackClient):
-        if not isinstance(val, LlamaStackClient):
-            raise TypeError(f"Expected instance of LlamaStackClient, got instance of {val.__class__.__name__} instead.")
-        self._ls_client = val
+        super().__init__(client=client, model_id=model_id, model_params=model_params)
+        self.model_params = model_params
+        self.system_message_text = system_message_text
+        self.user_message_text = (
+            user_message_text if user_message_text is not None else get_user_message_text(model_name=model_id)
+        )
+        self.context_template_text = (
+            context_template_text if context_template_text is not None else get_system_message_text(model_name=model_id)
+        )
 
     def chat(self, system_message: str, user_message: str) -> str:
         """
@@ -54,7 +65,7 @@ class LlamaStackFoundationModel(FoundationModel):
         str
             Chat response from the model.
         """
-        response_chat = self.ls_client.chat.completions.create(
+        response_chat = self.client.chat.completions.create(
             model=self.model_id,
             messages=[
                 SystemMessage(role="system", content=system_message),

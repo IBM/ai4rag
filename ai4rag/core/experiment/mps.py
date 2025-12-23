@@ -5,7 +5,6 @@
 from typing import Any
 
 from langchain_core.documents import Document
-
 from ai4rag.core.experiment.exception_handler import (
     ExperimentExceptionsHandler,
     IndexingError,
