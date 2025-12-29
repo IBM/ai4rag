@@ -10,7 +10,6 @@ import pytest
 from ai4rag.search_space.src.parameter import Parameter, ParameterValueError
 
 
-
 class TestMethods:
     """all member test various methods defined on the `Parameter` class"""
 

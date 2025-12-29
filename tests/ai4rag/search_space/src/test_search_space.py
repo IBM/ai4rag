@@ -28,7 +28,7 @@ def mocked_params() -> list[Parameter]:
         ({"chunk_size": 2048, "chunk_overlap": 512}, True),
         ({"chunk_size": 512, "chunk_overlap": 512}, False),
         ({"chunk_size": 256, "chunk_overlap": 512}, False),
-    )
+    ),
 )
 def test_rule_chunk_size_bigger_than_chunk_overlap_returns(combination, expected_value):
     val = _rule_chunk_size_bigger_than_chunk_overlap(combination)
@@ -47,7 +47,7 @@ def test_rule_chunk_size_bigger_than_chunk_overlap_raises():
         ({"retrieval_method": "simple", "window_size": 2}, False),
         ({"retrieval_method": "window", "window_size": 0}, False),
         ({"retrieval_method": "window", "window_size": 5}, True),
-    )
+    ),
 )
 def test_rule_adjust_window_to_retrieval_method(combination, expected_value):
     val = _rule_adjust_window_to_retrieval_method(combination)
@@ -73,7 +73,7 @@ class TestSearchSpace:
 
     def test_params_setter_raises_error(self):
         with pytest.raises(SearchSpaceValueError):
-            search_space = SearchSpace(
+            _ = SearchSpace(
                 params=[
                     Parameter(name="a", param_type="C", values=[1, 2]),
                     Parameter(name="a", param_type="C", values=[3, 4]),
@@ -97,4 +97,6 @@ class TestSearchSpace:
 
         search_space = SearchSpace(params=mocked_params, rules=[_custom_rule])
 
-        assert search_space.max_combinations == len(mocked_params[0].all_values()) * len(mocked_params[1].all_values()) - 1
+        assert (
+            search_space.max_combinations == len(mocked_params[0].all_values()) * len(mocked_params[1].all_values()) - 1
+        )

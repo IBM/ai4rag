@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import itertools
-from typing import Any, Callable
+from typing import Any, Callable, TypeAlias
 
 from ai4rag.search_space.src.default_search_space import (
     get_default_ai4rag_search_space_parameters,
@@ -13,6 +13,9 @@ from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.utils.constants import AI4RAGParamNames
 
 __all__ = ["SearchSpace", "AI4RAGSearchSpace"]
+
+
+RuleFunction: TypeAlias = Callable[[dict[str, Any]], bool]
 
 
 def _rule_chunk_size_bigger_than_chunk_overlap(combination: dict) -> bool:
@@ -64,7 +67,7 @@ class SearchSpace:
         List of Parameters, each of which is a parameter to optimize in hyperparameter optimization process.
     """
 
-    def __init__(self, params: list[Parameter] = None, rules: list[Callable] | None = None):
+    def __init__(self, params: list[Parameter] = None, rules: list[RuleFunction] | None = None):
         self.params = params or []
         self._search_space = {param.name: param for param in self._params}
         self._rules = rules
@@ -104,7 +107,7 @@ class SearchSpace:
         self._params = params
 
     @staticmethod
-    def _apply_rules(combinations: list[dict], rules: list[Callable]) -> list[dict]:
+    def _apply_rules(combinations: list[dict], rules: list[RuleFunction]) -> list[dict]:
         """
         Apply set of rules on the given combinations.
         Remove all solutions (nodes in the space) that do not meet criteria defined in rules.
@@ -114,7 +117,7 @@ class SearchSpace:
         combinations : list[dict]
             Possible combinations of parameters (nodes in the space of solutions).
 
-        rules : list[Callable]
+        rules : list[RuleFunction]
             List of rules to apply on the combinations.
 
         Returns
@@ -169,7 +172,7 @@ class AI4RAGSearchSpace(SearchSpace):
     params : list[Parameter]
         List of Parameter, each of which is a parameter to optimize in the ai4rag process.
 
-    rules : list[Callable]
+    rules : list[RuleFunction]
         List of functions - called "rules" - that will be applied on each combination in the search space.
     """
 
@@ -178,7 +181,7 @@ class AI4RAGSearchSpace(SearchSpace):
         _rule_adjust_window_to_retrieval_method,
     )
 
-    def __init__(self, params: list[Parameter], rules: list[Callable] | None = None):
+    def __init__(self, params: list[Parameter], rules: list[RuleFunction] | None = None):
         default_search_space_parameters = get_default_ai4rag_search_space_parameters()
 
         self._validate_user_params(params)
