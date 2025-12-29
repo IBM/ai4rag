@@ -1,7 +1,7 @@
-#
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 from collections import Counter
 
 from ai4rag.utils.event_handler import BaseEventHandler, LogLevel
@@ -44,15 +44,10 @@ class IndexingError(AI4RAGError):
 class GenerationError(AI4RAGError):
     """Exception representing error during retrieval or inference."""
 
-    def __init__(self, exception: Exception, inference_model: str, deployment_id: str | None = None):
+    def __init__(self, exception: Exception, model_id: str):
         super().__init__(exception)
-        self.inference_model = inference_model
-        self.deployment_id = deployment_id
-        self._message_core = (
-            f"Unable to retrieve chunks and generate answers for deployment with ID: '{deployment_id}'"
-            if deployment_id
-            else f"Unable to retrieve chunks and generate answers for foundation model: '{inference_model}'"
-        )
+        self.model_id = model_id
+        self._message_core = f"Unable to retrieve chunks and generate answers for foundation model: '{model_id}'"
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}: {self._message_core} due to: {repr(self.exception)}"

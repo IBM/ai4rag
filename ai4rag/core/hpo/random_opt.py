@@ -1,7 +1,7 @@
-#
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 from dataclasses import dataclass
 import random
 from typing import Callable, Any
@@ -13,6 +13,7 @@ from ai4rag.search_space.src.search_space import SearchSpace
 
 __all__ = ["RandomOptimiser", "RandomOptSettings", "FailedIterationError"]
 
+
 @dataclass
 class RandomOptSettings(OptimiserSettings):
     """Settings for random optimiser."""
@@ -20,11 +21,9 @@ class RandomOptSettings(OptimiserSettings):
 
 class RandomOptimiser(BaseOptimiser):
     """Optimiser running random search on the given search space."""
+
     def __init__(
-        self,
-        objective_function: Callable[[dict], float],
-        search_space: SearchSpace,
-        settings: RandomOptSettings
+        self, objective_function: Callable[[dict], float], search_space: SearchSpace, settings: RandomOptSettings
     ):
         super().__init__(objective_function, search_space, settings)
         self._evaluated_combinations = []
@@ -49,9 +48,7 @@ class RandomOptimiser(BaseOptimiser):
 
         for idx in range(self.settings.max_evals):
             score = self._objective_function(combinations[idx])
-            self._evaluated_combinations.append(
-                combinations[idx] | {"score": score}
-            )
+            self._evaluated_combinations.append(combinations[idx] | {"score": score})
 
         successful_evaluations = [ev for ev in self._evaluated_combinations if ev["score"] is not None]
 

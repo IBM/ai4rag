@@ -1,0 +1,67 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# C extensions
+*.abi3.so
+
+# --- Environments ---
+venv/
+.env/
+.venv/
+env/
+ENV/
+*.env
+
+# --- Packaging / Build ---
+build/
+dist/
+pip-wheel-metadata/
+*.egg-info/
+*.egg
+.eggs/
+
+# --- PyInstaller ---
+*.manifest
+*.spec
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Testing ---
+.coverage
+htmlcov/
+.tox/
+.nox/
+.pytest_cache/
+.cache/
+
+# --- Type checkers / linters ---
+.mypy_cache/
+.dmypy.json
+ruff_cache/
+.pyre/
+
+# --- Logs ---
+*.log
+
+# --- IDEs / Editors ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- Virtual environment metadata ---
+.python-version
+
+# --- Local data ---
+data/
+local
+*.sqlite3
+
+# --- Misc ---
+.DS_Store
+

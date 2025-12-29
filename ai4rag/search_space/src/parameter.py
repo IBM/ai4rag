@@ -1,7 +1,7 @@
-#
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 from dataclasses import dataclass, fields
 from typing import Any, Literal, Optional, Sequence
 

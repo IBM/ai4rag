@@ -1,7 +1,7 @@
-#
+# -----------------------------------------------------------------------------
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
-#
+# -----------------------------------------------------------------------------
 from dataclasses import asdict, fields
 from functools import partial
 from string import Formatter
@@ -393,7 +393,6 @@ class AI4RAGConstraints:
             raise SearchSpaceValueError(f"Embedding models: {not_supported_em} are not supported.")
 
         return embedding_models
-
 
     @model_validator(mode="after")
     def cast_to_parameter(self):
