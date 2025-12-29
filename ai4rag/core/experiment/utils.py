@@ -299,8 +299,8 @@ def get_retrieval_params(rag_params: RAGRetrievalParamsType) -> RAGRetrievalPara
     number_of_retrieved_chunks = rag_params.get("number_of_retrieved_chunks")
 
     retrieval_params = {
-        AI4RAGParamNames.RETRIEVAL_WINDOW_SIZE: retrieval_window_size,
-        AI4RAGParamNames.NUMBER_OF_RETRIEVED_CHUNKS: number_of_retrieved_chunks,
+        AI4RAGParamNames.WINDOW_SIZE: retrieval_window_size,
+        AI4RAGParamNames.NUMBER_OF_CHUNKS: number_of_retrieved_chunks,
         AI4RAGParamNames.RETRIEVAL_METHOD: retrieval_method,
     }
     if retrieval_window_size is None or not all((retrieval_method, number_of_retrieved_chunks)):

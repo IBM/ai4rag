@@ -384,7 +384,7 @@ class AI4RAGExperiment:
             AI4RAGParamNames.EMBEDDING_MODEL,
         )
 
-        inference_model_id = rag_params.get(AI4RAGParamNames.INFERENCE_MODEL_ID)
+        inference_model_id = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
 
         truncate_strategy = "left"
         input_size = EmbeddingModels.get_max_tokens(embedding_model_name)
@@ -414,7 +414,7 @@ class AI4RAGExperiment:
             else inference_model_id.max_sequence_length
         )
         inference_params = {
-            AI4RAGParamNames.INFERENCE_MODEL_ID: inference_model_id,
+            AI4RAGParamNames.FOUNDATION_MODEL: inference_model_id,
             "context_template_text": context_template_text,
             "system_message_text": system_message_text,
             "user_message_text": user_message_text,
@@ -488,8 +488,8 @@ class AI4RAGExperiment:
             chunked_documents = None
 
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
-        retrieval_window_size = retrieval_params[AI4RAGParamNames.RETRIEVAL_WINDOW_SIZE]
-        number_of_retrieved_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_RETRIEVED_CHUNKS]
+        retrieval_window_size = retrieval_params[AI4RAGParamNames.WINDOW_SIZE]
+        number_of_retrieved_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
         logger.info(
             "Using retriever with parameters: %s",
@@ -649,7 +649,7 @@ class AI4RAGExperiment:
                 raise FailedIterationError(msg) from err
 
         # MPS - models pre-selection based on sample evaluation. Run if there are more than 3 foundation models
-        foundation_models = list(self.search_space[AI4RAGParamNames.INFERENCE_MODEL_ID].values)
+        foundation_models = list(self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values)
         if self.use_knowledge_bases:
             embedding_models = None
         else:
@@ -660,8 +660,8 @@ class AI4RAGExperiment:
             embedding_models and len(embedding_models) > self.n_mps_em or len(foundation_models) > self.n_mps_fm
         ) and not kwargs.get("skip_mps", False):
             selected_models = self.run_pre_selection(foundation_models, embedding_models=embedding_models)
-            self.search_space.search_space[AI4RAGParamNames.INFERENCE_MODEL_ID] = Parameter(
-                name=AI4RAGParamNames.INFERENCE_MODEL_ID, param_type="C", values=selected_models["foundation_models"]
+            self.search_space.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
+                name=AI4RAGParamNames.FOUNDATION_MODEL, param_type="C", values=selected_models["foundation_models"]
             )
             if not self.use_knowledge_bases:
                 self.search_space.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
@@ -740,18 +740,16 @@ class AI4RAGExperiment:
 
         retrieval_params = {
             "method": evaluation_result.inference_params[AI4RAGParamNames.RETRIEVAL_METHOD],
-            "number_of_chunks": evaluation_result.inference_params[AI4RAGParamNames.NUMBER_OF_RETRIEVED_CHUNKS],
-            "window_size": evaluation_result.inference_params[AI4RAGParamNames.RETRIEVAL_WINDOW_SIZE],
+            "number_of_chunks": evaluation_result.inference_params[AI4RAGParamNames.NUMBER_OF_CHUNKS],
+            "window_size": evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE],
         }
 
         retrieval_payload = {
             "retrieval": retrieval_params,
         }
 
-        if evaluation_result.inference_params[AI4RAGParamNames.RETRIEVAL_WINDOW_SIZE]:
-            retrieval_payload["window_size"] = evaluation_result.inference_params[
-                AI4RAGParamNames.RETRIEVAL_WINDOW_SIZE
-            ]
+        if evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE]:
+            retrieval_payload["window_size"] = evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE]
 
         vector_store_payload = {
             "datasource_type": self.vector_store_type,
@@ -774,7 +772,7 @@ class AI4RAGExperiment:
         }
         vector_store_type = self.vector_store_type
 
-        model_identifier = evaluation_result.inference_params[AI4RAGParamNames.INFERENCE_MODEL_ID].get_id_as_dict()
+        model_identifier = evaluation_result.inference_params[AI4RAGParamNames.FOUNDATION_MODEL].get_id_as_dict()
 
         generation_payload = model_identifier | {
             "parameters": evaluation_result.inference_params["generation_params"],
