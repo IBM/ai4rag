@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 import pytest
 import pandas as pd
 
@@ -86,7 +90,7 @@ def pre_selector_evaluation_results(embedding_models, foundation_models) -> list
 
 @pytest.fixture
 def pre_selector(
-        documents, benchmark_data, embedding_models, foundation_models, pre_selector_evaluation_results
+    documents, benchmark_data, embedding_models, foundation_models, pre_selector_evaluation_results
 ) -> ModelsPreSelector:
 
     pre_selector = ModelsPreSelector(
@@ -103,9 +107,7 @@ def pre_selector(
 
 
 @pytest.fixture
-def fully_mocked_selector(
-    mocker, documents, benchmark_data, embedding_models, foundation_models
-) -> ModelsPreSelector:
+def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, foundation_models) -> ModelsPreSelector:
     mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", autospec=True)
 
     def side_effect(**kwargs):
@@ -143,7 +145,8 @@ class TestModelsPreSelector:
                 assert em in evaluated_ems, f"{em.model_id} not in {evaluated_ems}"
                 assert fm in evaluated_fms, f"{fm.model_id} not in {evaluated_fms}"
                 assert (
-                    f"Starting pre-evaluation of foundation model: {fm.model_id} and embedding model: {em.model_id}" in caplog.text
+                    f"Starting pre-evaluation of foundation model: {fm.model_id} and embedding model: {em.model_id}"
+                    in caplog.text
                 ), f"There are no proper pre-selection logs for {(em, fm)}"
 
     def test_evaluate_patterns_with_errors(self, mocker, fully_mocked_selector, caplog):
