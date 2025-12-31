@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from langgraph.types import StreamWriter
-from ibm_watsonx_ai.foundation_models.extensions.rag.pattern.prompt_builder import build_prompt
 
 from ai4rag.core.ai_service.states import AI4RAGState
 

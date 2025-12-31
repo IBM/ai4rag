@@ -3,14 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Literal, TypeAlias
+from enum import StrEnum
+from typing import Literal
 from dataclasses import dataclass
 
 
-__all__ = ["BaseEventHandler", "LogLevel", "LevelType", "AIServiceData"]
-
-
-LevelType: TypeAlias = Literal["info", "warning", "error"]
+__all__ = ["BaseEventHandler", "LogLevel", "AIServiceData"]
 
 
 @dataclass
@@ -22,7 +20,7 @@ class AIServiceData:
     vector_store_type: Literal["chroma", "milvus"]
 
 
-class LogLevel:
+class LogLevel(StrEnum):
     """Available log levels."""
 
     INFO = "info"
@@ -37,13 +35,13 @@ class BaseEventHandler(ABC):
     """
 
     @abstractmethod
-    def on_status_change(self, level: LevelType, message: str, step: str | None = None) -> None:
+    def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:
         """
         Method called to notify about experiment's status change.
 
         Parameters
         ----------
-        level : LevelType
+        level : LogLevel
             Logging level
 
         message : str

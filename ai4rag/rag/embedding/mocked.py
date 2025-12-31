@@ -2,10 +2,10 @@
 # Copyright IBM Corp. 2025
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from .base_model import BaseEmbeddingModel
+from .base_model import EmbeddingModel
 
 
-class MockedEmbeddingModel(BaseEmbeddingModel):
+class MockedEmbeddingModel(EmbeddingModel):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._dim = 512

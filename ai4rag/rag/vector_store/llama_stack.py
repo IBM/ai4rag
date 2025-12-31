@@ -5,7 +5,7 @@
 from llama_stack_client import LlamaStackClient
 
 from .base_vector_store import BaseVectorStore
-from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.embedding.base_model import EmbeddingModel
 
 
 class LlamaStackVectorStore(BaseVectorStore):
@@ -13,7 +13,7 @@ class LlamaStackVectorStore(BaseVectorStore):
 
     def __init__(
         self,
-        embedding_model: BaseEmbeddingModel,
+        embedding_model: EmbeddingModel,
         collection_name: str,
         distance_metric: str,
         ls_client: LlamaStackClient,

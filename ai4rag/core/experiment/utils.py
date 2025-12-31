@@ -6,10 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from typing import Any, Callable, Literal, TypeAlias, TypedDict, TypeVar
 
-from elasticsearch.exceptions import AuthorizationException
-from ibm_watsonx_ai import APIClient
-from ibm_watsonx_ai.deployments import RuntimeContext
-
 from ai4rag import logger
 from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -17,7 +13,6 @@ from ai4rag.core.experiment.exception_handler import AI4RAGError, GenerationErro
 from ai4rag.evaluator.base_evaluator import EvaluationData
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGModel
 from ai4rag.utils.constants import AI4RAGParamNames
-from ai4rag.utils.event_handler import AIServiceData
 
 T = TypeVar("T")
 
@@ -28,7 +23,6 @@ __all__ = [
     "query_inference_service",
     "build_evaluation_data",
     "get_retrieval_params",
-    "get_inference_service_data",
     "get_chunking_params",
     "RAGRetrievalParamsType",
 ]
@@ -126,7 +120,7 @@ def query_inference_service(
     return responses
 
 
-def _generate_response(question: str, api_client: APIClient, inference_function: Callable) -> dict[str, Any]:
+def _generate_response(question: str, inference_function: Callable) -> dict[str, Any]:
     """
     Make a single call to the AI (inference) service via RAG pattern.
     Notice that question parameter should remain first to be easily

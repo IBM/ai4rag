@@ -10,7 +10,7 @@ FoundationModelClientT = TypeVar("FoundationModelClientT")
 FoundationModelParamsT = TypeVar("FoundationModelParamsT")
 
 
-class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
+class FoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
     def __init__(self, client: FoundationModelClientT, model_id: str, model_params: FoundationModelParamsT):
         self.client = client
         self.model_id = model_id
@@ -23,7 +23,7 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         return repr(self)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, BaseFoundationModel):
+        if not isinstance(other, FoundationModel):
             raise NotImplementedError
 
         return self.model_id == other.model_id

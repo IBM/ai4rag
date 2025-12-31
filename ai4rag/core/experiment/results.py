@@ -20,7 +20,7 @@ class EvaluationResult:
         Name of the RAG pattern created. Next names should be
         i.e. Pattern1, Pattern2, ..., PatternX
 
-    collections : list[str]
+    collection : list[str]
         Name of the indexes/collections in the VectorStores for single
         configuration.
 
@@ -28,17 +28,12 @@ class EvaluationResult:
         Subspace of hyperparameters used during indexing stage in the
         Retrieval Augmented Generation.
 
-    inference_params : dict[str, Any]
+    rag_params : dict[str, Any]
         Subspace of hyperparameters used during inference stage in the
         Retrieval Augmented Generation.
 
-    ai_service : str
+    inference_service_code : str
         Inference service function code's string representation for the particular RAG pattern.
-        Formatted as an IBM AI service.
-
-    indexing_service : str
-        Indexing service function code's string representation for the particular RAG pattern.
-        Formatted as an IBM AI service.
 
     scores : dict[str, dict[str, float]]
         Score data from the evaluation that may look like:
@@ -55,22 +50,16 @@ class EvaluationResult:
 
     final_score : float
         Single score calculated for optimisation process as the value to be minimized or maximised.
-
-    word_to_token_ratio : float
-        Number describing mapping of number of words in the prompt
-        to the number of tokens included.
     """
 
     pattern_name: str
-    collections: list[str]
-    inference_params: dict[str, Any]
-    ai_service: str
-    indexing_service: str | None
+    collection: str
+    indexing_params: dict[str, Any]
+    rag_params: dict[str, Any]
+    inference_service_code: str
     scores: dict[str, dict]
     execution_time: float
     final_score: float
-    word_to_token_ratio: float
-    indexing_params: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Cast instance to dict"""
@@ -137,7 +126,7 @@ class ExperimentResults:
         self.evaluation_data.append(evaluation_data)
 
     def evaluation_explored_or_cached(
-        self, indexing_params: dict[str, Any] | None, inference_params: dict[str, Any]
+        self, indexing_params: dict[str, Any] | None, rag_params: dict[str, Any]
     ) -> float | None:
         """
         This method checks if an evaluation to certain params already exists.
@@ -148,7 +137,7 @@ class ExperimentResults:
             Dictionary containing keys and values that are compared with
             previously used ones, to establish if the evaluation already done.
 
-        inference_params : dict[str, Any]
+        rag_params : dict[str, Any]
             Dictionary containing keys and values that are compared with
             previously used ones, to establish if the evaluation already done.
 
@@ -158,7 +147,7 @@ class ExperimentResults:
             The final score of the evaluation if it exists, otherwise None.
         """
         for evaluation in self.evaluations:
-            if evaluation.indexing_params == indexing_params and evaluation.inference_params == inference_params:
+            if evaluation.indexing_params == indexing_params and evaluation.rag_params == rag_params:
                 return evaluation.final_score
         return None
 
@@ -179,7 +168,7 @@ class ExperimentResults:
         """
         for evaluation in self.evaluations:
             if evaluation.indexing_params == indexing_params:
-                return evaluation.collections
+                return evaluation.collection
         return None
 
     @property

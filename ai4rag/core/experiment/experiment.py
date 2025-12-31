@@ -7,8 +7,6 @@ from datetime import datetime
 from typing import Any, Sequence
 
 import pandas as pd
-from ibm_watsonx_ai.foundation_models.extensions.rag.chunker import LangChainChunker
-from ibm_watsonx_ai.foundation_models.extensions.rag.retriever import Retriever
 from langchain_core.documents import Document
 from llama_stack_client import LlamaStackClient
 
@@ -20,12 +18,10 @@ from ai4rag.core.experiment.exception_handler import (
     AI4RAGError,
     ExperimentExceptionsHandler,
     IndexingError,
-    SemanticChunkingError,
 )
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
 from ai4rag.core.experiment.utils import (
-    HybridSemanticChunkerFactory,
     RAGExperimentError,
     RAGParamsType,
     VectorStoreType,
@@ -39,7 +35,8 @@ from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimiserSettings, Opt
 from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimiser
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.foundation_models import LlamaStackFoundationModel
+from ai4rag.rag.embedding.base_model import EmbeddingModel
+from ai4rag.rag.foundation_models.base_model import FoundationModel
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGModel
 from ai4rag.search_space.src.models import EmbeddingModels
 from ai4rag.search_space.src.parameter import Parameter
@@ -48,12 +45,10 @@ from ai4rag.utils.constants import (
     AI4RAGParamNames,
     EventsToReport,
     ExperimentStep,
-    HybridRankerConstants,
 )
 from ai4rag.utils.event_handler.event_handler import AIServiceData, BaseEventHandler, LogLevel
 from ai4rag.utils.experiment_monitor import ExperimentMonitor
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
-from ai4rag.utils.vector_store_schemas import VECTOR_STORE_SCHEMAS
 
 
 class AI4RAGExperiment:
@@ -155,8 +150,8 @@ class AI4RAGExperiment:
         event_handler: BaseEventHandler,
         optimiser_settings: OptimiserSettings,
         search_space: AI4RAGSearchSpace,
-        ls_client: LlamaStackClient,
         benchmark_data: pd.DataFrame | BenchmarkData,
+        ls_client: LlamaStackClient | None = None,
         vector_store_type: VectorStoreType | None = None,
         documents: list[Document] | None = None,
         vs_connection_id: str | None = None,
@@ -198,7 +193,6 @@ class AI4RAGExperiment:
             output_path=experiment_monitor_output_path,
         )
 
-        self._adjust_search_space()
         self.exceptions_handler = ExperimentExceptionsHandler(self.event_handler)
 
         if kwargs:
@@ -273,19 +267,12 @@ class AI4RAGExperiment:
         """Check and set benchmark data based on the executed scenario."""
         self._benchmark_data = val
 
-    def _adjust_search_space(self) -> None:
-        """
-        Adjust search space according to provided experiment settings.
-        """
-        if hasattr(self.search_space, "combinations"):
-            del self.search_space.combinations
-
     def run_pre_selection(
         self,
-        foundation_models: list[AI4RAGModel],
+        foundation_models: list[FoundationModel],
+        embedding_models: list[EmbeddingModel],
         n_records: int = 5,
         random_seed: int = 17,
-        embedding_models: list[str] | None = None,
     ) -> dict[str, list[str]]:
         """
         Run models pre-selection using ModelsPreSelector and sample
@@ -293,10 +280,10 @@ class AI4RAGExperiment:
 
         Parameters
         ----------
-        embedding_models : list[str]
+        embedding_models : list[EmbeddingModel]
             Embedding models to be considered during pre-selection process.
 
-        foundation_models : list[str]
+        foundation_models : list[FoundationModel]
             Foundation models to be evaluated during pre-selection process.
 
         n_records : int, default=10
@@ -322,8 +309,7 @@ class AI4RAGExperiment:
 
         # pylint: disable=protected-access
         mps = ModelsPreSelector(
-            api_client=self.api_client,
-            agent="sequential",
+            ls_client=self.ls_client,
             benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
