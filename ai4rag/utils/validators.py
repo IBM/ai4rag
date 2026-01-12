@@ -93,7 +93,7 @@ class RAGPromptTemplateString(Validator[str]):
 
         self._required_placeholders: tuple[str, ...] = (
             (CONTEXT_TEXT_PLACEHOLDER,)
-            if template_name == "context_teplate_text"
+            if template_name == "context_tepmlate_text"
             else (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
         )
 

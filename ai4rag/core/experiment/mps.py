@@ -157,14 +157,14 @@ class ModelsPreSelector:
                         embedding_model, chunked_documents, collection_name=collection_name
                     )
                 except Exception as exc:
-                    raise IndexingError(exc, collection_name, embedding_model) from exc
+                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
                 retriever = Retriever(vector_store, **self.retrieval_params)
                 self._evaluate_foundation_models(retriever=retriever, embedding_model=embedding_model)
 
             except IndexingError as exc:
                 self.exceptions_handler.handle_exception(exc)
-                logger.warning("Pre-evaluation of '%s' has failed.", embedding_model)
+                logger.warning("Pre-evaluation of '%s' has failed.", embedding_model.model_id)
                 continue
 
         if not self.evaluation_results:

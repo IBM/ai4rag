@@ -13,6 +13,7 @@ from ..embedding.base_model import EmbeddingModel
 def get_vector_store(
     vs_type: str,
     embedding_model: EmbeddingModel,
+    collection_name: str,
     ls_client: LlamaStackClient | None = None,
 ) -> BaseVectorStore:
     """Get vector store of desired type with chosen settings.
@@ -24,6 +25,9 @@ def get_vector_store(
 
     embedding_model : EmbeddingModel
         Embedding model used for the embeddings creation in the created vector store instance.
+
+    collection_name : str
+        Name of the collection that will be created in the vector database.
 
     ls_client : LlamaStackClient | None, default=None
         Instance of the llama stack client to communicate with registered vector databases.
@@ -38,6 +42,7 @@ def get_vector_store(
         case "chroma":
             vs = ChromaVectorStore(
                 embedding_model=embedding_model,
+                collection_name=collection_name,
             )
 
         case _:

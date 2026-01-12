@@ -80,8 +80,6 @@ line-length = 120
 [tool.pylint]
 disable = ["missing-module-docstring", "too-few-public-methods"]
 max-line-length = 120
-max-module-lines = 1200
 max-args = 6
 max-positional-arguments = 6
 max-attributes = 10
-max-branches = 16  # temporary fix after pylint 4.0.0 release
