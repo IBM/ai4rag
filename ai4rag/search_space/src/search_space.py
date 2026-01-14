@@ -181,9 +181,9 @@ class AI4RAGSearchSpace(SearchSpace):
         _rule_adjust_window_to_retrieval_method,
     )
 
-    def __init__(self, params: list[Parameter], rules: list[RuleFunction] | None = None):
+    def __init__(self, params: list[Parameter] | None = None, rules: list[RuleFunction] | None = None):
         default_search_space_parameters = get_default_ai4rag_search_space_parameters()
-
+        params = params or []
         self._validate_user_params(params)
 
         params = self._overwrite_default_search_space_with_user_provided_parameters(

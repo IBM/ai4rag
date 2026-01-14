@@ -29,15 +29,15 @@ class AI4RAGError(Exception):
 class IndexingError(AI4RAGError):
     """Exception representing error during indexing chunks to vector store."""
 
-    def __init__(self, exception, collection_name, embedding_model):
+    def __init__(self, exception, collection_name, embedding_model_id):
         super().__init__(exception)
         self.collection_name = collection_name
-        self.embedding_model = embedding_model
+        self.embedding_model_id = embedding_model_id
 
     def __repr__(self) -> str:
         return (
             f"{self.__class__.__name__}: Unable to embed and upload documents to vector store for collection name "
-            f"'{self.collection_name}' and embedding model '{self.embedding_model}' due to: {repr(self.exception)}"
+            f"'{self.collection_name}' and embedding model '{self.embedding_model_id}' due to: {repr(self.exception)}"
         )
 
 

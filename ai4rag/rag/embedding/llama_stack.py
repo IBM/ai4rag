@@ -4,13 +4,13 @@
 # -----------------------------------------------------------------------------
 from llama_stack_client import Client
 
-from .base_model import BaseEmbeddingModel
+from .base_model import EmbeddingModel
 from .embedding_types import LLamaStackEmbeddingParams
 
 __all__ = ["LLamaStackEmbeddingModel"]
 
 
-class LLamaStackEmbeddingModel(BaseEmbeddingModel[Client, LLamaStackEmbeddingParams]):
+class LLamaStackEmbeddingModel(EmbeddingModel[Client, LLamaStackEmbeddingParams]):
     """Creates embeddings for LLamaStack client."""
 
     def __init__(self, client: Client, model_id: str, params: LLamaStackEmbeddingParams):

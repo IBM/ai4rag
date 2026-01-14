@@ -10,11 +10,14 @@ ClientT = TypeVar("ClientT")
 EmbeddingParamsT = TypeVar("EmbeddingParamsT")
 
 
-class BaseEmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
+class EmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
     def __init__(self, client: ClientT, model_id: str, params: EmbeddingParamsT):
         self.client: ClientT = client
         self.model_id = model_id
         self.params: EmbeddingParamsT = params
+
+    def __str__(self) -> str:
+        return self.model_id
 
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]:

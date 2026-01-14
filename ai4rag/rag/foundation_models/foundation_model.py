@@ -10,7 +10,7 @@ from llama_stack_client import LlamaStackClient
 from llama_stack_client.types import SystemMessage, UserMessage
 
 from ai4rag.utils.constants import ChatGenerationConstants
-from ai4rag.rag.foundation_models.base_foundation_model import BaseFoundationModel
+from ai4rag.rag.foundation_models.base_model import FoundationModel
 from ai4rag.utils.validators import RAGPromptTemplateString
 from ai4rag.search_space.src.model_props import (
     get_system_message_text,
@@ -23,7 +23,7 @@ class ModelParameters(BaseModel):
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class LlamaStackFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
+class LlamaStackFoundationModel(FoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
     """Integration point to use any model via Llama-stack API / client"""
 
     user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")

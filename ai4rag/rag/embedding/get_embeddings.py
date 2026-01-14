@@ -4,13 +4,13 @@
 # -----------------------------------------------------------------------------
 from typing import Any
 
-from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.embedding.base_model import EmbeddingModel
 from ai4rag.rag.embedding.mocked import MockedEmbeddingModel
 
 
 def get_embeddings(
     provider: str, model_id: str, embedding_params: dict[str, Any] | None = None, **kwargs
-) -> BaseEmbeddingModel:
+) -> EmbeddingModel:
     """
     Create instance of EmbeddingModel.
 
@@ -27,7 +27,7 @@ def get_embeddings(
 
     Returns
     -------
-    BaseEmbeddingModel
+    EmbeddingModel
         Instance of the embedding model wrapper.
     """
 
