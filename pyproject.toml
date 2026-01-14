@@ -7,15 +7,15 @@ name = "ai4rag"
 description = "Automatic and optimised RAG Pattern generator"
 authors = [{ name = "IBM"}]
 maintainers = [
-    { name = "Jakub Walaszczyk", email = "jakub.walaszczyk@ibm.com" },
-    { name = "Michal Steczko", email = "michal.steczko@ibm.com" },
+    { name = "Jakub Walaszczyk", email = "jwalaszc@redhat.com" },
+    { name = "Michal Steczko", email = "msteczko@redhat.com" },
 ]
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
 ]

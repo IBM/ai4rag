@@ -65,3 +65,6 @@ local
 # --- Misc ---
 .DS_Store
 
+# AI code tools
+.claude
+.cursor
