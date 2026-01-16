@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 import random
 from copy import deepcopy
 from dataclasses import dataclass
