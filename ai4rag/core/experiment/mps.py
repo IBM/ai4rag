@@ -143,7 +143,7 @@ class ModelsPreSelector:
         """
         logger.debug("MPS: Sampling documents")
         document_ids = []
-        for element in self.benchmark_data.documents_ids:
+        for element in self.benchmark_data.document_ids:
             document_ids.extend(element)
 
         documents = [document for document in self.documents if document.metadata["document_id"] in document_ids]
