@@ -23,7 +23,7 @@ def benchmark_data() -> BenchmarkData:
         benchmark_data=pd.DataFrame(
             {
                 "question": ["Question 1", "Questions 2"],
-                "correct_answer": ["Answer 1", "Answer 2"],
+                "correct_answers": [["Answer 1"], ["Answer 2"]],
                 "correct_answer_document_ids": [["id_1_1"], ["id_2_1"]],
             }
         )
