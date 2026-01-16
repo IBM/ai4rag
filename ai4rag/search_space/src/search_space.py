@@ -252,12 +252,7 @@ class AI4RAGSearchSpace(SearchSpace):
         user_params = {param.name: param for param in params}
         default_params = {param.name: param for param in default_search_space_params}
 
-        selected_params = []
-
-        for k, v in default_params.items():
-            if k in user_params.keys():
-                selected_params.append(user_params[k])
-            else:
-                selected_params.append(v)
+        selected_params_dict = default_params | user_params
+        selected_params = [v for v in selected_params_dict.values()]
 
         return selected_params

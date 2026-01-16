@@ -3,9 +3,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from dataclasses import dataclass, fields
-from typing import Any, Literal, Optional, Sequence
+from typing import Any, Literal, Optional, Sequence, TypeVar, Protocol, Generic
 
 from ai4rag.utils import get_hashable_repr
+
+
+class HashableProtocol(Protocol):
+    def __hash__(self) -> int: ...
+
+HashableType = TypeVar("HashableType", bound=HashableProtocol)
 
 
 class ParameterValueError(ValueError):
@@ -13,7 +19,7 @@ class ParameterValueError(ValueError):
 
 
 @dataclass(frozen=True)
-class Parameter:
+class Parameter(Generic[HashableType]):
     """
     Representation of the general parameter used in optimization process.
     """
@@ -22,7 +28,7 @@ class Parameter:
     param_type: Literal["B", "I", "R", "C"]
     v_min: Optional[int | float] = None
     v_max: Optional[int | float] = None
-    values: Optional[Sequence[dict[str, str | int]] | Sequence[str | int | float | bool]] = None
+    values: Optional[Sequence[HashableType]] = None
 
     def __post_init__(self):
         """Perform basic validations for Parameter initializations."""
