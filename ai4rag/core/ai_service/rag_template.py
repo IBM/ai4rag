@@ -203,11 +203,7 @@ class LlamaStackRAGTemplate(BaseAutoRAGTemplate):
 
         self.vector_store.add_documents(chunks)
 
-    def generate(
-        self,
-        question: str,
-        **retrieval_kwargs,
-    ) -> dict[str, Any]:
+    def generate(self, question: str, **retrieval_kwargs) -> dict[str, Any]:
         """
         Generate an answer for a question using RAG pipeline.
 
