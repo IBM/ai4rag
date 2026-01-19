@@ -156,13 +156,11 @@ class LlamaStackRAGTemplate(BaseAutoRAGTemplate):
         user_message_text: Optional[str] = None,
         context_template_text: Optional[str] = None,
     ):
-        # Store components
         self.chunker = chunker
         self.system_message_text = system_message_text or self._get_default_system_message()
         self.user_message_text = user_message_text or self._get_default_user_message()
         self.context_template_text = context_template_text or self._get_default_context_template()
 
-        # Initialize base class with all components
         super().__init__(
             embedding=embedding_model,
             foundation_model=foundation_model,
@@ -201,7 +199,6 @@ class LlamaStackRAGTemplate(BaseAutoRAGTemplate):
         documents : list[Document]
             List of LangChain Document objects to index.
         """
-        # Chunk documents
         chunks = self.chunker.split_documents(documents)
 
         self.vector_store.add_documents(chunks)
