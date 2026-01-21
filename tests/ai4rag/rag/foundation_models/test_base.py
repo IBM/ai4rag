@@ -99,7 +99,9 @@ class TestFoundationModelLegacy:
         return mocker.MagicMock()
 
     @pytest.fixture
-    def model_with_dict_params(self, mock_client, valid_user_message_template, valid_context_template, valid_system_message):
+    def model_with_dict_params(
+        self, mock_client, valid_user_message_template, valid_context_template, valid_system_message
+    ):
         """Create a model with dict parameters."""
         return ConcreteFoundationModelLegacy(
             client=mock_client,
@@ -111,7 +113,9 @@ class TestFoundationModelLegacy:
         )
 
     @pytest.fixture
-    def model_with_model_params(self, mock_client, valid_user_message_template, valid_context_template, valid_system_message):
+    def model_with_model_params(
+        self, mock_client, valid_user_message_template, valid_context_template, valid_system_message
+    ):
         """Create a model with ModelParameters object."""
         params = ModelParameters(max_completion_tokens=512, temperature=0.7)
         return ConcreteFoundationModelLegacy(
@@ -124,7 +128,9 @@ class TestFoundationModelLegacy:
         )
 
     @pytest.fixture
-    def model_with_none_params(self, mock_client, valid_user_message_template, valid_context_template, valid_system_message):
+    def model_with_none_params(
+        self, mock_client, valid_user_message_template, valid_context_template, valid_system_message
+    ):
         """Create a model with None parameters (should use defaults)."""
         return ConcreteFoundationModelLegacy(
             client=mock_client,
@@ -137,11 +143,15 @@ class TestFoundationModelLegacy:
 
     def test_init_basic(self, mock_client):
         """Test basic initialization."""
-        model = ConcreteFoundationModelLegacy(client=mock_client, model_id="test-model", model_params={"max_completion_tokens": 100})
+        model = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="test-model", model_params={"max_completion_tokens": 100}
+        )
         assert model.model_id == "test-model"
         assert model.model_params == {"max_completion_tokens": 100}
 
-    def test_init_with_kwargs(self, mock_client, valid_user_message_template, valid_context_template, valid_system_message):
+    def test_init_with_kwargs(
+        self, mock_client, valid_user_message_template, valid_context_template, valid_system_message
+    ):
         """Test initialization with kwargs."""
         model = ConcreteFoundationModelLegacy(
             client=mock_client,
@@ -157,8 +167,13 @@ class TestFoundationModelLegacy:
 
     def test_init_without_optional_kwargs(self, mock_client, mocker):
         """Test initialization without optional kwargs."""
-        mocker.patch("ai4rag.rag.foundation_models.base_model.get_user_message_text", return_value="Question: {question}\nReferences: {reference_documents}")
-        mocker.patch("ai4rag.rag.foundation_models.base_model.get_context_template_text", return_value="Document: {document}")
+        mocker.patch(
+            "ai4rag.rag.foundation_models.base_model.get_user_message_text",
+            return_value="Question: {question}\nReferences: {reference_documents}",
+        )
+        mocker.patch(
+            "ai4rag.rag.foundation_models.base_model.get_context_template_text", return_value="Document: {document}"
+        )
         mocker.patch("ai4rag.rag.foundation_models.base_model.get_system_message_text", return_value="default system")
         model = ConcreteFoundationModelLegacy(client=mock_client, model_id="test-model", model_params=None)
         assert model.user_message_text == "Question: {question}\nReferences: {reference_documents}"
@@ -177,7 +192,9 @@ class TestFoundationModelLegacy:
     def test_eq_same_model_id(self, mock_client):
         """Test equality when model_ids are the same."""
         model1 = ConcreteFoundationModelLegacy(client=mock_client, model_id="same-id", model_params=None)
-        model2 = ConcreteFoundationModelLegacy(client=mock_client, model_id="same-id", model_params={"different": "params"})
+        model2 = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="same-id", model_params={"different": "params"}
+        )
         assert model1 == model2
 
     def test_eq_different_model_id(self, mock_client):
@@ -198,7 +215,9 @@ class TestFoundationModelLegacy:
     def test_hash_consistency(self, mock_client):
         """Test that models with same model_id have same hash."""
         model1 = ConcreteFoundationModelLegacy(client=mock_client, model_id="same-id", model_params=None)
-        model2 = ConcreteFoundationModelLegacy(client=mock_client, model_id="same-id", model_params={"different": "params"})
+        model2 = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="same-id", model_params={"different": "params"}
+        )
         assert hash(model1) == hash(model2)
 
     def test_model_params_property_getter(self, model_with_dict_params):
@@ -213,7 +232,9 @@ class TestFoundationModelLegacy:
     def test_system_message_text_setter_with_string(self, mock_client, mocker):
         """Test system_message_text can be set via constructor."""
         mocker.patch("ai4rag.rag.foundation_models.base_model.get_system_message_text", return_value="default")
-        model = ConcreteFoundationModelLegacy(client=mock_client, model_id="test", model_params=None, system_message_text="Custom system message")
+        model = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="test", model_params=None, system_message_text="Custom system message"
+        )
         assert model.system_message_text == "Custom system message"
 
     def test_system_message_text_setter_with_none(self, mock_client, mocker):
@@ -221,7 +242,9 @@ class TestFoundationModelLegacy:
         mock_get_system = mocker.patch(
             "ai4rag.rag.foundation_models.base_model.get_system_message_text", return_value="Default system message"
         )
-        model = ConcreteFoundationModelLegacy(client=mock_client, model_id="llama-3-70b", model_params=None, system_message_text=None)
+        model = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="llama-3-70b", model_params=None, system_message_text=None
+        )
         mock_get_system.assert_called_with(model_name="llama-3-70b")
         assert model.system_message_text == "Default system message"
 
@@ -234,7 +257,9 @@ class TestFoundationModelLegacy:
         """Test user_message_text can be set via constructor with valid template string."""
         mocker.patch("ai4rag.rag.foundation_models.base_model.get_user_message_text", return_value="default")
         valid_template = "Q: {question} Refs: {reference_documents}"
-        model = ConcreteFoundationModelLegacy(client=mock_client, model_id="test", model_params=None, user_message_text=valid_template)
+        model = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="test", model_params=None, user_message_text=valid_template
+        )
         assert model.user_message_text == valid_template
 
     def test_user_message_text_setter_with_invalid_string(self, mock_client, mocker):
@@ -242,8 +267,12 @@ class TestFoundationModelLegacy:
         mocker.patch("ai4rag.rag.foundation_models.base_model.get_user_message_text", return_value="default")
         invalid_template = "Only question: {question}"  # Missing reference_documents
         with pytest.raises(Exception) as exc_info:  # Could be ConstraintsValidationError or ValueError
-            ConcreteFoundationModelLegacy(client=mock_client, model_id="test", model_params=None, user_message_text=invalid_template)
-        assert "Incorrect number of placeholders" in str(exc_info.value) or "unexpected placeholder" in str(exc_info.value)
+            ConcreteFoundationModelLegacy(
+                client=mock_client, model_id="test", model_params=None, user_message_text=invalid_template
+            )
+        assert "Incorrect number of placeholders" in str(exc_info.value) or "unexpected placeholder" in str(
+            exc_info.value
+        )
 
     def test_user_message_text_setter_with_none(self, mock_client, mocker):
         """Test user_message_text with None loads default."""
@@ -251,7 +280,9 @@ class TestFoundationModelLegacy:
             "ai4rag.rag.foundation_models.base_model.get_user_message_text",
             return_value="Default user message: {question} {reference_documents}",
         )
-        model = ConcreteFoundationModelLegacy(client=mock_client, model_id="granite-13b", model_params=None, user_message_text=None)
+        model = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="granite-13b", model_params=None, user_message_text=None
+        )
         mock_get_user.assert_called_with(model_name="granite-13b")
         assert "Default user message" in model.user_message_text
 
@@ -270,14 +301,18 @@ class TestFoundationModelLegacy:
         """Test that FoundationModel instances can be added to a set."""
         model1 = ConcreteFoundationModelLegacy(client=mock_client, model_id="model-1", model_params=None)
         model2 = ConcreteFoundationModelLegacy(client=mock_client, model_id="model-2", model_params=None)
-        model3 = ConcreteFoundationModelLegacy(client=mock_client, model_id="model-1", model_params={"different": "params"})
+        model3 = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="model-1", model_params={"different": "params"}
+        )
         model_set = {model1, model2, model3}
         assert len(model_set) == 2  # model1 and model3 are considered equal
 
     def test_models_can_be_used_as_dict_keys(self, mock_client):
         """Test that FoundationModel instances can be used as dictionary keys."""
         model1 = ConcreteFoundationModelLegacy(client=mock_client, model_id="model-1", model_params=None)
-        model2 = ConcreteFoundationModelLegacy(client=mock_client, model_id="model-1", model_params={"different": "params"})
+        model2 = ConcreteFoundationModelLegacy(
+            client=mock_client, model_id="model-1", model_params={"different": "params"}
+        )
         model_dict = {model1: "value1"}
         model_dict[model2] = "value2"
         assert len(model_dict) == 1
@@ -300,8 +335,7 @@ class TestFoundationModelLegacy:
     def test_init_with_dict_params(self, mock_client):
         """Test that dict params are stored as-is."""
         model = ConcreteFoundationModelLegacy(
-            client=mock_client,
-            model_id="test", model_params={"max_completion_tokens": 100, "temperature": 0.1}
+            client=mock_client, model_id="test", model_params={"max_completion_tokens": 100, "temperature": 0.1}
         )
         assert model.model_params == {"max_completion_tokens": 100, "temperature": 0.1}
 
@@ -324,7 +358,7 @@ class TestFoundationModelLegacy:
                 client=mock_client,
                 model_id="test",
                 model_params=None,
-                user_message_text="Question: {question} Context: {document}"
+                user_message_text="Question: {question} Context: {document}",
             )
         assert "unexpected placeholder" in str(exc_info.value)
 
