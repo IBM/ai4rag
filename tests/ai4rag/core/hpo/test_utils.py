@@ -13,11 +13,13 @@ class TestHandleMissingValues:
 
     def test_handle_missing_ranker_strategy_and_sparse_vectors(self):
         """Test handling of missing values in ranker_strategy and ranker_sparse_vectors columns."""
-        df = pd.DataFrame({
-            "ranker_strategy": ["strategy1", np.nan, "strategy2"],
-            "ranker_sparse_vectors": [["vec1", "vec2"], np.nan, ["vec3"]],
-            "other_column": [1, 2, 3],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_strategy": ["strategy1", np.nan, "strategy2"],
+                "ranker_sparse_vectors": [["vec1", "vec2"], np.nan, ["vec3"]],
+                "other_column": [1, 2, 3],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -27,10 +29,12 @@ class TestHandleMissingValues:
 
     def test_handle_ranker_sparse_vectors_with_non_list(self):
         """Test handling of ranker_sparse_vectors when it contains non-list values."""
-        df = pd.DataFrame({
-            "ranker_strategy": ["strategy1", "strategy2", "strategy3"],
-            "ranker_sparse_vectors": ["not_a_list", np.nan, "another_string"],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_strategy": ["strategy1", "strategy2", "strategy3"],
+                "ranker_sparse_vectors": ["not_a_list", np.nan, "another_string"],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -39,9 +43,11 @@ class TestHandleMissingValues:
 
     def test_handle_missing_ranker_k(self):
         """Test handling of missing values in ranker_k column."""
-        df = pd.DataFrame({
-            "ranker_k": [10, np.nan, 20, 30],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_k": [10, np.nan, 20, 30],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -49,9 +55,11 @@ class TestHandleMissingValues:
 
     def test_handle_missing_ranker_alpha(self):
         """Test handling of missing values in ranker_alpha column."""
-        df = pd.DataFrame({
-            "ranker_alpha": [0.5, np.nan, 0.8, np.nan],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_alpha": [0.5, np.nan, 0.8, np.nan],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -59,13 +67,15 @@ class TestHandleMissingValues:
 
     def test_handle_all_special_columns_together(self):
         """Test handling of all special columns together."""
-        df = pd.DataFrame({
-            "ranker_strategy": ["strategy1", np.nan, "strategy2"],
-            "ranker_sparse_vectors": [["vec1"], np.nan, "not_a_list"],
-            "ranker_k": [10, np.nan, 30],
-            "ranker_alpha": [0.5, np.nan, 0.9],
-            "regular_column": ["a", "b", "c"],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_strategy": ["strategy1", np.nan, "strategy2"],
+                "ranker_sparse_vectors": [["vec1"], np.nan, "not_a_list"],
+                "ranker_k": [10, np.nan, 30],
+                "ranker_alpha": [0.5, np.nan, 0.9],
+                "regular_column": ["a", "b", "c"],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -77,11 +87,13 @@ class TestHandleMissingValues:
 
     def test_handle_dataframe_without_special_columns(self):
         """Test that dataframes without special columns are returned unchanged."""
-        df = pd.DataFrame({
-            "column1": [1, 2, 3],
-            "column2": ["a", "b", "c"],
-            "column3": [np.nan, 4.5, 6.7],
-        })
+        df = pd.DataFrame(
+            {
+                "column1": [1, 2, 3],
+                "column2": ["a", "b", "c"],
+                "column3": [np.nan, 4.5, 6.7],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -99,11 +111,13 @@ class TestHandleMissingValues:
 
     def test_handle_dataframe_with_only_nan_values(self):
         """Test handling of dataframe with only NaN values in special columns."""
-        df = pd.DataFrame({
-            "ranker_strategy": [np.nan, np.nan],
-            "ranker_sparse_vectors": [np.nan, np.nan],
-            "ranker_k": [np.nan, np.nan],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_strategy": [np.nan, np.nan],
+                "ranker_sparse_vectors": [np.nan, np.nan],
+                "ranker_k": [np.nan, np.nan],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -113,12 +127,14 @@ class TestHandleMissingValues:
 
     def test_handle_dataframe_with_no_nan_values(self):
         """Test handling of dataframe with no NaN values in special columns."""
-        df = pd.DataFrame({
-            "ranker_strategy": ["strategy1", "strategy2"],
-            "ranker_k": [10, 20],
-            "ranker_alpha": [0.5, 0.8],
-            "ranker_sparse_vectors": [["vec1"], ["vec2"]],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_strategy": ["strategy1", "strategy2"],
+                "ranker_k": [10, 20],
+                "ranker_alpha": [0.5, 0.8],
+                "ranker_sparse_vectors": [["vec1"], ["vec2"]],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 
@@ -129,10 +145,12 @@ class TestHandleMissingValues:
 
     def test_returns_same_dataframe_object(self):
         """Test that the function modifies and returns the same dataframe object."""
-        df = pd.DataFrame({
-            "ranker_strategy": ["strategy1", np.nan],
-            "ranker_sparse_vectors": [["vec1"], np.nan],
-        })
+        df = pd.DataFrame(
+            {
+                "ranker_strategy": ["strategy1", np.nan],
+                "ranker_sparse_vectors": [["vec1"], np.nan],
+            }
+        )
 
         result = handle_missing_values_in_combinations_being_explored(df)
 

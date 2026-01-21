@@ -117,7 +117,7 @@ def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, f
             res.append({"question": question, "answer": question[::-1], "reference_documents": []})
         return res
 
-    mocker.patch("ai4rag.core.experiment.mps.query_inference_service", side_effect=side_effect)
+    mocker.patch("ai4rag.core.experiment.mps.query_rag", side_effect=side_effect)
 
     selector = ModelsPreSelector(
         agent="sequential",
@@ -152,7 +152,7 @@ class TestModelsPreSelector:
     def test_evaluate_patterns_with_errors(self, mocker, fully_mocked_selector, caplog):
         gen_exc = GenerationError(exception=ValueError("Dummy val error"), model_id="some-inference-model")
 
-        mocker.patch("ai4rag.core.experiment.mps.query_inference_service", side_effect=gen_exc)
+        mocker.patch("ai4rag.core.experiment.mps.query_rag", side_effect=gen_exc)
 
         with pytest.raises(PreSelectorError) as err:
             fully_mocked_selector.evaluate_patterns()

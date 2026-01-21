@@ -4,15 +4,15 @@
 # -----------------------------------------------------------------------------
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
-from typing import Any, Callable, Literal, TypeAlias, TypedDict, TypeVar
+from typing import Any, Literal, TypeAlias, TypedDict, TypeVar
 
 from ai4rag import logger
-from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
-from ai4rag.core.experiment.exception_handler import AI4RAGError, GenerationError
+from ai4rag.core.experiment.exception_handler import GenerationError
 from ai4rag.evaluator.base_evaluator import EvaluationData
 from ai4rag.rag.embedding.base_model import EmbeddingModel
 from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.utils.constants import AI4RAGParamNames
 
 T = TypeVar("T")
@@ -21,7 +21,7 @@ __all__ = [
     "VectorStoreType",
     "RAGExperimentError",
     "RAGParamsType",
-    "query_inference_service",
+    "query_rag",
     "build_evaluation_data",
     "get_retrieval_params",
     "get_chunking_params",
@@ -66,16 +66,14 @@ class RAGRetrievalParamsType(TypedDict):
     retrieval_method: Literal["simple", "window"]
 
 
-def query_inference_service(
-    rag_service: RAGService, questions: list[str], max_threads: int = 10
-) -> list[dict[str, Any]]:
+def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10) -> list[dict[str, Any]]:
     """
     Function to perform parallel queries on RAG inference service.
 
     Parameters
     ----------
-    rag_service : RAGService
-        Instance of the RAGService class to be used for response generation.
+    rag : BaseRAGTemplate
+        Instance of the BaseRAGTemplate to be used for retrieval-augmented generation.
 
     questions : list[str]
         Questions used for AI Service (RAG).
@@ -90,50 +88,39 @@ def query_inference_service(
         List of dicts as in the _generate_response.
     """
     logger.debug(
-        "Starting concurrent inference execution. Limit of concurrent executions: %s for %s calls. Model: %s",
+        "Starting concurrent RAG execution. Limit of concurrent executions: %s for %s calls. Model: %s",
         max_threads,
         len(questions),
-        rag_service.foundation_model.model_id,
+        rag.foundation_model.model_id,
     )
 
     try:
-        context = RuntimeContext(api_client=api_client)
-        inference_function = rag_service(context)[0]
-
-        _generate_function = partial(_generate_response, api_client=api_client, inference_function=inference_function)
+        _generate_function = partial(_generate_response, rag=rag)
 
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
             responses = list(executor.map(_generate_function, questions))
 
-    except AuthorizationException as exc:
-        raise AI4RAGError(
-            exception=exc,
-            message=(
-                "Current license for chosen Elasticsearch instance is non-compliant for [Reciprocal Rank Fusion (RRF)]."
-            ),
-        ) from exc
-
     except Exception as exc:
-        raise GenerationError(exc, model_id=rag_service.foundation_model.model_id) from exc
+        raise GenerationError(exc, model_id=rag.foundation_model.model_id) from exc
 
-    logger.debug("Finished concurrent inference execution!")
+    logger.debug("Finished concurrent RAG execution!")
 
     return responses
 
 
-def _generate_response(question: str, inference_function: Callable) -> dict[str, Any]:
+def _generate_response(question: str, rag: BaseRAGTemplate) -> dict[str, Any]:
     """
-    Make a single call to the AI (inference) service via RAG pattern.
+    Make a single call to the RAG instance.
     Notice that question parameter should remain first to be easily
     utilised by concurrent executor.
 
     Parameters
     ----------
     question : str
-        Question for the inference AI service.
+        Question for the RAG.
 
-    inference_function : Callable
-        Inference function that performs Retrieval-Augmented Generation.
+    rag : BaseRAGTemplate
+        Instance capable of performing Retrieval-Augmented Generation.
 
     Returns
     -------
@@ -149,13 +136,7 @@ def _generate_response(question: str, inference_function: Callable) -> dict[str,
             ]
         }
     """
-    request_payload = {"messages": [{"role": "user", "content": question}]}
-    context = RuntimeContext(api_client=api_client, request_payload_json=request_payload)
-    response = inference_function(context)
-    answer = response["body"]["choices"][0]["message"]["content"]
-    reference_documents = response["body"]["choices"][0]["reference_documents"]
-
-    return {"question": question, "answer": answer, "reference_documents": reference_documents}
+    return rag.generate(question)
 
 
 def build_evaluation_data(
@@ -230,7 +211,7 @@ def _get_chunk_overlap(chunk_size: int, chunk_overlap: int | float) -> int:
     return chunk_overlap
 
 
-def get_chunking_params(rag_params : RAGChunkingParamsType) -> dict:
+def get_chunking_params(rag_params: RAGChunkingParamsType) -> dict:
     """
     Extracts chunking parameters from the provided rag parameters.
     All three configurations are mandatory as part of single `chunking` setting:
@@ -268,7 +249,7 @@ def get_chunking_params(rag_params : RAGChunkingParamsType) -> dict:
     return chunking_params
 
 
-def get_retrieval_params(rag_params : RAGParamsType) -> RAGRetrievalParamsType:
+def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
     """
     Extracts retrieval parameters from the provided rag parameters.
     All three setting's configurations are mandatory under `retrieval` key:

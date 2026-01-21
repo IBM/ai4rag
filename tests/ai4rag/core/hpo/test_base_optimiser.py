@@ -102,6 +102,7 @@ class TestBaseOptimiser:
         self, mock_objective_function, mock_search_space, optimiser_settings
     ):
         """Test that BaseOptimiser attributes are set correctly via a concrete subclass."""
+
         # Create a concrete implementation for testing
         class ConcreteOptimiser(BaseOptimiser):
             def search(self):
@@ -119,6 +120,7 @@ class TestBaseOptimiser:
 
     def test_base_optimiser_search_method_is_abstract(self):
         """Test that the search method is abstract and must be implemented."""
+
         # Create a subclass without implementing search
         class IncompleteOptimiser(BaseOptimiser):
             pass

@@ -27,7 +27,7 @@ from ai4rag.core.experiment.utils import (
     build_evaluation_data,
     get_chunking_params,
     get_retrieval_params,
-    query_inference_service,
+    query_rag,
 )
 from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimiserSettings, OptimisationError
 from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimiser
@@ -45,7 +45,7 @@ from ai4rag.utils.constants import (
     EventsToReport,
     ExperimentStep,
 )
-from ai4rag.utils.event_handler.event_handler import AIServiceData, BaseEventHandler, LogLevel
+from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 from ai4rag.utils.experiment_monitor import ExperimentMonitor
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 
@@ -58,6 +58,10 @@ class AI4RAGExperiment:
 
     Parameters
     ----------
+    client : LlamaStackClient
+        Instance of the llama stack client allowing to communicate
+        with the llama stack server.
+
     documents : list[Document | tuple[str, str]]
         List of documents to embed in vector db and use as context in RAG.
         When given as list of langchain's Document instances, both content and document
@@ -84,9 +88,6 @@ class AI4RAGExperiment:
 
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimisation.
-
-    api_client : APIClient | None, default=None
-        Client instance that is able to communicate with external databases, databases
 
     knowledge_base_references : KnowledgeBaseReferences
         Knowledge Base References (Vector Store or SQL Database) to conduct experiment on.
@@ -143,17 +144,17 @@ class AI4RAGExperiment:
     # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-instance-attributes,too-many-lines
     def __init__(
         self,
+        client: LlamaStackClient,
         event_handler: BaseEventHandler,
         optimiser_settings: OptimiserSettings,
         search_space: AI4RAGSearchSpace,
         benchmark_data: pd.DataFrame | BenchmarkData,
         vector_store_type: str,
-        ls_client: LlamaStackClient | None = None,
         documents: list[Document] | None = None,
         optimization_metrics: Sequence[str] = (MetricType.FAITHFULNESS,),
         **kwargs,
     ):
-        self.ls_client = ls_client
+        self.client = client
 
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.documents = documents
@@ -167,7 +168,6 @@ class AI4RAGExperiment:
         self.search_output = None
 
         self.output_path: str | None = kwargs.pop("output_path", None)
-        self.embeddings_provider: str = kwargs.pop("embeddings_provider", "watsonx")
         self.job_id = kwargs.pop("job_id", "a0b1c2d3-zxcv-asdf-qwer-poiulkjhmnbv").replace("-", "_")
 
         self.metrics: Sequence[str] = kwargs.pop(
@@ -304,7 +304,7 @@ class AI4RAGExperiment:
 
         # pylint: disable=protected-access
         mps = ModelsPreSelector(
-            ls_client=self.ls_client,
+            ls_client=self.client,
             benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
@@ -486,7 +486,7 @@ class AI4RAGExperiment:
         )
 
         self.experiment_monitor.on_start_event_info()
-        inference_response = query_inference_service(
+        inference_response = query_rag(
             api_client=self.api_client,
             rag_service=rag_service,
             questions=list(self.benchmark_data.questions),

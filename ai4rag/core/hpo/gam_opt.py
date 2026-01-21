@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import random
@@ -198,10 +198,9 @@ class GAMOptimiser(BaseOptimiser):
         )
 
         # Optimize encoding: build array directly
-        encoded_data_to_predict = np.column_stack([
-            encoder.transform(remaining_evaluations_df[column])
-            for column, encoder in self._encoders_with_columns
-        ])
+        encoded_data_to_predict = np.column_stack(
+            [encoder.transform(remaining_evaluations_df[column]) for column, encoder in self._encoders_with_columns]
+        )
 
         predictions = gam.predict(encoded_data_to_predict)
 

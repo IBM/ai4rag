@@ -32,7 +32,7 @@ dependencies = [
     "langchain_chroma",
     "langchain-text-splitters",
     "langgraph>=1.0.4",
-    "llama-stack-client==0.3.0",
+    "llama-stack-client==0.4.2",
     "pandas==2.2.*",
     "pydantic==2.11.0",
     "pypdf>=6.1.0",

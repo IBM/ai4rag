@@ -98,7 +98,9 @@ class TestRandomOptimiser:
         settings = RandomOptSettings(max_evals=4)
 
         # First and third succeed, second and fourth fail
-        objective_func = MagicMock(side_effect=[0.3, FailedIterationError("Failed"), 0.8, FailedIterationError("Failed")])
+        objective_func = MagicMock(
+            side_effect=[0.3, FailedIterationError("Failed"), 0.8, FailedIterationError("Failed")]
+        )
 
         mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
@@ -117,11 +119,13 @@ class TestRandomOptimiser:
     def test_search_all_iterations_failed(self, mock_search_space, optimiser_settings, mocker):
         """Test search when all iterations fail."""
         # All evaluations fail
-        objective_func = MagicMock(side_effect=[
-            FailedIterationError("Failed 1"),
-            FailedIterationError("Failed 2"),
-            FailedIterationError("Failed 3"),
-        ])
+        objective_func = MagicMock(
+            side_effect=[
+                FailedIterationError("Failed 1"),
+                FailedIterationError("Failed 2"),
+                FailedIterationError("Failed 3"),
+            ]
+        )
 
         mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
@@ -153,9 +157,7 @@ class TestRandomOptimiser:
         assert result == 0.42
         objective_func.assert_called_once_with(params)
 
-    def test_objective_function_wrapper_catches_failed_iteration_error(
-        self, mock_search_space, optimiser_settings
-    ):
+    def test_objective_function_wrapper_catches_failed_iteration_error(self, mock_search_space, optimiser_settings):
         """Test that _objective_function catches FailedIterationError and returns None."""
         objective_func = MagicMock(side_effect=FailedIterationError("Iteration failed"))
 
@@ -251,12 +253,14 @@ class TestRandomOptimiser:
         """Test that search correctly filters out evaluations with None scores."""
         settings = RandomOptSettings(max_evals=4)
         # Mix of successful and failed evaluations
-        objective_func = MagicMock(side_effect=[
-            0.3,
-            FailedIterationError("Failed"),
-            0.8,
-            FailedIterationError("Failed"),
-        ])
+        objective_func = MagicMock(
+            side_effect=[
+                0.3,
+                FailedIterationError("Failed"),
+                0.8,
+                FailedIterationError("Failed"),
+            ]
+        )
 
         mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
