@@ -246,7 +246,7 @@ class ChromaVectorStore(BaseVectorStore):
                 {self._chunk_sequence_number_field: {"$lte": seq_nums_window[-1]}},
             ]
         }
-        res = self._langchain_vector_store.get(where=expr)  # type: ignore[arg-type]
+        res = self._vector_store.get(where=expr)  # type: ignore[arg-type]
         texts, metadatas = res["documents"], res["metadatas"]
         window_documents = [
             Document(
