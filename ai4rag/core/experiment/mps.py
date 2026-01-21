@@ -88,9 +88,6 @@ class ModelsPreSelector:
         Dictionary holding results from evaluating each RAG Pattern.
         This may be overwritten by the user to avoid evaluation and
         pre-select models based on mean scores or RFR.
-
-    mean_scores : dict[str, float]
-        Mapping with predicted scores for each model.
     """
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments

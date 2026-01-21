@@ -32,9 +32,6 @@ class EvaluationResult:
         Subspace of hyperparameters used during inference stage in the
         Retrieval Augmented Generation.
 
-    inference_service_code : str
-        Inference service function code's string representation for the particular RAG pattern.
-
     scores : dict[str, dict[str, float]]
         Score data from the evaluation that may look like:
         data = {
@@ -56,7 +53,6 @@ class EvaluationResult:
     collection: str
     indexing_params: dict[str, Any]
     rag_params: dict[str, Any]
-    inference_service_code: str
     scores: dict[str, dict]
     execution_time: float
     final_score: float

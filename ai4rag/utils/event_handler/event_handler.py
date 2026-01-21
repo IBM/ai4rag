@@ -4,20 +4,9 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import Literal
-from dataclasses import dataclass
 
 
-__all__ = ["BaseEventHandler", "LogLevel", "AIServiceData"]
-
-
-@dataclass
-class AIServiceData:
-    """Dataclass representing metadata and code of the given AI service."""
-
-    service_metadata: dict
-    service_code: str | None
-    vector_store_type: Literal["chroma", "milvus"]
+__all__ = ["BaseEventHandler", "LogLevel"]
 
 
 class LogLevel(StrEnum):
@@ -52,9 +41,7 @@ class BaseEventHandler(ABC):
         """
 
     @abstractmethod
-    def on_pattern_creation(
-        self, payload: dict, evaluation_results: list, inference_service_data: AIServiceData, **kwargs
-    ) -> None:
+    def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
         """
         Method called when single RAG pattern's evaluation is completed.
 

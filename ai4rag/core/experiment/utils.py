@@ -165,8 +165,8 @@ def build_evaluation_data(
         contexts = []
         context_ids = []
         for el in inference_response[idx]["reference_documents"]:
-            contexts.append(el.get("page_content"))
-            context_ids.append(el.get("metadata", {}).get("document_id"))
+            contexts.append(getattr(el, "page_content", None))
+            context_ids.append(getattr(el, "metadata", {}).get("document_id"))
 
         evaluation_data.append(
             EvaluationData(
@@ -271,8 +271,8 @@ def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
         Raised when retrieval parameters are missing.
     """
     retrieval_method = rag_params.get("retrieval_method")
-    retrieval_window_size = rag_params.get("retrieval_window_size")
-    number_of_retrieved_chunks = rag_params.get("number_of_retrieved_chunks")
+    retrieval_window_size = rag_params.get("window_size")
+    number_of_retrieved_chunks = rag_params.get("number_of_chunks")
 
     retrieval_params = {
         AI4RAGParamNames.WINDOW_SIZE: retrieval_window_size,

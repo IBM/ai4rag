@@ -101,7 +101,7 @@ class LlamaStackRAG(BaseRAGTemplate):
 
         context = "\n".join(
             [
-                self.foundation_model.context_template_text.format(document=doc.get("content", ""))
+                self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
                 for doc in reference_documents
             ]
         )

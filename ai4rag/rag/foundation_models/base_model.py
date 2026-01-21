@@ -5,7 +5,11 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
-from ai4rag.search_space.src.model_props import get_user_message_text, get_system_message_text
+from ai4rag.search_space.src.model_props import (
+    get_user_message_text,
+    get_system_message_text,
+    get_context_template_text,
+)
 from ai4rag.utils.validators import RAGPromptTemplateString
 
 FoundationModelClientT = TypeVar("FoundationModelClientT")
@@ -29,12 +33,14 @@ class FoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], A
         self.client = client
         self.model_id = model_id
         self.model_params = model_params
-        self.system_message_text = system_message_text
+        self.system_message_text = system_message_text or get_system_message_text(model_name=model_id)
         self.user_message_text = (
             user_message_text if user_message_text is not None else get_user_message_text(model_name=model_id)
         )
         self.context_template_text = (
-            context_template_text if context_template_text is not None else get_system_message_text(model_name=model_id)
+            context_template_text
+            if context_template_text is not None
+            else get_context_template_text(model_name=model_id)
         )
 
     def __repr__(self) -> str:

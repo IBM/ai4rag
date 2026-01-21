@@ -33,8 +33,8 @@ class FileStore:
     """
 
     suffix_to_func = {
-        "txt": _txt_to_string,
-        "pdf": _pdf_to_string,
+        ".txt": _txt_to_string,
+        ".pdf": _pdf_to_string,
     }
 
     def __init__(self, path: str | Path | Sequence[str] | Sequence[Path]):

@@ -32,23 +32,27 @@ if __name__ == "__main__":
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[LSFoundationModel(model_id="ollama/llama3.2.:3b", client=client)],
+                values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
-                values=[LSEmbeddingModel(model_id="nomic-embed-text", client=client)],
+                values=[LSEmbeddingModel(model_id="ollama/nomic-embed-text:latest", client=client)],
             ),
         ]
     )
 
     experiment = AI4RAGExperiment(
         client=client,
-        documents=documents,
-        benchmark_data=benchmark_data,
+        documents=documents[:3],
+        benchmark_data=benchmark_data[:2],
         search_space=search_space,
         optimiser_settings=optimiser_settings,
         event_handler=LocalEventHandler(),
         output_path=_filepath.parent / "local" / "results",
         vector_store_type="chroma",
     )
+
+    best = experiment.search(skip_mps=True)
+
+    print(best)
