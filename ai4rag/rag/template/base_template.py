@@ -26,7 +26,6 @@ class BaseRAGTemplate(ABC):
     1. Index building: Process and store documents in a vector store
     2. Retrieval: Find relevant documents for a given query
     3. Generation: Use a foundation model to generate answers based on retrieved context
-    4. Evaluation: Calculate quality scores for generated responses
 
     Parameters
     ----------

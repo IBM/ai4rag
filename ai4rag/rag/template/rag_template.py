@@ -94,7 +94,7 @@ class LlamaStackRAG(BaseRAGTemplate):
         dict[str, Any]
             Dictionary containing:
             - "answer": The generated answer
-            - "retrieved_docs": The retrieved document chunks
+            - "reference_documents": The retrieved document chunks
             - "question": The original question
         """
         reference_documents = self.retriever.retrieve(question, **retrieval_kwargs)
