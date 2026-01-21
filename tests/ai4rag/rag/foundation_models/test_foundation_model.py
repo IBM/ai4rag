@@ -119,13 +119,8 @@ class TestLlamaStackFoundationModel:
 
     @pytest.fixture
     def valid_context_template(self):
-        """Return a valid context template.
-
-        NOTE: Due to a typo in validators.py:96, context_template_text actually validates
-        for user_message_text placeholders (question, reference_documents) instead of
-        the expected (document). This fixture provides a template that passes validation.
-        """
-        return "Question: {question}\nReferences: {reference_documents}"
+        """Return a valid context template."""
+        return "Document: {document}"
 
     @pytest.fixture
     def valid_system_message(self):
@@ -215,7 +210,7 @@ class TestLlamaStackFoundationModel:
     ):
         """Test that default user_message_text is used when None is provided."""
         mock_get_user_message = mocker.patch(
-            "ai4rag.rag.foundation_models.foundation_model.get_user_message_text",
+            "ai4rag.rag.foundation_models.base_model.get_user_message_text",
             return_value="Default user message: {question} {reference_documents}",
         )
         model = LSFoundationModel(
@@ -230,11 +225,8 @@ class TestLlamaStackFoundationModel:
         assert "Default user message" in model.user_message_text
 
     def test_context_template_text_custom(self, mock_llama_client, valid_user_message_template, valid_system_message):
-        """Test that custom context_template_text is used when provided.
-
-        NOTE: Due to validator bug, must use user_message_text placeholders.
-        """
-        custom_template = "Custom: {question} and {reference_documents}"
+        """Test that custom context_template_text is used when provided."""
+        custom_template = "Custom: {document}"
         model = LSFoundationModel(
             model_id="test-model",
             model_params=None,
@@ -248,13 +240,10 @@ class TestLlamaStackFoundationModel:
     def test_context_template_text_default_when_none(
         self, mock_llama_client, valid_user_message_template, valid_system_message, mocker
     ):
-        """Test that default context_template_text is used when None is provided.
-
-        NOTE: Due to validator bug, mocked return value must use user_message_text placeholders.
-        """
-        mock_get_system_message = mocker.patch(
-            "ai4rag.rag.foundation_models.foundation_model.get_system_message_text",
-            return_value="Default: {question} {reference_documents}",
+        """Test that default context_template_text is used when None is provided."""
+        mock_get_context_template = mocker.patch(
+            "ai4rag.rag.foundation_models.base_model.get_context_template_text",
+            return_value="Default: {document}",
         )
         model = LSFoundationModel(
             model_id="granite-13b",
@@ -264,7 +253,7 @@ class TestLlamaStackFoundationModel:
             context_template_text=None,
             system_message_text=valid_system_message,
         )
-        mock_get_system_message.assert_called_once_with(model_name="granite-13b")
+        mock_get_context_template.assert_called_once_with(model_name="granite-13b")
         assert "Default" in model.context_template_text
 
     def test_system_message_text_assignment(
@@ -299,10 +288,10 @@ class TestLlamaStackFoundationModel:
         # Verify messages were passed correctly
         messages = call_args.kwargs["messages"]
         assert len(messages) == 2
-        assert messages[0].role == "system"
-        assert messages[0].content == system_msg
-        assert messages[1].role == "user"
-        assert messages[1].content == user_msg
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == system_msg
+        assert messages[1]["role"] == "user"
+        assert messages[1]["content"] == user_msg
 
         # Verify response
         assert response == "Test response from model"
@@ -325,8 +314,8 @@ class TestLlamaStackFoundationModel:
             model_with_dict_params.chat(sys_msg, usr_msg)
             call_args = mock_llama_client.chat.completions.create.call_args
             messages = call_args.kwargs["messages"]
-            assert messages[0].content == sys_msg
-            assert messages[1].content == usr_msg
+            assert messages[0]["content"] == sys_msg
+            assert messages[1]["content"] == usr_msg
 
     def test_invalid_user_message_template_missing_placeholder(
         self, mock_llama_client, valid_context_template, valid_system_message
@@ -379,13 +368,8 @@ class TestLlamaStackFoundationModel:
     def test_invalid_context_template_wrong_placeholder(
         self, mock_llama_client, valid_user_message_template, valid_system_message
     ):
-        """Test that wrong placeholder in context_template_text raises validation error.
-
-        NOTE: Due to a typo in validators.py:96, context_template_text validates for
-        user_message_text placeholders. This test uses {document} which is invalid
-        for that validator.
-        """
-        invalid_template = "Document: {document}"  # Invalid due to validator bug
+        """Test that wrong placeholder in context_template_text raises validation error."""
+        invalid_template = "Context: {question}"  # Wrong placeholder for context_template
         with pytest.raises(ConstraintsValidationError) as exc_info:
             LSFoundationModel(
                 model_id="test-model",
