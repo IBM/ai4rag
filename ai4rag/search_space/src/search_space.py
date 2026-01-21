@@ -75,6 +75,12 @@ class SearchSpace:
     def __getitem__(self, item: str) -> Parameter:
         return self._search_space[item]
 
+    def __setitem__(self, key: str, item: Parameter) -> None:
+        for idx, param in enumerate(self.params):
+            if item.name == param.name:
+                self.params[idx] = item
+        self._search_space[item.name] = item
+
     def as_list(self) -> list[Parameter]:
         """
         Get the list of parameter composing the search space.

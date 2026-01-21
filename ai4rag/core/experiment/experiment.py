@@ -548,27 +548,24 @@ class AI4RAGExperiment:
 
         # MPS - models pre-selection based on sample evaluation. Run if there are more than 3 foundation models
         foundation_models = list(self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values)
-        embedding_models_parameter = self.search_space[AI4RAGParamNames.EMBEDDING_MODEL]
-        embedding_models = list(embedding_models_parameter.values)
+        embedding_models = list(self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values)
 
-        if (
-            embedding_models and len(embedding_models) > self.n_mps_em or len(foundation_models) > self.n_mps_fm
-        ) and not kwargs.get("skip_mps", False):
-            selected_models = self.run_pre_selection(foundation_models, embedding_models=embedding_models)
-            self.search_space.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
+        if (len(embedding_models) > self.n_mps_em or len(foundation_models) > self.n_mps_fm) and not kwargs.get(
+            "skip_mps", False
+        ):
+            selected_models = self.run_pre_selection(
+                foundation_models=foundation_models, embedding_models=embedding_models
+            )
+            self.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
                 name=AI4RAGParamNames.FOUNDATION_MODEL, param_type="C", values=selected_models["foundation_models"]
             )
-            if not self.use_knowledge_bases:
-                self.search_space.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
-                    name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
-                )
-            # To clear cached_property calculating possible combinations
-            if hasattr(self.search_space, "combinations"):
-                del self.search_space.combinations  # deleting so that it can be rebuilt with new modelsg
+            self.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
+                name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
+            )
 
         optimiser_class: type[BaseOptimiser] = kwargs.get("optimiser", RandomOptimiser)
 
-        # This line is introduced to make AI4RAGExperiment testing easier
+        # In the search kwargs user may pass different optimiser instance for testing purposes
         optimiser = optimiser_class(
             objective_function=objective_function,
             search_space=self.search_space,
