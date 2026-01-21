@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 """Sample script to run ai4rag experiment"""
 
 from llama_stack_client import LlamaStackClient
@@ -19,14 +23,20 @@ if __name__ == "__main__":
     _filepath = Path(__file__)
     client = LlamaStackClient(base_url="http://localhost:8321")
 
+    # change to direct to your local documents path
     documents_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "documents"
+
+    # change to direct to your benchmark_data.json
     benchmark_data_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "watsonx_benchmark.json"
 
     file_store = FileStore(documents_path)
     documents = file_store.load_as_documents()
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
-    optimiser_settings = GAMOptSettings(max_evals=1)
+    # Configure optimiser
+    optimiser_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
+
+    # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
         params=[
             Parameter(
@@ -44,8 +54,8 @@ if __name__ == "__main__":
 
     experiment = AI4RAGExperiment(
         client=client,
-        documents=documents[:3],
-        benchmark_data=benchmark_data[:2],
+        documents=documents,
+        benchmark_data=benchmark_data,
         search_space=search_space,
         optimiser_settings=optimiser_settings,
         event_handler=LocalEventHandler(),

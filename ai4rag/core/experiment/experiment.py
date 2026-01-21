@@ -765,9 +765,9 @@ class AI4RAGExperiment:
         -------
             Collection name that is new or one of the previously created
         """
-        collections = self.results.collection_exists(indexing_params=indexing_params)
-        if collections is not None:
-            collection_name = collections[0]
+        collection = self.results.collection_exists(indexing_params=indexing_params)
+        if collection is not None:
+            collection_name = collection
             logger.info("Reusing existing collection: '%s'", collection_name)
             return collection_name
 

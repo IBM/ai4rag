@@ -147,7 +147,7 @@ class ExperimentResults:
                 return evaluation.final_score
         return None
 
-    def collection_exists(self, indexing_params: dict[str, Any]) -> list[str] | None:
+    def collection_exists(self, indexing_params: dict[str, Any]) -> str | None:
         """
         This method checks if a collection to certain params already exists.
 
@@ -179,7 +179,7 @@ class ExperimentResults:
         """
         ret = set()
         for ev in self.evaluations:
-            ret.update(ev.collections)
+            ret.update(ev.collection)
         return list(ret)
 
     @property
