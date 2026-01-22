@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import ast
@@ -9,20 +9,6 @@ import textwrap
 from typing import Any, Callable, Literal, cast
 
 import black
-from ibm_watsonx_ai import APIClient, Credentials
-from ibm_watsonx_ai.ai_services import AIServices
-from ibm_watsonx_ai.foundation_models import ModelInference
-from ibm_watsonx_ai.foundation_models.extensions.rag.chunker import (  # pylint: disable=no-name-in-module
-    HybridSemanticChunker,
-    LangChainChunker,
-)
-from ibm_watsonx_ai.foundation_models.extensions.rag.retriever import BaseRetriever, Retriever
-from ibm_watsonx_ai.foundation_models.extensions.rag.utils import get_max_input_tokens
-from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores import BaseVectorStore, VectorStore
-from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores.adapters.milvus_adapter import MilvusVectorStore
-from ibm_watsonx_ai.foundation_models.utils.utils import _copy_function
-from ibm_watsonx_ai.wml_client_error import InvalidMultipleArguments, ValidationError
-
 from ai4rag.core.ai_service.nodes.generate import chat_node
 from ai4rag.core.ai_service.nodes.retrieve import multi_index_retrieve_node, retrieve_node
 from ai4rag.core.ai_service.states import AI4RAGState
@@ -48,10 +34,6 @@ VECTOR_STORE_INITIALIZATION_MAPPING = {
     "ElasticsearchVectorStore": elasticsearch_vector_store_initialization,
 }
 
-INDEXING_CODE_MAPPING = {
-    HybridSemanticChunker: (indexing_semantic_chunking_imports, indexing_semantic_chunking),
-    LangChainChunker: (indexing_recursive_chunking_imports, indexing_recursive_chunking),
-}
 
 DEFAULT_GENERATE_SQL_MODEL_ID = FoundationModels.GRANITE_3_3_8B_INSTRUCT
 
@@ -130,15 +112,11 @@ class RAGService:
     def __init__(
         self,
         *,
-        api_client: APIClient,
-        model: ModelInference,
         agent: Literal["sequential"],
         context_template_text: str | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         default_max_sequence_length: int | None = None,
-        retrievers: list[BaseRetriever] | None = None,
-        vector_stores: list[BaseVectorStore] | None = None,
         chunker: "LangChainChunker | HybridSemanticChunker | None" = None,
         multi_index_reranking_number_chunks: int | None = None,
         word_to_token_ratio: float = 1.5,
@@ -148,7 +126,6 @@ class RAGService:
         ranker_config: list[dict | None] | dict | None = None,
         ## multindex
     ) -> None:
-        self.api_client = api_client
         self.space_id = self.api_client.default_space_id
         self.project_id = self.api_client.default_project_id
 

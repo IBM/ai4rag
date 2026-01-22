@@ -1,28 +1,15 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Literal, TypeAlias
-from dataclasses import dataclass
+from enum import StrEnum
 
 
-__all__ = ["BaseEventHandler", "LogLevel", "LevelType", "AIServiceData"]
+__all__ = ["BaseEventHandler", "LogLevel"]
 
 
-LevelType: TypeAlias = Literal["info", "warning", "error"]
-
-
-@dataclass
-class AIServiceData:
-    """Dataclass representing metadata and code of the given AI service."""
-
-    service_metadata: dict
-    service_code: str | None
-    vector_store_type: Literal["chroma", "milvus"]
-
-
-class LogLevel:
+class LogLevel(StrEnum):
     """Available log levels."""
 
     INFO = "info"
@@ -37,13 +24,13 @@ class BaseEventHandler(ABC):
     """
 
     @abstractmethod
-    def on_status_change(self, level: LevelType, message: str, step: str | None = None) -> None:
+    def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:
         """
         Method called to notify about experiment's status change.
 
         Parameters
         ----------
-        level : LevelType
+        level : LogLevel
             Logging level
 
         message : str
@@ -54,9 +41,7 @@ class BaseEventHandler(ABC):
         """
 
     @abstractmethod
-    def on_pattern_creation(
-        self, payload: dict, evaluation_results: list, inference_service_data: AIServiceData, **kwargs
-    ) -> None:
+    def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
         """
         Method called when single RAG pattern's evaluation is completed.
 

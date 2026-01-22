@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from typing import Any, Annotated
@@ -7,15 +7,10 @@ from annotated_types import Gt, Le, Ge
 from pydantic import BaseModel
 
 from llama_stack_client import LlamaStackClient
-from llama_stack_client.types import SystemMessage, UserMessage
+from llama_stack_client.types import SystemMessage
 
 from ai4rag.utils.constants import ChatGenerationConstants
-from ai4rag.rag.foundation_models.base_foundation_model import BaseFoundationModel
-from ai4rag.utils.validators import RAGPromptTemplateString
-from ai4rag.search_space.src.model_props import (
-    get_system_message_text,
-    get_user_message_text,
-)
+from ai4rag.rag.foundation_models.base_model import FoundationModel
 
 
 class ModelParameters(BaseModel):
@@ -23,30 +18,27 @@ class ModelParameters(BaseModel):
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class LlamaStackFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
+class LSFoundationModel(FoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
     """Integration point to use any model via Llama-stack API / client"""
-
-    user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")
-    context_template_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="context_template_text")
 
     def __init__(
         self,
-        model_id: str,
-        model_params: dict[str, Any] | ModelParameters | None,
         client: LlamaStackClient,
-        user_message_text: str,
-        context_template_text: str,
-        system_message_text: str,
+        model_id: str,
+        model_params: dict[str, Any] | ModelParameters | None = None,
+        system_message_text: str | None = None,
+        user_message_text: str | None = None,
+        context_template_text: str | None = None,
     ):
-        super().__init__(client=client, model_id=model_id, model_params=model_params)
+        super().__init__(
+            client=client,
+            model_id=model_id,
+            model_params=model_params,
+            system_message_text=system_message_text,
+            user_message_text=user_message_text,
+            context_template_text=context_template_text,
+        )
         self.model_params = model_params
-        self.system_message_text = system_message_text
-        self.user_message_text = (
-            user_message_text if user_message_text is not None else get_user_message_text(model_name=model_id)
-        )
-        self.context_template_text = (
-            context_template_text if context_template_text is not None else get_system_message_text(model_name=model_id)
-        )
 
     def chat(self, system_message: str, user_message: str) -> str:
         """
@@ -68,8 +60,8 @@ class LlamaStackFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, 
         response_chat = self.client.chat.completions.create(
             model=self.model_id,
             messages=[
-                SystemMessage(role="system", content=system_message),
-                UserMessage(role="user", content=user_message),
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
             ],
         )
         answer = response_chat.choices[0].message.content

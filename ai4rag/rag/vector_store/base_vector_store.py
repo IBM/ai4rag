@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import abstractmethod, ABC
@@ -7,7 +7,7 @@ from typing import Sequence
 
 from langchain_core.documents import Document
 
-from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.embedding.base_model import EmbeddingModel
 
 
 __all__ = ["BaseVectorStore"]
@@ -19,7 +19,7 @@ class BaseVectorStore(ABC):
     Single instance defines 1 collection/index that can be used to store or retrieve data.
     """
 
-    def __init__(self, embedding_model: BaseEmbeddingModel, collection_name: str, distance_metric: str):
+    def __init__(self, embedding_model: EmbeddingModel, collection_name: str, distance_metric: str):
         self.embedding_model = embedding_model
         self.collection_name = collection_name
         self.distance_metric = distance_metric

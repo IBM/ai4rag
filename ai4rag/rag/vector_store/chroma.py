@@ -1,5 +1,5 @@
 #  -----------------------------------------------------------------------------------------
-#  (C) Copyright IBM Corp. 2025.
+#  (C) Copyright IBM Corp. 2025-2026.
 #  https://opensource.org/licenses/BSD-3-Clause
 #  -----------------------------------------------------------------------------------------
 
@@ -12,7 +12,7 @@ from langchain_core.documents import Document
 from .base_vector_store import BaseVectorStore
 from .utils import merge_window_into_a_document
 
-from ..embedding.base_model import BaseEmbeddingModel
+from ..embedding.base_model import EmbeddingModel
 
 from ai4rag import logger
 
@@ -23,7 +23,7 @@ class ChromaVectorStore(BaseVectorStore):
 
     Parameters
     ----------
-    embedding_model : BaseEmbeddingModel
+    embedding_model : EmbeddingModel
         Instance used for embedding documents and user's queries.
 
     collection_name : str, default="default_collection"
@@ -43,7 +43,7 @@ class ChromaVectorStore(BaseVectorStore):
 
     def __init__(
         self,
-        embedding_model: BaseEmbeddingModel,
+        embedding_model: EmbeddingModel,
         collection_name: str = "default_collection",
         distance_metric: str = "cosine",
         document_name_field: str = "document_id",
@@ -246,7 +246,7 @@ class ChromaVectorStore(BaseVectorStore):
                 {self._chunk_sequence_number_field: {"$lte": seq_nums_window[-1]}},
             ]
         }
-        res = self._langchain_vector_store.get(where=expr)  # type: ignore[arg-type]
+        res = self._vector_store.get(where=expr)  # type: ignore[arg-type]
         texts, metadatas = res["documents"], res["metadatas"]
         window_documents = [
             Document(

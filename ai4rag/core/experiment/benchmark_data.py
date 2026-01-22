@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from typing import Iterator
@@ -30,7 +30,7 @@ class BenchmarkData:
     answers : list[str]
         Validated answers from the benchmark dataset.
 
-    documents_ids : list[str]
+    document_ids : list[str]
         Validated IDs of documents with correct context for given answers.
 
     Raises
@@ -40,35 +40,26 @@ class BenchmarkData:
     """
 
     QUESTION = "question"
-    ANSWER = "correct_answer"
+    ANSWERS = "correct_answers"
     DOC_IDS = "correct_answer_document_ids"
 
     def __init__(self, benchmark_data: pd.DataFrame):
         self._benchmark_data = benchmark_data
 
-        self.squashed_benchmark_data = self._squash_multiple_correct_answers(benchmark_data)
-
-        self.questions: list[str] = list(self.squashed_benchmark_data[self.QUESTION])
-        self.answers: list[list[str]] = list(self.squashed_benchmark_data[self.ANSWER])
-        self.documents_ids: list[list[str]] | None = (
-            None
-            if self.DOC_IDS not in self.squashed_benchmark_data.columns
-            else list(self.squashed_benchmark_data[self.DOC_IDS])
-        )
+        self.questions: list[str] = list(self._benchmark_data[self.QUESTION])
+        self.answers: list[list[str]] = list(self._benchmark_data[self.ANSWERS])
+        self.document_ids: list[list[str]] = list(self._benchmark_data[self.DOC_IDS])
         self._questions_ids = [f"q{idx}" for idx in range(len(self.questions))]
 
     def __iter__(self) -> Iterator[tuple[str, list[str], list[str] | None]]:
-        doc_ids = self.documents_ids or [None for _ in range(len(self.questions))]
-        for q, a, id_ in zip(self.questions, self.answers, doc_ids):
+        for q, a, id_ in zip(self.questions, self.answers, self.document_ids):
             yield q, a, id_
 
     def __len__(self) -> int:
         return len(self.questions)
 
     def __getitem__(self, idx: int) -> tuple[str, list[str], list[str] | None]:
-        doc_ids = self.documents_ids[idx] if self.documents_ids is not None else None
-
-        return self.questions[idx], self.answers[idx], doc_ids
+        return self.questions[idx], self.answers[idx], self.document_ids[idx]
 
     def get_random_sample(self, n_records: int = 10, random_seed: int = 17) -> "BenchmarkData":
         """
@@ -90,9 +81,9 @@ class BenchmarkData:
             New instance of BenchmarkData.
         """
         if n_records > len(self):
-            sample = self.squashed_benchmark_data.copy()
+            sample = self._benchmark_data.copy()
         else:
-            sample = self.squashed_benchmark_data.sample(n=n_records, random_state=random_seed)
+            sample = self._benchmark_data.sample(n=n_records, random_state=random_seed)
         return self.__class__(benchmark_data=sample)
 
     @property
@@ -116,61 +107,23 @@ class BenchmarkData:
     def answers(self, val: list[list[str]]) -> None:
         """Validate whether each element is a list of not empty strings"""
         for el in val:
-            _validate_list_of_strings(el, self.ANSWER)
+            _validate_list_of_strings(el, self.ANSWERS)
         self._answers = val
 
     @property
-    def documents_ids(self) -> list[list[str]]:
+    def document_ids(self) -> list[list[str]]:
         """Get all document ids from benchmark data."""
-        return self._documents_ids
+        return self._document_ids
 
-    @documents_ids.setter
-    def documents_ids(self, val: list[list[str]] | None) -> None:
+    @document_ids.setter
+    def document_ids(self, val: list[list[str]] | None) -> None:
         """Validate whether each element is a list of not empty strings"""
         if val is None:
-            self._documents_ids = val
+            self._document_ids = val
         else:
             for el in val:
                 _validate_list_of_strings(el, self.DOC_IDS)
-            self._documents_ids = val
-
-    @staticmethod
-    def _squash_multiple_correct_answers(benchmark_data: pd.DataFrame) -> pd.DataFrame:
-        """
-        Method validating whether there are many correct answers per single question.
-
-        Parameters
-        ----------
-        benchmark_data : pd.DataFrame
-            Data structure looking like:
-
-            question    |   correct_answer  |   correct_answer_document_id
-            Q1              A1                  ["id1", "id2"]
-            ...             ...                 ...
-
-        Returns
-        -------
-        pd.DataFrame
-            Validated and squashed data structure supporting many correct answers
-            per single question.
-        """
-        data = benchmark_data.copy()
-
-        if "correct_answer_document_ids" in data.columns:
-            df_merged = data.groupby("question", as_index=False).agg(
-                {
-                    "correct_answer": lambda x: sum(([i] if isinstance(i, str) else i for i in x), []),
-                    "correct_answer_document_ids": lambda x: sum(([i] if isinstance(i, str) else i for i in x), []),
-                }
-            )
-
-        else:
-            df_merged = data.groupby("question", as_index=False).agg(
-                {
-                    "correct_answer": lambda x: sum(([i] if isinstance(i, str) else i for i in x), []),
-                }
-            )
-        return df_merged
+            self._document_ids = val
 
     @property
     def questions_ids(self) -> list[str]:

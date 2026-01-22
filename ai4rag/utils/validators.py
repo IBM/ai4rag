@@ -1,9 +1,7 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-
-
 from abc import ABC, abstractmethod
 from string import Formatter
 from typing import Any, Protocol, Literal, TypeVar, Generic, Self, overload
@@ -93,7 +91,7 @@ class RAGPromptTemplateString(Validator[str]):
 
         self._required_placeholders: tuple[str, ...] = (
             (CONTEXT_TEXT_PLACEHOLDER,)
-            if template_name == "context_teplate_text"
+            if template_name == "context_template_text"
             else (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
         )
 
@@ -140,7 +138,7 @@ class RAGPromptTemplateString(Validator[str]):
 
         if placeholders_count != len(self._required_placeholders):
             raise ConstraintsValidationError(
-                f"Incorrect number of placeholders required for {value.split('_')[0]} template text, "
+                f"Incorrect number of placeholders required for: '{value.split('_')[0]}' template text, "
                 f"expected {len(self._required_placeholders)} but got {placeholders_count}."
             )
 

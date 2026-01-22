@@ -1,19 +1,20 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from llama_stack_client import Client
 
-from .base_model import BaseEmbeddingModel
+from .base_model import EmbeddingModel
 from .embedding_types import LLamaStackEmbeddingParams
 
-__all__ = ["LLamaStackEmbeddingModel"]
+__all__ = ["LSEmbeddingModel"]
 
 
-class LLamaStackEmbeddingModel(BaseEmbeddingModel[Client, LLamaStackEmbeddingParams]):
+class LSEmbeddingModel(EmbeddingModel[Client, LLamaStackEmbeddingParams]):
     """Creates embeddings for LLamaStack client."""
 
-    def __init__(self, client: Client, model_id: str, params: LLamaStackEmbeddingParams):
+    def __init__(self, client: Client, model_id: str, params: LLamaStackEmbeddingParams | None = None):
+        params = params or {}
         super().__init__(client=client, model_id=model_id, params=params)
 
     def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:

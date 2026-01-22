@@ -7,15 +7,15 @@ name = "ai4rag"
 description = "Automatic and optimised RAG Pattern generator"
 authors = [{ name = "IBM"}]
 maintainers = [
-    { name = "Jakub Walaszczyk", email = "jakub.walaszczyk@ibm.com" },
-    { name = "Michal Steczko", email = "michal.steczko@ibm.com" },
+    { name = "Jakub Walaszczyk", email = "jwalaszc@redhat.com" },
+    { name = "Michal Steczko", email = "msteczko@redhat.com" },
 ]
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Natural Language :: English",
-    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
 ]
@@ -32,7 +32,7 @@ dependencies = [
     "langchain_chroma",
     "langchain-text-splitters",
     "langgraph>=1.0.4",
-    "llama-stack-client==0.3.0",
+    "llama-stack-client==0.4.2",
     "pandas==2.2.*",
     "pydantic==2.11.0",
     "pypdf>=6.1.0",
@@ -80,8 +80,6 @@ line-length = 120
 [tool.pylint]
 disable = ["missing-module-docstring", "too-few-public-methods"]
 max-line-length = 120
-max-module-lines = 1200
 max-args = 6
 max-positional-arguments = 6
 max-attributes = 10
-max-branches = 16  # temporary fix after pylint 4.0.0 release

@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
@@ -7,40 +7,36 @@ from datetime import datetime
 from typing import Any, Sequence
 
 import pandas as pd
-from ibm_watsonx_ai.foundation_models.extensions.rag.chunker import LangChainChunker
-from ibm_watsonx_ai.foundation_models.extensions.rag.retriever import Retriever
 from langchain_core.documents import Document
 from llama_stack_client import LlamaStackClient
 
 from ai4rag import logger
-from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import (
     AssetSaveError,
     AI4RAGError,
     ExperimentExceptionsHandler,
     IndexingError,
-    SemanticChunkingError,
 )
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
 from ai4rag.core.experiment.utils import (
-    HybridSemanticChunkerFactory,
     RAGExperimentError,
     RAGParamsType,
-    VectorStoreType,
     build_evaluation_data,
     get_chunking_params,
-    get_inference_service_data,
     get_retrieval_params,
-    query_inference_service,
+    query_rag,
 )
 from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimiserSettings, OptimisationError
 from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimiser
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.foundation_models import LlamaStackFoundationModel
-from ai4rag.search_space.prepare.input_payload_types import AI4RAGModel
+from ai4rag.rag.chunking import LangChainChunker
+from ai4rag.rag.embedding.base_model import EmbeddingModel
+from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.retrieval.retriever import Retriever
+from ai4rag.rag.template.rag_template import LlamaStackRAG
 from ai4rag.search_space.src.models import EmbeddingModels
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -48,12 +44,10 @@ from ai4rag.utils.constants import (
     AI4RAGParamNames,
     EventsToReport,
     ExperimentStep,
-    HybridRankerConstants,
 )
-from ai4rag.utils.event_handler.event_handler import AIServiceData, BaseEventHandler, LogLevel
+from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 from ai4rag.utils.experiment_monitor import ExperimentMonitor
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
-from ai4rag.utils.vector_store_schemas import VECTOR_STORE_SCHEMAS
 
 
 class AI4RAGExperiment:
@@ -64,6 +58,10 @@ class AI4RAGExperiment:
 
     Parameters
     ----------
+    client : LlamaStackClient
+        Instance of the llama stack client allowing to communicate
+        with the llama stack server.
+
     documents : list[Document | tuple[str, str]]
         List of documents to embed in vector db and use as context in RAG.
         When given as list of langchain's Document instances, both content and document
@@ -74,7 +72,7 @@ class AI4RAGExperiment:
     benchmark_data : pd.DataFrame | BenchmarkData
         Structure with 3 columns: 'question', 'correct_answers' and - if applicable - 'correct_answer_document_ids'.
 
-    vector_store_type : VectorStoreType
+    vector_store_type : str
         Specific type of Vector Data Base that will be used during the experiment.
 
     optimiser_settings : OptimiserSettings
@@ -84,18 +82,12 @@ class AI4RAGExperiment:
         Instance satisfying BaseEventHandler's interface to stream information
         from the training.
 
-    vs_connection_id : str
-        ID of the connection used to create instance of VectorStore.
-
-    optimization_metrics : Sequence[str], default=(MetricType.FAITHFULNESS, )
+    optimization_metric : str, default=MetricType.FAITHFULNESS
         Metrics that should be used for calculating final score value that will be minimized.
         This sequence should contain 1 value for first release.
 
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimisation.
-
-    api_client : APIClient | None, default=None
-        Client instance that is able to communicate with external databases, databases
 
     knowledge_base_references : KnowledgeBaseReferences
         Knowledge Base References (Vector Store or SQL Database) to conduct experiment on.
@@ -152,22 +144,20 @@ class AI4RAGExperiment:
     # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-instance-attributes,too-many-lines
     def __init__(
         self,
+        client: LlamaStackClient,
         event_handler: BaseEventHandler,
         optimiser_settings: OptimiserSettings,
         search_space: AI4RAGSearchSpace,
-        ls_client: LlamaStackClient,
         benchmark_data: pd.DataFrame | BenchmarkData,
-        vector_store_type: VectorStoreType | None = None,
+        vector_store_type: str,
         documents: list[Document] | None = None,
-        vs_connection_id: str | None = None,
-        optimization_metrics: Sequence[str] = (MetricType.FAITHFULNESS,),
+        optimization_metric: str = MetricType.FAITHFULNESS,
         **kwargs,
     ):
-        self.ls_client = ls_client
+        self.client = client
 
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.documents = documents
-        self.vs_connection_id = vs_connection_id
         self.vector_store_type = vector_store_type
 
         self.optimiser_settings = optimiser_settings
@@ -178,13 +168,12 @@ class AI4RAGExperiment:
         self.search_output = None
 
         self.output_path: str | None = kwargs.pop("output_path", None)
-        self.embeddings_provider: str = kwargs.pop("embeddings_provider", "watsonx")
         self.job_id = kwargs.pop("job_id", "a0b1c2d3-zxcv-asdf-qwer-poiulkjhmnbv").replace("-", "_")
 
         self.metrics: Sequence[str] = kwargs.pop(
             "metrics", (MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS)
         )
-        self.optimization_metrics = optimization_metrics
+        self.optimization_metric = optimization_metric
 
         self.evaluator: BaseEvaluator = kwargs.pop(
             "evaluator",
@@ -198,7 +187,6 @@ class AI4RAGExperiment:
             output_path=experiment_monitor_output_path,
         )
 
-        self._adjust_search_space()
         self.exceptions_handler = ExperimentExceptionsHandler(self.event_handler)
 
         if kwargs:
@@ -235,33 +223,20 @@ class AI4RAGExperiment:
         self._documents = proper_docs
 
     @property
-    def optimization_metrics(self) -> Sequence[str]:
+    def optimization_metric(self) -> str:
         """Get optimization metrics used for the experiment."""
-        return self._optimization_metrics
+        return self._optimization_metric
 
-    @optimization_metrics.setter
-    def optimization_metrics(self, val: Sequence[str]) -> None:
+    @optimization_metric.setter
+    def optimization_metric(self, val: str) -> None:
         """Validate and set optimization metrics"""
-        if len(val) == 0:
+        if val not in MetricType:
             raise RAGExperimentError(
-                "No optimization metric provided. Select one of the available optimization metrics: "
-                "['answer_correctness', 'faithfulness', 'context_correctness']."
-            )
-
-        if len(val) > 1:
-            raise RAGExperimentError(f"{len(val)} optimization metrics provided while only one was expected.")
-
-        metric = val[0]
-        if metric not in MetricType:
-            raise RAGExperimentError(
-                f"Provided optimization metric: '{metric}' is not supported. "
+                f"Provided optimization metric: '{val}' is not supported. "
                 f"Available metrics: ['answer_correctness', 'faithfulness', 'context_correctness']."
             )
 
-        if metric not in self.metrics:
-            self.metrics = (metric, *self.metrics)
-
-        self._optimization_metrics = val
+        self._optimization_metric = val
 
     @property
     def benchmark_data(self) -> BenchmarkData:
@@ -273,30 +248,23 @@ class AI4RAGExperiment:
         """Check and set benchmark data based on the executed scenario."""
         self._benchmark_data = val
 
-    def _adjust_search_space(self) -> None:
-        """
-        Adjust search space according to provided experiment settings.
-        """
-        if hasattr(self.search_space, "combinations"):
-            del self.search_space.combinations
-
     def run_pre_selection(
         self,
-        foundation_models: list[AI4RAGModel],
+        foundation_models: list[FoundationModel],
+        embedding_models: list[EmbeddingModel],
         n_records: int = 5,
         random_seed: int = 17,
-        embedding_models: list[str] | None = None,
-    ) -> dict[str, list[str]]:
+    ) -> dict[str, list[EmbeddingModel | FoundationModel]]:
         """
         Run models pre-selection using ModelsPreSelector and sample
         of the data.
 
         Parameters
         ----------
-        embedding_models : list[str]
+        embedding_models : list[EmbeddingModel]
             Embedding models to be considered during pre-selection process.
 
-        foundation_models : list[str]
+        foundation_models : list[FoundationModel]
             Foundation models to be evaluated during pre-selection process.
 
         n_records : int, default=10
@@ -307,11 +275,12 @@ class AI4RAGExperiment:
 
         Returns
         -------
-        dict[str, list[str]]
+        dict[str, list[FoundationModel | EmbeddingModel]]
             Best embedding models and foundation models found in pre-selection.
         """
         _log_start_mps = (
-            f"Starting foundation models pre-selection with following models: {[str(fm) for fm in foundation_models]}."
+            f"Starting foundation models pre-selection with following foundation models: {[str(fm) for fm in foundation_models]} "
+            f"and following embedding models: {[str(em) for em in embedding_models]}."
         )
         logger.info(_log_start_mps)
         self.event_handler.on_status_change(
@@ -322,25 +291,23 @@ class AI4RAGExperiment:
 
         # pylint: disable=protected-access
         mps = ModelsPreSelector(
-            api_client=self.api_client,
-            agent="sequential",
+            ls_client=self.client,
             benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
             experiment_monitor=self.experiment_monitor,
-            metric=self.optimization_metrics[0],
+            metric=self.optimization_metric,
             predict_number_of_questions=len(self.benchmark_data),
         )
         mps.evaluate_patterns()
 
         selected_models = mps.select_models(n_em=self.n_mps_em, n_fm=self.n_mps_fm)
 
-        embedding_models_log = "selected embedding models: {}" if selected_models.get("embedding_models") else ""
         logger.info(
-            "Models pre-selection has been finished. Selected foundation models: %s %s",
+            "Models pre-selection has been finished. Selected foundation models: %s and selected embedding models: %s.",
             [str(model) for model in selected_models["foundation_models"]],
-            embedding_models_log,
+            [str(model) for model in selected_models["embedding_models"]],
         )
 
         return selected_models
@@ -351,7 +318,7 @@ class AI4RAGExperiment:
 
         Parameters
         ----------
-        rag_params: dict
+        rag_params : RAGParamsType
             A dictionary containing rag parameters as keys and their values.
 
         Returns
@@ -367,7 +334,7 @@ class AI4RAGExperiment:
 
         Parameters
         ----------
-        rag_params: dict
+        rag_params : RAGParamsType
             A dictionary containing rag parameters as keys and their values.
 
         Returns
@@ -380,51 +347,40 @@ class AI4RAGExperiment:
         chunking_params = get_chunking_params(rag_params)
         retrieval_params = get_retrieval_params(rag_params)
 
-        embedding_model_name = rag_params.get(
-            AI4RAGParamNames.EMBEDDING_MODEL,
-        )
+        foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
+        embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
 
-        inference_model_id = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
-
-        truncate_strategy = "left"
-        input_size = EmbeddingModels.get_max_tokens(embedding_model_name)
-        distance_metric = EmbeddingModels.get_distance_metric(embedding_model_name)
+        distance_metric = EmbeddingModels.get_distance_metric(embedding_model.model_id)
 
         indexing_params = {
-            AI4RAGParamNames.CHUNKING_METHOD: chunking_params[AI4RAGParamNames.CHUNKING_METHOD],
-            AI4RAGParamNames.CHUNK_SIZE: chunking_params[AI4RAGParamNames.CHUNK_SIZE],
-            AI4RAGParamNames.CHUNK_OVERLAP: chunking_params[AI4RAGParamNames.CHUNK_OVERLAP],
-            AI4RAGParamNames.EMBEDDING_MODEL: embedding_model_name,
-            AI4RAGParamNames.DISTANCE_METRIC: distance_metric,
-            AI4RAGParamNames.TRUNCATE_STRATEGY: truncate_strategy,
-            AI4RAGParamNames.INPUT_SIZE: input_size,
+            "chunking": chunking_params,
+            "embedding": {
+                "model_id": embedding_model.model_id,
+                "distance_metric": distance_metric,
+            },
         }
 
-        logger.info("Using indexing params: indexing_params=%s", indexing_params)
+        logger.info("Using indexing params: %s", indexing_params)
 
-        context_template_text = inference_model_id.context_template_text
-        system_message_text = getattr(inference_model_id.chat_template_messages, "system_message_text", None)
-        user_message_text = getattr(inference_model_id.chat_template_messages, "user_message_text", None)
+        context_template_text = foundation_model.context_template_text
+        system_message_text = foundation_model.system_message_text
+        user_message_text = foundation_model.user_message_text
 
-        generation_params = inference_model_id.parameters.to_dict()
+        rag_params = {
+            "retrieval": retrieval_params,
+            "generation": {
+                "model_id": foundation_model.model_id,
+                "context_template_text": context_template_text,
+                "user_message_text": user_message_text,
+                "system_message_text": system_message_text,
+            },
+        }
 
-        model_max_sequence_length = (
-            generation_params.pop("max_sequence_length")
-            if generation_params.get("max_sequence_length")
-            else inference_model_id.max_sequence_length
+        logger.info("Using retrieval and generation params: %s", rag_params)
+
+        result_score = self.results.evaluation_explored_or_cached(
+            indexing_params=indexing_params, rag_params=rag_params
         )
-        inference_params = {
-            AI4RAGParamNames.FOUNDATION_MODEL: inference_model_id,
-            "context_template_text": context_template_text,
-            "system_message_text": system_message_text,
-            "user_message_text": user_message_text,
-            "generation_params": generation_params,
-            **retrieval_params,
-        }
-
-        logger.debug("Using inference params: inference_params=%s", inference_params)
-
-        result_score = self._evaluation_explored_or_cached(inference_params, indexing_params)
         if result_score is not None:
             return result_score
 
@@ -432,23 +388,19 @@ class AI4RAGExperiment:
         self.experiment_monitor.on_pattern_start()
         logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        embeddings = get_embeddings(
-            model_name=embedding_model_name,
-            model_params={"truncate_input_tokens": input_size},
-        )
-
         collection_name = self._create_collection_name(indexing_params=indexing_params)
 
         vector_store = get_vector_store(
             vs_type=self.vector_store_type,
-            embeddings=embeddings,
-            distance_metric=distance_metric,
-            index_name=collection_name,
-            connection_id=self.vs_connection_id,
+            embedding_model=embedding_model,
+            collection_name=collection_name,
         )
 
         if not self._collection_exists(collection_name=collection_name):
-            chunking_method, chunk_size, chunk_overlap = chunking_params.values()
+            chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
+            chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
+            chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
+
             chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             chunked_documents = chunker.split_documents(self.documents)
 
@@ -466,17 +418,17 @@ class AI4RAGExperiment:
 
             self.event_handler.on_status_change(
                 level=LogLevel.INFO,
-                message=f"Embedding chunks using the {embedding_model_name} model. Building index: {collection_name}.",
+                message=f"Embedding chunks using the {embedding_model.model_id} model. Building index: {collection_name}.",
                 step=ExperimentStep.EMBEDDING,
             )
 
             try:
                 vector_store.add_documents(chunked_documents)
             except Exception as exc:
-                raise IndexingError(exc, collection_name, embedding_model_name) from exc
+                raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
             self.experiment_monitor.on_finish_event_info(
-                event=EventsToReport.EMBEDDING, step=ExperimentStep.OPTIMIZATION, model_id=embedding_model_name
+                event=EventsToReport.EMBEDDING, step=ExperimentStep.OPTIMIZATION, model_id=embedding_model.model_id
             )
         else:
             self.event_handler.on_status_change(
@@ -485,77 +437,43 @@ class AI4RAGExperiment:
                 step=ExperimentStep.EMBEDDING,
             )
 
-            chunked_documents = None
-
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
-        retrieval_window_size = retrieval_params[AI4RAGParamNames.WINDOW_SIZE]
-        number_of_retrieved_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
+        number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
-        logger.info(
-            "Using retriever with parameters: %s",
-            {
-                "method": retrieval_method,
-                "window_size": retrieval_window_size,
-                "number_of_chunks": number_of_retrieved_chunks,
-            },
-        )
+        logger.info("Using retriever with parameters: %s", retrieval_params)
 
         retriever = Retriever(
             vector_store=vector_store,
             method=retrieval_method,
-            window_size=retrieval_window_size,
-            number_of_chunks=number_of_retrieved_chunks,
+            number_of_chunks=number_of_chunks,
         )
 
-        logger.debug(
-            "Using model: '%s' with generation params: generate_params=%s", inference_model_id, generation_params
+        rag = LlamaStackRAG(
+            foundation_model=foundation_model,
+            retriever=retriever,
         )
 
-        model = LlamaStackFoundationModel(model_id=inference_model_id, ls_client=self.ls_client)
-
-        model_with_word_to_token_ratio = self._update_word_to_token_ratio_for_given_model(
-            model=inference_model_id,
-            chunked_documents=chunked_documents,
+        _rag_log = (
+            f"Retrieval and generation using collection: '{collection_name}' and "
+            f"foundation model: '{foundation_model.model_id}'."
         )
-
-        # inference service for chroma will not include documents indexing part!
-        # we've already inserted the documents and have a chroma object in memory.
-        rag_service = RAGService(
-            api_client=self.api_client,
-            model=model_inference,
-            context_template_text=context_template_text,
-            system_message_text=system_message_text,
-            user_message_text=user_message_text,
-            retrievers=[retriever],
-            default_max_sequence_length=model_max_sequence_length,
-            word_to_token_ratio=model_with_word_to_token_ratio.word_to_token_ratio,
-        )
-
-        logger.info(
-            "Retrieval and generation using collection: '%s' and foundation model: '%s'",
-            collection_name,
-            str(inference_model_id),
-        )
+        logger.info(_rag_log)
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
-            message=(
-                f"Retrieval and generation using collection: '{collection_name}' and "
-                f"foundation model: '{str(inference_model_id)}'"
-            ),
+            message=_rag_log,
             step=ExperimentStep.GENERATION,
         )
 
         self.experiment_monitor.on_start_event_info()
-        inference_response = query_inference_service(
-            api_client=self.api_client,
-            rag_service=rag_service,
+        inference_response = query_rag(
+            rag=rag,
             questions=list(self.benchmark_data.questions),
         )
         self.experiment_monitor.on_finish_event_info(
             event=EventsToReport.RETRIEVAL_GENERATION,
             step=ExperimentStep.OPTIMIZATION,
-            model_id=str(inference_model_id),
-            retrieved_chunks=number_of_retrieved_chunks,
+            model_id=foundation_model.model_id,
+            retrieved_chunks=number_of_chunks,
         )
 
         result_scores, evaluation_data = self._evaluate_response(
@@ -566,43 +484,25 @@ class AI4RAGExperiment:
         stop_time = time.time()
         execution_time = stop_time - start_time
 
-        result_score = result_scores["scores"][self.optimization_metrics[0]]["mean"]
+        result_score = result_scores["scores"][self.optimization_metric]["mean"]
 
         logger.info("Calculated optimization score for '%s': %s", pattern_name, result_score)
 
-        if self.vector_store_type == "chroma":
-            # regenerate inference service code in order to include documents inserting stage.
-            # Necessary so that it's functional outside of this python process (chroma is not a persistent DB).
-            rag_service = RAGService(
-                api_client=self.api_client,
-                model=model_inference,
-                context_template_text=context_template_text,
-                system_message_text=system_message_text,
-                user_message_text=user_message_text,
-                retrievers=[retriever],
-                default_max_sequence_length=model_max_sequence_length,
-                word_to_token_ratio=model_with_word_to_token_ratio.word_to_token_ratio,
-                chunker=self._init_chunker(**chunking_params),
-                input_data_references=self._input_data_references,
-            )
-
         evaluation_result = EvaluationResult(
             pattern_name=pattern_name,
-            collections=[collection_name],
+            collection=collection_name,
             indexing_params=indexing_params,
-            inference_params=inference_params,
-            ai_service=rag_service.code,
+            rag_params=rag_params,
             scores=result_scores,
             execution_time=execution_time,
             final_score=result_score,
-            word_to_token_ratio=model_with_word_to_token_ratio.word_to_token_ratio,
         )
 
         evaluation_results_json = self.results.create_evaluation_results_json(
             evaluation_data=evaluation_data, evaluation_result=evaluation_result
         )
 
-        logger.debug(
+        logger.info(
             "Evaluation scores: %s",
             {el.get("question_id"): el.get("scores") for el in evaluation_results_json if isinstance(el, dict)},
         )
@@ -611,8 +511,6 @@ class AI4RAGExperiment:
             self._stream_finished_pattern(
                 evaluation_result=evaluation_result,
                 evaluation_results_json=evaluation_results_json,
-                inference_service_function_code=rag_service.code,
-                inference_service_template_info=rag_service.inference_service_info,
             )
         except Exception as exc:
             raise AssetSaveError(exc) from exc
@@ -650,32 +548,24 @@ class AI4RAGExperiment:
 
         # MPS - models pre-selection based on sample evaluation. Run if there are more than 3 foundation models
         foundation_models = list(self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values)
-        if self.use_knowledge_bases:
-            embedding_models = None
-        else:
-            embedding_models_parameter = self.search_space[AI4RAGParamNames.EMBEDDING_MODEL]
-            embedding_models = list(embedding_models_parameter.values)
+        embedding_models = list(self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values)
 
-        if (
-            embedding_models and len(embedding_models) > self.n_mps_em or len(foundation_models) > self.n_mps_fm
-        ) and not kwargs.get("skip_mps", False):
-            selected_models = self.run_pre_selection(foundation_models, embedding_models=embedding_models)
-            self.search_space.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
+        if (len(embedding_models) > self.n_mps_em or len(foundation_models) > self.n_mps_fm) and not kwargs.get(
+            "skip_mps", False
+        ):
+            selected_models = self.run_pre_selection(
+                foundation_models=foundation_models, embedding_models=embedding_models
+            )
+            self.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
                 name=AI4RAGParamNames.FOUNDATION_MODEL, param_type="C", values=selected_models["foundation_models"]
             )
-            if not self.use_knowledge_bases:
-                self.search_space.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
-                    name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
-                )
-            # To clear cached_property calculating possible combinations
-            if hasattr(self.search_space, "combinations"):
-                del self.search_space.combinations  # deleting so that it can be rebuilt with new modelsg
-
-            self._adjust_search_space()
+            self.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
+                name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
+            )
 
         optimiser_class: type[BaseOptimiser] = kwargs.get("optimiser", RandomOptimiser)
 
-        # This line is introduced to make AI4RAGExperiment testing easier
+        # In the search kwargs user may pass different optimiser instance for testing purposes
         optimiser = optimiser_class(
             objective_function=objective_function,
             search_space=self.search_space,
@@ -707,10 +597,7 @@ class AI4RAGExperiment:
         self,
         evaluation_result: EvaluationResult,
         evaluation_results_json: list,
-        inference_service_function_code: str,
-        inference_service_template_info: dict,
     ) -> None:
-        # pylint: disable=too-many-locals,too-many-statements
         """
         Stream finished pattern.
 
@@ -721,12 +608,7 @@ class AI4RAGExperiment:
 
         evaluation_results_json : list
             Prepared partial payload for the streamed content.
-
-        inference_service_function_code : str
-            Inference service function code.
         """
-        # pylint: disable=too-many-branches
-
         metrics = []
         for metric in self.metrics:
             scores = evaluation_result.scores["scores"][metric]
@@ -738,66 +620,29 @@ class AI4RAGExperiment:
             }
             metrics.append(single_metric)
 
-        retrieval_params = {
-            "method": evaluation_result.inference_params[AI4RAGParamNames.RETRIEVAL_METHOD],
-            "number_of_chunks": evaluation_result.inference_params[AI4RAGParamNames.NUMBER_OF_CHUNKS],
-            "window_size": evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE],
-        }
-
         retrieval_payload = {
-            "retrieval": retrieval_params,
+            "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
+            "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
         }
 
-        if evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE]:
-            retrieval_payload["window_size"] = evaluation_result.inference_params[AI4RAGParamNames.WINDOW_SIZE]
+        if evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]:
+            retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
 
         vector_store_payload = {
             "datasource_type": self.vector_store_type,
-            "index_name": evaluation_result.collections[0],
-            "distance_metric": evaluation_result.indexing_params[AI4RAGParamNames.DISTANCE_METRIC],
+            "collection_name": evaluation_result.collection,
         }
 
         indexing_payload = {
             "chunking": {
-                "method": evaluation_result.indexing_params[AI4RAGParamNames.CHUNKING_METHOD],
-                "chunk_size": evaluation_result.indexing_params[AI4RAGParamNames.CHUNK_SIZE],
-                "chunk_overlap": evaluation_result.indexing_params[AI4RAGParamNames.CHUNK_OVERLAP],
+                "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
+                "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
+                "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
             },
-            "embeddings": {
-                "truncate_strategy": evaluation_result.indexing_params["truncate_strategy"],
-                "truncate_input_tokens": evaluation_result.indexing_params["input_size"],
-                "model_id": evaluation_result.indexing_params[AI4RAGParamNames.EMBEDDING_MODEL],
-            },
-            "vector_store": vector_store_payload,
-        }
-        vector_store_type = self.vector_store_type
-
-        model_identifier = evaluation_result.inference_params[AI4RAGParamNames.FOUNDATION_MODEL].get_id_as_dict()
-
-        generation_payload = model_identifier | {
-            "parameters": evaluation_result.inference_params["generation_params"],
-            "word_to_token_ratio": evaluation_result.word_to_token_ratio,
-        }
-        if not self.use_knowledge_bases:
-            generation_payload["context_template_text"] = evaluation_result.inference_params.get(
-                "context_template_text"
-            )
-
-        generation_payload["chat_template_messages"] = {
-            "system_message_text": evaluation_result.inference_params.get("system_message_text"),
-            "user_message_text": evaluation_result.inference_params.get("user_message_text"),
+            "embedding": evaluation_result.indexing_params.get("embedding"),
         }
 
-        inference_service_data = get_inference_service_data(
-            pattern_name=evaluation_result.pattern_name,
-            inference_service_function_code=inference_service_function_code,
-            vector_store_type=vector_store_type,
-        )
-        indexing_service_data = AIServiceData(
-            service_metadata=get_indexing_service_metadata(),
-            service_code=evaluation_result.indexing_service,
-            vector_store_type=self.vector_store_type,
-        )
+        generation_payload = evaluation_result.rag_params.get("generation")
 
         payload = {
             "metrics": {"test_data": metrics},
@@ -814,10 +659,10 @@ class AI4RAGExperiment:
                         "duration_seconds": int(evaluation_result.execution_time),
                         "name": evaluation_result.pattern_name,
                         "settings": {
+                            "vector_store": vector_store_payload,
                             **indexing_payload,
                             **retrieval_payload,
                             "generation": generation_payload,
-                            "agent": inference_service_template_info,
                         },
                     },
                     "iteration": len(self.results),
@@ -831,8 +676,6 @@ class AI4RAGExperiment:
             evaluation_results=evaluation_results_json,
             output_path=self.output_path,
             pattern_name=evaluation_result.pattern_name,
-            inference_service_data=inference_service_data,
-            indexing_service_data=indexing_service_data,
         )
 
     def _evaluate_response(
@@ -876,36 +719,10 @@ class AI4RAGExperiment:
         )
 
         eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
-        result = self.evaluator.evaluate_metrics(evaluation_data=eval_data)
+        result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=self.metrics)
 
         logger.info("Response evaluation results for '%s': %s.", pattern_name, result)
         return result, eval_data
-
-    def _evaluation_explored_or_cached(
-        self, inference_params: dict[str, Any], indexing_params: dict[str, Any] | None = None
-    ) -> float | None:
-        """
-        This method checks if an evaluation to certain params already exists.
-
-        Parameters
-        ----------
-        indexing_params : dict[str, Any]
-            Dictionary containing keys and values that are compared with
-            previously used ones, to establish if the evaluation already done.
-
-        inference_params : dict[str, Any]
-            Dictionary containing keys and values that are compared with
-            previously used ones, to establish if the evaluation already done.
-
-        Returns
-        -------
-        float | None
-            The final score of the evaluation if it exists, otherwise None.
-        """
-        score = self.results.evaluation_explored_or_cached(indexing_params, inference_params)
-        if score is not None:
-            return score
-        return None
 
     def _collection_exists(self, collection_name: str) -> bool:
         """
@@ -917,16 +734,14 @@ class AI4RAGExperiment:
         Parameters
         ----------
         collection_name : str
-            name of the collection to check if exists
+            Name of the collection to check if exists.
 
         Returns
         -------
         bool
             True if collection exist, otherwise False.
         """
-        if self.vector_store_type != "chroma" and collection_name in self.results.collection_names:
-            return True
-        return False
+        return collection_name in self.results.collection_names
 
     def _create_collection_name(self, indexing_params: dict[str, Any]) -> str:
         """
@@ -947,9 +762,9 @@ class AI4RAGExperiment:
         -------
             Collection name that is new or one of the previously created
         """
-        collections = self.results.collection_exists(indexing_params=indexing_params)
-        if collections is not None:
-            collection_name = collections[0]
+        collection = self.results.collection_exists(indexing_params=indexing_params)
+        if collection is not None:
+            collection_name = collection
             logger.info("Reusing existing collection: '%s'", collection_name)
             return collection_name
 

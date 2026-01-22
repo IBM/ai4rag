@@ -1,10 +1,11 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from typing import Any
 
 from langchain_core.documents import Document
+
 from ai4rag.core.experiment.exception_handler import (
     ExperimentExceptionsHandler,
     IndexingError,
@@ -14,15 +15,14 @@ from ai4rag.core.experiment.exception_handler import (
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
-from ai4rag.rag.embedding.get_embeddings import get_embeddings
-from ai4rag.rag.foundation_models.base import FoundationModel
+from ai4rag.rag.embedding.base_model import EmbeddingModel
+from ai4rag.rag.foundation_models.base_model import FoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
+from ai4rag.rag.template.rag_template import LlamaStackRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
-from ai4rag.search_space.prepare.input_payload_types import AI4RAGModel
-from ai4rag.core.ai_service.rag_service import RAGService
 from ai4rag.core.experiment.utils import (
-    query_inference_service,
+    query_rag,
     build_evaluation_data,
 )
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -60,43 +60,20 @@ class ModelsPreSelector:
 
     Parameters
     ----------
-    embedding_models : list[str]
-        Embedding models to models pre-selection.
+    metric : str
+        Metric used in ranking the models.
 
-    benchmark_data : BenchmarkData
-        Sample of benchmark data used for the pre-selection.
+    foundation_models : list[FoundationModel]
+        List of foundation models that should be considered in the selection.
+
+    embedding_models : list[EmbeddingModel]
+        Embedding models to models pre-selection.
 
     documents : list[Document]
         Grounding documents that will be sampled to perform pre-selection.
 
-    agent : str
-        Name of the agent to be used for models selection.
-
-    kb_vector_store_references: list[VectorStoreKnowledgeBaseReference]
-        List of vector stores to be used to select foundation models (scenario with knowledge base references).
-
-    kb_database_references: list[DatabaseKnowledgeBaseReference]
-        List of databases to be used to select foundation models (scenario with knowledge base references).
-
-    foundation_models : list[AI4RAGModel]
-        List of foundation models that should be considered in the selection.
-
-    metric : str
-        Metric used in ranking the models.
-
-    api_client : APIClient | None, default=None
-        Instance of APIClient to perform evaluation of RAG Patterns.
-        It is optional so that we can provide known evaluations and use
-        only models selection.
-
-
-    Other Parameters
-    ----------------
-    evaluator : BaseEvaluator, default=UnitxtEvaluator()
-        Instance used in the evaluation of RAG Patterns.
-
-    generation_params : dict
-        Mapping constraining generation parameters during inference.
+    benchmark_data : BenchmarkData
+        Sample of benchmark data used for the pre-selection.
 
 
     Attributes
@@ -111,19 +88,16 @@ class ModelsPreSelector:
         Dictionary holding results from evaluating each RAG Pattern.
         This may be overwritten by the user to avoid evaluation and
         pre-select models based on mean scores or RFR.
-
-    mean_scores : dict[str, float]
-        Mapping with predicted scores for each model.
     """
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         metric: str,
-        foundation_models: list[AI4RAGModel],
+        foundation_models: list[FoundationModel],
+        embedding_models: list[EmbeddingModel],
+        documents: list[Document],
         benchmark_data: BenchmarkData,
-        embedding_models: list[str],
-        documents: list[Document] | None = None,
         **kwargs,
     ):
         self.benchmark_data = benchmark_data
@@ -145,8 +119,7 @@ class ModelsPreSelector:
             "chunk_overlap": kwargs.get(AI4RAGParamNames.CHUNK_OVERLAP, 128),
         }
 
-        self.evaluation_results = {}
-        self.mean_scores = {}
+        self.evaluation_results = []
 
         self.exceptions_handler = ExperimentExceptionsHandler()
         self.experiment_monitor = kwargs.get("experiment_monitor", None)
@@ -168,7 +141,7 @@ class ModelsPreSelector:
         """
         logger.debug("MPS: Sampling documents")
         document_ids = []
-        for element in self.benchmark_data.documents_ids:
+        for element in self.benchmark_data.document_ids:
             document_ids.extend(element)
 
         documents = [document for document in self.documents if document.metadata["document_id"] in document_ids]
@@ -182,14 +155,14 @@ class ModelsPreSelector:
                         embedding_model, chunked_documents, collection_name=collection_name
                     )
                 except Exception as exc:
-                    raise IndexingError(exc, collection_name, embedding_model) from exc
+                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
                 retriever = Retriever(vector_store, **self.retrieval_params)
                 self._evaluate_foundation_models(retriever=retriever, embedding_model=embedding_model)
 
             except IndexingError as exc:
                 self.exceptions_handler.handle_exception(exc)
-                logger.warning("Pre-evaluation of '%s' has failed.", embedding_model)
+                logger.warning("Pre-evaluation of '%s' has failed.", embedding_model.model_id)
                 continue
 
         if not self.evaluation_results:
@@ -199,7 +172,7 @@ class ModelsPreSelector:
                 f"None of the given models has been successfully evaluated. {msg}"
             )
 
-    def _evaluate_foundation_models(self, retriever: Retriever, embedding_model: str):
+    def _evaluate_foundation_models(self, retriever: Retriever, embedding_model: EmbeddingModel):
         """
         Evaluates each embedding model with given retriever.
 
@@ -208,42 +181,50 @@ class ModelsPreSelector:
         retriever : Retriever
             Instance to be used in retrieval phase.
 
-        embedding_model : str
-            Name of embedding model used for collection creation.
+        embedding_model : EmbeddingModel
+            Embedding model used for collection creation.
         """
         for foundation_model in self.foundation_models:
             try:
                 logger.info(
                     "Starting pre-evaluation of foundation model: %s and embedding model: %s.",
-                    foundation_model,
-                    embedding_model,
+                    foundation_model.model_id,
+                    embedding_model.model_id,
                 )
 
                 result_scores = self._evaluate_single_pattern(foundation_model=foundation_model, retriever=retriever)
 
-                self.evaluation_results[(embedding_model, foundation_model)] = result_scores
+                self.evaluation_results.append(
+                    {
+                        "embedding_model": embedding_model,
+                        "foundation_model": foundation_model,
+                        **result_scores,
+                    }
+                )
 
                 logger.debug(
                     "Finished pre-evaluation of foundation model: %s and embedding model: %s",
-                    foundation_model,
-                    embedding_model,
+                    foundation_model.model_id,
+                    embedding_model.model_id,
                 )
             except (GenerationError, EvaluationError) as exc:
                 self.exceptions_handler.handle_exception(exc)
-                logger.warning("Pre-evaluation of '%s' has failed.", foundation_model)
+                logger.warning("Pre-evaluation of '%s' has failed.", foundation_model.model_id)
                 continue
 
     def _create_vector_store(
-        self, embedding_model: str, chunked_documents: list[Document], collection_name: str = "mps_collection"
+        self,
+        embedding_model: EmbeddingModel,
+        chunked_documents: list[Document],
+        collection_name: str = "mps_collection",
     ) -> BaseVectorStore:
         """
         Create instance of vector store with given chunked documents and embedding model.
 
         Parameters
         ----------
-        embedding_model : str
-            ID of the watsonx embedding model used to create instance
-            of Embeddings and VectorStore.
+        embedding_model : EmbeddingModel
+            Embedding model used for collection creation.
 
         chunked_documents : list[Document]
             Chunked documents fot the embedding process.
@@ -262,11 +243,10 @@ class ModelsPreSelector:
         PreSelectorError
             When 2 attempts of embedding documents are failing
         """
-        logger.info("Building index for pre-evaluation using embedding model: '%s'.", embedding_model)
-        embeddings = get_embeddings(provider="llama_stack", model_id=embedding_model)
+        logger.info("Building index for pre-evaluation using embedding model: '%s'.", embedding_model.model_id)
 
         vector_store = ChromaVectorStore(
-            embedding_model=embeddings,
+            embedding_model=embedding_model,
             collection_name=collection_name,
         )
 
@@ -283,7 +263,7 @@ class ModelsPreSelector:
                 raise PreSelectorError(f"Failed to create in-memory vector index due to: {repr(exc)}.") from exc
         if self.experiment_monitor:
             self.experiment_monitor.on_finish_event_info(
-                event=EventsToReport.EMBEDDING, step=ExperimentStep.MODEL_SELECTION, model_id=embedding_model
+                event=EventsToReport.EMBEDDING, step=ExperimentStep.MODEL_SELECTION, model_id=embedding_model.model_id
             )
         logger.debug("MPS: Embedding documents finished!")
 
@@ -307,13 +287,13 @@ class ModelsPreSelector:
             Evaluation scores per model.
         """
 
-        rag_service = RAGService(foundation_model=foundation_model, retriever=retriever)
+        rag = LlamaStackRAG(foundation_model=foundation_model, retriever=retriever)
 
         if self.experiment_monitor:
             self.experiment_monitor.on_start_event_info()
 
-        inference_response = query_inference_service(
-            rag_service=rag_service,
+        inference_response = query_rag(
+            rag=rag,
             questions=list(self.benchmark_data.questions),
         )
 
@@ -321,7 +301,7 @@ class ModelsPreSelector:
             self.experiment_monitor.on_finish_event_info(
                 event=EventsToReport.RETRIEVAL_GENERATION,
                 step=ExperimentStep.MODEL_SELECTION,
-                model_id=str(foundation_model),
+                model_id=foundation_model.model_id,
                 retrieved_chunks=self.retrieval_params["number_of_chunks"],
             )
 
@@ -329,7 +309,7 @@ class ModelsPreSelector:
 
         return result_scores
 
-    def select_models(self, n_em: int = 2, n_fm: int = 3) -> dict[str, list[str]]:
+    def select_models(self, n_em: int = 2, n_fm: int = 3) -> dict[str, list[EmbeddingModel | FoundationModel]]:
         """
         Select n models pairs based on evaluation scores.
 
@@ -348,12 +328,14 @@ class ModelsPreSelector:
         """
 
         logger.info("Selecting the best %s embedding models and %s foundation models.", n_em, n_fm)
-        best_models_pairs = self._mean_based_scoring()
+        top_models_with_scores = self._mean_based_scoring()
 
         embedding_models = []
         foundation_models = []
         seen = set()
-        for em, fm in best_models_pairs:
+        for element in top_models_with_scores:
+            fm = element.get("foundation_model")
+            em = element.get("embedding_model")
             if em is not None and em not in seen:
                 seen.add(em)
                 embedding_models.append(em)
@@ -368,32 +350,39 @@ class ModelsPreSelector:
 
         return ret
 
-    def _mean_based_scoring(self) -> list[tuple[str, str]]:
+    def _mean_based_scoring(self) -> list[dict]:
         """
         Scoring models based on mean metric value for all records used
         in the evaluation.
 
         Returns
         -------
-        list[str]
-            Models pairs with the best scores.
+        list[dict]
+            Models and their corresponding mean scores in descending order.
         """
         logger.debug("MPS: Starting mean-based scoring...")
 
-        for models, results in self.evaluation_results.items():
-            mean_score = results.get("scores", {}).get(self.metric, {}).get("mean", {})
-            self.mean_scores[models] = mean_score
+        _mean_scoring_results = []
+
+        for result in self.evaluation_results:
+            mean_score = result.get("scores", {}).get(self.metric, {}).get("mean", {})
+            _mean_scoring_results.append(
+                {
+                    "embedding_model": result.get("embedding_model"),
+                    "foundation_model": result.get("foundation_model"),
+                    "score": mean_score,
+                }
+            )
 
         logger.debug("MPS: Finished mean-based scoring!")
 
         models_with_scores = sorted(
-            [{"models_names": models_names, "val": val} for models_names, val in self.mean_scores.items()],
-            key=lambda x: x.get("val"),
+            _mean_scoring_results,
+            key=lambda x: x.get("score"),
             reverse=True,
         )
-        top_models_pairs = [x["models_names"] for x in models_with_scores]
 
-        return top_models_pairs
+        return models_with_scores
 
     def _evaluate_response(self, inference_response: list[dict[str, Any]]) -> dict[str, dict]:
         """

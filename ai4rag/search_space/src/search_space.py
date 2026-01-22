@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import itertools
@@ -74,6 +74,12 @@ class SearchSpace:
 
     def __getitem__(self, item: str) -> Parameter:
         return self._search_space[item]
+
+    def __setitem__(self, key: str, item: Parameter) -> None:
+        for idx, param in enumerate(self.params):
+            if item.name == param.name:
+                self.params[idx] = item
+        self._search_space[item.name] = item
 
     def as_list(self) -> list[Parameter]:
         """
@@ -181,9 +187,9 @@ class AI4RAGSearchSpace(SearchSpace):
         _rule_adjust_window_to_retrieval_method,
     )
 
-    def __init__(self, params: list[Parameter], rules: list[RuleFunction] | None = None):
+    def __init__(self, params: list[Parameter] | None = None, rules: list[RuleFunction] | None = None):
         default_search_space_parameters = get_default_ai4rag_search_space_parameters()
-
+        params = params or []
         self._validate_user_params(params)
 
         params = self._overwrite_default_search_space_with_user_provided_parameters(
@@ -252,12 +258,7 @@ class AI4RAGSearchSpace(SearchSpace):
         user_params = {param.name: param for param in params}
         default_params = {param.name: param for param in default_search_space_params}
 
-        selected_params = []
-
-        for k, v in default_params.items():
-            if k in user_params.keys():
-                selected_params.append(user_params[k])
-            else:
-                selected_params.append(v)
+        selected_params_dict = default_params | user_params
+        selected_params = [v for v in selected_params_dict.values()]
 
         return selected_params
