@@ -11,6 +11,7 @@ from ai4rag.utils import get_hashable_repr
 class HashableProtocol(Protocol):
     def __hash__(self) -> int: ...
 
+
 HashableType = TypeVar("HashableType", bound=HashableProtocol)
 
 

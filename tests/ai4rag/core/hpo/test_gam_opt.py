@@ -203,9 +203,7 @@ class TestGAMOptimiser:
         assert result == 0.42
         objective_func.assert_called_once_with(params)
 
-    def test_objective_function_wrapper_catches_failed_iteration_error(
-        self, mock_search_space, optimiser_settings
-    ):
+    def test_objective_function_wrapper_catches_failed_iteration_error(self, mock_search_space, optimiser_settings):
         """Test that _objective_function catches FailedIterationError and returns None."""
         objective_func = MagicMock(side_effect=FailedIterationError("Iteration failed"))
 
@@ -283,13 +281,15 @@ class TestGAMOptimiser:
     def test_evaluate_initial_random_nodes_with_failures(self, mock_search_space, optimiser_settings, mocker):
         """Test evaluate_initial_random_nodes with some failed iterations."""
         # First fails, second succeeds, third succeeds
-        objective_func = MagicMock(side_effect=[
-            FailedIterationError("Failed"),
-            0.7,
-            FailedIterationError("Failed"),
-            0.5,
-            0.3,
-        ])
+        objective_func = MagicMock(
+            side_effect=[
+                FailedIterationError("Failed"),
+                0.7,
+                FailedIterationError("Failed"),
+                0.5,
+                0.3,
+            ]
+        )
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimiser = GAMOptimiser(
@@ -375,9 +375,9 @@ class TestGAMOptimiser:
         # Should not recreate encoders
         assert optimiser._encoders_with_columns == first_encoders
 
-    @patch("ai4rag.core.hpo.gam_opt.LinearGAM")
     def test_run_iteration(self, mock_gam_class, mock_search_space, mocker):
         """Test the _run_iteration method."""
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM")
         settings = GAMOptSettings(max_evals=6, n_random_nodes=2, evals_per_trial=1)
 
         # Setup mock GAM
@@ -420,8 +420,8 @@ class TestGAMOptimiser:
         mock_gam = MagicMock()
         mock_gam.predict.side_effect = [
             np.array([0.6, 0.7, 0.5, 0.4]),  # First iteration: 4 remaining
-            np.array([0.65, 0.55, 0.45]),     # Second iteration: 3 remaining
-            np.array([0.62, 0.58]),           # Third iteration: 2 remaining
+            np.array([0.65, 0.55, 0.45]),  # Second iteration: 3 remaining
+            np.array([0.62, 0.58]),  # Third iteration: 2 remaining
         ]
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
@@ -473,14 +473,16 @@ class TestGAMOptimiser:
         mock_gam.predict.return_value = np.array([0.6, 0.7, 0.5])
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
-        objective_func = MagicMock(side_effect=[
-            0.3,
-            FailedIterationError("Failed"),
-            0.5,
-            0.8,
-            FailedIterationError("Failed"),
-            0.6,
-        ])
+        objective_func = MagicMock(
+            side_effect=[
+                0.3,
+                FailedIterationError("Failed"),
+                0.5,
+                0.8,
+                FailedIterationError("Failed"),
+                0.6,
+            ]
+        )
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
         mocker.patch(
             "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
@@ -495,7 +497,7 @@ class TestGAMOptimiser:
 
         result = optimiser.search()
 
-        # Should return best successful evaluation
+        # Should return the best successful evaluation
         assert result["score"] == 0.8
 
     def test_run_iteration_evaluates_best_predictions(self, mock_search_space, mocker):
@@ -536,12 +538,14 @@ class TestGAMOptimiser:
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
         # Mix of successful and failed evaluations
-        objective_func = MagicMock(side_effect=[
-            0.3,
-            FailedIterationError("Failed"),
-            0.5,
-            0.8,
-        ])
+        objective_func = MagicMock(
+            side_effect=[
+                0.3,
+                FailedIterationError("Failed"),
+                0.5,
+                0.8,
+            ]
+        )
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
         mocker.patch(
             "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",

@@ -5,10 +5,21 @@
 from pathlib import Path
 from typing import Sequence
 from functools import lru_cache
+import io
 
-from ibm_watsonx_ai.data_loaders.text_loader import TextLoader
-from ibm_watsonx_ai.wml_client_error import WMLClientError
+from pypdf import PdfReader
 from langchain_core.documents import Document
+
+
+def _txt_to_string(binary_data: bytes) -> str:
+    return binary_data.decode("utf-8", errors="ignore")
+
+
+def _pdf_to_string(binary_data: bytes) -> str:
+    with io.BytesIO(binary_data) as open_pdf_file:
+        reader = PdfReader(open_pdf_file)
+        full_text = [page.extract_text() for page in reader.pages]
+        return "\n".join(full_text)
 
 
 class FileStoreException(Exception):
@@ -21,12 +32,9 @@ class FileStore:
     This class reused logics from the TextLoader class in ibm_watsonx_ai package
     """
 
-    file_type_handlers = {
-        "text/plain": TextLoader._txt_to_string,
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": TextLoader._docs_to_string,
-        "application/pdf": TextLoader._pdf_to_string,
-        "text/html": TextLoader._html_to_string,
-        "text/markdown": TextLoader._md_to_string,
+    suffix_to_func = {
+        ".txt": _txt_to_string,
+        ".pdf": _pdf_to_string,
     }
 
     def __init__(self, path: str | Path | Sequence[str] | Sequence[Path]):
@@ -71,17 +79,13 @@ class FileStore:
         str
             Extracted file text
         """
-        try:
-            file_type = TextLoader.identify_file_type(filename=filepath.suffix)
-        except WMLClientError:
-            raise FileStoreException(f"Not supported file type: {filepath.suffix}")
 
-        handler = self.file_type_handlers.get(file_type, None)
+        handler = self.suffix_to_func.get(filepath.suffix, None)
 
         try:
             text = handler(file_content)
-        except Exception as exception:
-            raise FileStoreException(f"Failed to load file.") from exception
+        except Exception as exc:
+            raise FileStoreException(f"Failed to load file.") from exc
 
         return text
 
@@ -92,11 +96,3 @@ class FileStore:
         text = self._process_file(filepath=filepath, file_content=content)
         self.files[str(filepath)] = text
         return text
-
-
-if __name__ == "__main__":
-    """Example usage with folder full of .txt docs"""
-    _filepath = Path(__file__)
-    documents_path = _filepath.parents[1] / "test_docs" / "documents" / "watson_x_ai"
-    file_store = FileStore(documents_path)
-    documents = file_store._load_content()

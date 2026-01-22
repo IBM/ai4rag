@@ -18,10 +18,11 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import EmbeddingModel
 from ai4rag.rag.foundation_models.base_model import FoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
+from ai4rag.rag.template.rag_template import LlamaStackRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
 from ai4rag.core.experiment.utils import (
-    query_inference_service,
+    query_rag,
     build_evaluation_data,
 )
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -87,9 +88,6 @@ class ModelsPreSelector:
         Dictionary holding results from evaluating each RAG Pattern.
         This may be overwritten by the user to avoid evaluation and
         pre-select models based on mean scores or RFR.
-
-    mean_scores : dict[str, float]
-        Mapping with predicted scores for each model.
     """
 
     # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -289,14 +287,13 @@ class ModelsPreSelector:
             Evaluation scores per model.
         """
 
-        # rag_service = RAGService(foundation_model=foundation_model, retriever=retriever)
-        rag_service = None
+        rag = LlamaStackRAG(foundation_model=foundation_model, retriever=retriever)
 
         if self.experiment_monitor:
             self.experiment_monitor.on_start_event_info()
 
-        inference_response = query_inference_service(
-            rag_service=rag_service,
+        inference_response = query_rag(
+            rag=rag,
             questions=list(self.benchmark_data.questions),
         )
 
