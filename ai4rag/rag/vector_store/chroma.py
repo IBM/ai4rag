@@ -2,7 +2,7 @@
 #  (C) Copyright IBM Corp. 2025-2026.
 #  https://opensource.org/licenses/BSD-3-Clause
 #  -----------------------------------------------------------------------------------------
-
+from datetime import datetime
 from typing import Any, cast
 import hashlib
 
@@ -44,17 +44,22 @@ class ChromaVectorStore(BaseVectorStore):
     def __init__(
         self,
         embedding_model: EmbeddingModel,
-        collection_name: str = "default_collection",
+        reuse_collection_name: str | None = None,
         distance_metric: str = "cosine",
         document_name_field: str = "document_id",
         chunk_sequence_number_field: str = "sequence_number",
         **kwargs,
     ) -> None:
         super().__init__(
-            embedding_model=embedding_model, collection_name=collection_name, distance_metric=distance_metric
+            embedding_model=embedding_model,
+            distance_metric=distance_metric,
+            reuse_collection_name=reuse_collection_name,
         )
         self._document_name_field = document_name_field
         self._chunk_sequence_number_field = chunk_sequence_number_field
+        self._collection_name = reuse_collection_name or kwargs.get(
+            "collection_name", f"ai4rag_{datetime.now().strftime("%Y%m%d%H%M%S")}"
+        )
         self._vector_store = self._get_chroma_client(**kwargs)
 
     def _get_chroma_client(self, **kwargs) -> Chroma:
@@ -94,6 +99,10 @@ class ChromaVectorStore(BaseVectorStore):
         if value not in self._supported_distance_metrics:
             raise ValueError(f"Invalid distance metric: {value}. Use one of: {self._supported_distance_metrics}.")
         self._distance_metric = value
+
+    @property
+    def collection_name(self) -> str:
+        return self._collection_name
 
     def clear(self) -> None:
         all_docs_ids = self._vector_store.get()["ids"]

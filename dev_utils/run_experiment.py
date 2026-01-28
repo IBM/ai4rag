@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025
+# Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 """Sample script to run ai4rag experiment"""
@@ -17,6 +17,8 @@ from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from dev_utils.file_store import FileStore
 from dev_utils.local_event_handler import LocalEventHandler
 from dev_utils.utils import read_benchmark_from_json
+
+from dev_utils.mocks import MockedEmbeddingModel, MockedFoundationModel
 
 
 if __name__ == "__main__":
@@ -37,17 +39,45 @@ if __name__ == "__main__":
     optimiser_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
 
     # Edit configurations of search space
+    # search_space = AI4RAGSearchSpace(
+    #     params=[
+    #         Parameter(
+    #             name="foundation_model",
+    #             param_type="C",
+    #             values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+    #         ),
+    #         Parameter(
+    #             name="embedding_model",
+    #             param_type="C",
+    #             values=[
+    #                 LSEmbeddingModel(
+    #                     model_id="ollama/nomic-embed-text:latest",
+    #                     client=client,
+    #                     params={"embedding_dimension": 768, "context_length": 8192},
+    #                 )
+    #             ],
+    #         ),
+    #     ]
+    # )
+
     search_space = AI4RAGSearchSpace(
         params=[
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+                values=[MockedFoundationModel(model_id="mocked_fm_1"), MockedFoundationModel(model_id="mocked_fm_2")],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
-                values=[LSEmbeddingModel(model_id="ollama/nomic-embed-text:latest", client=client)],
+                values=[
+                    MockedEmbeddingModel(model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}),
+                ],
+            ),
+            Parameter(
+                name="retrieval_method",
+                param_type="C",
+                values=["simple"]
             ),
         ]
     )
@@ -59,8 +89,8 @@ if __name__ == "__main__":
         search_space=search_space,
         optimiser_settings=optimiser_settings,
         event_handler=LocalEventHandler(),
-        output_path=_filepath.parent / "local" / "results",
-        vector_store_type="chroma",
+        output_path=_filepath.parent / "local" / "results_ls_milvus_mocks",
+        vector_store_type="ls_milvus",
     )
 
     best = experiment.search(skip_mps=True)

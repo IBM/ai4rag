@@ -5,15 +5,15 @@
 from llama_stack_client import Client
 
 from .base_model import EmbeddingModel
-from .embedding_types import LLamaStackEmbeddingParams
+from .embedding_types import LSEmbeddingParams
 
 __all__ = ["LSEmbeddingModel"]
 
 
-class LSEmbeddingModel(EmbeddingModel[Client, LLamaStackEmbeddingParams]):
+class LSEmbeddingModel(EmbeddingModel[Client, LSEmbeddingParams]):
     """Creates embeddings for LLamaStack client."""
 
-    def __init__(self, client: Client, model_id: str, params: LLamaStackEmbeddingParams | None = None):
+    def __init__(self, client: Client, model_id: str, params: LSEmbeddingParams):
         params = params or {}
         super().__init__(client=client, model_id=model_id, params=params)
 
@@ -31,9 +31,11 @@ class LSEmbeddingModel(EmbeddingModel[Client, LLamaStackEmbeddingParams]):
             Embeddings made from the list of texts or a single text.
         """
 
+        params_edited = {"dimensions": self.params.get("embedding_dimension")}
+
         return [
             data.embedding
-            for data in self.client.embeddings.create(input=text_input, model=self.model_id, **self.params).data
+            for data in self.client.embeddings.create(input=text_input, model=self.model_id, **params_edited).data
             if not isinstance(data.embedding, str)
         ]
 
