@@ -12,7 +12,7 @@ from .base_template import BaseRAGTemplate, RAGTemplateError
 from ..embedding.llama_stack import LSEmbeddingModel
 from ..foundation_models.base_model import FoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.vector_store.llama_stack import LlamaStackVectorStore
+from ai4rag.rag.vector_store.llama_stack import LSVectorStore
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 
 
@@ -38,7 +38,7 @@ class LlamaStackRAG(BaseRAGTemplate):
     embedding_model : LSEmbeddingModel | None, default=None
         Initialized Llama Stack embedding model.
 
-    vector_store : LlamaStackVectorStore | None, default=None
+    vector_store : LSVectorStore | None, default=None
         Initialized Llama Stack vector store.
     """
 
@@ -48,7 +48,7 @@ class LlamaStackRAG(BaseRAGTemplate):
         retriever: Retriever,
         chunker: LangChainChunker | None = None,
         embedding_model: LSEmbeddingModel | None = None,
-        vector_store: LlamaStackVectorStore | None = None,
+        vector_store: LSVectorStore | None = None,
     ):
         super().__init__(
             foundation_model=foundation_model,

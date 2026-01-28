@@ -19,10 +19,10 @@ class BaseVectorStore(ABC):
     Single instance defines 1 collection/index that can be used to store or retrieve data.
     """
 
-    def __init__(self, embedding_model: EmbeddingModel, collection_name: str, distance_metric: str):
+    def __init__(self, embedding_model: EmbeddingModel, distance_metric: str, reuse_collection_name: str | None = None):
         self.embedding_model = embedding_model
-        self.collection_name = collection_name
         self.distance_metric = distance_metric
+        self.reuse_collection_name = reuse_collection_name
 
     @abstractmethod
     def search(self, query: str, k: int) -> list[dict]:
@@ -54,3 +54,8 @@ class BaseVectorStore(ABC):
         documents : Sequence[Document]
             Documents to add to the collection.
         """
+
+    @property
+    @abstractmethod
+    def collection_name(self) -> str:
+        """Returns dynamically selected collection name, reused or new one."""
