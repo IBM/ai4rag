@@ -4,12 +4,9 @@
 # -----------------------------------------------------------------------------
 from collections import deque
 from collections.abc import Hashable
-from datetime import datetime
 from math import floor
-from textwrap import dedent
 from typing import Sequence
 
-import jinja2
 import pandas as pd
 
 
@@ -40,30 +37,6 @@ def get_hashable_repr(dct: dict):
             raise ValueError(f"Some value in the provided dict is not supported. {type(val)} is not supported")
 
     return tuple(sorted(dict_unpacked, key=lambda it: (it[2], it[0])))
-
-
-def remove_duplicates(items: list[dict]) -> list[dict]:
-    """
-    Deduplicates list of provided items. As for now only supported are dictionary members.
-    They must be also supported by `get_hashable_repr` function.
-
-    Parameters
-    ----------
-    items : list[dict]
-        List of items to deduplicate. Currently only dictionaries are supported.
-
-    Returns
-    -------
-    list[dict]
-        A deduplicated list of input items.
-    """
-    duplicate_tracker = set()
-    deduplicated_items = []
-    for ind, elem in enumerate(map(get_hashable_repr, items)):
-        if elem not in duplicate_tracker:
-            duplicate_tracker.add(elem)
-            deduplicated_items.append(items[ind])
-    return deduplicated_items
 
 
 def handle_missing_values_in_combinations_being_explored(df: pd.DataFrame):
@@ -107,76 +80,3 @@ def handle_missing_values_in_combinations_being_explored(df: pd.DataFrame):
         df["chunk_overlap"] = df["chunk_overlap"].map(lambda el: 0 if pd.isna(el) else el)
 
     return df
-
-
-def datetime_str_to_epoch_time(timestamp: str | int) -> str | int:
-    """
-    If `timestamp` is a datetime strings try to parse it to an epoch time.
-    Currenty only ISO8601 format strings are supported as this should be usually
-    returned (if at all as a datetime string) by elasticsearch.
-
-    Parameters
-    ----------
-    timestamp : str | int
-        Either a datetime string or an unix timestamp.
-
-    Returns
-    -------
-        Either an unchanged unix timestamp, datetime string parsed to a unix timestamp or -1 if parsing fails.
-    """
-    if not isinstance(timestamp, str):
-        return timestamp
-    try:
-        iso_parseable = datetime.fromisoformat(timestamp)
-    except ValueError:
-        return -1
-    return int(iso_parseable.timestamp())
-
-
-def _dedent(value):
-    return dedent(value.expandtabs(2))
-
-
-def _prepare_template():
-    """
-    A closure following singleton and lazy initialisation principles. Encompasses dict holding jinja related objects.
-    This will ensure that any templates loaded throughout the codebase share the same configuration environment
-    while not wasting time for unnecessary re-initialisation of jinja objects.
-    """
-
-    jinja_objects = {"env": None, "loader": None}
-
-    def _render_template(name: str, **kwargs) -> str:
-        """
-        Loads and renders the template specified by `name`.
-        If jinja objects are not yet created then instantiates them first.
-
-        Arguments
-        ---------
-        name : str
-            Name of the template to be loaded.
-
-        kwargs
-            Passed to `Template.render()` function as-is.
-
-        Returns
-        -------
-        str
-            A templated string.
-        """
-        if not jinja_objects["loader"]:
-            jinja_objects["loader"] = jinja2.PackageLoader("ai4rag.core.ai_service", package_path="function_templates")
-        if not jinja_objects["env"]:
-            jinja_objects["env"] = jinja2.Environment(
-                loader=jinja_objects["loader"], trim_blocks=True, lstrip_blocks=True
-            )
-            jinja_objects["env"].filters["dedent"] = _dedent
-
-        templ = jinja_objects["env"].get_template(name)
-
-        return templ.render(**kwargs)
-
-    return _render_template
-
-
-prepare_template = _prepare_template()

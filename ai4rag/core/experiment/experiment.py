@@ -99,9 +99,6 @@ class AI4RAGExperiment:
     output_path : str
         Path to the directory where output files/artifacts should be stored
 
-    embeddings_provider : Literal["watsonx"]
-        Literal type of embeddings provider
-
     job_id : str
         Unique identifier for a job
 
