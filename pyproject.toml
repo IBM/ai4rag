@@ -35,7 +35,6 @@ dependencies = [
     "llama-stack-client==0.4.2",
     "pandas==2.2.*",
     "pydantic==2.11.0",
-    "pypdf>=6.1.0",
     "unitxt~=1.26.1",
 ]
 
@@ -70,7 +69,6 @@ log_level = "INFO"
 # Skipping function templates for notebooks
 omit = [
     "ai4rag/core/ai_service/templates/*.py",
-    "ai4rag/search_space/prepare/validation_error_decoder.py",
     "ai4rag/core/ai_service/nodes/*.py"
 ]
 
