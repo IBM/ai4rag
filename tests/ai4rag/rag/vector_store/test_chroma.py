@@ -45,7 +45,7 @@ class TestChromaVectorStoreInitialization:
         mock_chroma_class = mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
         vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
         assert vector_store.embedding_model == mock_embedding_model
-        assert vector_store.collection_name == "default_collection"
+        assert vector_store.collection_name.startswith("ai4rag_")
         assert vector_store.distance_metric == "cosine"
         assert vector_store._document_name_field == "document_id"
         assert vector_store._chunk_sequence_number_field == "sequence_number"
@@ -55,7 +55,7 @@ class TestChromaVectorStoreInitialization:
         mock_chroma_class = mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
         vector_store = ChromaVectorStore(
             embedding_model=mock_embedding_model,
-            collection_name="custom_collection",
+            reuse_collection_name="custom_collection",
             distance_metric="l2",
             document_name_field="doc_id",
             chunk_sequence_number_field="seq_num",
@@ -71,7 +71,7 @@ class TestChromaVectorStoreInitialization:
         vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
         mock_chroma_class.assert_called_once()
         call_kwargs = mock_chroma_class.call_args.kwargs
-        assert call_kwargs["collection_name"] == "default_collection"
+        assert call_kwargs["collection_name"].startswith("ai4rag_")
         assert call_kwargs["embedding_function"] == mock_embedding_model
         assert call_kwargs["collection_metadata"]["hnsw:space"] == "cosine"
 

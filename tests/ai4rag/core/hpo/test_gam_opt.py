@@ -375,9 +375,9 @@ class TestGAMOptimiser:
         # Should not recreate encoders
         assert optimiser._encoders_with_columns == first_encoders
 
-    def test_run_iteration(self, mock_gam_class, mock_search_space, mocker):
+    def test_run_iteration(self, mock_search_space, mocker):
         """Test the _run_iteration method."""
-        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM")
+        mock_gam_class = mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM")
         settings = GAMOptSettings(max_evals=6, n_random_nodes=2, evals_per_trial=1)
 
         # Setup mock GAM

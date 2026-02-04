@@ -7,14 +7,15 @@ from .chroma import ChromaVectorStore
 
 from llama_stack_client import LlamaStackClient
 
+from .llama_stack import LSVectorStore
 from ..embedding.base_model import EmbeddingModel
 
 
 def get_vector_store(
     vs_type: str,
     embedding_model: EmbeddingModel,
-    collection_name: str,
-    ls_client: LlamaStackClient | None = None,
+    reuse_collection_name: str | None = None,
+    client: LlamaStackClient | None = None,
 ) -> BaseVectorStore:
     """Get vector store of desired type with chosen settings.
 
@@ -26,10 +27,10 @@ def get_vector_store(
     embedding_model : EmbeddingModel
         Embedding model used for the embeddings creation in the created vector store instance.
 
-    collection_name : str
+    reuse_collection_name : str | None, default=None
         Name of the collection that will be created in the vector database.
 
-    ls_client : LlamaStackClient | None, default=None
+    client : LlamaStackClient | None, default=None
         Instance of the llama stack client to communicate with registered vector databases.
 
     Returns
@@ -42,7 +43,16 @@ def get_vector_store(
         case "chroma":
             vs = ChromaVectorStore(
                 embedding_model=embedding_model,
-                collection_name=collection_name,
+                reuse_collection_name=reuse_collection_name,
+            )
+
+        case "ls_milvus":
+            vs = LSVectorStore(
+                embedding_model=embedding_model,
+                reuse_collection_name=reuse_collection_name,
+                distance_metric="cosine",
+                client=client,
+                provider_id="milvus",
             )
 
         case _:

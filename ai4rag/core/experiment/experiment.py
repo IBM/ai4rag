@@ -388,13 +388,16 @@ class AI4RAGExperiment:
         self.experiment_monitor.on_pattern_start()
         logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        collection_name = self._create_collection_name(indexing_params=indexing_params)
+        reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
 
         vector_store = get_vector_store(
             vs_type=self.vector_store_type,
             embedding_model=embedding_model,
-            collection_name=collection_name,
+            reuse_collection_name=reuse_collection_name,
+            client=self.client,
         )
+
+        collection_name = vector_store.collection_name
 
         if not self._collection_exists(collection_name=collection_name):
             chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
@@ -743,13 +746,10 @@ class AI4RAGExperiment:
         """
         return collection_name in self.results.collection_names
 
-    def _create_collection_name(self, indexing_params: dict[str, Any]) -> str:
+    def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method is utilised in the process of creating collection name
-        for Any vector database.
-        The general idea is to reuse the same collection if embedding and
-        chunking parameters remain the same as in other trials, so we do not
-        duplicate effort and consume more memory.
+        This method returns name of the collection / vector_store_id (for llama stack)
+        if chosen indexing params have already been used to create an index / collection.
 
         Parameters
         ----------
@@ -760,7 +760,9 @@ class AI4RAGExperiment:
 
         Returns
         -------
-            Collection name that is new or one of the previously created
+        str | None
+            Collection name that is new or one of the previously created.
+            None if there is no collection to reuse.
         """
         collection = self.results.collection_exists(indexing_params=indexing_params)
         if collection is not None:
@@ -768,12 +770,7 @@ class AI4RAGExperiment:
             logger.info("Reusing existing collection: '%s'", collection_name)
             return collection_name
 
-        collection_id = datetime.now().strftime("%Y%m%d%H%M%S")
-
-        ret = f"ai4rag_{self.job_id[:8]}_{collection_id}"
-        logger.info("Creating new collection with name '%s'", ret)
-
-        return ret
+        return None
 
     def _create_pattern_name(self) -> str:
         """
