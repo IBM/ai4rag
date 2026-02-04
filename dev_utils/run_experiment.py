@@ -10,7 +10,7 @@ from pathlib import Path
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
-from ai4rag.rag.foundation_models.foundation_model import LSFoundationModel
+from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
