@@ -8,7 +8,7 @@
 import pytest
 from pydantic import ValidationError
 
-from ai4rag.rag.foundation_models.foundation_model import (
+from ai4rag.rag.foundation_models.llama_stack import (
     ModelParameters,
     LSFoundationModel,
 )
