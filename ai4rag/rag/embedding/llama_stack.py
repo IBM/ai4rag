@@ -31,11 +31,9 @@ class LSEmbeddingModel(EmbeddingModel[Client, LSEmbeddingParams]):
             Embeddings made from the list of texts or a single text.
         """
 
-        params_edited = {"dimensions": self.params.get("embedding_dimension")}
-
         return [
             data.embedding
-            for data in self.client.embeddings.create(input=text_input, model=self.model_id, **params_edited).data
+            for data in self.client.embeddings.create(input=text_input, model=self.model_id).data
             if not isinstance(data.embedding, str)
         ]
 
