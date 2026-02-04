@@ -9,7 +9,6 @@ from math import floor
 from textwrap import dedent
 from typing import Sequence
 
-import jinja2
 import pandas as pd
 
 
@@ -40,30 +39,6 @@ def get_hashable_repr(dct: dict):
             raise ValueError(f"Some value in the provided dict is not supported. {type(val)} is not supported")
 
     return tuple(sorted(dict_unpacked, key=lambda it: (it[2], it[0])))
-
-
-def remove_duplicates(items: list[dict]) -> list[dict]:
-    """
-    Deduplicates list of provided items. As for now only supported are dictionary members.
-    They must be also supported by `get_hashable_repr` function.
-
-    Parameters
-    ----------
-    items : list[dict]
-        List of items to deduplicate. Currently only dictionaries are supported.
-
-    Returns
-    -------
-    list[dict]
-        A deduplicated list of input items.
-    """
-    duplicate_tracker = set()
-    deduplicated_items = []
-    for ind, elem in enumerate(map(get_hashable_repr, items)):
-        if elem not in duplicate_tracker:
-            duplicate_tracker.add(elem)
-            deduplicated_items.append(items[ind])
-    return deduplicated_items
 
 
 def handle_missing_values_in_combinations_being_explored(df: pd.DataFrame):

@@ -179,7 +179,7 @@ class ExperimentResults:
         """
         ret = set()
         for ev in self.evaluations:
-            ret.update(ev.collection)
+            ret.add(ev.collection)
         return list(ret)
 
     @property
