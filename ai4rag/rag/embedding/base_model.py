@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import TypeVar, Generic
-
+from typing import Generic, TypeVar
 
 ClientT = TypeVar("ClientT")
 EmbeddingParamsT = TypeVar("EmbeddingParamsT")

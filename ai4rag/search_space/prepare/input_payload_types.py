@@ -30,7 +30,7 @@ from ai4rag.search_space.src.model_props import (
     get_system_message_text,
     get_user_message_text,
 )
-from ai4rag.search_space.src.models import FoundationModels, EmbeddingModels
+from ai4rag.search_space.src.models import EmbeddingModels, FoundationModels
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.utils.constants import (
     ChatGenerationConstants,

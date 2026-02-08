@@ -9,6 +9,7 @@ import textwrap
 from typing import Any, Callable, Literal, cast
 
 import black
+
 from ai4rag.core.ai_service.nodes.generate import chat_node
 from ai4rag.core.ai_service.nodes.retrieve import multi_index_retrieve_node, retrieve_node
 from ai4rag.core.ai_service.states import AI4RAGState

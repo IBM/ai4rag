@@ -46,6 +46,7 @@ dev = [
     "dotenv",
     "pypdf",               # reading data from pdf
     "ipykernel",
+    "isort"
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
@@ -75,9 +76,17 @@ omit = [
 [tool.black]
 line-length = 120
 
+[tool.isort]
+profile = "black"
+py_version=312
+line_length=120
+skip=["tests/", "scripts/",  "dev_utils/"]
+
+
 [tool.pylint]
 disable = ["missing-module-docstring", "too-few-public-methods"]
 max-line-length = 120
 max-args = 6
 max-positional-arguments = 6
 max-attributes = 10
+

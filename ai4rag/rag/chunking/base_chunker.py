@@ -2,9 +2,8 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Sequence, Any, Generic, TypeVar
 from abc import ABC, abstractmethod
-
+from typing import Any, Generic, Sequence, TypeVar
 
 __all__ = [
     "BaseChunker",

@@ -67,14 +67,14 @@ def inference_service(context, url=None, vector_store_settings=None):  # pragma:
     """
     from typing import TypedDict
 
-    from langgraph.graph import StateGraph
     from ibm_watsonx_ai import APIClient, Credentials
     from ibm_watsonx_ai.foundation_models import ModelInference
     from ibm_watsonx_ai.foundation_models.extensions.rag import Retriever
+    from ibm_watsonx_ai.foundation_models.extensions.rag.pattern.prompt_builder import build_prompt
     from ibm_watsonx_ai.foundation_models.extensions.rag.vector_stores import (
         REPLACE_THIS_CODE_WITH_VECTOR_STORE_CLASS_NAME,
     )
-    from ibm_watsonx_ai.foundation_models.extensions.rag.pattern.prompt_builder import build_prompt
+    from langgraph.graph import StateGraph
     from langgraph.types import StreamWriter
 
     REPLACE_THIS_CODE_WITH_INDEXING_IMPORTS
