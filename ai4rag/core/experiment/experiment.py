@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 import time
 from datetime import datetime
-from typing import Any, Sequence
+from typing import Any, Sequence, Literal
 
 import pandas as pd
 from langchain_core.documents import Document
@@ -99,9 +99,6 @@ class AI4RAGExperiment:
     output_path : str
         Path to the directory where output files/artifacts should be stored
 
-    embeddings_provider : Literal["watsonx"]
-        Literal type of embeddings provider
-
     job_id : str
         Unique identifier for a job
 
@@ -149,7 +146,7 @@ class AI4RAGExperiment:
         optimiser_settings: OptimiserSettings,
         search_space: AI4RAGSearchSpace,
         benchmark_data: pd.DataFrame | BenchmarkData,
-        vector_store_type: str,
+        vector_store_type: Literal["chroma", "ls_milvus"],
         documents: list[Document] | None = None,
         optimization_metric: str = MetricType.FAITHFULNESS,
         **kwargs,
