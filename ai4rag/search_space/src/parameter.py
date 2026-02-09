@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from dataclasses import dataclass, fields
-from typing import Any, Literal, Optional, Sequence, TypeVar, Protocol, Generic
+from typing import Any, Generic, Literal, Optional, Protocol, Sequence, TypeVar
 
 from ai4rag.utils import get_hashable_repr
 

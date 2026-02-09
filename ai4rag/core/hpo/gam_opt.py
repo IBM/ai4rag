@@ -13,10 +13,10 @@ import pandas as pd
 from pygam import LinearGAM
 from sklearn.preprocessing import LabelEncoder
 
-from ai4rag.utils import handle_missing_values_in_combinations_being_explored
-from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimiserSettings, FailedIterationError, OptimisationError
-from ai4rag.search_space.src.search_space import SearchSpace
 from ai4rag import logger
+from ai4rag.core.hpo.base_optimiser import BaseOptimiser, FailedIterationError, OptimisationError, OptimiserSettings
+from ai4rag.search_space.src.search_space import SearchSpace
+from ai4rag.utils import handle_missing_values_in_combinations_being_explored
 
 __all__ = ["GAMOptSettings", "GAMOptimiser"]
 

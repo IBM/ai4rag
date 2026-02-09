@@ -6,12 +6,15 @@ from typing import Any
 
 from langchain_core.documents import Document
 
+from ai4rag import logger
+from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import (
-    ExperimentExceptionsHandler,
-    IndexingError,
-    GenerationError,
     EvaluationError,
+    ExperimentExceptionsHandler,
+    GenerationError,
+    IndexingError,
 )
+from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
@@ -21,19 +24,7 @@ from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.rag_template import LlamaStackRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
-from ai4rag.core.experiment.utils import (
-    query_rag,
-    build_evaluation_data,
-)
-from ai4rag.core.experiment.benchmark_data import BenchmarkData
-from ai4rag.utils.constants import (
-    AI4RAGParamNames,
-    ExperimentStep,
-    EventsToReport,
-)
-
-from ai4rag import logger
-
+from ai4rag.utils.constants import AI4RAGParamNames, EventsToReport, ExperimentStep
 
 __all__ = ["PreSelectorError", "ModelsPreSelector"]
 
@@ -365,7 +356,7 @@ class ModelsPreSelector:
         _mean_scoring_results = []
 
         for result in self.evaluation_results:
-            mean_score = result.get("scores", {}).get(self.metric, {}).get("mean", {})
+            mean_score = result["scores"][self.metric]["mean"]
             _mean_scoring_results.append(
                 {
                     "embedding_model": result.get("embedding_model"),

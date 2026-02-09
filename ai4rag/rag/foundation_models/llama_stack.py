@@ -2,15 +2,15 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Any, Annotated
-from annotated_types import Gt, Le, Ge
-from pydantic import BaseModel
+from typing import Annotated, Any
 
+from annotated_types import Ge, Gt, Le
 from llama_stack_client import LlamaStackClient
 from llama_stack_client.types import SystemMessage
+from pydantic import BaseModel
 
-from ai4rag.utils.constants import ChatGenerationConstants
 from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.utils.constants import ChatGenerationConstants
 
 
 class ModelParameters(BaseModel):

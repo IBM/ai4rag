@@ -6,7 +6,6 @@ from collections import deque
 from collections.abc import Hashable
 from datetime import datetime
 from math import floor
-from textwrap import dedent
 from typing import Sequence
 
 import pandas as pd
@@ -106,52 +105,3 @@ def datetime_str_to_epoch_time(timestamp: str | int) -> str | int:
     except ValueError:
         return -1
     return int(iso_parseable.timestamp())
-
-
-def _dedent(value):
-    return dedent(value.expandtabs(2))
-
-
-def _prepare_template():
-    """
-    A closure following singleton and lazy initialisation principles. Encompasses dict holding jinja related objects.
-    This will ensure that any templates loaded throughout the codebase share the same configuration environment
-    while not wasting time for unnecessary re-initialisation of jinja objects.
-    """
-
-    jinja_objects = {"env": None, "loader": None}
-
-    def _render_template(name: str, **kwargs) -> str:
-        """
-        Loads and renders the template specified by `name`.
-        If jinja objects are not yet created then instantiates them first.
-
-        Arguments
-        ---------
-        name : str
-            Name of the template to be loaded.
-
-        kwargs
-            Passed to `Template.render()` function as-is.
-
-        Returns
-        -------
-        str
-            A templated string.
-        """
-        if not jinja_objects["loader"]:
-            jinja_objects["loader"] = jinja2.PackageLoader("ai4rag.core.ai_service", package_path="function_templates")
-        if not jinja_objects["env"]:
-            jinja_objects["env"] = jinja2.Environment(
-                loader=jinja_objects["loader"], trim_blocks=True, lstrip_blocks=True
-            )
-            jinja_objects["env"].filters["dedent"] = _dedent
-
-        templ = jinja_objects["env"].get_template(name)
-
-        return templ.render(**kwargs)
-
-    return _render_template
-
-
-prepare_template = _prepare_template()

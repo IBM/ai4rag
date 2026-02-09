@@ -55,10 +55,10 @@ def indexing_semantic_chunking():
 
 
 def indexing_semantic_chunking_imports():
-    from ibm_watsonx_ai.foundation_models import Embeddings
     from ibm_watsonx_ai.data_loaders.datasets.documents import (
         DocumentsIterableDataset,
     )
+    from ibm_watsonx_ai.foundation_models import Embeddings
     from ibm_watsonx_ai.foundation_models.extensions.rag.chunker import HybridSemanticChunker
     from ibm_watsonx_ai.helpers.connections import DataConnection
 

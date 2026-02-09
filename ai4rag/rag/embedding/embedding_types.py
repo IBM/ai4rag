@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
-from typing import TypedDict, Optional
+from typing import Optional, TypedDict
 
 from httpx import Timeout
 

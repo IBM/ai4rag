@@ -12,7 +12,6 @@ from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
 from ai4rag.search_space.prepare.validation_error_decoder import validation_error_decoder
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
-
 __all__ = ["prepare_ai4rag_search_space"]
 
 

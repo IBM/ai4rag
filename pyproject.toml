@@ -11,7 +11,7 @@ maintainers = [
     { name = "Michal Steczko", email = "msteczko@redhat.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.12,<3.14"
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Natural Language :: English",
@@ -35,7 +35,6 @@ dependencies = [
     "llama-stack-client==0.4.2",
     "pandas==2.2.*",
     "pydantic==2.11.0",
-    "pypdf>=6.1.0",
     "unitxt~=1.26.1",
 ]
 
@@ -47,6 +46,7 @@ dev = [
     "dotenv",
     "pypdf",               # reading data from pdf
     "ipykernel",
+    "isort"
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
@@ -70,12 +70,18 @@ log_level = "INFO"
 # Skipping function templates for notebooks
 omit = [
     "ai4rag/core/ai_service/templates/*.py",
-    "ai4rag/search_space/prepare/validation_error_decoder.py",
     "ai4rag/core/ai_service/nodes/*.py"
 ]
 
 [tool.black]
 line-length = 120
+
+[tool.isort]
+profile = "black"
+py_version=312
+line_length=120
+skip=["tests/", "scripts/",  "dev_utils/"]
+
 
 [tool.pylint]
 disable = ["missing-module-docstring", "too-few-public-methods"]
@@ -83,3 +89,4 @@ max-line-length = 120
 max-args = 6
 max-positional-arguments = 6
 max-attributes = 10
+

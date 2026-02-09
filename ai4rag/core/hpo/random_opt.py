@@ -2,14 +2,13 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from dataclasses import dataclass
 import random
-from typing import Callable, Any
+from dataclasses import dataclass
+from typing import Any, Callable
 
 from ai4rag import logger
-from ai4rag.core.hpo.base_optimiser import OptimiserSettings, BaseOptimiser, OptimisationError, FailedIterationError
+from ai4rag.core.hpo.base_optimiser import BaseOptimiser, FailedIterationError, OptimisationError, OptimiserSettings
 from ai4rag.search_space.src.search_space import SearchSpace
-
 
 __all__ = ["RandomOptimiser", "RandomOptSettings", "FailedIterationError"]
 

@@ -2,19 +2,18 @@
 #  (C) Copyright IBM Corp. 2025-2026.
 #  https://opensource.org/licenses/BSD-3-Clause
 #  -----------------------------------------------------------------------------------------
+import hashlib
 from datetime import datetime
 from typing import Any, cast
-import hashlib
 
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-from .base_vector_store import BaseVectorStore
-from .utils import merge_window_into_a_document
+from ai4rag import logger
 
 from ..embedding.base_model import EmbeddingModel
-
-from ai4rag import logger
+from .base_vector_store import BaseVectorStore
+from .utils import merge_window_into_a_document
 
 
 class ChromaVectorStore(BaseVectorStore):
