@@ -5,7 +5,6 @@
 from abc import ABC, abstractmethod
 from typing import TypeVar, Generic
 
-
 ClientT = TypeVar("ClientT")
 EmbeddingParamsT = TypeVar("EmbeddingParamsT")
 
@@ -18,6 +17,9 @@ class EmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
 
     def __str__(self) -> str:
         return self.model_id
+
+    def __repr__(self) -> str:
+        return str(self)
 
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]:

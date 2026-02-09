@@ -5,7 +5,6 @@
 from typing import Sequence, Any, Generic, TypeVar
 from abc import ABC, abstractmethod
 
-
 __all__ = [
     "BaseChunker",
 ]

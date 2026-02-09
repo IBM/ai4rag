@@ -9,7 +9,6 @@ from langchain_core.documents import Document
 
 from .base_chunker import BaseChunker
 
-
 __all__ = [
     "LangChainChunker",
 ]

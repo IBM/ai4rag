@@ -12,7 +12,6 @@ from ai4rag.search_space.src.model_props import (
     REFERENCE_DOCUMENTS_PLACEHOLDER,
 )
 
-
 T = TypeVar("T")
 CT = TypeVar("CT", bound="Comparable")
 

@@ -10,7 +10,6 @@ from ai4rag import logger
 from ai4rag.core.hpo.base_optimiser import OptimiserSettings, BaseOptimiser, OptimisationError, FailedIterationError
 from ai4rag.search_space.src.search_space import SearchSpace
 
-
 __all__ = ["RandomOptimiser", "RandomOptSettings", "FailedIterationError"]
 
 

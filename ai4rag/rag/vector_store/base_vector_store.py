@@ -9,7 +9,6 @@ from langchain_core.documents import Document
 
 from ai4rag.rag.embedding.base_model import EmbeddingModel
 
-
 __all__ = ["BaseVectorStore"]
 
 

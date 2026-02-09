@@ -20,6 +20,7 @@ config = ConfigDict(extra="forbid")
 
 class AI4RAGFoundationModelParams(BaseModel):
     """Attributes to be included in the generation.foundation_models payload."""
+
     model_config = config
 
     max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
@@ -28,15 +29,17 @@ class AI4RAGFoundationModelParams(BaseModel):
 
 class AI4RAGFoundationModel(BaseModel):
     """Attributes to be included in the generation.foundation_models payload."""
+
     model_config = config
 
     model_id: Annotated[str, MinLen(1)]
     parameters: Optional[AI4RAGFoundationModelParams] = Field(default_factory=AI4RAGFoundationModelParams)
 
 
-class AI4RAGConstraints:
+class AI4RAGConstraints(BaseModel):
     """Attributes to be included in constraints payload."""
+
     model_config = config
 
-    embedding_models: Optional[Annotated[list[Annotated[str, MinLen(1)]], MinLen(1)]] = None
-    foundation_models: Optional[Annotated[list[Annotated[str, MinLen(1)]], MinLen(1)]] = None
+    embedding_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None
+    foundation_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None

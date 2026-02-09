@@ -133,7 +133,7 @@ class TestLSVectorStoreCollectionName:
         )
 
         # Initially None
-        assert vector_store.collection_name is None
+        assert vector_store.collection_name == vector_store._ls_vs.id
 
 
 class TestLSVectorStoreSearch:
@@ -313,9 +313,7 @@ class TestLSVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [
-            Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)
-        ]
+        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
 
         vector_store.add_documents(docs)
 

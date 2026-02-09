@@ -16,7 +16,6 @@ from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
-
 __all__ = ["prepare_search_space_with_llama_stack"]
 
 
@@ -33,7 +32,12 @@ def _get_default_llama_stack_models(client: LlamaStackClient) -> _DefaultModelsR
     llms = [model for model in available_models if model.custom_metadata.get("model_type") == "llm"]
     embeddings = [model for model in available_models if model.custom_metadata.get("model_type") == "embedding"]
     foundation_models = [LSFoundationModel(model_id=m.id, client=client) for m in llms]
-    embedding_models = [LSEmbeddingModel(model_id=m.id, client=client, params={"embedding_dimension": m.custom_metadata["embedding_dimension"]}) for m in embeddings]
+    embedding_models = [
+        LSEmbeddingModel(
+            model_id=m.id, client=client, params={"embedding_dimension": m.custom_metadata["embedding_dimension"]}
+        )
+        for m in embeddings
+    ]
 
     if not foundation_models:
         raise SearchSpaceValueError("There are no available models of type 'llm'.")
@@ -46,15 +50,18 @@ def _get_default_llama_stack_models(client: LlamaStackClient) -> _DefaultModelsR
     return {"foundation_models": foundation_models, "embedding_models": embedding_models}
 
 
-def _are_provided_models_available(provided_models: list[dict], available_models: list[LSFoundationModel | LSEmbeddingModel]) -> bool:
+def _are_provided_models_available(
+    provided_models: list, available_models: list[LSFoundationModel | LSEmbeddingModel]
+) -> bool:
     """Check whether models provided by the user are available for the experiment."""
 
     available_ids = [m.model_id for m in available_models]
 
     for model in provided_models:
-        if m_id := model.get("model_id") not in available_ids:
+        m_id = model.model_id
+        if m_id not in available_ids:
             raise SearchSpaceValueError(f"Provided model with model_id: {m_id} is not available for the experiment.")
-    raise True
+    return True
 
 
 def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: LlamaStackClient) -> AI4RAGSearchSpace:
@@ -84,7 +91,7 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
     payload_model = TypeAdapter(AI4RAGConstraints)
 
     try:
-        _ = payload_model.validate_python(payload)
+        validated_payload = payload_model.validate_python(payload)
     except ValidationError as ve:
         # we want to catch only the first error
         validation_error_decoder(ve.errors()[0])
@@ -96,32 +103,46 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
     else:
         raise SearchSpaceValueError(f"Unrecognized client type: {client.__class__.__name__}")
 
-    _are_provided_models_available(payload.get("foundation_models", []), default_foundation_models)
-    _are_provided_models_available(payload.get("embedding_models", []), default_embedding_models)
+    if validated_payload.foundation_models:
+        _are_provided_models_available(validated_payload.foundation_models, default_foundation_models)
+    if validated_payload.embedding_models:
+        _are_provided_models_available(validated_payload.embedding_models, default_embedding_models)
 
     # Transform user models into llama-stack based models
-    if fms := payload.get("foundation_models") is not None:
+    if validated_payload.foundation_models is not None:
         fms_param = Parameter(
-            name="foundation_models",
+            name="foundation_model",
             param_type="C",
-            values=[LSFoundationModel(model_id=fm["model_id"], client=client, model_params=fm["parameters"]) for fm in fms]
+            values=[
+                LSFoundationModel(
+                    model_id=fm.model_id,
+                    client=client,
+                    model_params=fm.parameters.model_dump() if fm.parameters else {},
+                )
+                for fm in validated_payload.foundation_models
+            ],
         )
     else:
         fms_param = Parameter(
-            name="foundation_models",
+            name="foundation_model",
             param_type="C",
             values=default_foundation_models,
-        ),
+        )
 
-    if ems := payload.get("embedding_models") is not None:
+    if validated_payload.embedding_models is not None:
         ems_param = Parameter(
-            name="embedding_models",
+            name="embedding_model",
             param_type="C",
-            values=[LSEmbeddingModel(model_id=em["model_id"], client=client, params=em["parameters"]) for em in ems],
+            values=[
+                LSEmbeddingModel(
+                    model_id=em.model_id, client=client, params=em.parameters.model_dump() if em.parameters else {}
+                )
+                for em in validated_payload.embedding_models
+            ],
         )
     else:
         ems_param = Parameter(
-            name="embedding_models",
+            name="embedding_model",
             param_type="C",
             values=default_embedding_models,
         )

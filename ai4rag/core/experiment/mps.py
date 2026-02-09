@@ -34,7 +34,6 @@ from ai4rag.utils.constants import (
 
 from ai4rag import logger
 
-
 __all__ = ["PreSelectorError", "ModelsPreSelector"]
 
 

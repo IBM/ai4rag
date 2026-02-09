@@ -5,7 +5,6 @@
 from abc import ABC, abstractmethod
 from enum import StrEnum
 
-
 __all__ = ["BaseEventHandler", "LogLevel"]
 
 
