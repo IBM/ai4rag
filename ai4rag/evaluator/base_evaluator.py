@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from typing import Any, Sequence
 
 from ai4rag.utils.constants import ConstantMeta

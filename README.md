@@ -5,12 +5,13 @@
 
 <div align="center">
 
-<img src="icon.svg" alt="ai4RAG icon" width="80" height="62"/>
+<img src="docs/icon.svg" alt="ai4RAG icon" width="80" height="62"/>
 
 # `ai4RAG`
 ### RAG Templates Optimization Engine
 
 ![AI4RAG](https://img.shields.io/badge/AI4RAG-RAG%20Builder%20%26%20Optimizer-0F62FE?style=for-the-badge&logo=ibm&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.13-3776AB?style=for-the-badge&logo=python&logoColor=white)
 
 [![RAG Builder](https://img.shields.io/badge/🏗️-RAG%20Builder-10B981?style=flat-square)](#)

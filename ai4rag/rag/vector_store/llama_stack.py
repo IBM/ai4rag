@@ -23,13 +23,13 @@ class LSVectorStore(BaseVectorStore):
     ):
         super().__init__(embedding_model, distance_metric, reuse_collection_name)
         self.client = client
-        self._collection_name = None
         self._ls_vs = self._initialize_ls_vector_store(
             client=client,
             embedding_model=embedding_model,
             provider_id=provider_id,
             reuse_collection_name=reuse_collection_name,
         )
+        self._collection_name = self._ls_vs.id
 
     @staticmethod
     def _initialize_ls_vector_store(

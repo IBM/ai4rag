@@ -4,14 +4,13 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from string import Formatter
-from typing import Any, Protocol, Literal, TypeVar, Generic, Self, overload
+from typing import Any, Generic, Literal, Protocol, Self, TypeVar, overload
 
 from ai4rag.search_space.src.model_props import (
     CONTEXT_TEXT_PLACEHOLDER,
     QUESTION_PLACEHOLDER,
     REFERENCE_DOCUMENTS_PLACEHOLDER,
 )
-
 
 T = TypeVar("T")
 CT = TypeVar("CT", bound="Comparable")

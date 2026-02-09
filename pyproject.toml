@@ -11,10 +11,11 @@ maintainers = [
     { name = "Michal Steczko", email = "msteczko@redhat.com" },
 ]
 readme = "README.md"
-requires-python = ">=3.13,<3.14"
+requires-python = ">=3.12,<3.14"
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Natural Language :: English",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
@@ -35,7 +36,6 @@ dependencies = [
     "llama-stack-client==0.4.2",
     "pandas==2.2.*",
     "pydantic==2.11.0",
-    "pypdf>=6.1.0",
     "unitxt~=1.26.1",
 ]
 
@@ -43,15 +43,26 @@ dependencies = [
 dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
+    "ai4rag[docs]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "pypdf",               # reading data from pdf
     "ipykernel",
+    "isort"
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
 
 code_check = ["pylint", "black"]
+
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.0",
+    "mkdocs-minify-plugin>=0.8.0",
+    "mike>=2.0.0",
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "ai4rag.__version__" }
@@ -69,13 +80,18 @@ log_level = "INFO"
 [tool.coverage.run]
 # Skipping function templates for notebooks
 omit = [
-    "ai4rag/core/ai_service/templates/*.py",
     "ai4rag/search_space/prepare/validation_error_decoder.py",
-    "ai4rag/core/ai_service/nodes/*.py"
 ]
 
 [tool.black]
 line-length = 120
+
+[tool.isort]
+profile = "black"
+py_version=312
+line_length=120
+skip=["tests/", "scripts/",  "dev_utils/"]
+
 
 [tool.pylint]
 disable = ["missing-module-docstring", "too-few-public-methods"]

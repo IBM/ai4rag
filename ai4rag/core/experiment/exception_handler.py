@@ -4,8 +4,8 @@
 # -----------------------------------------------------------------------------
 from collections import Counter
 
-from ai4rag.utils.event_handler import BaseEventHandler, LogLevel
 from ai4rag import logger
+from ai4rag.utils.event_handler import BaseEventHandler, LogLevel
 
 
 class AI4RAGError(Exception):

@@ -2,13 +2,12 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from .base_vector_store import BaseVectorStore
-from .chroma import ChromaVectorStore
-
 from llama_stack_client import LlamaStackClient
 
-from .llama_stack import LSVectorStore
 from ..embedding.base_model import EmbeddingModel
+from .base_vector_store import BaseVectorStore
+from .chroma import ChromaVectorStore
+from .llama_stack import LSVectorStore
 
 
 def get_vector_store(
