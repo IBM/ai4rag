@@ -356,7 +356,7 @@ class ModelsPreSelector:
         _mean_scoring_results = []
 
         for result in self.evaluation_results:
-            mean_score = result["scores"][self.metric]["mean"]
+            mean_score = result.get("scores", {}).get(self.metric, {}).get("mean", {})
             _mean_scoring_results.append(
                 {
                     "embedding_model": result.get("embedding_model"),

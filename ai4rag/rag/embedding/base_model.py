@@ -18,6 +18,9 @@ class EmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
     def __str__(self) -> str:
         return self.model_id
 
+    def __repr__(self) -> str:
+        return str(self)
+
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed documents.

@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 import time
 from datetime import datetime
-from typing import Any, Sequence
+from typing import Any, Sequence, Literal
 
 import pandas as pd
 from langchain_core.documents import Document
@@ -58,14 +58,14 @@ class AI4RAGExperiment:
         Instance of the llama stack client allowing to communicate
         with the llama stack server.
 
-    documents : list[Document]
+    documents : list[Document | tuple[str, str]]
         List of documents to embed in vector db and use as context in RAG.
         When given as list of langchain's Document instances, both content and document
         ids must be provided:
         Document(page_content=..., metadata={document_id: 'some_id'})
         When given as list of tuples it should be (content, document_id)
 
-    benchmark_data : pd.DataFrame
+    benchmark_data : pd.DataFrame | BenchmarkData
         Structure with 3 columns: 'question', 'correct_answers' and - if applicable - 'correct_answer_document_ids'.
 
     vector_store_type : str
@@ -94,9 +94,6 @@ class AI4RAGExperiment:
     ----------------
     output_path : str
         Path to the directory where output files/artifacts should be stored
-
-    embeddings_provider : Literal["watsonx"]
-        Literal type of embeddings provider
 
     job_id : str
         Unique identifier for a job
@@ -145,7 +142,7 @@ class AI4RAGExperiment:
         optimiser_settings: OptimiserSettings,
         search_space: AI4RAGSearchSpace,
         benchmark_data: pd.DataFrame,
-        vector_store_type: str,
+        vector_store_type: Literal["chroma", "ls_milvus"],
         documents: list[Document],
         optimization_metric: str = MetricType.FAITHFULNESS,
         **kwargs,

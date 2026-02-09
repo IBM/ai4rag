@@ -69,8 +69,7 @@ log_level = "INFO"
 [tool.coverage.run]
 # Skipping function templates for notebooks
 omit = [
-    "ai4rag/core/ai_service/templates/*.py",
-    "ai4rag/core/ai_service/nodes/*.py"
+    "ai4rag/search_space/prepare/validation_error_decoder.py",
 ]
 
 [tool.black]
@@ -89,4 +88,3 @@ max-line-length = 120
 max-args = 6
 max-positional-arguments = 6
 max-attributes = 10
-
