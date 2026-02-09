@@ -7,13 +7,13 @@ from typing import Any
 
 from langchain_core.documents import Document
 
-
-from .base_template import BaseRAGTemplate, RAGTemplateError
-from ..embedding.llama_stack import LSEmbeddingModel
-from ..foundation_models.base_model import FoundationModel
+from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.vector_store.llama_stack import LSVectorStore
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
+
+from ..embedding.llama_stack import LSEmbeddingModel
+from ..foundation_models.base_model import FoundationModel
+from .base_template import BaseRAGTemplate, RAGTemplateError
 
 
 class LlamaStackRAG(BaseRAGTemplate):

@@ -8,12 +8,12 @@ import numpy as np
 import pandas as pd
 from unitxt.eval_utils import evaluate
 
+from ai4rag.core.experiment.exception_handler import EvaluationError
 from ai4rag.evaluator.base_evaluator import (
     BaseEvaluator,
-    MetricType,
     EvaluationData,
+    MetricType,
 )
-from ai4rag.core.experiment.exception_handler import EvaluationError
 
 
 class UnitxtEvaluator(BaseEvaluator):

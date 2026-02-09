@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from abc import abstractmethod, ABC
+from abc import ABC, abstractmethod
 from typing import Sequence
 
 from langchain_core.documents import Document

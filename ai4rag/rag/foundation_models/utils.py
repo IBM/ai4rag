@@ -2,8 +2,8 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Literal
 from string import Formatter
+from typing import Literal
 
 from ai4rag.search_space.src.model_props import (
     CONTEXT_TEXT_PLACEHOLDER,

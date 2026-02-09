@@ -13,8 +13,8 @@ from llama_stack_client import LlamaStackClient
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import (
-    AssetSaveError,
     AI4RAGError,
+    AssetSaveError,
     ExperimentExceptionsHandler,
     IndexingError,
 )
@@ -28,7 +28,7 @@ from ai4rag.core.experiment.utils import (
     get_retrieval_params,
     query_rag,
 )
-from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimiserSettings, OptimisationError
+from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimisationError, OptimiserSettings
 from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimiser
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
@@ -37,17 +37,13 @@ from ai4rag.rag.embedding.base_model import EmbeddingModel
 from ai4rag.rag.foundation_models.base_model import FoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.rag_template import LlamaStackRAG
+from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.models import EmbeddingModels
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import (
-    AI4RAGParamNames,
-    EventsToReport,
-    ExperimentStep,
-)
+from ai4rag.utils.constants import AI4RAGParamNames, EventsToReport, ExperimentStep
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 from ai4rag.utils.experiment_monitor import ExperimentMonitor
-from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 
 
 class AI4RAGExperiment:
@@ -145,9 +141,9 @@ class AI4RAGExperiment:
         event_handler: BaseEventHandler,
         optimiser_settings: OptimiserSettings,
         search_space: AI4RAGSearchSpace,
-        benchmark_data: pd.DataFrame | BenchmarkData,
+        benchmark_data: pd.DataFrame,
         vector_store_type: Literal["chroma", "ls_milvus"],
-        documents: list[Document] | None = None,
+        documents: list[Document],
         optimization_metric: str = MetricType.FAITHFULNESS,
         **kwargs,
     ):
@@ -288,14 +284,12 @@ class AI4RAGExperiment:
 
         # pylint: disable=protected-access
         mps = ModelsPreSelector(
-            ls_client=self.client,
             benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
             experiment_monitor=self.experiment_monitor,
             metric=self.optimization_metric,
-            predict_number_of_questions=len(self.benchmark_data),
         )
         mps.evaluate_patterns()
 
@@ -310,22 +304,6 @@ class AI4RAGExperiment:
         return selected_models
 
     def run_single_evaluation(self, rag_params: RAGParamsType, **kwargs: Any) -> float:
-        """
-        Selects proper single run evaluation function based on provided experiment params.
-
-        Parameters
-        ----------
-        rag_params : RAGParamsType
-            A dictionary containing rag parameters as keys and their values.
-
-        Returns
-        -------
-        float
-            A single evaluation score obtained by the executed rag pattern.
-        """
-        return self.run_single_evaluation_using_documents(rag_params, **kwargs)
-
-    def run_single_evaluation_using_documents(self, rag_params: RAGParamsType, **kwargs: Any) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
 

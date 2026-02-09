@@ -6,8 +6,8 @@ from abc import ABC, abstractmethod
 
 from ..embedding.base_model import EmbeddingModel
 from ..foundation_models.base_model import FoundationModel
-from ..vector_store.base_vector_store import BaseVectorStore
 from ..retrieval.retriever import Retriever
+from ..vector_store.base_vector_store import BaseVectorStore
 
 
 class RAGTemplateError(Exception):

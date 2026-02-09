@@ -2,11 +2,11 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import time
 import json
 import os
-from pathlib import Path
+import time
 from collections import defaultdict
+from pathlib import Path
 
 from ai4rag import logger
 
