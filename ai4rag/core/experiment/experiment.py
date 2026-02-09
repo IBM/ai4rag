@@ -54,6 +54,7 @@ class AI4RAGExperiment:
 
     Parameters
     ----------
+
     client : LlamaStackClient
         Instance of the llama stack client allowing to communicate
         with the llama stack server.
@@ -90,13 +91,15 @@ class AI4RAGExperiment:
         It is used interchangeably with documents,
         if given chunking and embedding step is skipped as reference already has data.
 
+
     Other Parameters
     ----------------
-    output_path : str
-        Path to the directory where output files/artifacts should be stored
 
     job_id : str
         Unique identifier for a job
+
+    output_path : str | None, default=None
+        Path to the directory where output files/artifacts should be stored.
 
     metrics : Sequence[str]
         Metrics that will be evaluated during AutoRAG experiment. Not all
@@ -124,6 +127,7 @@ class AI4RAGExperiment:
 
     Attributes
     ----------
+
     documents : list[Document]
         Validated documents
 

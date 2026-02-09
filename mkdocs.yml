@@ -1,0 +1,246 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025-2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
+
+site_name: ai4RAG Documentation
+site_description: RAG Templates Optimization Engine - LLM and Vector Database provider agnostic
+site_author: IBM
+site_url: https://ibm.github.io/ai4rag/
+repo_url: https://github.com/IBM/ai4rag
+repo_name: IBM/ai4rag
+edit_uri: edit/main/docs/
+
+# Copyright
+copyright: Copyright &copy; 2025-2026 IBM Corp.
+
+# Build directories
+docs_dir: docs
+site_dir: site
+
+# Configuration
+theme:
+  name: material
+  language: en
+
+  # Color palette with automatic dark/light mode toggle
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: black
+      accent: black
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: black
+      accent: black
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+
+  # Features
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.action.view
+    - content.code.annotate
+    - content.code.copy
+    - content.tooltips
+    - navigation.expand
+    - navigation.footer
+    - navigation.indexes
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - navigation.path
+    - navigation.sections
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.top
+    - navigation.tracking
+    - search.highlight
+    - search.share
+    - search.suggest
+    - toc.follow
+
+  # Logo and icons
+  icon:
+    repo: fontawesome/brands/github
+
+  # Favicon (using default, can be customized later)
+  # favicon: assets/favicon.ico
+
+# Plugins
+plugins:
+  - search:
+      separator: '[\s\-,:!=\[\]()"`/]+|\.(?!\d)|&[lg]t;|(?!\b)(?=[A-Z][a-z])'
+      lang: en
+
+  - minify:
+      minify_html: true
+      minify_js: true
+      minify_css: true
+      htmlmin_opts:
+        remove_comments: true
+      cache_safe: true
+
+  - git-revision-date-localized:
+      enable_creation_date: true
+      type: timeago
+
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [.]
+          options:
+            docstring_style: numpy
+            docstring_section_style: list
+            show_source: true
+            show_root_heading: true
+            show_root_full_path: false
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            members_order: source
+            group_by_category: true
+            show_category_heading: true
+            show_if_no_docstring: false
+            show_signature_annotations: true
+            separate_signature: true
+            line_length: 120
+            merge_init_into_class: true
+            docstring_options:
+              ignore_init_summary: true
+
+# Extensions
+markdown_extensions:
+  # Python Markdown
+  - abbr
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - toc:
+      permalink: true
+      toc_depth: 3
+
+  # Python Markdown Extensions
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.betterem:
+      smart_enable: all
+  - pymdownx.caret
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.snippets:
+      base_path:
+        - docs
+        - .
+      check_paths: true
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+# Page tree
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quick Start: getting-started/quick-start.md
+      - Configuration: getting-started/configuration.md
+  - User Guide:
+      - Overview: user-guide/overview.md
+      - Search Space: user-guide/search-space.md
+      - Optimizers: user-guide/optimizers.md
+      - Evaluation: user-guide/evaluation.md
+      - Event Handlers: user-guide/event-handlers.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Core Components: architecture/core-components.md
+      - RAG Components: architecture/rag-components.md
+      - Data Flow: architecture/data-flow.md
+  - API Reference:
+      - Core:
+          - Experiment: api-reference/core/experiment.md
+          - HPO: api-reference/core/hpo.md
+      - Search Space:
+          - Search Space: api-reference/search-space.md
+      - RAG:
+          - Foundation Models: api-reference/rag/foundation-models.md
+          - Embedding Models: api-reference/rag/embedding.md
+          - Vector Stores: api-reference/rag/vector-stores.md
+          - Chunking: api-reference/rag/chunking.md
+          - Retrieval: api-reference/rag/retrieval.md
+      - Evaluator:
+          - Evaluator: api-reference/evaluator.md
+  - Development:
+      - Workflow: development/workflow.md
+      - Contributing: development/contributing.md
+      - Testing: development/testing.md
+      - Code Style: development/code-style.md
+  - About:
+      - License: about/license.md
+      - Changelog: about/changelog.md
+
+# Extra configuration
+extra:
+  version:
+    provider: mike
+    default: latest
+
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/IBM/ai4rag
+      name: ai4rag on GitHub
+
+  analytics:
+    feedback:
+      title: Was this page helpful?
+      ratings:
+        - icon: material/emoticon-happy-outline
+          name: This page was helpful
+          data: 1
+          note: >-
+            Thanks for your feedback!
+        - icon: material/emoticon-sad-outline
+          name: This page could be improved
+          data: 0
+          note: >-
+            Thanks for your feedback! Help us improve this page by
+            <a href="https://github.com/IBM/ai4rag/issues/new" target="_blank" rel="noopener">opening an issue</a>.
+
+# Additional CSS and JavaScript
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js

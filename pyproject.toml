@@ -13,8 +13,9 @@ maintainers = [
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Natural Language :: English",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Operating System :: MacOS :: MacOS X",
     "Operating System :: POSIX :: Linux",
@@ -42,6 +43,7 @@ dependencies = [
 dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
+    "ai4rag[docs]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "pypdf",               # reading data from pdf
@@ -52,6 +54,15 @@ dev = [
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
 
 code_check = ["pylint", "black"]
+
+docs = [
+    "mkdocs>=1.6.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.25.0",
+    "mkdocs-git-revision-date-localized-plugin>=1.2.0",
+    "mkdocs-minify-plugin>=0.8.0",
+    "mike>=2.0.0",
+]
 
 [tool.setuptools.dynamic]
 version = { attr = "ai4rag.__version__" }
