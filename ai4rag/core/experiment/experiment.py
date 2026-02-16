@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 import time
 from datetime import datetime
-from typing import Any, Sequence, Literal
+from typing import Any, Literal, Sequence
 
 import pandas as pd
 from langchain_core.documents import Document

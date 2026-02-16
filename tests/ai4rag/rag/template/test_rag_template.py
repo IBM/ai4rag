@@ -305,8 +305,7 @@ class TestLlamaStackRAGBuildIndex:
     ):
         """Test build_index with large document list."""
         large_doc_list = [
-            Document(page_content=f"Document {i}", metadata={"document_id": f"doc{i}"})
-            for i in range(100)
+            Document(page_content=f"Document {i}", metadata={"document_id": f"doc{i}"}) for i in range(100)
         ]
         large_chunk_list = [
             Document(page_content=f"Chunk {i}", metadata={"document_id": f"doc{i % 100}", "sequence_number": i})
