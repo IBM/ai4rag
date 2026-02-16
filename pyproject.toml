@@ -81,6 +81,7 @@ log_level = "INFO"
 # Skipping function templates for notebooks
 omit = [
     "ai4rag/search_space/prepare/validation_error_decoder.py",
+    "ai4rag/core/experiment/experiment.py",
 ]
 
 [tool.black]
