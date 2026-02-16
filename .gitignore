@@ -69,3 +69,7 @@ local
 .claude
 .cursor
 CLAUDE.md
+
+# --- Documentation ---
+site/
+.cache/
