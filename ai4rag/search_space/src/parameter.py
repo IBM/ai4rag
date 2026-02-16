@@ -2,10 +2,40 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from collections import deque
+from collections.abc import Hashable
 from dataclasses import dataclass, fields
+from math import floor
 from typing import Any, Generic, Literal, Optional, Protocol, Sequence, TypeVar
 
-from ai4rag.utils import get_hashable_repr
+
+def _get_hashable_repr(dct: dict):
+    """
+    Returns
+    -------
+    A hashable representation of the provided dictionary.
+    """
+    queue = deque((k, v, 0, None) for k, v in dct.items())
+    dict_unpacked = []
+    while queue:
+        key, val, lvl, p_ref = queue.pop()
+        if hasattr(val, "items"):  # we have a nested dict
+            dict_unpacked.append((key, "+", lvl, p_ref))  # key is an aggregator at this level (that's why '+')
+            if hash(key) != p_ref:  # but it could be an aggregator for a Sequence (and not other dict)
+                lvl += 1
+            queue.extendleft((k, v, lvl, hash(key)) for k, v in val.items())
+        elif isinstance(val, Hashable):
+            dict_unpacked.append((key, val, lvl, p_ref))
+        elif isinstance(val, Sequence):
+            # only sequences supported now
+            dict_unpacked.append((key, "+", lvl, p_ref))
+
+            queue.extendleft((key, vv, floor(lvl) + ind * 0.01, hash(key)) for ind, vv in enumerate(val, 1))
+
+        else:
+            raise ValueError(f"Some value in the provided dict is not supported. {type(val)} is not supported")
+
+    return tuple(sorted(dict_unpacked, key=lambda it: (it[2], it[0])))
 
 
 class HashableProtocol(Protocol):
@@ -62,7 +92,7 @@ class Parameter(Generic[HashableType]):
         Parameter with `param_type="C"`allow specifying a list of (possible nested) objects as available values.
         In order to reliably compare such Parameter instances between each other and ensure hashability, this
         utility function exists.
-        It may seem compute heavy, but for typical input its execution time still lies in
+        It may seem to be computationally heavy, but for typical input its execution time still lies in
         the order of magnitude of 100ths of a milisecond.
 
         Returns
@@ -78,7 +108,7 @@ class Parameter(Generic[HashableType]):
         if isinstance(self.values[0], (str, bool, int, float)):
             return tuple(sorted(self.values))
         if isinstance(self.values[0], dict):
-            return tuple(sorted((hash(dct_hash_repr) for dct_hash_repr in map(get_hashable_repr, self.values))))
+            return tuple(sorted((hash(dct_hash_repr) for dct_hash_repr in map(_get_hashable_repr, self.values))))
         # tmp workaround for param.name='inference_model_id'
         try:
             return tuple(sorted(map(hash, self.values)))

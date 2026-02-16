@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 import pytest
 import numpy as np
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from ai4rag.core.hpo.gam_opt import GAMOptimiser, GAMOptSettings
 from ai4rag.core.hpo.base_optimiser import OptimisationError, FailedIterationError
