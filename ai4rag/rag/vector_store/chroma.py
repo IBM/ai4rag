@@ -25,7 +25,7 @@ class ChromaVectorStore(BaseVectorStore):
     embedding_model : EmbeddingModel
         Instance used for embedding documents and user's queries.
 
-    collection_name : str, default="default_collection"
+    reuse_collection_name : str, default=None
         Name of the collection that will be created as a vector store.
 
     distance_metric : str, default="cosine"

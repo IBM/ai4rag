@@ -192,7 +192,7 @@ nav:
           - Experiment: api-reference/core/experiment.md
           - HPO: api-reference/core/hpo.md
       - Search Space:
-          - Search Space: api-reference/search-space.md
+          - Search Space: api-reference/search-space/search-space.md
       - RAG:
           - Foundation Models: api-reference/rag/foundation-models.md
           - Embedding Models: api-reference/rag/embedding.md
@@ -200,7 +200,7 @@ nav:
           - Chunking: api-reference/rag/chunking.md
           - Retrieval: api-reference/rag/retrieval.md
       - Evaluator:
-          - Evaluator: api-reference/evaluator.md
+          - Evaluator: api-reference/evaluator/evaluator.md
   - Development:
       - Workflow: development/workflow.md
       - Contributing: development/contributing.md
