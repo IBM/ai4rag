@@ -1,0 +1,59 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches:
+      - dev
+    tags:
+      - 'v*'
+  pull_request:
+    branches:
+      - main
+      - dev
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for git-revision-date-localized plugin
+          token: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN for authentication
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[docs]"
+
+      - name: Configure Git for mike
+        if: github.event_name != 'pull_request'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Build documentation (PR check)
+        if: github.event_name == 'pull_request'
+        run: mkdocs build --strict
+
+      - name: Deploy documentation (dev branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+        run: |
+          mike deploy --push dev
+
+      - name: Deploy documentation (tagged release)
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # Extract version from tag (e.g., v0.2.0 -> 0.2.0)
+          VERSION=${GITHUB_REF#refs/tags/v}
+          mike deploy --push --update-aliases $VERSION latest
+          mike set-default --push latest
