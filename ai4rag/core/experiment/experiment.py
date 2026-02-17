@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
-from datetime import datetime
 from typing import Any, Literal, Sequence
 
 import pandas as pd
@@ -54,7 +53,6 @@ class AI4RAGExperiment:
 
     Parameters
     ----------
-
     client : LlamaStackClient
         Instance of the llama stack client allowing to communicate
         with the llama stack server.
@@ -86,15 +84,9 @@ class AI4RAGExperiment:
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimisation.
 
-    knowledge_base_references : KnowledgeBaseReferences
-        Knowledge Base References (Vector Store or SQL Database) to conduct experiment on.
-        It is used interchangeably with documents,
-        if given chunking and embedding step is skipped as reference already has data.
-
 
     Other Parameters
     ----------------
-
     job_id : str
         Unique identifier for a job
 
@@ -127,7 +119,6 @@ class AI4RAGExperiment:
 
     Attributes
     ----------
-
     documents : list[Document]
         Validated documents
 

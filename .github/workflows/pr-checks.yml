@@ -42,6 +42,39 @@ jobs:
         run: |
           bash scripts/copyright_check.sh
 
+      - name: Check version update (PRs to main only)
+        if: github.base_ref == 'main'
+        run: |
+          # Get the version from the target branch (main)
+          git fetch origin main
+          git fetch --tags
+          MAIN_VERSION=$(git show origin/main:ai4rag/__init__.py | grep '^__version__' | sed 's/__version__[[:space:]]*=[[:space:]]*"\(.*\)"/\1/')
+
+          # Get the version from the PR branch
+          PR_VERSION=$(grep '^__version__' ai4rag/__init__.py | sed 's/__version__[[:space:]]*=[[:space:]]*"\(.*\)"/\1/')
+
+          echo "Main branch version: $MAIN_VERSION"
+          echo "PR branch version: $PR_VERSION"
+
+          # Check if version was updated
+          if [ "$MAIN_VERSION" = "$PR_VERSION" ]; then
+            echo "ERROR: Version has not been updated in ai4rag/__init__.py"
+            echo "Please update __version__ before merging to main"
+            exit 1
+          fi
+
+          # Check if the new version already exists as a tag
+          TAG_NAME="v$PR_VERSION"
+          if git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+            echo "ERROR: Tag $TAG_NAME already exists in the repository"
+            echo "The version $PR_VERSION has already been released"
+            echo "Please update __version__ to a new version number"
+            exit 1
+          fi
+
+          echo "SUCCESS: Version has been updated from $MAIN_VERSION to $PR_VERSION"
+          echo "SUCCESS: Tag $TAG_NAME does not exist yet"
+
   tests:
     name: Unit Tests with Coverage
     runs-on: ubuntu-latest
