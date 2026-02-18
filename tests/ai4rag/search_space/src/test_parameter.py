@@ -2,8 +2,8 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from dataclasses import FrozenInstanceError, fields
 from contextlib import nullcontext as does_not_raise
+from dataclasses import FrozenInstanceError, fields
 
 import pytest
 
@@ -16,7 +16,6 @@ class TestMethods:
     @pytest.mark.parametrize(
         "param, exp_res",
         [
-            # TODO hashable repr of list of dicts
             (Parameter(name="cat", param_type="C", values=[0.5, 0.1]), (0.1, 0.5)),
             (Parameter(name="cat", param_type="C", values=["simple", "recursive"]), ("recursive", "simple")),
             (Parameter("int_param", param_type="I", v_min=0, v_max=10), None),

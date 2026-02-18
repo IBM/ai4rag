@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   build-and-deploy:
+    name: Documentation Build or Build and Deployment
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository

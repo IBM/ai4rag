@@ -2,12 +2,13 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pytest
 from unittest.mock import MagicMock, Mock
+
+import pytest
 from langchain_core.documents import Document
 
-from ai4rag.rag.vector_store.llama_stack import LSVectorStore
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.vector_store.llama_stack import LSVectorStore
 
 
 class MockLSEmbeddingModel(LSEmbeddingModel):

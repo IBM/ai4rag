@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
-import pytest
 from typing import Any
+
+import pytest
 
 from ai4rag.rag.foundation_models.base_model import FoundationModel
 

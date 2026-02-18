@@ -6,8 +6,8 @@
 import pytest
 from langchain_core.documents import Document
 
-from ai4rag.rag.template.rag_template import LlamaStackRAG
 from ai4rag.rag.template.base_template import RAGTemplateError
+from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
 
 
 class TestLlamaStackRAGInitialization:

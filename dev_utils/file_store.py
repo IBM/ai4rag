@@ -2,13 +2,13 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import io
+from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
-from functools import lru_cache
-import io
 
-from pypdf import PdfReader
 from langchain_core.documents import Document
+from pypdf import PdfReader
 
 
 def _txt_to_string(binary_data: bytes) -> str:

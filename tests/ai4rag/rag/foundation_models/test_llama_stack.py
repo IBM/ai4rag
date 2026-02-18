@@ -7,8 +7,8 @@ import pytest
 from pydantic import ValidationError
 
 from ai4rag.rag.foundation_models.llama_stack import (
-    ModelParameters,
     LSFoundationModel,
+    ModelParameters,
 )
 from ai4rag.utils.constants import ChatGenerationConstants
 from ai4rag.utils.validators import ConstraintsValidationError

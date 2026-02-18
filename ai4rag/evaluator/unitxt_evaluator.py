@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Iterable, Sequence
+from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -27,7 +27,7 @@ class UnitxtEvaluator(BaseEvaluator):
 
     def evaluate_metrics(
         self,
-        evaluation_data: Iterable[EvaluationData],
+        evaluation_data: list[EvaluationData],
         metrics: Sequence[str],
     ) -> dict:
         """
@@ -35,9 +35,8 @@ class UnitxtEvaluator(BaseEvaluator):
 
         Parameters
         ----------
-        evaluation_data : Iterable[EvaluationData]
-            Iterable of instances that hold data needed for the unitxt
-            algorithms to perform evaluation.
+        evaluation_data : list[EvaluationData]
+            Instances that hold data needed for the unitxt algorithms to perform evaluation.
 
         metrics : Sequence[str]
             Values describing which specific evaluation metrics should be used
@@ -132,7 +131,7 @@ class UnitxtEvaluator(BaseEvaluator):
 
         Returns
         -------
-        list
+        list[str]
             Specific versions of the metrics that can be used within
             unitxt evaluation process.
         """

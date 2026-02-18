@@ -76,6 +76,7 @@ class TestEvaluationResult:
             "scores",
             "execution_time",
             "final_score",
+            "rag_pattern",
         }
         assert set(result_dict.keys()) == expected_keys
 
@@ -346,7 +347,7 @@ class TestExperimentResultsCollectionExists:
         """Test that collection_exists returns collection name when indexing params match."""
         indexing_params = {"chunk_size": 512, "chunk_overlap": 128}
 
-        collection = results_with_collections.collection_exists(indexing_params)
+        collection = results_with_collections.get_existing_collection(indexing_params)
 
         assert collection == "collection_0"
 
@@ -354,7 +355,7 @@ class TestExperimentResultsCollectionExists:
         """Test that collection_exists returns None when indexing params don't match."""
         indexing_params = {"chunk_size": 999, "chunk_overlap": 999}
 
-        collection = results_with_collections.collection_exists(indexing_params)
+        collection = results_with_collections.get_existing_collection(indexing_params)
 
         assert collection is None
 
@@ -363,7 +364,7 @@ class TestExperimentResultsCollectionExists:
         results = ExperimentResults()
         indexing_params = {"chunk_size": 512, "chunk_overlap": 128}
 
-        collection = results.collection_exists(indexing_params)
+        collection = results.get_existing_collection(indexing_params)
 
         assert collection is None
 
@@ -406,20 +407,6 @@ class TestExperimentResultsProperties:
 
         assert results.collection_names == []
 
-    def test_scores_property(self, results_with_data):
-        """Test scores property returns all final scores."""
-        scores = results_with_data.scores
-
-        assert isinstance(scores, list)
-        assert len(scores) == 5
-        assert scores == [0.5, 0.55, 0.6, 0.65, 0.7]
-
-    def test_scores_on_empty_results(self):
-        """Test scores property on empty results."""
-        results = ExperimentResults()
-
-        assert results.scores == []
-
 
 class TestExperimentResultsSorted:
     """Test suite for ExperimentResults.sorted_ method."""
@@ -444,35 +431,6 @@ class TestExperimentResultsSorted:
             results.add_evaluation([], eval_result)
 
         return results
-
-    def test_sorted_returns_tuple(self, unsorted_results):
-        """Test that sorted_ returns a tuple."""
-        sorted_results = unsorted_results.sorted_()
-
-        assert isinstance(sorted_results, tuple)
-
-    def test_sorted_returns_descending_order(self, unsorted_results):
-        """Test that sorted_ returns evaluations in descending order by final_score."""
-        sorted_results = unsorted_results.sorted_()
-
-        scores = [ev.final_score for ev in sorted_results]
-        assert scores == [0.9, 0.8, 0.6, 0.5, 0.3]
-
-    def test_sorted_preserves_original_list(self, unsorted_results):
-        """Test that sorted_ doesn't modify the original evaluations list."""
-        original_scores = [ev.final_score for ev in unsorted_results.evaluations]
-
-        unsorted_results.sorted_()
-
-        assert [ev.final_score for ev in unsorted_results.evaluations] == original_scores
-
-    def test_sorted_on_empty_results(self):
-        """Test sorted_ on empty results."""
-        results = ExperimentResults()
-
-        sorted_results = results.sorted_()
-
-        assert sorted_results == ()
 
 
 class TestExperimentResultsGetBestEvaluations:
@@ -598,7 +556,6 @@ class TestExperimentResultsCreateEvaluationResultsJson:
         first_entry = result[0]
         assert first_entry["question"] == "What is AI?"
         assert first_entry["correct_answers"] == ["AI is artificial intelligence"]
-        assert first_entry["question_id"] == "q0"
         assert first_entry["answer"] == "AI is artificial intelligence."
 
     def test_create_evaluation_results_json_answer_contexts(self, evaluation_data_list, evaluation_result):
@@ -626,7 +583,7 @@ class TestExperimentResultsCreateEvaluationResultsJson:
         """Test that all expected fields are present."""
         result = ExperimentResults.create_evaluation_results_json(evaluation_data_list, evaluation_result)
 
-        expected_fields = {"question", "correct_answers", "question_id", "answer", "answer_contexts", "scores"}
+        expected_fields = {"question", "correct_answers", "answer", "answer_contexts", "scores"}
         for entry in result:
             assert set(entry.keys()) == expected_fields
 

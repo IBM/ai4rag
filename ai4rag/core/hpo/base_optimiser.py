@@ -58,8 +58,8 @@ class BaseOptimiser(ABC):
     objective_function : Callable[[dict], float]
         Target function that will be used in every evaluation. Output of
         this function should be 'float', as this is the value that algorithms
-        try to minimize. Function should take dict filled with key: value pairs
-        that are argument: corresponding value.
+        try to minimize. Function should take dict filled with 'key: value' pairs
+        that are 'argument: corresponding value'.
 
     search_space : SearchSpace
         List of parameters that algorithm will optimize.
@@ -70,7 +70,7 @@ class BaseOptimiser(ABC):
     Methods
     -------
     search()
-        Perform hyperparameter optimisation to find what point in search space
+        Perform hyperparameter optimization to find what point in search space
         gives the minimal value for the objective function.
     """
 

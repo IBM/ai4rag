@@ -48,8 +48,8 @@ class GAMOptimiser(BaseOptimiser):
     objective_function : Callable[[dict], float]
         Target function that will be used in every evaluation. Output of
         this function should be 'float', as this is the value for which algorithms
-        try to optimize solution. Function should take dict filled with key: value pairs
-        that are argument: corresponding value.
+        try to optimize solution. Function should take dict filled with 'key: value' pairs
+        that are 'argument: corresponding value'.
 
     search_space : SearchSpace
         Instance containing information about nodes in the solutions space that
@@ -60,9 +60,6 @@ class GAMOptimiser(BaseOptimiser):
 
     Attributes
     ----------
-    settings : GAMOptSettings
-        Settings to configure GAMOptSettings.
-
     evaluations : list[dict]
         Already evaluated hyperparameters combinations with corresponding score.
 
@@ -79,8 +76,8 @@ class GAMOptimiser(BaseOptimiser):
         super().__init__(objective_function, search_space, settings)
         self.settings = settings
         self.evaluations = []
-        self._evaluated_combinations = []
         self.max_iterations = self.settings.max_evals
+        self._evaluated_combinations = []
         self._encoders_with_columns: list[tuple[str, LabelEncoder]] = []
 
     @property

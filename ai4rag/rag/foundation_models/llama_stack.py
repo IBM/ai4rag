@@ -6,7 +6,6 @@ from typing import Annotated, Any
 
 from annotated_types import Ge, Gt, Le
 from llama_stack_client import LlamaStackClient
-from llama_stack_client.types import SystemMessage
 from pydantic import BaseModel
 
 from ai4rag.rag.foundation_models.base_model import FoundationModel

@@ -2,8 +2,9 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pytest
 from typing import Any
+
+import pytest
 
 from ai4rag.rag.chunking.base_chunker import BaseChunker
 
