@@ -8,7 +8,6 @@ from typing import Any
 from ai4rag.rag.embedding.base_model import EmbeddingModel
 from ai4rag.rag.foundation_models.base_model import FoundationModel
 
-
 seed(42)
 
 

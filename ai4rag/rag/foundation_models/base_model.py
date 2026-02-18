@@ -5,12 +5,12 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
+from ai4rag.rag.foundation_models.utils import RAGPromptTemplateString
 from ai4rag.search_space.src.model_props import (
     get_context_template_text,
     get_system_message_text,
     get_user_message_text,
 )
-from ai4rag.utils.validators import RAGPromptTemplateString
 
 FoundationModelClientT = TypeVar("FoundationModelClientT")
 FoundationModelParamsT = TypeVar("FoundationModelParamsT")

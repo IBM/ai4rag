@@ -281,19 +281,6 @@ class TestGetChunkingParams:
 
         assert result["chunk_overlap"] == 0
 
-    def test_get_chunking_params_with_semantic_method(self):
-        """Test get_chunking_params with semantic chunking method."""
-        rag_params = {
-            "chunking_method": "semantic",
-            "chunk_size": 512,
-            "chunk_overlap": 128,
-        }
-
-        result = get_chunking_params(rag_params)
-
-        assert result["chunking_method"] == "semantic"
-        assert result["chunk_overlap"] == 0  # Semantic sets overlap to 0
-
     def test_get_chunking_params_raises_on_missing_method(self):
         """Test that get_chunking_params raises error when chunking_method is missing."""
         rag_params = {

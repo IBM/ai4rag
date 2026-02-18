@@ -48,14 +48,13 @@ dev = [
     "ai4rag[docs]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
-    "pypdf",               # reading data from pdf
     "ipykernel",
-    "isort"
+    "pypdf",               # reading data from pdf
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
 
-code_check = ["pylint", "black"]
+code_check = ["pylint", "black", "isort"]
 
 docs = [
     "mkdocs>=1.6.0",
@@ -91,9 +90,9 @@ line-length = 120
 
 [tool.isort]
 profile = "black"
-py_version=312
-line_length=120
-skip=["tests/", "scripts/",  "dev_utils/"]
+py_version = 313
+line_length = 120
+skip = ["tests/", "scripts/",  "dev_utils/"]
 
 
 [tool.pylint]

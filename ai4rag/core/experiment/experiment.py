@@ -14,7 +14,7 @@ from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import (
     AI4RAGError,
     AssetSaveError,
-    ExperimentExceptionsHandler,
+    ExperimentExceptionHandler,
     IndexingError,
 )
 from ai4rag.core.experiment.mps import ModelsPreSelector
@@ -35,28 +35,30 @@ from ai4rag.rag.chunking import LangChainChunker
 from ai4rag.rag.embedding.base_model import EmbeddingModel
 from ai4rag.rag.foundation_models.base_model import FoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.rag_template import LlamaStackRAG
+from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.models import EmbeddingModels
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import AI4RAGParamNames, EventsToReport, ExperimentStep
+from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
-from ai4rag.utils.experiment_monitor import ExperimentMonitor
 
 
 class AI4RAGExperiment:
     """
-    Class responsible for conducting AutoRAG experiment, that consists of finding the best hyperparameters
-    for several steps/stages. Based on client instance it should perform connections with instances like
-    COS, VectorStore (external or internal) etc.
+    Class responsible for conducting AutoRAG experiment, that consists of
+    finding the best hyperparameters for several steps/stages.
+
+    AI4RAGExperiment is essentially an orchestrator for the RAG Patterns
+    hyperparameters optimization for the desired metric. It requires from
+    user to provide fully defined search space on which the experiment will
+    be executed.
+
+    AI4RAG uses 'BaseRAGTemplate' inheriting classes as definitions on how
+    to build and utilize RAG Pattern with the given search space nodes.
 
     Parameters
     ----------
-    client : LlamaStackClient
-        Instance of the llama stack client allowing to communicate
-        with the llama stack server.
-
     documents : list[Document | tuple[str, str]]
         List of documents to embed in vector db and use as context in RAG.
         When given as list of langchain's Document instances, both content and document
@@ -67,115 +69,91 @@ class AI4RAGExperiment:
     benchmark_data : pd.DataFrame | BenchmarkData
         Structure with 3 columns: 'question', 'correct_answers' and - if applicable - 'correct_answer_document_ids'.
 
-    vector_store_type : str
+    search_space : AI4RAGSearchSpace
+        Grid of parameters used during hyperparameter optimization.
+
+    vector_store_type : Literal["chroma", "ls_milvus"]
         Specific type of Vector Data Base that will be used during the experiment.
 
     optimiser_settings : OptimiserSettings
         Settings for the optimiser to be used during the experiment.
 
+    client : LlamaStackClient | Any
+        Instance of the llama stack client or other client allowing to communicate
+        with the available vector store providers.
+
     event_handler : BaseEventHandler
-        Instance satisfying BaseEventHandler's interface to stream information
-        from the training.
+        Instance satisfying BaseEventHandler's interface to stream pattern evaluation
+        results and intermediate status updates. EventHandler is an entrypoint to configure
+        custom logging and assets handling.
 
     optimization_metric : str, default=MetricType.FAITHFULNESS
         Metrics that should be used for calculating final score value that will be minimized.
         This sequence should contain 1 value for first release.
 
-    search_space : AI4RAGSearchSpace
-        Grid of parameters used during hyperparameter optimisation.
-
 
     Other Parameters
     ----------------
-    job_id : str
-        Unique identifier for a job
-
-    output_path : str | None, default=None
-        Path to the directory where output files/artifacts should be stored.
+    job_id : str, default="ai4rag_job_a0b1c2d3"
+        Unique identifier for a job.
 
     metrics : Sequence[str]
         Metrics that will be evaluated during AutoRAG experiment. Not all
         of these metrics will be used to calculate final score, but they will
         be included in the evaluation results.
 
-    evaluator : BaseEvaluator
+    evaluator : BaseEvaluator, default=UnitxtEvaluator()
         An implementation of the BaseEvaluator class, that will be used by the AI4RAGExperiment
         To evaluate the RAG pattern performance and will be utilized during the optimization
         process.
 
-    experiment_monitor_output_path : str, default=None
-        Path to which json file with results form ExperimentMonitor instance is saved.
-        If None, file is not saved
-
-    n_mps_fm : int, default=3
+    n_mps_foundation_models : int, default=3
         Amount of foundation models to be further used in experiment post pre-selection.
 
-    n_mps_em : int, default=2
+    n_mps_embedding_models : int, default=2
         Amount of embedding models to be further used in experiment post pre-selection.
-
-    input_data_references : list[dict] | None
-        Required for properly creating an AI service for _chroma_. It's an in-memory DB so the documents
-        need to be inserted everytime the AI service code is executed.
 
     Attributes
     ----------
-    documents : list[Document]
-        Validated documents
-
     results : ExperimentResults
-        Status of each run in the hyperparameter optimization.
-
-    search_output : dict
-        Data from the search() result.
+        Instance holding information about each iteration during the experiment.
+        It consists of statuses, RAG pattern objects, scores and settings.
     """
 
-    # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-instance-attributes,too-many-lines
     def __init__(
         self,
-        client: LlamaStackClient,
-        event_handler: BaseEventHandler,
-        optimiser_settings: OptimiserSettings,
-        search_space: AI4RAGSearchSpace,
-        benchmark_data: pd.DataFrame,
-        vector_store_type: Literal["chroma", "ls_milvus"],
         documents: list[Document],
+        benchmark_data: pd.DataFrame,
+        search_space: AI4RAGSearchSpace,
+        vector_store_type: Literal["chroma", "ls_milvus"],
+        optimiser_settings: OptimiserSettings,
+        event_handler: BaseEventHandler,
+        client: LlamaStackClient | Any = None,
         optimization_metric: str = MetricType.FAITHFULNESS,
         **kwargs,
     ):
-        self.client = client
-
-        self.benchmark_data = BenchmarkData(benchmark_data)
         self.documents = documents
+        self.benchmark_data = BenchmarkData(benchmark_data)
+        self.search_space = search_space
         self.vector_store_type = vector_store_type
-
         self.optimiser_settings = optimiser_settings
-        self.search_space = search_space or AI4RAGSearchSpace()
-        self.n_mps_fm = kwargs.pop("n_mps_fm", 3)
-        self.n_mps_em = kwargs.pop("n_mps_em", 2)
         self.event_handler = event_handler
-        self.search_output = None
+        self.client = client
+        self.optimization_metric = optimization_metric
 
-        self.output_path: str | None = kwargs.pop("output_path", None)
-        self.job_id = kwargs.pop("job_id", "a0b1c2d3-zxcv-asdf-qwer-poiulkjhmnbv").replace("-", "_")
-
+        self.job_id = kwargs.pop("job_id", "ai4rag_job_a0b1c2d3").replace("-", "_")
         self.metrics: Sequence[str] = kwargs.pop(
             "metrics", (MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS)
         )
-        self.optimization_metric = optimization_metric
-
         self.evaluator: BaseEvaluator = kwargs.pop(
             "evaluator",
             UnitxtEvaluator(),
         )
+        self.n_mps_foundation_models = kwargs.pop("n_mps_fm", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS)
+        self.n_mps_embedding_models = kwargs.pop("n_mps_em", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
 
         self.results: ExperimentResults = ExperimentResults()
-
-        experiment_monitor_output_path = kwargs.pop("experiment_monitor_output_path", None)
-        self.experiment_monitor = ExperimentMonitor(
-            output_path=experiment_monitor_output_path,
-        )
-
-        self.exceptions_handler = ExperimentExceptionsHandler(self.event_handler)
+        self._exception_handler = ExperimentExceptionHandler(self.event_handler)
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
@@ -191,7 +169,7 @@ class AI4RAGExperiment:
         Validate and set documents value.
         We need to make sure if we have needed content and document_ids
         provided and the documents. All documents need to be instances
-        of langchain's Document class.
+        of LangChain's Document class.
         """
         proper_docs = []
         if docs:
@@ -255,7 +233,7 @@ class AI4RAGExperiment:
         foundation_models : list[FoundationModel]
             Foundation models to be evaluated during pre-selection process.
 
-        n_records : int, default=10
+        n_records : int, default=5
             Amount of records that should be used during models pre-selection.
 
         random_seed : int, default=17
@@ -277,18 +255,18 @@ class AI4RAGExperiment:
             step=ExperimentStep.MODEL_SELECTION,
         )
 
-        # pylint: disable=protected-access
         mps = ModelsPreSelector(
             benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            experiment_monitor=self.experiment_monitor,
             metric=self.optimization_metric,
         )
         mps.evaluate_patterns()
 
-        selected_models = mps.select_models(n_em=self.n_mps_em, n_fm=self.n_mps_fm)
+        selected_models = mps.select_models(
+            n_embedding_models=self.n_mps_embedding_models, n_foundation_models=self.n_mps_foundation_models
+        )
 
         logger.info(
             "Models pre-selection has been finished. Selected foundation models: %s and selected embedding models: %s.",
@@ -298,7 +276,7 @@ class AI4RAGExperiment:
 
         return selected_models
 
-    def run_single_evaluation(self, rag_params: RAGParamsType, **kwargs: Any) -> float:
+    def run_single_evaluation(self, rag_params: RAGParamsType) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
 
@@ -355,7 +333,6 @@ class AI4RAGExperiment:
             return result_score
 
         pattern_name = self._create_pattern_name()
-        self.experiment_monitor.on_pattern_start()
         logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
         reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
@@ -387,8 +364,6 @@ class AI4RAGExperiment:
                     step=ExperimentStep.CHUNKING,
                 )
 
-            self.experiment_monitor.on_start_event_info()
-
             self.event_handler.on_status_change(
                 level=LogLevel.INFO,
                 message=f"Embedding chunks using the {embedding_model.model_id} model. Building index: {collection_name}.",
@@ -400,9 +375,6 @@ class AI4RAGExperiment:
             except Exception as exc:
                 raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
-            self.experiment_monitor.on_finish_event_info(
-                event=EventsToReport.EMBEDDING, step=ExperimentStep.OPTIMIZATION, model_id=embedding_model.model_id
-            )
         else:
             self.event_handler.on_status_change(
                 level=LogLevel.INFO,
@@ -437,18 +409,10 @@ class AI4RAGExperiment:
             step=ExperimentStep.GENERATION,
         )
 
-        self.experiment_monitor.on_start_event_info()
         inference_response = query_rag(
             rag=rag,
             questions=list(self.benchmark_data.questions),
         )
-        self.experiment_monitor.on_finish_event_info(
-            event=EventsToReport.RETRIEVAL_GENERATION,
-            step=ExperimentStep.OPTIMIZATION,
-            model_id=foundation_model.model_id,
-            retrieved_chunks=number_of_chunks,
-        )
-
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,
             pattern_name=pattern_name,
@@ -488,8 +452,6 @@ class AI4RAGExperiment:
         except Exception as exc:
             raise AssetSaveError(exc) from exc
 
-        self.experiment_monitor.on_pattern_finish(pattern_name)
-
         self.results.add_evaluation(
             evaluation_data=evaluation_data,
             evaluation_result=evaluation_result,
@@ -497,35 +459,33 @@ class AI4RAGExperiment:
 
         return result_score
 
-    def search(self, **kwargs) -> Sequence[EvaluationResult]:
+    def search(self, **kwargs) -> None:
         """
         Prepare and execute experiment to find the best RAG parameters.
 
-        Returns
-        -------
-        dict
-            Dictionary with search results. The very same dictionary is saved in the AI4RAGExperiment
-            instance in its self.search_output attribute.
+        Result of the search() can be reviewed via self.results as this object
+        stores results of each evaluation or via self.event_handler with custom
+        implementation.
         """
 
         logger.info("Starting RAG optimization process...")
 
-        # pylint: disable=inconsistent-return-statements
-        def objective_function(space: dict) -> float | None:
+        def objective_function(space: RAGParamsType) -> float | None:
             """Function passed to the optimiser."""
             try:
-                return self.run_single_evaluation(space, **kwargs)
+                return self.run_single_evaluation(space)
             except AI4RAGError as err:
-                msg = self.exceptions_handler.handle_exception(err)
+                msg = self._exception_handler.handle_exception(err)
                 raise FailedIterationError(msg) from err
 
-        # MPS - models pre-selection based on sample evaluation. Run if there are more than 3 foundation models
+        # MPS - models pre-selection based on sample evaluation.
+        # Run if there are more than 3 foundation models or more than 2 embedding models.
         foundation_models = list(self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values)
         embedding_models = list(self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values)
 
-        if (len(embedding_models) > self.n_mps_em or len(foundation_models) > self.n_mps_fm) and not kwargs.get(
-            "skip_mps", False
-        ):
+        if (
+            len(embedding_models) > self.n_mps_embedding_models or len(foundation_models) > self.n_mps_foundation_models
+        ) and not kwargs.get("skip_mps", False):
             selected_models = self.run_pre_selection(
                 foundation_models=foundation_models, embedding_models=embedding_models
             )
@@ -553,18 +513,13 @@ class AI4RAGExperiment:
         try:
             _ = optimiser.search()
         except OptimisationError as err:
-            final_error_msg = self.exceptions_handler.get_final_error_msg()
+            final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
-
-        self.search_output = self.results.get_best_evaluations(k=1)
 
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message="Experiment optimization process finished.",
         )
-        self.experiment_monitor.close()
-
-        return self.search_output
 
     def _stream_finished_pattern(
         self,
@@ -647,7 +602,6 @@ class AI4RAGExperiment:
         self.event_handler.on_pattern_creation(
             payload=payload,
             evaluation_results=evaluation_results_json,
-            output_path=self.output_path,
             pattern_name=evaluation_result.pattern_name,
         )
 
@@ -734,7 +688,7 @@ class AI4RAGExperiment:
             Collection name that is new or one of the previously created.
             None if there is no collection to reuse.
         """
-        collection = self.results.collection_exists(indexing_params=indexing_params)
+        collection = self.results.get_existing_collection(indexing_params=indexing_params)
         if collection is not None:
             collection_name = collection
             logger.info("Reusing existing collection: '%s'", collection_name)

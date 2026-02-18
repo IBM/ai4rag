@@ -2,12 +2,13 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pytest
-import numpy as np
 from unittest.mock import MagicMock
 
+import numpy as np
+import pytest
+
+from ai4rag.core.hpo.base_optimiser import FailedIterationError, OptimisationError
 from ai4rag.core.hpo.gam_opt import GAMOptimiser, GAMOptSettings
-from ai4rag.core.hpo.base_optimiser import OptimisationError, FailedIterationError
 from ai4rag.search_space.src.search_space import SearchSpace
 
 

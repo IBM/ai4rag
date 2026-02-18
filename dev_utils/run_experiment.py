@@ -4,8 +4,9 @@
 # -----------------------------------------------------------------------------
 """Sample script to run ai4rag experiment"""
 
-from llama_stack_client import LlamaStackClient
 from pathlib import Path
+
+from llama_stack_client import LlamaStackClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -13,13 +14,10 @@ from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-
 from dev_utils.file_store import FileStore
 from dev_utils.local_event_handler import LocalEventHandler
-from dev_utils.utils import read_benchmark_from_json
-
 from dev_utils.mocks import MockedEmbeddingModel, MockedFoundationModel
-
+from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
@@ -71,14 +69,12 @@ if __name__ == "__main__":
                 name="embedding_model",
                 param_type="C",
                 values=[
-                    MockedEmbeddingModel(model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}),
+                    MockedEmbeddingModel(
+                        model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}
+                    ),
                 ],
             ),
-            Parameter(
-                name="retrieval_method",
-                param_type="C",
-                values=["simple"]
-            ),
+            Parameter(name="retrieval_method", param_type="C", values=["simple"]),
         ]
     )
 
@@ -88,11 +84,10 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimiser_settings=optimiser_settings,
-        event_handler=LocalEventHandler(),
-        output_path=_filepath.parent / "local" / "results_ls_milvus_mocks",
-        vector_store_type="ls_milvus",
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_mocks"),
+        vector_store_type="chroma",
     )
 
-    best = experiment.search(skip_mps=True)
+    experiment.search(skip_mps=True)
 
-    print(best)
+    print(experiment.results.get_best_evaluations(1))

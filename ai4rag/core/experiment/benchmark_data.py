@@ -19,7 +19,7 @@ class BenchmarkData:
     Parameters
     ----------
     benchmark_data : pandas.DataFrame
-        Benchmark Data given as pd.df. It should be tabular data that contains
+        Benchmark Data given as DataFrame.It should be tabular data that contains
         questions, answers and documents_ids columns.
 
     Attributes
@@ -27,7 +27,7 @@ class BenchmarkData:
     questions : list[str]
         Validated questions from the benchmark dataset.
 
-    answers : list[str]
+    correct_answers : list[str]
         Validated answers from the benchmark dataset.
 
     document_ids : list[str]
@@ -40,26 +40,28 @@ class BenchmarkData:
     """
 
     QUESTION = "question"
-    ANSWERS = "correct_answers"
+    CORRECT_ANSWERS = "correct_answers"
     DOC_IDS = "correct_answer_document_ids"
 
     def __init__(self, benchmark_data: pd.DataFrame):
+        if len(benchmark_data) == 0:
+            raise BenchmarkDataValueError("There are no records in the benchmark data.")
         self._benchmark_data = benchmark_data
 
         self.questions: list[str] = list(self._benchmark_data[self.QUESTION])
-        self.answers: list[list[str]] = list(self._benchmark_data[self.ANSWERS])
+        self.correct_answers: list[list[str]] = list(self._benchmark_data[self.CORRECT_ANSWERS])
         self.document_ids: list[list[str]] = list(self._benchmark_data[self.DOC_IDS])
         self._questions_ids = [f"q{idx}" for idx in range(len(self.questions))]
 
     def __iter__(self) -> Iterator[tuple[str, list[str], list[str] | None]]:
-        for q, a, id_ in zip(self.questions, self.answers, self.document_ids):
+        for q, a, id_ in zip(self.questions, self.correct_answers, self.document_ids):
             yield q, a, id_
 
     def __len__(self) -> int:
         return len(self.questions)
 
     def __getitem__(self, idx: int) -> tuple[str, list[str], list[str] | None]:
-        return self.questions[idx], self.answers[idx], self.document_ids[idx]
+        return self.questions[idx], self.correct_answers[idx], self.document_ids[idx]
 
     def get_random_sample(self, n_records: int = 10, random_seed: int = 17) -> "BenchmarkData":
         """
@@ -80,6 +82,8 @@ class BenchmarkData:
         BenchmarkData
             New instance of BenchmarkData.
         """
+        if n_records <= 0:
+            raise BenchmarkDataValueError("Cannot make empty sample. Select 'n_records' to be an int greater than 0.")
         if n_records > len(self):
             sample = self._benchmark_data.copy()
         else:
@@ -99,16 +103,16 @@ class BenchmarkData:
         self._questions = val
 
     @property
-    def answers(self) -> list[list[str]]:
+    def correct_answers(self) -> list[list[str]]:
         """get all answers from benchmark data."""
-        return self._answers
+        return self._correct_answers
 
-    @answers.setter
-    def answers(self, val: list[list[str]]) -> None:
+    @correct_answers.setter
+    def correct_answers(self, val: list[list[str]]) -> None:
         """Validate whether each element is a list of not empty strings"""
         for el in val:
-            _validate_list_of_strings(el, self.ANSWERS)
-        self._answers = val
+            _validate_list_of_strings(el, self.CORRECT_ANSWERS)
+        self._correct_answers = val
 
     @property
     def document_ids(self) -> list[list[str]]:

@@ -2,14 +2,11 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-
-import pytest
-
 from ai4rag.core.experiment.exception_handler import (
     AI4RAGError,
     AssetSaveError,
     EvaluationError,
-    ExperimentExceptionsHandler,
+    ExperimentExceptionHandler,
     GenerationError,
     IndexingError,
 )
@@ -172,7 +169,7 @@ class TestExperimentExceptionsHandlerInitialization:
 
     def test_init_without_event_handler(self):
         """Test initialization without event handler."""
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         assert handler.errors == []
         assert handler.event_handler is None
@@ -180,7 +177,7 @@ class TestExperimentExceptionsHandlerInitialization:
     def test_init_with_event_handler(self, mocker):
         """Test initialization with event handler."""
         mock_event_handler = mocker.MagicMock()
-        handler = ExperimentExceptionsHandler(event_handler=mock_event_handler)
+        handler = ExperimentExceptionHandler(event_handler=mock_event_handler)
 
         assert handler.errors == []
         assert handler.event_handler == mock_event_handler
@@ -192,7 +189,7 @@ class TestExperimentExceptionsHandlerHandleException:
     def test_handle_exception_adds_to_errors_list(self, mocker):
         """Test that handle_exception adds exception to errors list."""
         mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         base_exception = ValueError("Test error")
         error = AI4RAGError(base_exception, message="Custom message")
@@ -205,7 +202,7 @@ class TestExperimentExceptionsHandlerHandleException:
     def test_handle_exception_logs_warning(self, mocker):
         """Test that handle_exception logs warning."""
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         base_exception = ValueError("Test error")
         error = AI4RAGError(base_exception, message="Custom message")
@@ -217,7 +214,7 @@ class TestExperimentExceptionsHandlerHandleException:
     def test_handle_exception_returns_error_message(self, mocker):
         """Test that handle_exception returns error representation."""
         mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         base_exception = ValueError("Test error")
         error = IndexingError(base_exception, "collection_1", "model_1")
@@ -231,7 +228,7 @@ class TestExperimentExceptionsHandlerHandleException:
         """Test that handle_exception calls event_handler if provided."""
         mocker.patch("ai4rag.core.experiment.exception_handler.logger")
         mock_event_handler = mocker.MagicMock()
-        handler = ExperimentExceptionsHandler(event_handler=mock_event_handler)
+        handler = ExperimentExceptionHandler(event_handler=mock_event_handler)
 
         base_exception = ValueError("Test error")
         error = AI4RAGError(base_exception)
@@ -245,7 +242,7 @@ class TestExperimentExceptionsHandlerHandleException:
     def test_handle_exception_does_not_call_event_handler_if_none(self, mocker):
         """Test that handle_exception doesn't call event_handler when None."""
         mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler(event_handler=None)
+        handler = ExperimentExceptionHandler(event_handler=None)
 
         base_exception = ValueError("Test error")
         error = AI4RAGError(base_exception)
@@ -258,7 +255,7 @@ class TestExperimentExceptionsHandlerHandleException:
     def test_handle_exception_multiple_exceptions(self, mocker):
         """Test handling multiple exceptions."""
         mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         errors = [
             IndexingError(ValueError("Error 1"), "col1", "model1"),
@@ -279,7 +276,7 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
     def test_get_final_error_msg_single_error(self, mocker):
         """Test get_final_error_msg with single error."""
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         error = IndexingError(ValueError("Test error"), "collection_1", "model_1")
         handler.handle_exception(error)
@@ -297,7 +294,7 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
     def test_get_final_error_msg_multiple_errors_same_type(self, mocker):
         """Test get_final_error_msg with multiple errors of same type."""
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         errors = [
             IndexingError(ValueError("Error 1"), "col1", "model1"),
@@ -318,7 +315,7 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
     def test_get_final_error_msg_multiple_error_types(self, mocker):
         """Test get_final_error_msg with multiple error types returns most common."""
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         errors = [
             IndexingError(ValueError("Error 1"), "col1", "model1"),
@@ -340,7 +337,7 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
     def test_get_final_error_msg_logs_all_errors(self, mocker):
         """Test that get_final_error_msg logs all errors."""
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
-        handler = ExperimentExceptionsHandler()
+        handler = ExperimentExceptionHandler()
 
         errors = [
             IndexingError(ValueError("Error 1"), "col1", "model1"),
@@ -368,7 +365,7 @@ class TestExperimentExceptionsHandlerIntegration:
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
         mock_event_handler = mocker.MagicMock()
 
-        handler = ExperimentExceptionsHandler(event_handler=mock_event_handler)
+        handler = ExperimentExceptionHandler(event_handler=mock_event_handler)
 
         # Handle multiple errors
         errors = [
@@ -398,7 +395,7 @@ class TestExperimentExceptionsHandlerIntegration:
         """Test complete workflow without event handler."""
         mock_logger = mocker.patch("ai4rag.core.experiment.exception_handler.logger")
 
-        handler = ExperimentExceptionsHandler(event_handler=None)
+        handler = ExperimentExceptionHandler(event_handler=None)
 
         # Handle errors
         errors = [

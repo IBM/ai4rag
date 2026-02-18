@@ -12,7 +12,6 @@ __all__ = [
     "ExperimentStep",
     "RetrievalConstraints",
     "SearchSpaceValidationErrors",
-    "EventsToReport",
     "DEFAULT_WORD_TO_TOKEN_RATIO",
     "ChatGenerationConstants",
     "DefaultVectorStoreFieldNames",
@@ -157,10 +156,3 @@ class SearchSpaceValidationErrors(metaclass=ConstantMeta):
     INT_PARSING = "int_parsing"
     INT_TYPE = "int_type"
     LIST_TYPE = "list_type"
-
-
-class EventsToReport(metaclass=ConstantMeta):
-    """Constants used to name events reported on INFO level."""
-
-    EMBEDDING = "Embedding"
-    RETRIEVAL_GENERATION = "Retrieval and Generation"

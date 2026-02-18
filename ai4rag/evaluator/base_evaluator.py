@@ -69,26 +69,14 @@ class MetricType(metaclass=ConstantMeta):
     ----------
     ANSWER_CORRECTNESS : str, default="answer_correctness"
 
-    CONTEXT_RELEVANCY : str, default="context_relevancy"
-
     FAITHFULNESS : str, default="faithfulness"
 
     CONTEXT_CORRECTNESS : str, default="context_correctness"
-
-    CONTEXT_CORRECTNESS_MAP : str, default="context_correctness_map"
-
-    FAITHFULNESS_JUDGE: str, default="faithfulness_judge"
-
-    ANSWER_CORRECTNESS_JUDGE: str, default="answer_correctness_judge"
     """
 
     ANSWER_CORRECTNESS = "answer_correctness"
-    CONTEXT_RELEVANCY = "context_relevancy"
     FAITHFULNESS = "faithfulness"
     CONTEXT_CORRECTNESS = "context_correctness"
-    CONTEXT_CORRECTNESS_MAP = "context_correctness_map"
-    ANSWER_CORRECTNESS_JUDGE = "answer_correctness_judge"
-    FAITHFULNESS_JUDGE = "faithfulness_judge"
 
 
 class BaseEvaluator(ABC):
@@ -108,12 +96,11 @@ class BaseEvaluator(ABC):
             List of EvaluationData instances containing all the data needed
             to perform evaluation.
 
-        metrics : list[str]
-            List of metrics given as strings. They should be referred to
-            using MetricType.
+        metrics : Sequence[str]
+            Metrics given as strings. They should be referred to MetricType.
 
         Returns
         -------
         dict
-            Evaluation result data
+            Evaluation result data.
         """

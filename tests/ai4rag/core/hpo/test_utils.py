@@ -2,8 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pandas as pd
 import numpy as np
+import pandas as pd
 
 from ai4rag.core.hpo.utils import handle_missing_values_in_combinations_being_explored
 

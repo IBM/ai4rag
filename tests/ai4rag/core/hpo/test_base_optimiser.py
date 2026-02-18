@@ -2,14 +2,15 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 
 from ai4rag.core.hpo.base_optimiser import (
     BaseOptimiser,
-    OptimiserSettings,
-    OptimisationError,
     FailedIterationError,
+    OptimisationError,
+    OptimiserSettings,
 )
 from ai4rag.search_space.src.search_space import SearchSpace
 
