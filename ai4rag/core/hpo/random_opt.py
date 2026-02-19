@@ -7,19 +7,19 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from ai4rag import logger
-from ai4rag.core.hpo.base_optimiser import BaseOptimiser, FailedIterationError, OptimisationError, OptimiserSettings
+from ai4rag.core.hpo.base_optimizer import BaseOptimizer, FailedIterationError, OptimizationError, OptimizerSettings
 from ai4rag.search_space.src.search_space import SearchSpace
 
-__all__ = ["RandomOptimiser", "RandomOptSettings", "FailedIterationError"]
+__all__ = ["RandomOptimizer", "RandomOptSettings", "FailedIterationError"]
 
 
 @dataclass
-class RandomOptSettings(OptimiserSettings):
-    """Settings for random optimiser."""
+class RandomOptSettings(OptimizerSettings):
+    """Settings for random optimizer."""
 
 
-class RandomOptimiser(BaseOptimiser):
-    """Optimiser running random search on the given search space."""
+class RandomOptimizer(BaseOptimizer):
+    """Optimizer running random search on the given search space."""
 
     def __init__(
         self, objective_function: Callable[[dict], float], search_space: SearchSpace, settings: RandomOptSettings
@@ -39,7 +39,7 @@ class RandomOptimiser(BaseOptimiser):
 
         Raises
         ------
-        OptimisationError
+        OptimizationError
             When there were no successful evaluations for given constraints.
         """
         combinations = self._search_space.combinations
@@ -52,7 +52,7 @@ class RandomOptimiser(BaseOptimiser):
         successful_evaluations = [ev for ev in self._evaluated_combinations if ev["score"] is not None]
 
         if not successful_evaluations:
-            raise OptimisationError("Number of evaluations has reached limit. All iterations have failed.")
+            raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
 
         best_config_with_score = sorted(successful_evaluations, key=lambda d: d["score"])[-1]
 
@@ -60,7 +60,7 @@ class RandomOptimiser(BaseOptimiser):
 
     def _objective_function(self, params: dict) -> float | None:
         """
-        Wrapper around the objective function provided to the optimiser.
+        Wrapper around the objective function provided to the optimizer.
 
         Parameters
         ----------

@@ -6,28 +6,28 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai4rag.core.hpo.base_optimiser import (
-    BaseOptimiser,
+from ai4rag.core.hpo.base_optimizer import (
+    BaseOptimizer,
     FailedIterationError,
-    OptimisationError,
-    OptimiserSettings,
+    OptimizationError,
+    OptimizerSettings,
 )
 from ai4rag.search_space.src.search_space import SearchSpace
 
 
-class TestOptimisationError:
-    """Test the OptimisationError exception."""
+class TestOptimizationError:
+    """Test the OptimizationError exception."""
 
-    def test_optimisation_error_can_be_raised(self):
-        """Test that OptimisationError can be raised and caught."""
-        with pytest.raises(OptimisationError) as exc_info:
-            raise OptimisationError("Test error message")
+    def test_optimization_error_can_be_raised(self):
+        """Test that OptimizationError can be raised and caught."""
+        with pytest.raises(OptimizationError) as exc_info:
+            raise OptimizationError("Test error message")
 
         assert str(exc_info.value) == "Test error message"
 
-    def test_optimisation_error_is_exception(self):
-        """Test that OptimisationError is an Exception subclass."""
-        assert issubclass(OptimisationError, Exception)
+    def test_optimization_error_is_exception(self):
+        """Test that OptimizationError is an Exception subclass."""
+        assert issubclass(OptimizationError, Exception)
 
 
 class TestFailedIterationError:
@@ -45,26 +45,26 @@ class TestFailedIterationError:
         assert issubclass(FailedIterationError, Exception)
 
 
-class TestOptimiserSettings:
-    """Test the OptimiserSettings dataclass."""
+class TestOptimizerSettings:
+    """Test the OptimizerSettings dataclass."""
 
-    def test_optimiser_settings_creation(self):
-        """Test that OptimiserSettings can be instantiated."""
-        settings = OptimiserSettings(max_evals=10)
+    def test_optimizer_settings_creation(self):
+        """Test that OptimizerSettings can be instantiated."""
+        settings = OptimizerSettings(max_evals=10)
 
         assert settings.max_evals == 10
 
-    def test_optimiser_settings_to_dict(self):
-        """Test the to_dict method of OptimiserSettings."""
-        settings = OptimiserSettings(max_evals=20)
+    def test_optimizer_settings_to_dict(self):
+        """Test the to_dict method of OptimizerSettings."""
+        settings = OptimizerSettings(max_evals=20)
         settings_dict = settings.to_dict()
 
         assert settings_dict == {"max_evals": 20}
         assert isinstance(settings_dict, dict)
 
 
-class TestBaseOptimiser:
-    """Test the BaseOptimiser abstract class."""
+class TestBaseOptimizer:
+    """Test the BaseOptimizer abstract class."""
 
     @pytest.fixture
     def mock_objective_function(self):
@@ -82,55 +82,55 @@ class TestBaseOptimiser:
         return mock_space
 
     @pytest.fixture
-    def optimiser_settings(self):
-        """Create optimiser settings."""
-        return OptimiserSettings(max_evals=10)
+    def optimizer_settings(self):
+        """Create optimizer settings."""
+        return OptimizerSettings(max_evals=10)
 
-    def test_base_optimiser_cannot_be_instantiated(
-        self, mock_objective_function, mock_search_space, optimiser_settings
+    def test_base_optimizer_cannot_be_instantiated(
+        self, mock_objective_function, mock_search_space, optimizer_settings
     ):
-        """Test that BaseOptimiser cannot be instantiated directly."""
+        """Test that BaseOptimizer cannot be instantiated directly."""
         with pytest.raises(TypeError) as exc_info:
-            BaseOptimiser(
+            BaseOptimizer(
                 objective_function=mock_objective_function,
                 search_space=mock_search_space,
-                settings=optimiser_settings,
+                settings=optimizer_settings,
             )
 
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
-    def test_base_optimiser_initialization_via_subclass(
-        self, mock_objective_function, mock_search_space, optimiser_settings
+    def test_base_optimizer_initialization_via_subclass(
+        self, mock_objective_function, mock_search_space, optimizer_settings
     ):
-        """Test that BaseOptimiser attributes are set correctly via a concrete subclass."""
+        """Test that BaseOptimizer attributes are set correctly via a concrete subclass."""
 
         # Create a concrete implementation for testing
-        class ConcreteOptimiser(BaseOptimiser):
+        class ConcreteOptimizer(BaseOptimizer):
             def search(self):
                 return {"result": "test"}
 
-        optimiser = ConcreteOptimiser(
+        optimizer = ConcreteOptimizer(
             objective_function=mock_objective_function,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
-        assert optimiser.objective_function == mock_objective_function
-        assert optimiser._search_space == mock_search_space
-        assert optimiser.settings == optimiser_settings
+        assert optimizer.objective_function == mock_objective_function
+        assert optimizer._search_space == mock_search_space
+        assert optimizer.settings == optimizer_settings
 
-    def test_base_optimiser_search_method_is_abstract(self):
+    def test_base_optimizer_search_method_is_abstract(self):
         """Test that the search method is abstract and must be implemented."""
 
         # Create a subclass without implementing search
-        class IncompleteOptimiser(BaseOptimiser):
+        class IncompleteOptimizer(BaseOptimizer):
             pass
 
         with pytest.raises(TypeError) as exc_info:
-            IncompleteOptimiser(
+            IncompleteOptimizer(
                 objective_function=MagicMock(),
                 search_space=MagicMock(spec=SearchSpace),
-                settings=OptimiserSettings(max_evals=5),
+                settings=OptimizerSettings(max_evals=5),
             )
 
         assert "Can't instantiate abstract class" in str(exc_info.value)

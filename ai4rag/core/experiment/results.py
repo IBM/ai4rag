@@ -47,7 +47,7 @@ class EvaluationResult:
         Time in seconds how long did experiment take to run.
 
     final_score : float
-        Single score calculated for optimisation process as the value to be minimized or maximised.
+        Single score calculated for optimization process as the value to be minimized or maximized.
 
     rag_pattern : BaseRAGTemplate | None, default=None
         RAG Pattern instance that can be used.
@@ -69,7 +69,7 @@ class EvaluationResult:
 
 class ExperimentResults:
     """
-    Class holding information about each run in the optimisation process
+    Class holding information about each run in the optimization process.
 
     Attributes
     ----------

@@ -143,8 +143,4 @@ class BaseEventHandler(ABC):
                     }
                 }
             ]
-
-        inference_service_data : AIServiceData
-            Data for the AI inference service. It should contain both code and
-            metadata for the AI (inference) service.
         """

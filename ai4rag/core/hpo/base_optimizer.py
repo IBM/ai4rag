@@ -8,11 +8,11 @@ from typing import Any, Callable
 
 from ai4rag.search_space.src.search_space import SearchSpace
 
-__all__ = ["BaseOptimiser", "OptimiserSettings", "OptimisationError", "FailedIterationError"]
+__all__ = ["BaseOptimizer", "OptimizerSettings", "OptimizationError", "FailedIterationError"]
 
 
-class OptimisationError(Exception):
-    """Custom class representing exception occurring in the Optimiser."""
+class OptimizationError(Exception):
+    """Custom class representing exception occurring in the Optimizer."""
 
 
 class FailedIterationError(Exception):
@@ -20,14 +20,14 @@ class FailedIterationError(Exception):
 
 
 @dataclass
-class OptimiserSettings:
+class OptimizerSettings:
     """
-    Representation of the general Optimiser Settings.
+    Representation of the general Optimizer Settings.
 
     Parameters
     ----------
     max_evals : int
-        Maximum number of evaluations performed during optimisation process.
+        Maximum number of evaluations performed during optimization process.
 
     Methods
     -------
@@ -49,9 +49,9 @@ class OptimiserSettings:
         return asdict(self)
 
 
-class BaseOptimiser(ABC):
+class BaseOptimizer(ABC):
     """
-    Abstract class defining interface of Optimiser used in AI4RAGExperiment
+    Abstract class defining interface of Optimizer used in AI4RAGExperiment
 
     Parameters
     ----------
@@ -64,7 +64,7 @@ class BaseOptimiser(ABC):
     search_space : SearchSpace
         List of parameters that algorithm will optimize.
 
-    settings : OptimiserSettings
+    settings : OptimizerSettings
         Instance holding all the settings needed for the user
 
     Methods
@@ -78,7 +78,7 @@ class BaseOptimiser(ABC):
         self,
         objective_function: Callable[[dict], float],
         search_space: SearchSpace,
-        settings: OptimiserSettings,
+        settings: OptimizerSettings,
     ):
         self.objective_function = objective_function
         self._search_space = search_space

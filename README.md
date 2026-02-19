@@ -1,6 +1,7 @@
-> [!IMPORTANT]  
-> To make the best use of `ai4rag` user is encouraged to use it with `llama-stack`.
-> For that server with available models (at least 1 foundation model and 1 embedding model) and vector database needs to be provided.
+> [!IMPORTANT]
+> `ai4rag` is designed to be provider agnostic: user may provide his own implementation for foundation model, embedding model or vector store and use them for the experiment.
+> Out of the box `ai4rag` is designed to work with [Llama Stack](https://github.com/llamastack/llama-stack).
+> To use the full capabilities of ai4rag, you'll need access to a Llama Stack server configured with at least one foundation model, one embedding model, and a vector database.
 
 
 <div align="center">
@@ -18,7 +19,7 @@
 [![HPO](https://img.shields.io/badge/⚙️-Hyperparameter%20Optimization-F59E0B?style=flat-square)](#)
 [![AutoML](https://img.shields.io/badge/🚀-AutoML%20for%20RAG-8B5CF6?style=flat-square)](#)
 
-**Initialises RAG Template with optimal parameters**
+**Initializes RAG Templates with optimal parameters**
 
 [Quick Start](#quick-start) • [Llama Stack](#running-with-llama-stack-server) • [Contribution](#contribution)
 
@@ -28,9 +29,8 @@
 
 ## 🎯 What is ai4RAG?
 
-`ai4RAG` is an **optimization engine for RAG Templates** that is LLM and Vector Database provider agnostic. 
-It accepts variety of RAG Templates and search space definition.
-Returns initialised RAG Template with optimal parameters' values (called RAG Pattern).
+`ai4RAG` is an **optimization engine for RAG Templates** that is LLM and vector database provider agnostic.
+It accepts a variety of RAG Templates and a search space definition, then returns an initialized RAG Template with optimal parameter values (called a RAG Pattern).
 
 ## Llama Stack
 
@@ -50,20 +50,20 @@ When using the Llama Stack backend, ai4RAG relies on:
 
 
 ## Quick start
-1. [Provide instance of `llama-stack-client` to properly utilise `llama-stack`.](#prepare-llama-stack-client)
-2. [Prepare your knowledge base to be used in the experiment.](#prepare-knowledge-base-documents)
-3. [Prepare `benchmark_data.json`.](#prepare-benchmark_datajson)
+1. [Provide an instance of `llama-stack-client` to integrate with Llama Stack.](#prepare-llama-stack-client)
+2. [Prepare your knowledge base documents for the experiment.](#prepare-knowledge-base-documents)
+3. [Prepare `benchmark_data.json` with evaluation questions and answers.](#prepare-benchmark_datajson)
 4. [Define and constrain your search space.](#define-and-constrain-search-space)
-5. [Configure optimiser.](#configure-optimiser)
-6. [Prepare and run the experiment.](#run-the-experiment) 
+5. [Configure the optimizer.](#configure-optimizer)
+6. [Create and run the experiment.](#run-the-experiment) 
 
 
 ### Prepare `llama-stack-client`
-To provide full integration and use `ai4rag` with Llama Stack user needs to instantiate `LlamaStackClient`.
-This will allow to base the experiment on tha models and vector stores available under llama stack server.
+To enable full integration with Llama Stack, instantiate a `LlamaStackClient`.
+This allows ai4rag to use the models and vector stores available on your Llama Stack server.
 
 > [!tip]
-> User is encouraged to store all the credential in `.env` file.
+> Store your credentials securely in a `.env` file.
 
 ```python
 import os
@@ -74,15 +74,12 @@ client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API
 ```
 
 ### Prepare knowledge base documents
-To run the experiment user needs to prepare set of documents that will be used as a knowledge base for retrieval.
-These documents will be used to ground LLM's response.
-
-They should be contained within a local directory.
-
-To read the documents user can utilise `FileStore` class from `dev_utils` module.
+Prepare a set of documents to serve as the knowledge base for retrieval.
+These documents will be used to ground the LLM's responses and should be stored in a local directory.
 
 > [!note]
-> Supported documents formats can be found in the `FileStore` implementation.
+> If you are using the project locally, you can load documents using the `FileStore` class from the `dev_utils` module.
+> Supported document formats can be found in the `FileStore` implementation.
 
 ```python
 from pathlib import Path
@@ -94,7 +91,7 @@ documents = FileStore(documents_path).load_as_documents()
 
 
 ### Prepare `benchmark_data.json`
-To prepare for the experiment user needs to provide `benchmark_data.json` following schema:
+Create a `benchmark_data.json` file following this schema:
 ```json
 [
 	{
@@ -116,7 +113,7 @@ To prepare for the experiment user needs to provide `benchmark_data.json` follow
 ]
 ```
 
-Benchmark records need to be based on the knowledge base documents.
+All benchmark questions and answers must be derived from your knowledge base documents.
 
 ```python
 from dev_utils.utils import read_benchmark_from_json
@@ -127,8 +124,8 @@ benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
 
 ### Define and constrain search space
-Search space defines possible combinations of parameters where each combination creates a unique RAG Pattern.
-During the experiment engine will optimise RAG Pattern for selected metric over the given search space, using objective function to return metric.
+The search space defines all possible parameter combinations, where each combination creates a unique RAG Pattern.
+During the experiment, the engine will optimize the RAG Pattern for the selected metric over the given search space, using an objective function to evaluate each configuration.
 
 ```python
 from ai4rag.search_space.src.parameter import Parameter
@@ -159,30 +156,28 @@ search_space = AI4RAGSearchSpace(
 )
 ```
 
-> [!important]
-> As models discovery is under development, user needs to specify what models to use.
-> Additionally user may constrain any RAG parameter using similar convention.
+> [!tip]
+> To run automatic models discovery with Llama Stack you may use `prepare_search_space_with_llama_stack()` from `ai4rag.search_space.prepare_search_space`.
 
 
-### Configure optimiser
-User has full control over the optimisation algorithm.
-To configure `GAMOptimiser` user may tune `GAMOptSettings`.
+### Configure optimizer
+You have full control over the optimization algorithm. Configure the `GAMOptimizer` by adjusting `GAMOptSettings`.
 
 ```python
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 
-optimiser_settings = GAMOptSettings(
+optimizer_settings = GAMOptSettings(
     max_evals=10, n_random_nodes=4
 )
 ```
 
 
 ### Run the experiment
-Using information from all previous steps user may now create an experiment and run the ai4rag optimisation engine.
+Using the information from the previous steps, create an experiment and run the ai4rag optimization engine.
 
 > [!note]
-> To use milvus via `llama-stack` user needs to specify `"ls_milvus"` as the `vector_store_type`.
-> To use `chroma` in memory user needs to use `"chroma"`.
+> To use Milvus via Llama Stack, specify `"ls_milvus"` as the `vector_store_type`.
+> To use ChromaDB in-memory, specify `"chroma"`.
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
@@ -194,17 +189,16 @@ experiment = AI4RAGExperiment(
     benchmark_data=benchmark_data,
     search_space=search_space,
     vector_store_type="ls_milvus",
-    optimiser_settings=optimiser_settings,
-    event_handler=LocalEventHandler(),
-    output_path="<path where to store results files>",
+    optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="<local-path-to-store-your-output-files>"),
 )
 
 best = experiment.search()
 ```
 
 > [!tip]
-> Users are encouraged to use their own implementation of `EventHandler` to handle status changes and artifacts produced during the experiment.
-> To see more details, please see [`BaseEventHandler implementation`](http://github.com/IBM/ai4rag/blob/main/ai4rag/utils/event_handler/event_handler.py)
+> For production use, implement your own custom `EventHandler` to handle status changes and artifacts produced during the experiment.
+> See the [`BaseEventHandler implementation`](http://github.com/IBM/ai4rag/blob/main/ai4rag/utils/event_handler/event_handler.py) for reference.
 
 
 ## Contribution

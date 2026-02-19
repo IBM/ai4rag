@@ -33,8 +33,8 @@ if __name__ == "__main__":
     documents = file_store.load_as_documents()
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
-    # Configure optimiser
-    optimiser_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
+    # Configure optimizer
+    optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
 
     # Edit configurations of search space
     # search_space = AI4RAGSearchSpace(
@@ -83,7 +83,7 @@ if __name__ == "__main__":
         documents=documents,
         benchmark_data=benchmark_data,
         search_space=search_space,
-        optimiser_settings=optimiser_settings,
+        optimizer_settings=optimizer_settings,
         event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_mocks"),
         vector_store_type="chroma",
     )
