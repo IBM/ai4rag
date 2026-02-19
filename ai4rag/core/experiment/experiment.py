@@ -27,8 +27,8 @@ from ai4rag.core.experiment.utils import (
     get_retrieval_params,
     query_rag,
 )
-from ai4rag.core.hpo.base_optimiser import BaseOptimiser, OptimisationError, OptimiserSettings
-from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimiser
+from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
+from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimizer
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.chunking import LangChainChunker
@@ -75,8 +75,8 @@ class AI4RAGExperiment:
     vector_store_type : Literal["chroma", "ls_milvus"]
         Specific type of Vector Data Base that will be used during the experiment.
 
-    optimiser_settings : OptimiserSettings
-        Settings for the optimiser to be used during the experiment.
+    optimizer_settings : OptimizerSettings
+        Settings for the optimizer to be used during the experiment.
 
     client : LlamaStackClient | Any
         Instance of the llama stack client or other client allowing to communicate
@@ -126,7 +126,7 @@ class AI4RAGExperiment:
         benchmark_data: pd.DataFrame,
         search_space: AI4RAGSearchSpace,
         vector_store_type: Literal["chroma", "ls_milvus"],
-        optimiser_settings: OptimiserSettings,
+        optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
         client: LlamaStackClient | Any = None,
         optimization_metric: str = MetricType.FAITHFULNESS,
@@ -136,7 +136,7 @@ class AI4RAGExperiment:
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.search_space = search_space
         self.vector_store_type = vector_store_type
-        self.optimiser_settings = optimiser_settings
+        self.optimizer_settings = optimizer_settings
         self.event_handler = event_handler
         self.client = client
         self.optimization_metric = optimization_metric
@@ -471,7 +471,7 @@ class AI4RAGExperiment:
         logger.info("Starting RAG optimization process...")
 
         def objective_function(space: RAGParamsType) -> float | None:
-            """Function passed to the optimiser."""
+            """Function passed to the optimizer."""
             try:
                 return self.run_single_evaluation(space)
             except AI4RAGError as err:
@@ -496,23 +496,23 @@ class AI4RAGExperiment:
                 name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
             )
 
-        optimiser_class: type[BaseOptimiser] = kwargs.get("optimiser", RandomOptimiser)
+        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", RandomOptimizer)
 
-        # In the search kwargs user may pass different optimiser instance for testing purposes
-        optimiser = optimiser_class(
+        # In the search kwargs user may pass different optimizer instance for testing purposes
+        optimizer = optimizer_class(
             objective_function=objective_function,
             search_space=self.search_space,
-            settings=self.optimiser_settings,
+            settings=self.optimizer_settings,
         )
         logger.debug(
-            "Using optimiser: %s with optimiser settings: %s",
-            optimiser_class.__name__,
-            self.optimiser_settings.to_dict(),
+            "Using optimizer: %s with optimizer settings: %s",
+            optimizer_class.__name__,
+            self.optimizer_settings.to_dict(),
         )
 
         try:
-            _ = optimiser.search()
-        except OptimisationError as err:
+            _ = optimizer.search()
+        except OptimizationError as err:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
 

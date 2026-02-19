@@ -7,8 +7,8 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from ai4rag.core.hpo.base_optimiser import FailedIterationError, OptimisationError
-from ai4rag.core.hpo.gam_opt import GAMOptimiser, GAMOptSettings
+from ai4rag.core.hpo.base_optimizer import FailedIterationError, OptimizationError
+from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
 from ai4rag.search_space.src.search_space import SearchSpace
 
 
@@ -51,17 +51,17 @@ class TestGAMOptSettings:
 
         assert settings.n_random_nodes == 5
 
-    def test_gam_opt_settings_inherits_from_optimiser_settings(self):
-        """Test that GAMOptSettings inherits from OptimiserSettings."""
-        from ai4rag.core.hpo.base_optimiser import OptimiserSettings
+    def test_gam_opt_settings_inherits_from_optimizer_settings(self):
+        """Test that GAMOptSettings inherits from OptimizerSettings."""
+        from ai4rag.core.hpo.base_optimizer import OptimizerSettings
 
         settings = GAMOptSettings(max_evals=10)
 
-        assert isinstance(settings, OptimiserSettings)
+        assert isinstance(settings, OptimizerSettings)
 
 
-class TestGAMOptimiser:
-    """Test the GAMOptimiser class."""
+class TestGAMOptimizer:
+    """Test the GAMOptimizer class."""
 
     @pytest.fixture
     def mock_search_space(self):
@@ -79,66 +79,66 @@ class TestGAMOptimiser:
         return mock_space
 
     @pytest.fixture
-    def optimiser_settings(self):
+    def optimizer_settings(self):
         """Create GAMOptSettings."""
         return GAMOptSettings(max_evals=6, n_random_nodes=3)
 
-    def test_gam_optimiser_initialization(self, mock_search_space, optimiser_settings):
-        """Test that GAMOptimiser initializes correctly."""
+    def test_gam_optimizer_initialization(self, mock_search_space, optimizer_settings):
+        """Test that GAMOptimizer initializes correctly."""
         objective_func = MagicMock(return_value=0.5)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
-        assert optimiser.objective_function == objective_func
-        assert optimiser._search_space == mock_search_space
-        assert optimiser.settings == optimiser_settings
-        assert optimiser.evaluations == []
-        assert optimiser._evaluated_combinations == []
-        assert optimiser._encoders_with_columns == []
+        assert optimizer.objective_function == objective_func
+        assert optimizer._search_space == mock_search_space
+        assert optimizer.settings == optimizer_settings
+        assert optimizer.evaluations == []
+        assert optimizer._evaluated_combinations == []
+        assert optimizer._encoders_with_columns == []
 
-    def test_max_iterations_getter(self, mock_search_space, optimiser_settings):
+    def test_max_iterations_getter(self, mock_search_space, optimizer_settings):
         """Test the max_iterations property getter."""
         objective_func = MagicMock(return_value=0.5)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
-        assert optimiser.max_iterations == 6
+        assert optimizer.max_iterations == 6
 
     def test_max_iterations_setter_within_limit(self, mock_search_space):
         """Test setting max_iterations when it's within the search space limit."""
         settings = GAMOptSettings(max_evals=4)
         objective_func = MagicMock(return_value=0.5)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        optimiser.max_iterations = 3
-        assert optimiser.max_iterations == 3
+        optimizer.max_iterations = 3
+        assert optimizer.max_iterations == 3
 
     def test_max_iterations_setter_exceeds_limit(self, mock_search_space):
         """Test setting max_iterations when it exceeds the search space combinations."""
         settings = GAMOptSettings(max_evals=10)
         objective_func = MagicMock(return_value=0.5)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
         # Should be capped at max_combinations (6)
-        assert optimiser.max_iterations == 6
+        assert optimizer.max_iterations == 6
 
     def test_get_remaining_evaluations(self):
         """Test the _get_remaining_evaluations static method."""
@@ -152,7 +152,7 @@ class TestGAMOptimiser:
             {"param1": "a", "param2": 1},
         ]
 
-        remaining = GAMOptimiser._get_remaining_evaluations(all_combinations, evaluated)
+        remaining = GAMOptimizer._get_remaining_evaluations(all_combinations, evaluated)
 
         assert len(remaining) == 2
         assert {"param1": "b", "param2": 2} in remaining
@@ -171,7 +171,7 @@ class TestGAMOptimiser:
             {"param1": "b", "param2": 2},
         ]
 
-        remaining = GAMOptimiser._get_remaining_evaluations(all_combinations, evaluated)
+        remaining = GAMOptimizer._get_remaining_evaluations(all_combinations, evaluated)
 
         assert len(remaining) == 0
 
@@ -184,60 +184,60 @@ class TestGAMOptimiser:
 
         evaluated = []
 
-        remaining = GAMOptimiser._get_remaining_evaluations(all_combinations, evaluated)
+        remaining = GAMOptimizer._get_remaining_evaluations(all_combinations, evaluated)
 
         assert len(remaining) == 2
 
-    def test_objective_function_wrapper_success(self, mock_search_space, optimiser_settings):
+    def test_objective_function_wrapper_success(self, mock_search_space, optimizer_settings):
         """Test the _objective_function wrapper with successful execution."""
         objective_func = MagicMock(return_value=0.42)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
         params = {"param1": "test", "param2": 10}
-        result = optimiser._objective_function(params)
+        result = optimizer._objective_function(params)
 
         assert result == 0.42
         objective_func.assert_called_once_with(params)
 
-    def test_objective_function_wrapper_catches_failed_iteration_error(self, mock_search_space, optimiser_settings):
+    def test_objective_function_wrapper_catches_failed_iteration_error(self, mock_search_space, optimizer_settings):
         """Test that _objective_function catches FailedIterationError and returns None."""
         objective_func = MagicMock(side_effect=FailedIterationError("Iteration failed"))
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
         params = {"param1": "test", "param2": 10}
-        result = optimiser._objective_function(params)
+        result = optimizer._objective_function(params)
 
         assert result is None
         objective_func.assert_called_once_with(params)
 
-    def test_get_iterations_limit(self, mock_search_space, optimiser_settings):
+    def test_get_iterations_limit(self, mock_search_space, optimizer_settings):
         """Test the _get_iterations_limit method."""
         objective_func = MagicMock(return_value=0.5)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
         # With max_iterations=6, n_random_nodes=3, evals_per_trial=1
         # iterations_limit = ceil((6 - 0) / 1) = 6
-        iterations_limit = optimiser._get_iterations_limit()
+        iterations_limit = optimizer._get_iterations_limit()
         assert iterations_limit == 6
 
         # After evaluating 3 random nodes
-        optimiser.evaluations = [{"score": 0.5}] * 3
-        iterations_limit = optimiser._get_iterations_limit()
+        optimizer.evaluations = [{"score": 0.5}] * 3
+        iterations_limit = optimizer._get_iterations_limit()
         # ceil((6 - 3) / 1) = 3
         assert iterations_limit == 3
 
@@ -246,40 +246,40 @@ class TestGAMOptimiser:
         settings = GAMOptSettings(max_evals=10, evals_per_trial=2)
         objective_func = MagicMock(return_value=0.5)
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        optimiser.evaluations = [{"score": 0.5}] * 4
-        iterations_limit = optimiser._get_iterations_limit()
+        optimizer.evaluations = [{"score": 0.5}] * 4
+        iterations_limit = optimizer._get_iterations_limit()
         # ceil((6 - 4) / 2) = ceil(1) = 1
         assert iterations_limit == 1
 
-    def test_evaluate_initial_random_nodes(self, mock_search_space, optimiser_settings, mocker):
+    def test_evaluate_initial_random_nodes(self, mock_search_space, optimizer_settings, mocker):
         """Test the evaluate_initial_random_nodes method."""
         objective_func = MagicMock(side_effect=[0.3, 0.7, 0.5])
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
-        optimiser.evaluate_initial_random_nodes()
+        optimizer.evaluate_initial_random_nodes()
 
         # Should evaluate n_random_nodes=3 combinations
-        assert len(optimiser.evaluations) == 3
-        assert len(optimiser._evaluated_combinations) == 3
+        assert len(optimizer.evaluations) == 3
+        assert len(optimizer._evaluated_combinations) == 3
         assert objective_func.call_count == 3
 
         # Check that scores are stored
-        for evaluation in optimiser.evaluations:
+        for evaluation in optimizer.evaluations:
             assert "score" in evaluation
 
-    def test_evaluate_initial_random_nodes_with_failures(self, mock_search_space, optimiser_settings, mocker):
+    def test_evaluate_initial_random_nodes_with_failures(self, mock_search_space, optimizer_settings, mocker):
         """Test evaluate_initial_random_nodes with some failed iterations."""
         # First fails, second succeeds, third succeeds
         objective_func = MagicMock(
@@ -293,19 +293,19 @@ class TestGAMOptimiser:
         )
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
-        optimiser.evaluate_initial_random_nodes()
+        optimizer.evaluate_initial_random_nodes()
 
         # Should continue until n_random_nodes=3 successful evaluations
         # or until max_iterations is reached
-        successful_evals = [e for e in optimiser.evaluations if e["score"] is not None]
+        successful_evals = [e for e in optimizer.evaluations if e["score"] is not None]
         assert len(successful_evals) == 3
-        assert len(optimiser.evaluations) >= 3
+        assert len(optimizer.evaluations) >= 3
 
     def test_evaluate_initial_random_nodes_stops_at_max_iterations(self, mock_search_space, mocker):
         """Test that evaluate_initial_random_nodes stops at max_iterations."""
@@ -314,18 +314,18 @@ class TestGAMOptimiser:
         objective_func = MagicMock(side_effect=[FailedIterationError("Failed")] * 10)
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        optimiser.evaluate_initial_random_nodes()
+        optimizer.evaluate_initial_random_nodes()
 
         # Should stop at max_iterations=4, not n_random_nodes=10
-        assert len(optimiser.evaluations) == 4
+        assert len(optimizer.evaluations) == 4
 
-    def test_prepare_encoder(self, mock_search_space, optimiser_settings, mocker):
+    def test_prepare_encoder(self, mock_search_space, optimizer_settings, mocker):
         """Test the _prepare_encoder method."""
         objective_func = MagicMock(return_value=0.5)
 
@@ -335,24 +335,24 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
         # Initially no encoders
-        assert len(optimiser._encoders_with_columns) == 0
+        assert len(optimizer._encoders_with_columns) == 0
 
-        optimiser._prepare_encoder()
+        optimizer._prepare_encoder()
 
         # Should have created encoders for each column
-        assert len(optimiser._encoders_with_columns) == 2  # param1 and param2
-        column_names = [col for col, enc in optimiser._encoders_with_columns]
+        assert len(optimizer._encoders_with_columns) == 2  # param1 and param2
+        column_names = [col for col, enc in optimizer._encoders_with_columns]
         assert "param1" in column_names
         assert "param2" in column_names
 
-    def test_prepare_encoder_called_only_once(self, mock_search_space, optimiser_settings, mocker):
+    def test_prepare_encoder_called_only_once(self, mock_search_space, optimizer_settings, mocker):
         """Test that _prepare_encoder only prepares encoders once."""
         objective_func = MagicMock(return_value=0.5)
 
@@ -361,20 +361,20 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimiser_settings,
+            settings=optimizer_settings,
         )
 
-        optimiser._prepare_encoder()
-        first_encoders = optimiser._encoders_with_columns.copy()
+        optimizer._prepare_encoder()
+        first_encoders = optimizer._encoders_with_columns.copy()
 
         # Call again
-        optimiser._prepare_encoder()
+        optimizer._prepare_encoder()
 
         # Should not recreate encoders
-        assert optimiser._encoders_with_columns == first_encoders
+        assert optimizer._encoders_with_columns == first_encoders
 
     def test_run_iteration(self, mock_search_space, mocker):
         """Test the _run_iteration method."""
@@ -394,20 +394,20 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
         # First evaluate initial nodes
-        optimiser.evaluate_initial_random_nodes()
+        optimizer.evaluate_initial_random_nodes()
 
         # Then run one iteration
-        optimiser._run_iteration()
+        optimizer._run_iteration()
 
         # Should have evaluated one more combination
-        assert len(optimiser.evaluations) == 3
+        assert len(optimizer.evaluations) == 3
         assert mock_gam_instance.fit.called
         assert mock_gam_instance.predict.called
 
@@ -433,18 +433,18 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        result = optimiser.search()
+        result = optimizer.search()
 
         # Should return the best configuration
         assert "score" in result
         assert result["score"] == 0.8
-        assert len(optimiser.evaluations) == 5
+        assert len(optimizer.evaluations) == 5
 
     def test_search_all_iterations_failed(self, mock_search_space, mocker):
         """Test search when all iterations fail."""
@@ -453,14 +453,14 @@ class TestGAMOptimiser:
         objective_func = MagicMock(side_effect=[FailedIterationError("Failed")] * 10)
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        with pytest.raises(OptimisationError) as exc_info:
-            optimiser.search()
+        with pytest.raises(OptimizationError) as exc_info:
+            optimizer.search()
 
         assert "Number of evaluations has reached limit" in str(exc_info.value)
         assert "All iterations have failed" in str(exc_info.value)
@@ -490,13 +490,13 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        result = optimiser.search()
+        result = optimizer.search()
 
         # Should return the best successful evaluation
         assert result["score"] == 0.8
@@ -518,17 +518,17 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
-        optimiser.evaluate_initial_random_nodes()
-        optimiser._run_iteration()
+        optimizer.evaluate_initial_random_nodes()
+        optimizer._run_iteration()
 
         # Should have evaluated evals_per_trial=2 more combinations
-        assert len(optimiser.evaluations) == 4
+        assert len(optimizer.evaluations) == 4
 
     def test_run_iteration_filters_out_nan_scores_for_training(self, mock_search_space, mocker):
         """Test that _run_iteration filters out NaN scores when training GAM."""
@@ -553,25 +553,25 @@ class TestGAMOptimiser:
             side_effect=lambda df: df,
         )
 
-        optimiser = GAMOptimiser(
+        optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
             settings=settings,
         )
 
         # Manually set evaluations with some None scores
-        optimiser.evaluations = [
+        optimizer.evaluations = [
             {"param1": "a", "param2": 1, "score": 0.3},
             {"param1": "b", "param2": 2, "score": None},
             {"param1": "c", "param2": 3, "score": 0.5},
         ]
-        optimiser._evaluated_combinations = [
+        optimizer._evaluated_combinations = [
             {"param1": "a", "param2": 1},
             {"param1": "b", "param2": 2},
             {"param1": "c", "param2": 3},
         ]
 
-        optimiser._run_iteration()
+        optimizer._run_iteration()
 
         # GAM should be trained only on non-None scores
         # The fit call should receive only 2 samples (those with non-None scores)
