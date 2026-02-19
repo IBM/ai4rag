@@ -7,7 +7,7 @@ from typing import Sequence
 
 from langchain_core.documents import Document
 
-from ai4rag.rag.embedding.base_model import EmbeddingModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 
 __all__ = ["BaseVectorStore"]
 
@@ -18,7 +18,9 @@ class BaseVectorStore(ABC):
     Single instance defines 1 collection/index that can be used to store or retrieve data.
     """
 
-    def __init__(self, embedding_model: EmbeddingModel, distance_metric: str, reuse_collection_name: str | None = None):
+    def __init__(
+        self, embedding_model: BaseEmbeddingModel, distance_metric: str, reuse_collection_name: str | None = None
+    ):
         self.embedding_model = embedding_model
         self.distance_metric = distance_metric
         self.reuse_collection_name = reuse_collection_name

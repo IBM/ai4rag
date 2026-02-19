@@ -7,7 +7,7 @@ from typing import Optional, TypedDict
 from httpx import Timeout
 from llama_stack_client import Client
 
-from .base_model import EmbeddingModel
+from .base_model import BaseEmbeddingModel
 
 __all__ = ["LSEmbeddingModel", "LSEmbeddingParams"]
 
@@ -23,7 +23,7 @@ class LSEmbeddingParams(TypedDict, total=False):
     provider_resource_id: Optional[str]
 
 
-class LSEmbeddingModel(EmbeddingModel[Client, LSEmbeddingParams]):
+class LSEmbeddingModel(BaseEmbeddingModel[Client, LSEmbeddingParams]):
     """Creates embeddings for LLamaStack client."""
 
     def __init__(self, client: Client, model_id: str, params: LSEmbeddingParams):
