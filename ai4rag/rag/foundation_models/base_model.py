@@ -16,7 +16,7 @@ FoundationModelClientT = TypeVar("FoundationModelClientT")
 FoundationModelParamsT = TypeVar("FoundationModelParamsT")
 
 
-class FoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
+class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
 
     user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")
     context_template_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="context_template_text")
@@ -50,7 +50,7 @@ class FoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], A
         return repr(self)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, FoundationModel):
+        if not isinstance(other, BaseFoundationModel):
             raise NotImplementedError
 
         return self.model_id == other.model_id

@@ -7,11 +7,11 @@ from typing import Any
 
 import pytest
 
-from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
 
-class ConcreteFoundationModel(FoundationModel[Any, dict]):
-    """Concrete implementation of FoundationModel for testing purposes."""
+class ConcreteFoundationModel(BaseFoundationModel[Any, dict]):
+    """Concrete implementation of BaseFoundationModel for testing purposes."""
 
     def chat(self, system_message: str, user_message: str) -> str:
         """Simple chat implementation for testing."""
@@ -19,7 +19,7 @@ class ConcreteFoundationModel(FoundationModel[Any, dict]):
 
 
 class TestFoundationModel:
-    """Test suite for FoundationModel base class."""
+    """Test suite for BaseFoundationModel base class."""
 
     @pytest.fixture
     def mock_client(self, mocker):
@@ -37,7 +37,7 @@ class TestFoundationModel:
         return ConcreteFoundationModel(client=mock_client, model_id="test-model-id", model_params=model_params)
 
     def test_init(self, mock_client, model_params):
-        """Test FoundationModel initialization."""
+        """Test BaseFoundationModel initialization."""
         model = ConcreteFoundationModel(client=mock_client, model_id="test-model-123", model_params=model_params)
         assert model.client == mock_client
         assert model.model_id == "test-model-123"
@@ -65,7 +65,7 @@ class TestFoundationModel:
         assert model1 != model2
 
     def test_eq_with_non_foundation_model(self, foundation_model):
-        """Test equality with non-FoundationModel object raises NotImplementedError."""
+        """Test equality with non-BaseFoundationModel object raises NotImplementedError."""
         with pytest.raises(NotImplementedError):
             foundation_model == "not-a-foundation-model"
 
@@ -96,7 +96,7 @@ class TestFoundationModel:
         assert hash(model1) != hash(model2)
 
     def test_models_can_be_used_in_set(self, mock_client, model_params):
-        """Test that FoundationModel instances can be added to a set."""
+        """Test that BaseFoundationModel instances can be added to a set."""
         model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params=model_params)
         model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", model_params=model_params)
         model3 = ConcreteFoundationModel(
@@ -106,7 +106,7 @@ class TestFoundationModel:
         assert len(model_set) == 2  # model1 and model3 are considered equal
 
     def test_models_can_be_used_as_dict_keys(self, mock_client, model_params):
-        """Test that FoundationModel instances can be used as dictionary keys."""
+        """Test that BaseFoundationModel instances can be used as dictionary keys."""
         model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params=model_params)
         model2 = ConcreteFoundationModel(
             client=mock_client, model_id="model-1", model_params={"different": "params"}  # Same as model1
@@ -122,9 +122,9 @@ class TestFoundationModel:
         assert result == "System: system prompt, User: user query"
 
     def test_chat_is_abstract(self):
-        """Test that FoundationModel.chat is abstract and cannot be instantiated without implementation."""
+        """Test that BaseFoundationModel.chat is abstract and cannot be instantiated without implementation."""
         with pytest.raises(TypeError) as exc_info:
-            FoundationModel(client=None, model_id="test", model_params={})
+            BaseFoundationModel(client=None, model_id="test", model_params={})
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
     @pytest.mark.parametrize(
@@ -143,7 +143,7 @@ class TestFoundationModel:
         assert repr(model) == expected_repr
 
     def test_different_client_types(self, model_params):
-        """Test that FoundationModel works with different client types."""
+        """Test that BaseFoundationModel works with different client types."""
 
         class CustomClient:
             pass
@@ -153,7 +153,7 @@ class TestFoundationModel:
         assert isinstance(model.client, CustomClient)
 
     def test_different_param_types(self, mock_client):
-        """Test that FoundationModel works with different parameter types."""
+        """Test that BaseFoundationModel works with different parameter types."""
         # Test with dict
         model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params={"key": "value"})
         assert model1.model_params == {"key": "value"}

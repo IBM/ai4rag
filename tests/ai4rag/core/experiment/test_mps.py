@@ -6,11 +6,11 @@ import pandas as pd
 import pytest
 
 from ai4rag.core.experiment.mps import (
+    BaseEmbeddingModel,
+    BaseFoundationModel,
     BenchmarkData,
     ChromaVectorStore,
     Document,
-    EmbeddingModel,
-    FoundationModel,
     GenerationError,
     ModelsPreSelector,
     PreSelectorError,
@@ -49,13 +49,13 @@ def documents() -> list[Document]:
 
 @pytest.fixture
 def foundation_models(mocker):
-    fm_list = [mocker.MagicMock(spec=FoundationModel, model_id=f"foundation_model_{idx}") for idx in range(4)]
+    fm_list = [mocker.MagicMock(spec=BaseFoundationModel, model_id=f"foundation_model_{idx}") for idx in range(4)]
     return fm_list
 
 
 @pytest.fixture
 def embedding_models(mocker):
-    em_list = [mocker.MagicMock(spec=EmbeddingModel, model_id=f"embedding_model_{idx}") for idx in range(3)]
+    em_list = [mocker.MagicMock(spec=BaseEmbeddingModel, model_id=f"embedding_model_{idx}") for idx in range(3)]
     return em_list
 
 
@@ -182,7 +182,7 @@ class TestModelsPreSelector:
         val_err = ValueError("Fake embeddings error")
         vs.add_documents.side_effect = val_err
         mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", return_value=vs)
-        mocked_em = mocker.MagicMock(EmbeddingModel)
+        mocked_em = mocker.MagicMock(BaseEmbeddingModel)
         mocked_em.model_id = "embedding_model_id"
 
         with pytest.raises(PreSelectorError) as err:

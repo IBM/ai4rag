@@ -10,8 +10,8 @@ from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import GenerationError
 from ai4rag.evaluator.base_evaluator import EvaluationData
-from ai4rag.rag.embedding.base_model import EmbeddingModel
-from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.utils.constants import AI4RAGParamNames
 
@@ -40,8 +40,8 @@ class RAGExperimentError(Exception):
 class RAGParamsType(TypedDict):
     """Parameters required for single AutoRAG Pattern evaluation."""
 
-    embedding_model: EmbeddingModel
-    foundation_model: FoundationModel
+    embedding_model: BaseEmbeddingModel
+    foundation_model: BaseFoundationModel
     chunk_size: int
     chunk_overlap: int | float
     chunking_method: Literal["recursive"]

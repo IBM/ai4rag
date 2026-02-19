@@ -6,14 +6,14 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from ai4rag.rag.embedding.base_model import EmbeddingModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.llama_stack import LSVectorStore
 
 
-class MockEmbeddingModel(EmbeddingModel):
-    """Mock EmbeddingModel for testing."""
+class MockEmbeddingModel(BaseEmbeddingModel):
+    """Mock BaseEmbeddingModel for testing."""
 
     def __init__(self):
         self.client = MagicMock()

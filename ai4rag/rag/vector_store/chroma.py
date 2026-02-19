@@ -11,7 +11,7 @@ from langchain_core.documents import Document
 
 from ai4rag import logger
 
-from ..embedding.base_model import EmbeddingModel
+from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
 from .utils import merge_window_into_a_document
 
@@ -22,7 +22,7 @@ class ChromaVectorStore(BaseVectorStore):
 
     Parameters
     ----------
-    embedding_model : EmbeddingModel
+    embedding_model : BaseEmbeddingModel
         Instance used for embedding documents and user's queries.
 
     reuse_collection_name : str, default=None
@@ -42,7 +42,7 @@ class ChromaVectorStore(BaseVectorStore):
 
     def __init__(
         self,
-        embedding_model: EmbeddingModel,
+        embedding_model: BaseEmbeddingModel,
         reuse_collection_name: str | None = None,
         distance_metric: str = "cosine",
         document_name_field: str = "document_id",
