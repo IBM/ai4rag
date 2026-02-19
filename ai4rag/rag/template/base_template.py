@@ -4,8 +4,8 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 
-from ..embedding.base_model import EmbeddingModel
-from ..foundation_models.base_model import FoundationModel
+from ..embedding.base_model import BaseEmbeddingModel
+from ..foundation_models.base_model import BaseFoundationModel
 from ..retrieval.retriever import Retriever
 from ..vector_store.base_vector_store import BaseVectorStore
 
@@ -29,13 +29,13 @@ class BaseRAGTemplate(ABC):
 
     Parameters
     ----------
-    foundation_model : FoundationModel
+    foundation_model : BaseFoundationModel
         The foundation model (LLM) used to generate answers based on retrieved context.
 
     retriever : Retriever
         The retriever component responsible for finding relevant documents from the vector store.
 
-    embedding_model : EmbeddingModel | None, default=None
+    embedding_model : BaseEmbeddingModel | None, default=None
         The embedding model used to convert text into vector representations.
 
     vector_store : BaseVectorStore | None, default=None
@@ -48,13 +48,13 @@ class BaseRAGTemplate(ABC):
 
     def __init__(
         self,
-        foundation_model: FoundationModel,
+        foundation_model: BaseFoundationModel,
         retriever: Retriever,
         vector_store: BaseVectorStore | None = None,
-        embedding_model: EmbeddingModel | None = None,
+        embedding_model: BaseEmbeddingModel | None = None,
     ):
-        self.embedding_model: EmbeddingModel = embedding_model
-        self.foundation_model: FoundationModel = foundation_model
+        self.embedding_model: BaseEmbeddingModel = embedding_model
+        self.foundation_model: BaseFoundationModel = foundation_model
         self.retriever: Retriever = retriever
         self.vector_store: BaseVectorStore = vector_store
 

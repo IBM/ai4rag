@@ -32,8 +32,8 @@ from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimizer
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.chunking import LangChainChunker
-from ai4rag.rag.embedding.base_model import EmbeddingModel
-from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
@@ -216,21 +216,21 @@ class AI4RAGExperiment:
 
     def run_pre_selection(
         self,
-        foundation_models: list[FoundationModel],
-        embedding_models: list[EmbeddingModel],
+        foundation_models: list[BaseFoundationModel],
+        embedding_models: list[BaseEmbeddingModel],
         n_records: int = 5,
         random_seed: int = 17,
-    ) -> dict[str, list[EmbeddingModel | FoundationModel]]:
+    ) -> dict[str, list[BaseEmbeddingModel | BaseFoundationModel]]:
         """
         Run models pre-selection using ModelsPreSelector and sample
         of the data.
 
         Parameters
         ----------
-        embedding_models : list[EmbeddingModel]
+        embedding_models : list[BaseEmbeddingModel]
             Embedding models to be considered during pre-selection process.
 
-        foundation_models : list[FoundationModel]
+        foundation_models : list[BaseFoundationModel]
             Foundation models to be evaluated during pre-selection process.
 
         n_records : int, default=5
@@ -241,7 +241,7 @@ class AI4RAGExperiment:
 
         Returns
         -------
-        dict[str, list[FoundationModel | EmbeddingModel]]
+        dict[str, list[BaseFoundationModel | EmbeddingModel]]
             Best embedding models and foundation models found in pre-selection.
         """
         _log_start_mps = (

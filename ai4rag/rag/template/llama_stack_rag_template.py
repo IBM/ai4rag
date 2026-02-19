@@ -11,8 +11,8 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.vector_store.llama_stack import LSVectorStore
 
-from ..embedding.llama_stack import LSEmbeddingModel
-from ..foundation_models.base_model import FoundationModel
+from ..embedding.base_model import BaseEmbeddingModel
+from ..foundation_models.base_model import BaseFoundationModel
 from .base_template import BaseRAGTemplate, RAGTemplateError
 
 
@@ -26,7 +26,7 @@ class LlamaStackRAG(BaseRAGTemplate):
 
     Parameters
     ----------
-    foundation_model : FoundationModel
+    foundation_model : BaseFoundationModel
         Initialized Llama Stack foundation model for text generation.
 
     retriever : Retriever
@@ -44,10 +44,10 @@ class LlamaStackRAG(BaseRAGTemplate):
 
     def __init__(
         self,
-        foundation_model: FoundationModel,
+        foundation_model: BaseFoundationModel,
         retriever: Retriever,
         chunker: LangChainChunker | None = None,
-        embedding_model: LSEmbeddingModel | None = None,
+        embedding_model: BaseEmbeddingModel | None = None,
         vector_store: LSVectorStore | None = None,
     ):
         super().__init__(

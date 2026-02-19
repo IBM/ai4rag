@@ -2,29 +2,21 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Annotated, Any
+from typing import Any
 
-from annotated_types import Ge, Gt, Le
-from llama_stack_client import LlamaStackClient
-from pydantic import BaseModel
+from openai import OpenAI
 
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
-from ai4rag.utils.constants import ChatGenerationConstants
 
 
-class ModelParameters(BaseModel):
-    max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
-    temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
-
-
-class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
-    """Integration point to use any model via Llama-stack API / client"""
+class OpenAIFoundationModel(BaseFoundationModel):
+    """Wrapper for OpenAI client handled foundation models."""
 
     def __init__(
         self,
-        client: LlamaStackClient,
+        client: OpenAI,
         model_id: str,
-        model_params: dict[str, Any] | ModelParameters | None = None,
+        model_params: dict[str, Any] | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,

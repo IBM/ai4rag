@@ -18,8 +18,8 @@ from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
-from ai4rag.rag.embedding.base_model import EmbeddingModel
-from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
@@ -34,8 +34,8 @@ class PreSelectorError(Exception):
 
 
 class MPSEvaluationResultsTyped(TypedDict):
-    foundation_model: FoundationModel
-    embedding_model: EmbeddingModel
+    foundation_model: BaseFoundationModel
+    embedding_model: BaseEmbeddingModel
     scores: dict
     question_scores: dict
 
@@ -58,10 +58,10 @@ class ModelsPreSelector:
     metric : str
         Metric used in ranking the models.
 
-    foundation_models : list[FoundationModel]
+    foundation_models : list[BaseFoundationModel]
         List of foundation models that should be considered in the selection.
 
-    embedding_models : list[EmbeddingModel]
+    embedding_models : list[BaseEmbeddingModel]
         Embedding models to models pre-selection.
 
     documents : list[Document]
@@ -99,8 +99,8 @@ class ModelsPreSelector:
     def __init__(
         self,
         metric: str,
-        foundation_models: list[FoundationModel],
-        embedding_models: list[EmbeddingModel],
+        foundation_models: list[BaseFoundationModel],
+        embedding_models: list[BaseEmbeddingModel],
         documents: list[Document],
         benchmark_data: BenchmarkData,
         **kwargs,
@@ -172,7 +172,7 @@ class ModelsPreSelector:
                 f"None of the given models has been successfully evaluated. {msg}"
             )
 
-    def _evaluate_foundation_models(self, retriever: Retriever, embedding_model: EmbeddingModel):
+    def _evaluate_foundation_models(self, retriever: Retriever, embedding_model: BaseEmbeddingModel):
         """
         Evaluates each embedding model with given retriever.
 
@@ -181,7 +181,7 @@ class ModelsPreSelector:
         retriever : Retriever
             Instance to be used in retrieval phase.
 
-        embedding_model : EmbeddingModel
+        embedding_model : BaseEmbeddingModel
             Embedding model used for collection creation.
         """
         for foundation_model in self.foundation_models:
@@ -215,7 +215,7 @@ class ModelsPreSelector:
 
     @staticmethod
     def _create_vector_store(
-        embedding_model: EmbeddingModel,
+        embedding_model: BaseEmbeddingModel,
         chunked_documents: list[Document],
         collection_name: str,
     ) -> BaseVectorStore:
@@ -224,7 +224,7 @@ class ModelsPreSelector:
 
         Parameters
         ----------
-        embedding_model : EmbeddingModel
+        embedding_model : BaseEmbeddingModel
             Embedding model used for collection creation.
 
         chunked_documents : list[Document]
@@ -264,13 +264,13 @@ class ModelsPreSelector:
 
         return vector_store
 
-    def _evaluate_single_pattern(self, foundation_model: FoundationModel, retriever: Retriever) -> dict[str, dict]:
+    def _evaluate_single_pattern(self, foundation_model: BaseFoundationModel, retriever: Retriever) -> dict[str, dict]:
         """
         Perform retrieval-augmented generation and evaluate generated response.
 
         Parameters
         ----------
-        foundation_model : FoundationModel
+        foundation_model : BaseFoundationModel
             Model to be used for RAG.
 
         retriever : Retriever
@@ -297,7 +297,7 @@ class ModelsPreSelector:
         self,
         n_embedding_models: int = DEFAULT_N_EMBEDDING_MODELS,
         n_foundation_models: int = DEFAULT_N_FOUNDATION_MODELS,
-    ) -> dict[str, list[EmbeddingModel | FoundationModel]]:
+    ) -> dict[str, list[BaseEmbeddingModel | BaseFoundationModel]]:
         """
         Select n models pairs based on evaluation scores.
 

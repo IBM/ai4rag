@@ -9,7 +9,7 @@ ClientT = TypeVar("ClientT")
 EmbeddingParamsT = TypeVar("EmbeddingParamsT")
 
 
-class EmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
+class BaseEmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
     def __init__(self, client: ClientT, model_id: str, params: EmbeddingParamsT | None = None):
         self.client: ClientT = client
         self.model_id = model_id
