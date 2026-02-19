@@ -2,7 +2,7 @@
 
 ## GAM Optimizer
 
-::: ai4rag.core.hpo.gam_opt.GAMOptimiser
+::: ai4rag.core.hpo.gam_opt.GAMOptimizer
     options:
       show_root_heading: true
       show_source: true
@@ -14,7 +14,7 @@
 
 ## Random Optimizer
 
-::: ai4rag.core.hpo.random_opt.RandomOptimiser
+::: ai4rag.core.hpo.random_opt.RandomOptimizer
     options:
       show_root_heading: true
       show_source: true

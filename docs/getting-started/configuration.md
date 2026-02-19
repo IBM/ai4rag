@@ -59,7 +59,7 @@ experiment = AI4RAGExperiment(
     benchmark_data=benchmark_data,      # List of benchmark records (required)
     search_space=search_space,          # AI4RAGSearchSpace instance (required)
     vector_store_type="ls_milvus",      # Vector store type (required)
-    optimiser_settings=optimiser_settings,  # HPO settings (required)
+    optimizer_settings=optimizer_settings,  # HPO settings (required)
     event_handler=event_handler,        # Event handler instance (optional)
     output_path="./results",            # Results output directory (optional)
 )
@@ -67,16 +67,16 @@ experiment = AI4RAGExperiment(
 
 #### Parameters Explained
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `client` | `LlamaStackClient` | Yes | Llama Stack client for API access |
-| `documents` | `List[Document]` | Yes | Knowledge base documents |
-| `benchmark_data` | `List[dict]` | Yes | Evaluation questions and answers |
-| `search_space` | `AI4RAGSearchSpace` | Yes | Parameter search space |
-| `vector_store_type` | `str` | Yes | `"ls_milvus"` or `"chroma"` |
-| `optimiser_settings` | `OptSettings` | Yes | HPO algorithm configuration |
-| `event_handler` | `BaseEventHandler` | No | Custom event handler |
-| `output_path` | `str` | No | Results directory (default: current dir) |
+| Parameter            | Type                | Required | Description                               |
+|----------------------|---------------------|---------|-------------------------------------------|
+| `client`             | `LlamaStackClient`  | Yes     | Llama Stack client for API access         |
+| `documents`          | `List[Document]`    | Yes     | Knowledge base documents                  |
+| `benchmark_data`     | `List[dict]`        | Yes     | Evaluation questions and answers          |
+| `search_space`       | `AI4RAGSearchSpace` | Yes     | Parameter search space                    |
+| `vector_store_type`  | `str`               | Yes     | `"ls_milvus"` or `"chroma"`               |
+| `optimizer_settings` | `OptSettings`       | Yes     | HPO algorithm configuration               |
+| `event_handler`      | `BaseEventHandler`  | No      | Custom event handler                      |
+| `output_path`        | `str`               | No      | Results directory (default: current dir)  |
 
 ---
 
