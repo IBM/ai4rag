@@ -44,7 +44,7 @@ from ai4rag.core.hpo.gam_opt import GAMOptSettings
 search_space = AI4RAGSearchSpace(params=[...])
 
 # Configure optimizer
-optimiser_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
+optimizer_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
 
 # Run experiment
 experiment = AI4RAGExperiment(
@@ -53,7 +53,7 @@ experiment = AI4RAGExperiment(
     benchmark_data=benchmark_data,
     search_space=search_space,
     vector_store_type="ls_milvus",
-    optimiser_settings=optimiser_settings,
+    optimizer_settings=optimizer_settings,
 )
 
 best_pattern = experiment.search()

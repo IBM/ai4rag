@@ -173,7 +173,7 @@ Set up the hyperparameter optimization algorithm:
 ```python
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 
-optimiser_settings = GAMOptSettings(
+optimizer_settings = GAMOptSettings(
     max_evals=10,      # Total number of configurations to evaluate
     n_random_nodes=4   # Number of random explorations before using GAM
 )
@@ -200,7 +200,7 @@ experiment = AI4RAGExperiment(
     benchmark_data=benchmark_data,
     search_space=search_space,
     vector_store_type="ls_milvus",  # or "chroma" for in-memory
-    optimiser_settings=optimiser_settings,
+    optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(),  # Tracks progress
     output_path="./results",  # Where to save results
 )
@@ -299,7 +299,7 @@ search_space = AI4RAGSearchSpace(
 )
 
 # 5. Configure optimizer
-optimiser_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
+optimizer_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
 
 # 6. Run experiment
 experiment = AI4RAGExperiment(
@@ -308,7 +308,7 @@ experiment = AI4RAGExperiment(
     benchmark_data=benchmark_data,
     search_space=search_space,
     vector_store_type="ls_milvus",
-    optimiser_settings=optimiser_settings,
+    optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(),
     output_path="./results",
 )
