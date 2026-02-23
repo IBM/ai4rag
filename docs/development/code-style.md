@@ -1,6 +1,6 @@
 # Code Style Guide
 
-Code formatting and style standards for ai4rag.
+Code formatting and style standards for `ai4rag`.
 
 ---
 
@@ -8,7 +8,7 @@ Code formatting and style standards for ai4rag.
 
 - **Black**: Code formatter (120 character line length)
 - **isort**: Import sorting
-- **Pylint**: Code linter
+- **Pylint**: Code linter (Will be required soon)
 
 ## Quick Setup
 

@@ -574,29 +574,25 @@ class AI4RAGExperiment:
 
         payload = {
             "metrics": {"test_data": metrics},
-            "context": {
-                "auto_rag": {
-                    "rag_pattern": {
-                        "composition_steps": [
-                            "model_selection",
-                            "chunking",
-                            "embeddings",
-                            "retrieval",
-                            "generation",
-                        ],
-                        "duration_seconds": int(evaluation_result.execution_time),
-                        "name": evaluation_result.pattern_name,
-                        "settings": {
-                            "vector_store": vector_store_payload,
-                            **indexing_payload,
-                            **retrieval_payload,
-                            "generation": generation_payload,
-                        },
-                    },
-                    "iteration": len(self.results),
-                    "max_combinations": self.search_space.max_combinations,
-                }
+            "rag_pattern": {
+                "composition_steps": [
+                    "model_selection",
+                    "chunking",
+                    "embeddings",
+                    "retrieval",
+                    "generation",
+                ],
+                "name": evaluation_result.pattern_name,
+                "settings": {
+                    "vector_store": vector_store_payload,
+                    **indexing_payload,
+                    **retrieval_payload,
+                    "generation": generation_payload,
+                },
             },
+            "duration_seconds": int(evaluation_result.execution_time),
+            "iteration": len(self.results),
+            "max_combinations": self.search_space.max_combinations,
         }
 
         self.event_handler.on_pattern_creation(

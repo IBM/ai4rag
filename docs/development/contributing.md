@@ -1,4 +1,4 @@
-# Contributing to ai4RAG
+# Contributing to ai4rag
 
 Thank you for your interest in contributing to `ai4rag`! This guide will help you get started.
 
@@ -6,7 +6,8 @@ Thank you for your interest in contributing to `ai4rag`! This guide will help yo
 
 ## Code of Conduct
 
-We are committed to fostering a welcoming and inclusive community. Please be respectful and professional in all interactions.
+We are committed to fostering a welcoming and inclusive community.
+Please be respectful and professional in all interactions.
 
 ---
 

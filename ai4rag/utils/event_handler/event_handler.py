@@ -1,146 +1,42 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025-2026
+# Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from abc import ABC, abstractmethod
-from enum import StrEnum
+from pathlib import Path
+import json
 
-__all__ = ["BaseEventHandler", "LogLevel"]
+from .base_event_handler import BaseEventHandler, LogLevel
 
-
-class LogLevel(StrEnum):
-    """Available log levels."""
-
-    INFO = "info"
-    WARNING = "warning"
-    ERROR = "error"
+from ai4rag import logger
 
 
-class BaseEventHandler(ABC):
-    """
-    Abstract class defining interface for streaming results and messages,
-    to the service layer.
+class LocalEventHandler(BaseEventHandler):
+    """Implementation used for local development and testing purposes.
+
+    Parameters
+    ----------
+    output_path : str | Path | None, default=None
+        Location where results for all patterns will be saved.
     """
 
-    @abstractmethod
+    def __init__(self, output_path: str | Path | None = None):
+        self.output_path = Path(output_path) if output_path else None
+
     def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:
-        """
-        Method called to notify about experiment's status change.
+        logger.info("LocalEventHandler ::: %s ::: %s ::: %s", level, step, message)
 
-        Parameters
-        ----------
-        level : LogLevel
-            Logging level
-
-        message : str
-            Text of streamed message
-
-        step : str
-            Currently performed step. It should be one of composition steps.
-        """
-
-    @abstractmethod
     def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
-        """
-        Method called when single RAG pattern's evaluation is completed.
+        logger.info("LocalEventHandler ::: Pattern creation ::: ", payload)
+        pattern_name = payload.get("rag_pattern", {}).get("name", "default_pattern_name")
 
-        Parameters
-        ----------
-        payload : dict
-            Information about RAG pattern's location and name, calculated scores
-            and message.
+        if self.output_path:
+            dir_path = self.output_path / pattern_name
+            dir_path.mkdir(exist_ok=False, parents=True)
 
-            Example:
+            evaluation_results_path = dir_path / "evaluation_results.json"
+            with open(evaluation_results_path, mode="w") as file:
+                json.dump(evaluation_results, file)
 
-            name --> Pattern 1
-            iteration --> which pattern we are evaluating
+            with open(dir_path / "pattern.json", mode="w") as file2:
+                json.dump(payload, file2)
 
-            payload = {
-                "metrics": {
-                    "test_data": {
-                        "answer_correctness": {
-                            "mean": 0.7,
-                            "ci_low": 0.6,
-                            "ci_high": 0.8,
-                        },
-                    },
-                },
-                "context": {
-                    "rag_pattern": {
-                        "composition_steps" : [
-                            "chunking", "embeddings", "vector_store", "retrieval", "generation"
-                        ],
-                        "duration": 3507.9,
-                        "location": {},
-                        "name": "Pattern 1",
-                        "settings": {
-                            "chunking": {
-                                "method": "recursive",
-                                "chunk_size": 256,
-                                "overlap": 128
-                            },
-                            "embeddings": {
-                                "truncate_strategy": "left",
-                                "input_size": 384,
-                                "model_name": "ibm/slate.30m.english.rtrvr"
-                            },
-                            "vector_store": {
-                                "database": "milvus",
-                                "index_name": "XD_1234_index_5678",
-                                "distance_metric": "euclidean"
-                                "operation": "upsert",
-                                "document_schema": {...},
-                            },
-                            "retrieval": {
-                                "method": "simple",
-                                "number_of_chunks": 5
-                            },
-                            "generation": {
-                                "model_name": "mistralai/mixtral-8x7b-instruct-v0-1",
-                                "parameters": {
-                                    "max_new_tokens": 256
-                                },
-                                "chat_template_messages": {
-                                    "system_message_text": "...",
-                                    "user_message_text": "...",
-                                }
-                                "context_template_text": "...",
-                            }
-                        }
-                    }
-                    "iteration": 1,
-                    "max_combinations": 100
-                }
-            }
-
-        evaluation_results : dict
-            Results from single pattern evaluation.
-
-            Example content:
-            "data": [
-                {
-                    "question_id": "0",
-                    "answer": "<model's answer>",
-                    "answer_contexts": [
-                        {"text": "<content1_text>", "document_id": "document_1.pdf"},
-                        {"text": "<content2_text>", "document_id": "document_2.pdf"},
-                    ]
-                    "scores": {
-                        "answer_correctness": 0.79,
-                        "context_correctness": 0.65,
-                    }
-                },
-                {
-                    "question_id": "1",
-                    "answer": "<model's answer>",
-                    "answer_contexts": [
-                        {"text": "<content3_text>", "document_id": "document_3.pdf"},
-                        {"text": "<content4_text>", "document_id": "document_4.pdf"},
-                    ]
-                    "scores": {
-                        "answer_correctness": 0.79,
-                        "context_correctness": 0.65,
-                    }
-                }
-            ]
-        """

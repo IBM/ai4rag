@@ -1,9 +1,9 @@
 # Testing Guide
 
-Comprehensive testing practices for ai4rag development.
+Comprehensive testing practices for `ai4rag` development.
 
 !!! note "Coming Soon"
-    Detailed testing documentation is under development. See [CLAUDE.md](https://github.com/IBM/ai4rag/blob/main/CLAUDE.md#testing-notes) for current testing notes.
+    Detailed testing documentation is under development.
 
 ## Quick Reference
 

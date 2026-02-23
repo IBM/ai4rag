@@ -14,8 +14,8 @@ from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.event_handler import LocalEventHandler
 from dev_utils.file_store import FileStore
-from dev_utils.local_event_handler import LocalEventHandler
 from dev_utils.mocks import MockedEmbeddingModel, MockedFoundationModel
 from dev_utils.utils import read_benchmark_from_json
 

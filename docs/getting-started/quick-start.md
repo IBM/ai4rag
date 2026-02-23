@@ -1,6 +1,13 @@
 # Quick Start
 
-This guide walks you through running your first RAG optimization experiment with ai4rag.
+This guide walks you through running your first RAG optimization experiment with `ai4rag`.
+For the sake of quick-start Llama Stack server will be used, but this can be run with independently deployed models as long as they are introduced to the experiment with proper wrapper.
+
+---
+
+## Data loading
+To run the experiment you need to provide documents in the format of LangChain's `Document` instances with proper metadata.
+For the development purposes you may use `FileStore` implementation from `dev_utils`, but this will be available only when cloning the repository, as this is not part of the project.
 
 ---
 
@@ -9,12 +16,12 @@ This guide walks you through running your first RAG optimization experiment with
 Before starting, ensure you have:
 
 - [x] Installed ai4rag ([Installation Guide](installation.md))
-- [x] A running Llama Stack server with models configured
-- [x] Environment variables set (`BASE_URL`, `APIKEY`)
+- [x] A running Llama Stack server with models configured or other deployed models that can be used for the experiment
+- [x] Environment variables set (e.g. `BASE_URL`, `API_KEY`) to communicate with Llama Stack server or deployed models
 
 ---
 
-## Step-by-Step Guide
+## Step-by-Step Guide with Llama Stack
 
 ### 1. Prepare Llama Stack Client
 
@@ -22,15 +29,16 @@ Create a client instance to connect to your Llama Stack server:
 
 ```python
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, find_dotenv
 from llama_stack_client import LlamaStackClient
 
-load_dotenv()
+load_dotenv(find_dotenv())
 
 client = LlamaStackClient(
     base_url=os.getenv("BASE_URL"),
-    api_key=os.getenv("APIKEY")
+    api_key=os.getenv("API_KEY")
 )
+
 ```
 
 ---
@@ -53,7 +61,8 @@ print(f"Loaded {len(documents)} documents")
 ```
 
 !!! info "Document Format"
-    Documents must include a `document_id` in their metadata. `FileStore` handles this automatically.
+    Documents must include a `document_id` in their metadata.
+    `FileStore` handles this automatically.
 
 ---
 
@@ -69,14 +78,14 @@ Create a `benchmark_data.json` file with questions and ground truth answers:
       "ai4rag optimizes RAG templates using hyperparameter optimization",
       "ai4rag finds optimal RAG configurations"
     ],
-    "correct_answer_document_ids": ["doc_001", "doc_002"]
+    "correct_answer_document_ids": ["doc_001.pdf", "doc_002.pdf"]
   },
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
-      "Milvus and ChromaDB are supported"
+      "Milvus and ChromaDB are supported."
     ],
-    "correct_answer_document_ids": ["doc_005"]
+    "correct_answer_document_ids": ["doc_005.txt"]
   }
 ]
 ```
@@ -91,7 +100,8 @@ benchmark_data = read_benchmark_from_json(benchmark_data_path)
 ```
 
 !!! tip "Benchmark Quality"
-    High-quality benchmark data is crucial for meaningful optimization. Ensure questions are based on your knowledge base and answers are accurate.
+    High-quality benchmark data is crucial for meaningful optimization.
+    Ensure questions are based on your knowledge base and answers are accurate.
 
 ---
 
@@ -110,7 +120,7 @@ search_space = AI4RAGSearchSpace(
         # Foundation model for generation
         Parameter(
             name="foundation_model",
-            param_type="C",  # Categorical
+            param_type="C",
             values=[
                 LSFoundationModel(
                     model_id="ollama/llama3.2:3b",
@@ -121,7 +131,7 @@ search_space = AI4RAGSearchSpace(
         # Embedding model
         Parameter(
             name="embedding_model",
-            param_type="C",  # Categorical
+            param_type="C",
             values=[
                 LSEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
@@ -136,33 +146,28 @@ search_space = AI4RAGSearchSpace(
         # Chunking parameters
         Parameter(
             name="chunk_size",
-            param_type="I",  # Integer
+            param_type="C",
             values=[200, 400, 800, 1000],
         ),
         Parameter(
             name="chunk_overlap",
-            param_type="I",  # Integer
+            param_type="C",
             values=[0, 50, 100, 200],
         ),
         # Retrieval parameters
         Parameter(
             name="retrieval_method",
-            param_type="C",  # Categorical
+            param_type="C",
             values=["simple", "window"],
         ),
         Parameter(
             name="number_of_chunks",
-            param_type="I",  # Integer
+            param_type="C",
             values=[3, 5, 7, 10],
         ),
     ]
 )
 ```
-
-!!! note "Parameter Types"
-    - **C** (Categorical): Discrete choices (models, methods)
-    - **I** (Integer): Integer values (chunk sizes, top-k)
-    - **F** (Float): Continuous values (thresholds, weights)
 
 ---
 
@@ -180,9 +185,8 @@ optimizer_settings = GAMOptSettings(
 ```
 
 !!! tip "Optimization Strategy"
-    - **Random phase** (`n_random_nodes`): Explores the search space randomly
+    - **Random phase** (`n_random_nodes`): Explores the search space randomly to avoid falling into local minimum (greater value = better solutions space exploration)
     - **GAM phase**: Uses a model to suggest promising configurations
-    - Start with 10-20 evaluations for initial experiments
 
 ---
 
@@ -192,7 +196,7 @@ Create and run the optimization experiment:
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from dev_utils.local_event_handler import LocalEventHandler
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
     client=client,
@@ -201,14 +205,15 @@ experiment = AI4RAGExperiment(
     search_space=search_space,
     vector_store_type="ls_milvus",  # or "chroma" for in-memory
     optimizer_settings=optimizer_settings,
-    event_handler=LocalEventHandler(),  # Tracks progress
-    output_path="./results",  # Where to save results
+    event_handler=LocalEventHandler(output_path="<path_to_store_results>"),  # Tracks progress
 )
 
 # Run optimization
-best_pattern = experiment.search()
+experiment.search()
 
-print(f"Best RAG Pattern: {best_pattern}")
+best_pattern = experiment.results.get_best_evaluations(k=1)[0]
+
+print(best_pattern.rag_pattern.generate("What is the main purpose of ai4rag?"))
 ```
 
 ---
@@ -217,24 +222,7 @@ print(f"Best RAG Pattern: {best_pattern}")
 
 After completion, check the `output_path` directory for:
 
-- **CSV files**: Detailed results for each evaluated configuration
-- **JSON artifacts**: Best configuration parameters
-- **Logs**: Event handler output and experiment progress
-
-```python
-import pandas as pd
-
-# Load results
-results = pd.read_csv("./results/experiment_results.csv")
-print(results.head())
-
-# View best configuration
-print(f"\nBest Configuration:")
-print(f"  Foundation Model: {best_pattern['foundation_model']}")
-print(f"  Chunk Size: {best_pattern['chunk_size']}")
-print(f"  Retrieval Method: {best_pattern['retrieval_method']}")
-print(f"  Score: {best_pattern['score']}")
-```
+- **JSON files**: Detailed results for each evaluated configuration
 
 ---
 
@@ -254,10 +242,10 @@ from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
+from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
 from dev_utils.utils import read_benchmark_from_json
-from dev_utils.local_event_handler import LocalEventHandler
 
 # 1. Setup client
 load_dotenv()
@@ -327,16 +315,3 @@ print(f"Optimization complete! Best pattern: {best_pattern}")
 - [Custom event handlers](../user-guide/event-handlers.md) - Track experiments in production
 
 ---
-
-## Common Issues
-
-??? question "Vector store connection errors"
-    Ensure your Llama Stack server has Milvus properly configured. Alternatively, use `vector_store_type="chroma"` for in-memory testing.
-
-??? question "Out of memory errors"
-    Reduce `max_evals` or simplify your search space. Process documents in smaller batches.
-
-??? question "Poor optimization results"
-    - Verify benchmark data quality
-    - Expand search space with more parameter options
-    - Increase `max_evals` for more thorough exploration
