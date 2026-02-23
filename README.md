@@ -1,14 +1,8 @@
-> [!IMPORTANT]
-> `ai4rag` is designed to be provider agnostic: user may provide his own implementation for foundation model, embedding model or vector store and use them for the experiment.
-> Out of the box `ai4rag` is designed to work with [Llama Stack](https://github.com/llamastack/llama-stack).
-> To use the full capabilities of ai4rag, you'll need access to a Llama Stack server configured with at least one foundation model, one embedding model, and a vector database.
-
-
 <div align="center">
 
-<img src="docs/icon.svg" alt="ai4RAG icon" width="80" height="62"/>
+<img src="docs/icon.svg" alt="ai4rag icon" width="80" height="62"/>
 
-# `ai4RAG`
+# `ai4rag`
 ### RAG Templates Optimization Engine
 
 ![AI4RAG](https://img.shields.io/badge/AI4RAG-RAG%20Builder%20%26%20Optimizer-0F62FE?style=for-the-badge&logo=ibm&logoColor=white)
@@ -21,7 +15,7 @@
 
 **Initializes RAG Templates with optimal parameters**
 
-[Quick Start](#quick-start) • [Llama Stack](#running-with-llama-stack-server) • [Contribution](#contribution)
+[Getting Started](https://ibm.github.io/ai4rag/latest/getting-started/quick-start/) • [User Guide](https://ibm.github.io/ai4rag/latest/user-guide/overview/) • [API Reference](https://ibm.github.io/ai4rag/latest/api-reference/core/experiment/) • [Development](https://ibm.github.io/ai4rag/latest/development/contributing/)
 
 </div>
 
@@ -29,8 +23,14 @@
 
 ## 🎯 What is ai4RAG?
 
-`ai4RAG` is an **optimization engine for RAG Templates** that is LLM and vector database provider agnostic.
+`ai4RAG` is an **optimization engine for RAG Templates** that is LLM and vector database provider-agnostic.
 It accepts a variety of RAG Templates and a search space definition, then returns an initialized RAG Template with optimal parameter values (called a RAG Pattern).
+
+
+> [!IMPORTANT]
+> `ai4rag` is designed to be provider-agnostic: user may provide his own implementation for foundation model, embedding model or vector store and use them for the experiment.
+> Out of the box `ai4rag` is designed to work with [Llama Stack](https://github.com/llamastack/llama-stack).
+> To use the full capabilities of `ai4rag`, you'll need access to a Llama Stack server configured with at least one foundation model, one embedding model, and a vector database.
 
 ## Llama Stack
 
@@ -39,9 +39,9 @@ ai4RAG can run experiments using a [Llama Stack](https://github.com/llamastack/l
 - **Client:** [llama-stack-client](https://pypi.org/project/llama-stack-client/) (Python package used by ai4RAG; installs with this project).
 - **API reference:** [Llama Stack API docs](https://llamastack.github.io/docs/) — HTTP API used by the client.
 
-**Features used by ai4RAG**
+**Features used by ai4rag**
 
-When using the Llama Stack backend, ai4RAG relies on:
+When using the Llama Stack backend, ai4rag relies on:
 
 - **Embeddings** — Text embeddings via the client (e.g. for indexing and query encoding). See [Embeddings API](https://llamastack.github.io/docs/api/embeddings) in the docs.
 - **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://llamastack.github.io/docs/api/creates-a-vector-store) in the API docs.
@@ -60,7 +60,7 @@ When using the Llama Stack backend, ai4RAG relies on:
 
 ### Prepare `llama-stack-client`
 To enable full integration with Llama Stack, instantiate a `LlamaStackClient`.
-This allows ai4rag to use the models and vector stores available on your Llama Stack server.
+This allows `ai4rag` to use the models and vector stores available on your Llama Stack server.
 
 > [!tip]
 > Store your credentials securely in a `.env` file.
@@ -70,7 +70,7 @@ import os
 from dotenv import load_dotenv, find_dotenv
 from llama_stack_client import LlamaStackClient
 
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
 ```
 
 ### Prepare knowledge base documents
@@ -181,7 +181,7 @@ Using the information from the previous steps, create an experiment and run the 
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from dev_utils.local_event_handler import LocalEventHandler
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
     client=client,
@@ -198,7 +198,7 @@ best = experiment.search()
 
 > [!tip]
 > For production use, implement your own custom `EventHandler` to handle status changes and artifacts produced during the experiment.
-> See the [`BaseEventHandler implementation`](http://github.com/IBM/ai4rag/blob/main/ai4rag/utils/event_handler/event_handler.py) for reference.
+> See the [`BaseEventHandler` implementation](http://github.com/IBM/ai4rag/blob/main/ai4rag/utils/event_handler/event_handler.py) for reference.
 
 
 ## Contribution

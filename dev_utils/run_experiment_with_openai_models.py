@@ -14,8 +14,8 @@ from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.event_handler.event_handler import LocalEventHandler
 from dev_utils.file_store import FileStore
-from dev_utils.local_event_handler import LocalEventHandler
 from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":

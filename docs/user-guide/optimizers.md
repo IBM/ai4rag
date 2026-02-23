@@ -3,7 +3,7 @@
 Detailed documentation on HPO optimization algorithms.
 
 !!! note "Coming Soon"
-    This page is under development. For now, see the [Configuration Guide](../getting-started/configuration.md#optimizer-configuration) for optimizer settings.
+    This page is under development.
 
 ## Topics Covered
 
