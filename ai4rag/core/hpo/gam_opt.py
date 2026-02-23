@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import random
-from copy import deepcopy, copy
+from copy import copy, deepcopy
 from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable
