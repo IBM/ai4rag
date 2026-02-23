@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 """Sample script to run ai4rag experiment"""
+
 import os
 from pathlib import Path
 
@@ -20,8 +21,12 @@ from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
-    foundation_client = OpenAI(base_url=os.getenv("FOUNDATION_OPENAI_BASE_URL"), api_key=os.getenv("FOUNDATION_OPENAI_API_KEY"))
-    embedding_client = OpenAI(base_url=os.getenv("EMBEDDING_OPENAI_BASE_URL"), api_key=os.getenv("EMBEDDING_OPENAI_API_KEY"))
+    foundation_client = OpenAI(
+        base_url=os.getenv("FOUNDATION_OPENAI_BASE_URL"), api_key=os.getenv("FOUNDATION_OPENAI_API_KEY")
+    )
+    embedding_client = OpenAI(
+        base_url=os.getenv("EMBEDDING_OPENAI_BASE_URL"), api_key=os.getenv("EMBEDDING_OPENAI_API_KEY")
+    )
 
     # change to direct to your local documents path
     documents_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "documents"
@@ -57,7 +62,6 @@ if __name__ == "__main__":
             ),
         ]
     )
-
 
     experiment = AI4RAGExperiment(
         documents=documents,

@@ -90,4 +90,8 @@ if __name__ == "__main__":
 
     experiment.search(skip_mps=True)
 
-    print(experiment.results.get_best_evaluations(1))
+    best_eval = experiment.results.get_best_evaluations(k=1)[0]
+
+    print(best_eval)
+
+    print(best_eval.rag_pattern.generate("What is greedy decoding?"))

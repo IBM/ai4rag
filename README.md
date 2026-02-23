@@ -193,7 +193,11 @@ experiment = AI4RAGExperiment(
     event_handler=LocalEventHandler(output_path="<local-path-to-store-your-output-files>"),
 )
 
-best = experiment.search()
+experiment.search()
+best_eval = experiment.results.get_best_evaluations(k=1)[0]
+print(best_eval)
+
+print(best_eval.rag_pattern.generate("What ai4rag can be used for?"))
 ```
 
 > [!tip]
