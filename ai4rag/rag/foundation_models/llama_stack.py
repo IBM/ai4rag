@@ -6,10 +6,9 @@ from typing import Annotated, Any
 
 from annotated_types import Ge, Gt, Le
 from llama_stack_client import LlamaStackClient
-from llama_stack_client.types import SystemMessage
 from pydantic import BaseModel
 
-from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.utils.constants import ChatGenerationConstants
 
 
@@ -18,7 +17,7 @@ class ModelParameters(BaseModel):
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class LSFoundationModel(FoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
+class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
     """Integration point to use any model via Llama-stack API / client"""
 
     def __init__(
@@ -38,7 +37,6 @@ class LSFoundationModel(FoundationModel[LlamaStackClient, dict[str, Any] | Model
             user_message_text=user_message_text,
             context_template_text=context_template_text,
         )
-        self.model_params = model_params
 
     def chat(self, system_message: str, user_message: str) -> str:
         """

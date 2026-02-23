@@ -3,10 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, Generator
 
 from ai4rag import logger
 from ai4rag.evaluator.base_evaluator import EvaluationData
+from ai4rag.rag.template.base_template import BaseRAGTemplate
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,10 @@ class EvaluationResult:
         Time in seconds how long did experiment take to run.
 
     final_score : float
-        Single score calculated for optimisation process as the value to be minimized or maximised.
+        Single score calculated for optimization process as the value to be minimized or maximized.
+
+    rag_pattern : BaseRAGTemplate | None, default=None
+        RAG Pattern instance that can be used.
     """
 
     pattern_name: str
@@ -56,6 +60,7 @@ class EvaluationResult:
     scores: dict[str, dict]
     execution_time: float
     final_score: float
+    rag_pattern: BaseRAGTemplate | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Cast instance to dict"""
@@ -64,14 +69,14 @@ class EvaluationResult:
 
 class ExperimentResults:
     """
-    Class holding information about each run in the optimisation process
+    Class holding information about each run in the optimization process.
 
     Attributes
     ----------
     evaluations : list[EvaluationResult]
         Instances of each evaluation.
 
-    evaluation_data : list[EvaluationData]
+    evaluation_data : list[list[EvaluationData]]
         Data for evaluation, questions, ground truth answers and context references.
 
     Methods
@@ -94,7 +99,7 @@ class ExperimentResults:
     def __len__(self) -> int:
         return len(self.evaluations)
 
-    def __iter__(self) -> EvaluationResult:
+    def __iter__(self) -> Generator[EvaluationResult, None, None]:
         yield from self.evaluations
 
     def __bool__(self) -> bool:
@@ -122,14 +127,14 @@ class ExperimentResults:
         self.evaluation_data.append(evaluation_data)
 
     def evaluation_explored_or_cached(
-        self, indexing_params: dict[str, Any] | None, rag_params: dict[str, Any]
+        self, indexing_params: dict[str, Any], rag_params: dict[str, Any]
     ) -> float | None:
         """
         This method checks if an evaluation to certain params already exists.
 
         Parameters
         ----------
-        indexing_params : dict[str, Any] | None
+        indexing_params : dict[str, Any]
             Dictionary containing keys and values that are compared with
             previously used ones, to establish if the evaluation already done.
 
@@ -147,9 +152,10 @@ class ExperimentResults:
                 return evaluation.final_score
         return None
 
-    def collection_exists(self, indexing_params: dict[str, Any]) -> str | None:
+    def get_existing_collection(self, indexing_params: dict[str, Any]) -> str | None:
         """
         This method checks if a collection to certain params already exists.
+        If so, returns the collection name.
 
         Parameters
         ----------
@@ -182,12 +188,6 @@ class ExperimentResults:
             ret.add(ev.collection)
         return list(ret)
 
-    @property
-    def scores(self) -> list[float]:
-        """All achieved scores across the evaluations."""
-        ret = [ev.final_score for ev in self.evaluations]
-        return ret
-
     def get_best_evaluations(self, k: int | None = None) -> tuple[EvaluationResult]:
         """
         Return k-best evaluations.
@@ -202,20 +202,9 @@ class ExperimentResults:
         tuple[EvaluationResult]
             the best evaluations from the AutoRAG experiment
         """
-        return self.sorted_()[:k]
-
-    def sorted_(self) -> tuple[EvaluationResult]:
-        """
-        Return sorted version of the structure.
-
-        Returns
-        -------
-        tuple[EvaluationResult]
-            Sorted sequence of EvaluationResults based on the final_score
-        """
         evaluations = list(self.evaluations)
         sorted_evs = tuple(sorted(evaluations, key=lambda x: x.final_score, reverse=True))
-        return sorted_evs
+        return sorted_evs[:k]
 
     @staticmethod
     def create_evaluation_results_json(
@@ -270,7 +259,6 @@ class ExperimentResults:
             ret = {
                 "question": local_ev_data.question,
                 "correct_answers": local_ev_data.ground_truths,
-                "question_id": local_ev_data.question_id,
                 "answer": local_ev_data.answer,
                 "answer_contexts": [
                     {"text": text, "document_id": doc_id}

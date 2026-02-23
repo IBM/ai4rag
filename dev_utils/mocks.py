@@ -5,14 +5,13 @@
 from random import random, seed
 from typing import Any
 
-from ai4rag.rag.embedding.base_model import EmbeddingModel
-from ai4rag.rag.foundation_models.base_model import FoundationModel
-
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
 seed(42)
 
 
-class MockedFoundationModel(FoundationModel):
+class MockedFoundationModel(BaseFoundationModel):
     def __init__(
         self,
         model_id: str,
@@ -25,7 +24,7 @@ class MockedFoundationModel(FoundationModel):
         return "I cannot answer this question, because I am just a mocked model."
 
 
-class MockedEmbeddingModel(EmbeddingModel):
+class MockedEmbeddingModel(BaseEmbeddingModel):
     def __init__(self, model_id: str, params: dict[str, Any], client: None = None):
         super().__init__(client, model_id, params)
 

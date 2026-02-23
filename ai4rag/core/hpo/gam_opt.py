@@ -14,17 +14,17 @@ from pygam import LinearGAM
 from sklearn.preprocessing import LabelEncoder
 
 from ai4rag import logger
-from ai4rag.core.hpo.base_optimiser import BaseOptimiser, FailedIterationError, OptimisationError, OptimiserSettings
+from ai4rag.core.hpo.base_optimizer import BaseOptimizer, FailedIterationError, OptimizationError, OptimizerSettings
+from ai4rag.core.hpo.utils import handle_missing_values_in_combinations_being_explored
 from ai4rag.search_space.src.search_space import SearchSpace
-from ai4rag.utils import handle_missing_values_in_combinations_being_explored
 
-__all__ = ["GAMOptSettings", "GAMOptimiser"]
+__all__ = ["GAMOptSettings", "GAMOptimizer"]
 
 
 @dataclass
-class GAMOptSettings(OptimiserSettings):
+class GAMOptSettings(OptimizerSettings):
     """
-    Settings for the GAMOptimiser. For the detailed description
+    Settings for the GAMOptimizer. For the detailed description
     of parameters for Generalized Additive Models, please see pygam
     documentation.
     """
@@ -37,9 +37,9 @@ class GAMOptSettings(OptimiserSettings):
         self.n_random_nodes = min(self.n_random_nodes, self.max_evals)
 
 
-class GAMOptimiser(BaseOptimiser):
+class GAMOptimizer(BaseOptimizer):
     """
-    Optimiser based on Generalized Additive Models.
+    Optimizer based on Generalized Additive Models.
     Trained model is used to suggest next node in the search space
     for evaluation.
 
@@ -48,8 +48,8 @@ class GAMOptimiser(BaseOptimiser):
     objective_function : Callable[[dict], float]
         Target function that will be used in every evaluation. Output of
         this function should be 'float', as this is the value for which algorithms
-        try to optimize solution. Function should take dict filled with key: value pairs
-        that are argument: corresponding value.
+        try to optimize solution. Function should take dict filled with 'key: value' pairs
+        that are 'argument: corresponding value'.
 
     search_space : SearchSpace
         Instance containing information about nodes in the solutions space that
@@ -60,9 +60,6 @@ class GAMOptimiser(BaseOptimiser):
 
     Attributes
     ----------
-    settings : GAMOptSettings
-        Settings to configure GAMOptSettings.
-
     evaluations : list[dict]
         Already evaluated hyperparameters combinations with corresponding score.
 
@@ -79,8 +76,8 @@ class GAMOptimiser(BaseOptimiser):
         super().__init__(objective_function, search_space, settings)
         self.settings = settings
         self.evaluations = []
-        self._evaluated_combinations = []
         self.max_iterations = self.settings.max_evals
+        self._evaluated_combinations = []
         self._encoders_with_columns: list[tuple[str, LabelEncoder]] = []
 
     @property
@@ -129,7 +126,7 @@ class GAMOptimiser(BaseOptimiser):
 
         successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
         if not successful_evaluations:
-            raise OptimisationError("Number of evaluations has reached limit. All iterations have failed.")
+            raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
 
         # Sort in ascending order and take the last element (highest score).
         # This assumes we're maximizing the score.
@@ -140,7 +137,7 @@ class GAMOptimiser(BaseOptimiser):
     def _get_iterations_limit(self) -> int:
         """
         Calculate maximum number of iterations that can be proceeded based on the
-        already evaluated random nodes and settings for the optimiser.
+        already evaluated random nodes and settings for the optimizer.
         """
         iterations_limit = ceil((self.max_iterations - len(self.evaluations)) / self.settings.evals_per_trial)
         return iterations_limit
@@ -258,7 +255,7 @@ class GAMOptimiser(BaseOptimiser):
 
     def _objective_function(self, params: dict) -> float | None:
         """
-        Wrapper around the objective function provided to the optimiser.
+        Wrapper around the objective function provided to the optimizer.
 
         Parameters
         ----------

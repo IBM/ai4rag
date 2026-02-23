@@ -5,12 +5,12 @@
 import pytest
 
 from ai4rag.search_space.src.search_space import (
-    SearchSpace,
     AI4RAGSearchSpace,
+    Parameter,
+    SearchSpace,
+    SearchSpaceValueError,
     _rule_adjust_window_to_retrieval_method,
     _rule_chunk_size_bigger_than_chunk_overlap,
-    SearchSpaceValueError,
-    Parameter,
 )
 
 

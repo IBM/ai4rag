@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
-site_name: ai4RAG Documentation
+site_name: ai4rag Documentation
 site_description: RAG Templates Optimization Engine - LLM and Vector Database provider agnostic
 site_author: IBM
 site_url: https://ibm.github.io/ai4rag/
@@ -175,9 +175,9 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quick-start.md
-      - Configuration: getting-started/configuration.md
   - User Guide:
       - Overview: user-guide/overview.md
+      - Provider Agnostic: user-guide/provider-agnostic.md
       - Search Space: user-guide/search-space.md
       - Optimizers: user-guide/optimizers.md
       - Evaluation: user-guide/evaluation.md
@@ -192,7 +192,7 @@ nav:
           - Experiment: api-reference/core/experiment.md
           - HPO: api-reference/core/hpo.md
       - Search Space:
-          - Search Space: api-reference/search-space.md
+          - Search Space: api-reference/search-space/search-space.md
       - RAG:
           - Foundation Models: api-reference/rag/foundation-models.md
           - Embedding Models: api-reference/rag/embedding.md
@@ -200,7 +200,7 @@ nav:
           - Chunking: api-reference/rag/chunking.md
           - Retrieval: api-reference/rag/retrieval.md
       - Evaluator:
-          - Evaluator: api-reference/evaluator.md
+          - Evaluator: api-reference/evaluator/evaluator.md
   - Development:
       - Workflow: development/workflow.md
       - Contributing: development/contributing.md

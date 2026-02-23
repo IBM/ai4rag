@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from llama_stack_client import LlamaStackClient
 
-from ..embedding.base_model import EmbeddingModel
+from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
 from .chroma import ChromaVectorStore
 from .llama_stack import LSVectorStore
@@ -12,7 +12,7 @@ from .llama_stack import LSVectorStore
 
 def get_vector_store(
     vs_type: str,
-    embedding_model: EmbeddingModel,
+    embedding_model: BaseEmbeddingModel,
     reuse_collection_name: str | None = None,
     client: LlamaStackClient | None = None,
 ) -> BaseVectorStore:
@@ -23,7 +23,7 @@ def get_vector_store(
     vs_type : str
         Type of vector store.
 
-    embedding_model : EmbeddingModel
+    embedding_model : BaseEmbeddingModel
         Embedding model used for the embeddings creation in the created vector store instance.
 
     reuse_collection_name : str | None, default=None

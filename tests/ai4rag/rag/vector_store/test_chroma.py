@@ -2,16 +2,17 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from langchain_core.documents import Document
 
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
-from ai4rag.rag.embedding.base_model import EmbeddingModel
 
 
-class MockEmbeddingModel(EmbeddingModel):
-    """Mock EmbeddingModel for testing."""
+class MockEmbeddingModel(BaseEmbeddingModel):
+    """Mock BaseEmbeddingModel for testing."""
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Mock embed_documents implementation."""

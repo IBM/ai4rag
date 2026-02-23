@@ -2,18 +2,18 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import pytest
 import pandas as pd
+import pytest
 
 from ai4rag.core.experiment.mps import (
-    ModelsPreSelector,
-    PreSelectorError,
+    BaseEmbeddingModel,
+    BaseFoundationModel,
+    BenchmarkData,
+    ChromaVectorStore,
     Document,
     GenerationError,
-    BenchmarkData,
-    FoundationModel,
-    EmbeddingModel,
-    ChromaVectorStore,
+    ModelsPreSelector,
+    PreSelectorError,
 )
 
 
@@ -49,13 +49,13 @@ def documents() -> list[Document]:
 
 @pytest.fixture
 def foundation_models(mocker):
-    fm_list = [mocker.MagicMock(spec=FoundationModel, model_id=f"foundation_model_{idx}") for idx in range(4)]
+    fm_list = [mocker.MagicMock(spec=BaseFoundationModel, model_id=f"foundation_model_{idx}") for idx in range(4)]
     return fm_list
 
 
 @pytest.fixture
 def embedding_models(mocker):
-    em_list = [mocker.MagicMock(spec=EmbeddingModel, model_id=f"embedding_model_{idx}") for idx in range(3)]
+    em_list = [mocker.MagicMock(spec=BaseEmbeddingModel, model_id=f"embedding_model_{idx}") for idx in range(3)]
     return em_list
 
 
@@ -120,8 +120,6 @@ def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, f
     mocker.patch("ai4rag.core.experiment.mps.query_rag", side_effect=side_effect)
 
     selector = ModelsPreSelector(
-        agent="sequential",
-        embedding_model_id="embedding_model_id",
         benchmark_data=benchmark_data,
         documents=documents,
         foundation_models=foundation_models,
@@ -184,11 +182,13 @@ class TestModelsPreSelector:
         val_err = ValueError("Fake embeddings error")
         vs.add_documents.side_effect = val_err
         mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", return_value=vs)
-        mocked_em = mocker.MagicMock(EmbeddingModel)
+        mocked_em = mocker.MagicMock(BaseEmbeddingModel)
         mocked_em.model_id = "embedding_model_id"
 
         with pytest.raises(PreSelectorError) as err:
-            fully_mocked_selector._create_vector_store(embedding_model=mocked_em, chunked_documents=[document])
+            fully_mocked_selector._create_vector_store(
+                embedding_model=mocked_em, chunked_documents=[document], collection_name="mps_collection_1"
+            )
 
         exp_msg = f"Failed to create in-memory vector index due to: {repr(val_err)}."
         assert exp_msg in caplog.text, "Warning after first embedding fail was not logged"
@@ -204,7 +204,7 @@ class TestModelsPreSelector:
     def test_select_models(self, pre_selector, caplog):
         n_em = 2
         n_fm = 3
-        models = pre_selector.select_models(n_em=n_em, n_fm=n_fm)
+        models = pre_selector.select_models(n_embedding_models=n_em, n_foundation_models=n_fm)
         assert len(models.get("foundation_models")) == n_fm
         assert len(models.get("embedding_models")) == n_em
         assert f"Selecting the best {n_em} embedding models and {n_fm} foundation models." in caplog.text

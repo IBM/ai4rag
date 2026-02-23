@@ -4,8 +4,9 @@
 # -----------------------------------------------------------------------------
 """Sample script to run ai4rag experiment"""
 
-from llama_stack_client import LlamaStackClient
 from pathlib import Path
+
+from llama_stack_client import LlamaStackClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -13,13 +14,10 @@ from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-
+from ai4rag.utils.event_handler import LocalEventHandler
 from dev_utils.file_store import FileStore
-from dev_utils.local_event_handler import LocalEventHandler
-from dev_utils.utils import read_benchmark_from_json
-
 from dev_utils.mocks import MockedEmbeddingModel, MockedFoundationModel
-
+from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
@@ -35,8 +33,8 @@ if __name__ == "__main__":
     documents = file_store.load_as_documents()
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
-    # Configure optimiser
-    optimiser_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
+    # Configure optimizer
+    optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
 
     # Edit configurations of search space
     # search_space = AI4RAGSearchSpace(
@@ -71,14 +69,12 @@ if __name__ == "__main__":
                 name="embedding_model",
                 param_type="C",
                 values=[
-                    MockedEmbeddingModel(model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}),
+                    MockedEmbeddingModel(
+                        model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}
+                    ),
                 ],
             ),
-            Parameter(
-                name="retrieval_method",
-                param_type="C",
-                values=["simple"]
-            ),
+            Parameter(name="retrieval_method", param_type="C", values=["simple"]),
         ]
     )
 
@@ -87,12 +83,15 @@ if __name__ == "__main__":
         documents=documents,
         benchmark_data=benchmark_data,
         search_space=search_space,
-        optimiser_settings=optimiser_settings,
-        event_handler=LocalEventHandler(),
-        output_path=_filepath.parent / "local" / "results_ls_milvus_mocks",
-        vector_store_type="ls_milvus",
+        optimizer_settings=optimizer_settings,
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_mocks"),
+        vector_store_type="chroma",
     )
 
-    best = experiment.search(skip_mps=True)
+    experiment.search(skip_mps=True)
 
-    print(best)
+    best_eval = experiment.results.get_best_evaluations(k=1)[0]
+
+    print(best_eval)
+
+    print(best_eval.rag_pattern.generate("What is greedy decoding?"))

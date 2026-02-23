@@ -48,7 +48,7 @@ class TestBenchmarkDataInitialization:
         benchmark_data = BenchmarkData(benchmark_data=benchmark_data_df)
         assert len(benchmark_data) == 3
         assert len(benchmark_data.questions) == 3
-        assert len(benchmark_data.answers) == 3
+        assert len(benchmark_data.correct_answers) == 3
         assert len(benchmark_data.document_ids) == 3
 
     def test_init_with_empty_question_string(self, benchmark_data_df):
@@ -90,11 +90,8 @@ class TestBenchmarkDataInitialization:
     def test_init_with_empty_dataframe(self):
         """Test initialization with empty DataFrame."""
         empty_df = pd.DataFrame(columns=["question", "correct_answers", "correct_answer_document_ids"])
-        benchmark_data = BenchmarkData(benchmark_data=empty_df)
-        assert len(benchmark_data) == 0
-        assert benchmark_data.questions == []
-        assert benchmark_data.answers == []
-        assert benchmark_data.document_ids == []
+        with pytest.raises(BenchmarkDataValueError, match="There are no records in the benchmark data."):
+            _ = BenchmarkData(benchmark_data=empty_df)
 
 
 class TestBenchmarkDataMagicMethods:
@@ -136,13 +133,6 @@ class TestBenchmarkDataMagicMethods:
         assert items[1][0] == "Is it good to be a software engineer?"
         assert items[2][0] == "What is Python?"
 
-    def test_iter_empty_data(self):
-        """Test __iter__ with empty data."""
-        empty_df = pd.DataFrame(columns=["question", "correct_answers", "correct_answer_document_ids"])
-        benchmark_data = BenchmarkData(benchmark_data=empty_df)
-        items = list(benchmark_data)
-        assert items == []
-
 
 class TestBenchmarkDataProperties:
     """Test suite for BenchmarkData properties."""
@@ -172,7 +162,7 @@ class TestBenchmarkDataProperties:
 
     def test_answers_property_getter(self, benchmark_data):
         """Test answers property getter."""
-        answers = benchmark_data.answers
+        answers = benchmark_data.correct_answers
         assert isinstance(answers, list)
         assert len(answers) == 3
         assert answers[0] == ["Being good to others."]
@@ -180,23 +170,23 @@ class TestBenchmarkDataProperties:
     def test_answers_property_setter_valid(self, benchmark_data):
         """Test answers property setter with valid data."""
         new_answers = [["A1"], ["A2"], ["A3"]]
-        benchmark_data.answers = new_answers
-        assert benchmark_data.answers == new_answers
+        benchmark_data.correct_answers = new_answers
+        assert benchmark_data.correct_answers == new_answers
 
     def test_answers_property_setter_empty_string(self, benchmark_data):
         """Test answers property setter fails with empty string."""
         with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answers' value: ''"):
-            benchmark_data.answers = [[""]]
+            benchmark_data.correct_answers = [[""]]
 
     def test_answers_property_setter_non_string(self, benchmark_data):
         """Test answers property setter fails with non-string."""
         with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answers' value: '456'"):
-            benchmark_data.answers = [[456]]
+            benchmark_data.correct_answers = [[456]]
 
     def test_answers_property_setter_multiple_invalid(self, benchmark_data):
         """Test answers property setter fails when multiple answers have issues."""
         with pytest.raises(BenchmarkDataValueError):
-            benchmark_data.answers = [["Valid"], [""], ["Also valid"]]
+            benchmark_data.correct_answers = [["Valid"], [""], ["Also valid"]]
 
     def test_document_ids_property_getter(self, benchmark_data):
         """Test document_ids property getter."""
@@ -233,12 +223,6 @@ class TestBenchmarkDataProperties:
         assert len(question_ids) == 3
         assert question_ids == ["q0", "q1", "q2"]
 
-    def test_questions_ids_property_empty_data(self):
-        """Test questions_ids property with empty data."""
-        empty_df = pd.DataFrame(columns=["question", "correct_answers", "correct_answer_document_ids"])
-        benchmark_data = BenchmarkData(benchmark_data=empty_df)
-        assert benchmark_data.questions_ids == []
-
 
 class TestBenchmarkDataGetRandomSample:
     """Test suite for get_random_sample method."""
@@ -274,7 +258,7 @@ class TestBenchmarkDataGetRandomSample:
         sample1 = benchmark_data.get_random_sample(n_records=2, random_seed=42)
         sample2 = benchmark_data.get_random_sample(n_records=2, random_seed=42)
         assert sample1.questions == sample2.questions
-        assert sample1.answers == sample2.answers
+        assert sample1.correct_answers == sample2.correct_answers
         assert sample1.document_ids == sample2.document_ids
 
     def test_get_random_sample_different_seeds(self, benchmark_data):
@@ -286,17 +270,10 @@ class TestBenchmarkDataGetRandomSample:
 
     def test_get_random_sample_zero_records(self, benchmark_data):
         """Test get_random_sample with zero records."""
-        sample = benchmark_data.get_random_sample(n_records=0, random_seed=17)
-        assert isinstance(sample, BenchmarkData)
-        assert len(sample) == 0
-
-    def test_get_random_sample_empty_data(self):
-        """Test get_random_sample with empty data."""
-        empty_df = pd.DataFrame(columns=["question", "correct_answers", "correct_answer_document_ids"])
-        benchmark_data = BenchmarkData(benchmark_data=empty_df)
-        sample = benchmark_data.get_random_sample(n_records=10, random_seed=17)
-        assert isinstance(sample, BenchmarkData)
-        assert len(sample) == 0
+        with pytest.raises(
+            BenchmarkDataValueError, match="Cannot make empty sample. Select 'n_records' to be an int greater than 0."
+        ):
+            _ = benchmark_data.get_random_sample(n_records=0, random_seed=17)
 
 
 class TestBenchmarkDataEdgeCases:
@@ -325,7 +302,7 @@ class TestBenchmarkDataEdgeCases:
             }
         )
         benchmark_data = BenchmarkData(benchmark_data=df)
-        assert len(benchmark_data.answers[0]) == 3
+        assert len(benchmark_data.correct_answers[0]) == 3
         assert len(benchmark_data.document_ids[0]) == 3
 
     def test_single_document_id_per_question(self):
@@ -360,7 +337,7 @@ class TestBenchmarkDataEdgeCases:
         )
         benchmark_data = BenchmarkData(benchmark_data=df)
         assert len(benchmark_data.questions[0]) == 10000
-        assert len(benchmark_data.answers[0][0]) == 10000
+        assert len(benchmark_data.correct_answers[0][0]) == 10000
 
 
 class TestBenchmarkDataValueError:

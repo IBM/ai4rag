@@ -7,8 +7,8 @@ import pytest
 from pydantic import ValidationError
 
 from ai4rag.rag.foundation_models.llama_stack import (
-    ModelParameters,
     LSFoundationModel,
+    ModelParameters,
 )
 from ai4rag.utils.constants import ChatGenerationConstants
 from ai4rag.utils.validators import ConstraintsValidationError
@@ -380,7 +380,7 @@ class TestLlamaStackFoundationModel:
         assert "unexpected placeholder" in str(exc_info.value)
 
     def test_model_inherits_from_foundation_model(self, model_with_dict_params):
-        """Test that LSFoundationModel inherits FoundationModel methods."""
+        """Test that LSFoundationModel inherits BaseFoundationModel methods."""
         # Test __repr__
         assert repr(model_with_dict_params) == "test-model-id"
 

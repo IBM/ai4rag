@@ -1,6 +1,5 @@
-# ai4RAG
+# ai4rag
 
-!!! note "This documentation is currently under construction ⚙️⏳..."
 
 ## RAG Templates Optimization Engine
 
@@ -18,14 +17,15 @@
 
 </div>
 
-**ai4RAG** is an optimization engine for RAG (Retrieval-Augmented Generation) Templates that is **LLM and Vector Database provider agnostic**. It accepts RAG Templates and search space definitions, then returns an initialized RAG Template with optimal parameter values (called a **RAG Pattern**).
+**ai4rag** is an optimization engine for RAG (Retrieval-Augmented Generation) patterns that is **LLM and Vector Database provider-agnostic**.
+It accepts benchmark data, search space definition, optimizer configuration then returns a leaderboard with benchmarked RAG Template instances (called **RAG Patterns**).
 
 ---
 
 ## Key Features
 
-- **Provider Agnostic**: Works with any LLM and vector database through Llama Stack integration
-- **Hyperparameter Optimization**: Uses advanced HPO algorithms (GAM-based, Random) to find optimal RAG configurations
+- **Provider-agnostic**: Works with any LLM and vector database: for more information please see [Provider-agnostic section in User Guide](user-guide/provider-agnostic.md)
+- **Hyperparameter Optimization**: Uses advanced HPO algorithms (GAM-based optimizer) to find optimal RAG configurations
 - **Comprehensive Evaluation**: Built-in metrics for faithfulness, answer correctness, and context correctness
 - **Flexible Search Space**: Define and constrain any RAG parameter (models, chunk sizes, retrieval methods, etc.)
 - **Event-Driven Architecture**: Track experiment progress with custom event handlers
@@ -37,23 +37,27 @@
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.event_handler import LocalEventHandler
+from pathlib import Path
 
 # Define search space
 search_space = AI4RAGSearchSpace(params=[...])
 
 # Configure optimizer
-optimiser_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
+optimizer_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
 
 # Run experiment
 experiment = AI4RAGExperiment(
-    client=llama_stack_client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",
-    optimiser_settings=optimiser_settings,
+    vector_store_type="chroma",
+    optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(
+        output_path=Path(__file__).parent / "ai4rag_results"
+    )
 )
 
 best_pattern = experiment.search()
@@ -102,11 +106,11 @@ graph TB
     D --> P
 ```
 
-1. **Indexing Phase**: Documents are chunked, embedded, and stored in a vector database
-2. **Search Space**: Define possible parameter combinations (models, chunk sizes, retrieval methods)
-3. **Optimization**: HPO engine explores configurations using an objective function
-4. **Evaluation**: Each configuration is evaluated using unitxt metrics
-5. **Result**: Return the optimal RAG Pattern with best performance
+1. **Documents and `benchmakr_data.json`** are prepared following desired schema
+2. **Search Space** defines possible parameter combinations (models, chunk sizes, retrieval methods, etc.)
+3. **Optimizer** (optimization engine) explores configurations using an objective function with given RAG Template
+4. **Evaluation** of each configuration using selected metrics based on the `Evaluator` (default `unitxt`)
+5. **Results** are returned containing the optimal RAG Pattern with best performance
 
 ---
 
@@ -115,25 +119,26 @@ graph TB
 ### Core Components
 
 - **Experiment Engine**: Orchestrates the full optimization lifecycle
-- **HPO Optimizers**: GAM-based and Random search algorithms
+- **Hyperparameter Optimizer**: GAM-based optimization algorithm
 - **Search Space**: Flexible parameter definition with validation rules
-- **Evaluator**: Unitxt-based metrics (faithfulness, correctness)
+- **Evaluator**: metrics calculation (`faithfulness`, `answer_correctness`, `context_correctness`)
 
 ### RAG Components
 
-- **Foundation Models**: LLM integration via Llama Stack
-- **Embedding Models**: Text embedding generation
-- **Vector Stores**: Milvus and ChromaDB support
-- **Chunking**: LangChain-based document splitting
-- **Retrieval**: Simple and window-based retrieval strategies
-- **Templates**: Complete RAG implementations
+- **Foundation Model**: LLM integration via `BaseFoundationModel` interface 
+- **Embedding Model**: embedding model integration via `BaseEmbeddingModel`
+- **Vector Store**: selected from supported ones (Milvus via Llama Stack and Chroma) or introduced by the user with `BaseVectorStore` interface
+- **Chunking**: document splitting into smaller chunks
+- **Retrieval**: simple and window-based retrieval strategies
+- **Templates**: complete RAG implementations defined as a `RAGTemplate`
 
 ---
 
 ## Requirements
 
 !!! warning "Llama Stack Integration"
-    At this moment ai4rag is designed to work with a [Llama Stack](https://github.com/llamastack/llama-stack) server. You need:
+    `ai4rag` works with a [Llama Stack](https://github.com/llamastack/llama-stack) server.
+    Tyo run experiment based on Llama Stack you will need:
 
     - At least one foundation model (for text generation)
     - At least one embedding model (for document embeddings)
@@ -191,6 +196,6 @@ graph TB
 
 ## License
 
-ai4rag is released under the Apache License 2.0. See [LICENSE](about/license.md) for details.
+`ai4rag` is released under the Apache License 2.0. See [LICENSE](about/license.md) for details.
 
 Copyright © 2025-2026 IBM Corp.

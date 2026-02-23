@@ -5,18 +5,18 @@
 from abc import ABC, abstractmethod
 from typing import Generic, TypeVar
 
+from ai4rag.rag.foundation_models.utils import RAGPromptTemplateString
 from ai4rag.search_space.src.model_props import (
     get_context_template_text,
     get_system_message_text,
     get_user_message_text,
 )
-from ai4rag.utils.validators import RAGPromptTemplateString
 
 FoundationModelClientT = TypeVar("FoundationModelClientT")
 FoundationModelParamsT = TypeVar("FoundationModelParamsT")
 
 
-class FoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
+class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
 
     user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")
     context_template_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="context_template_text")
@@ -50,7 +50,7 @@ class FoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], A
         return repr(self)
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, FoundationModel):
+        if not isinstance(other, BaseFoundationModel):
             raise NotImplementedError
 
         return self.model_id == other.model_id

@@ -10,9 +10,9 @@ import pytest
 from llama_stack_client import LlamaStackClient
 
 from ai4rag.search_space.prepare_search_space import (
-    prepare_search_space_with_llama_stack,
-    _get_default_llama_stack_models,
     _are_provided_models_available,
+    _get_default_llama_stack_models,
+    prepare_search_space_with_llama_stack,
 )
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 

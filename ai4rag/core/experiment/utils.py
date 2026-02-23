@@ -10,8 +10,8 @@ from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import GenerationError
 from ai4rag.evaluator.base_evaluator import EvaluationData
-from ai4rag.rag.embedding.base_model import EmbeddingModel
-from ai4rag.rag.foundation_models.base_model import FoundationModel
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.utils.constants import AI4RAGParamNames
 
@@ -30,7 +30,7 @@ __all__ = [
 
 _semantic_chunker_cache = {}
 
-VectorStoreType: TypeAlias = Literal["milvus", "chroma", "local_milvus", "elasticsearch", "local_elasticsearch"]
+VectorStoreType: TypeAlias = Literal["milvus", "chroma"]
 
 
 class RAGExperimentError(Exception):
@@ -40,8 +40,8 @@ class RAGExperimentError(Exception):
 class RAGParamsType(TypedDict):
     """Parameters required for single AutoRAG Pattern evaluation."""
 
-    embedding_model: EmbeddingModel
-    foundation_model: FoundationModel
+    embedding_model: BaseEmbeddingModel
+    foundation_model: BaseFoundationModel
     chunk_size: int
     chunk_overlap: int | float
     chunking_method: Literal["recursive"]
@@ -112,7 +112,7 @@ def _generate_response(question: str, rag: BaseRAGTemplate) -> dict[str, Any]:
     """
     Make a single call to the RAG instance.
     Notice that question parameter should remain first to be easily
-    utilised by concurrent executor.
+    utilized by concurrent executor.
 
     Parameters
     ----------
@@ -174,7 +174,7 @@ def build_evaluation_data(
                 answer=inference_response[idx]["answer"],
                 contexts=contexts,
                 context_ids=context_ids,
-                ground_truths=benchmark_data.answers[idx],
+                ground_truths=benchmark_data.correct_answers[idx],
                 question_id=benchmark_data.questions_ids[idx],
                 ground_truths_context_ids=benchmark_data.document_ids[idx] if benchmark_data.document_ids else None,
             )
@@ -211,7 +211,7 @@ def _get_chunk_overlap(chunk_size: int, chunk_overlap: int | float) -> int:
     return chunk_overlap
 
 
-def get_chunking_params(rag_params: RAGChunkingParamsType) -> dict:
+def get_chunking_params(rag_params: RAGParamsType) -> RAGChunkingParamsType:
     """
     Extracts chunking parameters from the provided rag parameters.
     All three configurations are mandatory as part of single `chunking` setting:
@@ -236,13 +236,9 @@ def get_chunking_params(rag_params: RAGChunkingParamsType) -> dict:
         k: rag_params.get(k)
         for k in [AI4RAGParamNames.CHUNKING_METHOD, AI4RAGParamNames.CHUNK_SIZE, AI4RAGParamNames.CHUNK_OVERLAP]
     }
-
-    if chunking_params[AI4RAGParamNames.CHUNKING_METHOD] == "semantic":
-        chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = 0
-    else:
-        chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = _get_chunk_overlap(
-            chunking_params[AI4RAGParamNames.CHUNK_SIZE], chunking_params[AI4RAGParamNames.CHUNK_OVERLAP]
-        )
+    chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = _get_chunk_overlap(
+        chunking_params[AI4RAGParamNames.CHUNK_SIZE], chunking_params[AI4RAGParamNames.CHUNK_OVERLAP]
+    )
     if any(v is None for v in chunking_params.values()):
         raise RAGExperimentError(f"Missing or invalid values in chunking configuration: {chunking_params}.")
 
@@ -270,21 +266,12 @@ def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
     RAGExperimentError
         Raised when retrieval parameters are missing.
     """
-    retrieval_method = rag_params.get("retrieval_method")
-    retrieval_window_size = rag_params.get("window_size")
-    number_of_retrieved_chunks = rag_params.get("number_of_chunks")
-
     retrieval_params = {
-        AI4RAGParamNames.WINDOW_SIZE: retrieval_window_size,
-        AI4RAGParamNames.NUMBER_OF_CHUNKS: number_of_retrieved_chunks,
-        AI4RAGParamNames.RETRIEVAL_METHOD: retrieval_method,
+        AI4RAGParamNames.WINDOW_SIZE: rag_params.get(AI4RAGParamNames.WINDOW_SIZE),
+        AI4RAGParamNames.NUMBER_OF_CHUNKS: rag_params.get(AI4RAGParamNames.NUMBER_OF_CHUNKS),
+        AI4RAGParamNames.RETRIEVAL_METHOD: rag_params.get(AI4RAGParamNames.RETRIEVAL_METHOD),
     }
-    if retrieval_window_size is None or not all((retrieval_method, number_of_retrieved_chunks)):
-        p = {
-            "window_size": retrieval_window_size,
-            "number_of_chunks": number_of_retrieved_chunks,
-            "method": retrieval_method,
-        }
-        raise RAGExperimentError(f"Missing or invalid values in retrieval configuration: {p}.")
+    if any(v is None for v in retrieval_params.values()):
+        raise RAGExperimentError(f"Missing or invalid values in retrieval configuration: {retrieval_params}.")
 
     return retrieval_params

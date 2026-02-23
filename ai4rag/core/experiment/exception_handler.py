@@ -9,9 +9,7 @@ from ai4rag.utils.event_handler import BaseEventHandler, LogLevel
 
 
 class AI4RAGError(Exception):
-    """
-    Base class for all external exceptions which can occur in AutoRAG.
-    """
+    """Base class for all external exceptions which can occur in AI4RAG."""
 
     def __init__(self, exception: Exception, message: str | None = None) -> None:
         self.exception = exception
@@ -73,7 +71,7 @@ class AssetSaveError(AI4RAGError):
         return f"{self.__class__.__name__}: Unable to save assets for evaluated pattern due to: {repr(self.exception)}"
 
 
-class ExperimentExceptionsHandler:
+class ExperimentExceptionHandler:
     """
     Class responsible for handling exceptions raised during the experiment.
     Exceptions are stored in dict containing information about iteration and raised error.
@@ -91,7 +89,6 @@ class ExperimentExceptionsHandler:
         ----------
         exception : AI4RAGError
             Handled exception.
-
         """
         self.errors.append(exception)
         logger.warning(exception, exc_info=True)

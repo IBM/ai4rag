@@ -23,7 +23,7 @@ class LangChainChunker(BaseChunker[Document]):
     method : Literal["recursive", "character", "token"], default="recursive"
         Describes the type of TextSplitter as the main instance performing the chunking.
 
-    chunk_suze : int, default=2048
+    chunk_size : int, default=2048
         Maximum size of a single chunk that is returned.
 
     chunk_overlap : int, default=256

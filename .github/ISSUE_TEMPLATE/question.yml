@@ -1,0 +1,76 @@
+name: Question/Clarification
+description: Ask a question or request clarification about ai4rag
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your question! We'll do our best to help.
+
+  - type: dropdown
+    id: topic
+    attributes:
+      label: Topic
+      description: What is your question about?
+      options:
+        - Installation/Setup
+        - Configuration
+        - Usage/How-to
+        - Search Space Definition
+        - Hyperparameter Optimization
+        - Llama Stack Integration
+        - Other Provider Integration
+        - Vector Store Setup / Integration
+        - Evaluation
+        - Performance/Optimization
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: What would you like to know?
+      placeholder: Please describe your question in detail...
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Provide any relevant context (what you're trying to do, what you've tried, etc.)
+      placeholder: I'm trying to... I've already looked at...
+    validations:
+      required: false
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Code Sample
+      description: If relevant, provide a code sample or configuration
+      render: python
+    validations:
+      required: false
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (if relevant)
+      description: Your environment details
+      value: |
+        - ai4rag version:
+        - Python version:
+      render: markdown
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional Context
+      description: Add any other context or screenshots
+    validations:
+      required: false
