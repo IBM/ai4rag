@@ -506,7 +506,7 @@ class AI4RAGExperiment:
             search_space=self.search_space,
             settings=self.optimizer_settings,
         )
-        logger.debug(
+        logger.info(
             "Using optimizer: %s with optimizer settings: %s",
             optimizer_class.__name__,
             self.optimizer_settings.to_dict(),
