@@ -393,7 +393,7 @@ class AI4RAGExperiment:
             number_of_chunks=number_of_chunks,
         )
 
-        rag = LlamaStackRAG(
+        rag_pattern = LlamaStackRAG(
             foundation_model=foundation_model,
             retriever=retriever,
         )
@@ -410,7 +410,7 @@ class AI4RAGExperiment:
         )
 
         inference_response = query_rag(
-            rag=rag,
+            rag=rag_pattern,
             questions=list(self.benchmark_data.questions),
         )
         result_scores, evaluation_data = self._evaluate_response(
@@ -433,6 +433,7 @@ class AI4RAGExperiment:
             scores=result_scores,
             execution_time=execution_time,
             final_score=result_score,
+            rag_pattern=rag_pattern,
         )
 
         evaluation_results_json = self.results.create_evaluation_results_json(

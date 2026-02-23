@@ -1,13 +1,13 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2026
+# Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from pathlib import Path
 import json
-
-from .base_event_handler import BaseEventHandler, LogLevel
+from pathlib import Path
 
 from ai4rag import logger
+
+from .base_event_handler import BaseEventHandler, LogLevel
 
 
 class LocalEventHandler(BaseEventHandler):
@@ -39,4 +39,3 @@ class LocalEventHandler(BaseEventHandler):
 
             with open(dir_path / "pattern.json", mode="w") as file2:
                 json.dump(payload, file2)
-
