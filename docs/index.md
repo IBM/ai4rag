@@ -72,10 +72,10 @@ graph TB
     A[Documents]
     B[Benchmark Data]
     C[Search Space Definition]
-    
+
     D[Experiment Engine]
     E[HPO Optimizer]
-    
+
     subgraph X[RAG Pattern]
         G[Chunking]
         H[Embedding]
@@ -89,7 +89,7 @@ graph TB
     N[Best RAG Pattern]
     O[Results Artifacts]
     P[Events Callbacks]
-    
+
     A --> D
     B --> D
     C --> D
@@ -125,7 +125,7 @@ graph TB
 
 ### RAG Components
 
-- **Foundation Model**: LLM integration via `BaseFoundationModel` interface 
+- **Foundation Model**: LLM integration via `BaseFoundationModel` interface
 - **Embedding Model**: embedding model integration via `BaseEmbeddingModel`
 - **Vector Store**: selected from supported ones (Milvus via Llama Stack and Chroma) or introduced by the user with `BaseVectorStore` interface
 - **Chunking**: document splitting into smaller chunks

@@ -55,7 +55,7 @@ When using the Llama Stack backend, ai4rag relies on:
 3. [Prepare `benchmark_data.json` with evaluation questions and answers.](#prepare-benchmark_datajson)
 4. [Define and constrain your search space.](#define-and-constrain-search-space)
 5. [Configure the optimizer.](#configure-optimizer)
-6. [Create and run the experiment.](#run-the-experiment) 
+6. [Create and run the experiment.](#run-the-experiment)
 
 
 ### Prepare `llama-stack-client`
@@ -215,8 +215,3 @@ Pull requests are very welcome! Make sure your patches are well tested. Ideally 
 5. Create new Pull Request
 
 See more details in [contributing section](contributing.md).
-
-
-
-
-
