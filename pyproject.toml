@@ -8,7 +8,9 @@ description = "Automatic and optimised RAG Pattern generator"
 authors = [{ name = "IBM"}]
 maintainers = [
     { name = "Jakub Walaszczyk", email = "jwalaszc@redhat.com" },
+    { name = "Lukasz Cmielowski", email = "lcmielow@redhat.com"},
     { name = "Michal Steczko", email = "msteczko@redhat.com" },
+    { name = "Filip Komarzyniec", email = "fkomarzy@redhat.com"}
 ]
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
@@ -49,6 +51,7 @@ dev = [
     "ai4rag[docs]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
+    "pre-commit",
     "ipykernel",
     "pypdf",               # reading data from pdf
 ]
