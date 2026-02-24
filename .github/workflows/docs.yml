@@ -56,5 +56,5 @@ jobs:
         run: |
           # Extract version from tag (e.g., v0.2.0 -> 0.2.0)
           VERSION=${GITHUB_REF#refs/tags/v}
-          mike deploy --push --update-aliases $VERSION latest
+          mike deploy --push $VERSION latest
           mike set-default --push latest

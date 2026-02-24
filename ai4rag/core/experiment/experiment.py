@@ -28,6 +28,7 @@ from ai4rag.core.experiment.utils import (
     query_rag,
 )
 from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
+from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimizer
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
@@ -497,7 +498,7 @@ class AI4RAGExperiment:
                 name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
             )
 
-        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", RandomOptimizer)
+        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
 
         # In the search kwargs user may pass different optimizer instance for testing purposes
         optimizer = optimizer_class(
@@ -505,7 +506,7 @@ class AI4RAGExperiment:
             search_space=self.search_space,
             settings=self.optimizer_settings,
         )
-        logger.debug(
+        logger.info(
             "Using optimizer: %s with optimizer settings: %s",
             optimizer_class.__name__,
             self.optimizer_settings.to_dict(),
