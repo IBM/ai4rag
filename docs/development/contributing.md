@@ -248,7 +248,7 @@ def my_function(param1: str, param2: int) -> bool:
     ----------
     param1 : str
         Description of param1
-    
+
     param2 : int
         Description of param2
 

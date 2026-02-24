@@ -49,6 +49,7 @@ dev = [
     "ai4rag[docs]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
+    "pre-commit",
     "ipykernel",
     "pypdf",               # reading data from pdf
 ]
