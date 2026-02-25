@@ -33,11 +33,11 @@ dependencies = [
     "langchain_chroma~=1.1.0",
     "langchain-text-splitters~=1.1.0",
     "llama-stack-client~=0.4.2",
-    "openai~=2.23.0",
-    "pandas~=2.2.*",
-    "pydantic~=2.11.0",
+    "openai==2.23.*",
+    "pandas==2.2.*",
+    "pydantic==2.11.*",
     "pygam~=0.12.0",
-    "scikit-learn~=1.8.0",
+    "scikit-learn==1.8.*",
     "unitxt~=1.26.1",
 ]
 
