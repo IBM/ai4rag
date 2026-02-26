@@ -4,18 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai4rag"
-description = "Automatic and optimised RAG Pattern generator"
+description = "Automatic and optimized RAG Pattern generator"
 authors = [{ name = "IBM"}]
 maintainers = [
     { name = "Jakub Walaszczyk", email = "jwalaszc@redhat.com" },
-    { name = "Lukasz Cmielowski", email = "lcmielow@redhat.com"},
     { name = "Michal Steczko", email = "msteczko@redhat.com" },
-    { name = "Filip Komarzyniec", email = "fkomarzy@redhat.com"}
 ]
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.12,<3.14"
 classifiers = [
     "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -31,18 +31,25 @@ keywords = [
 dynamic = ["version"]
 
 dependencies = [
-    "langchain==1.1.3",
-    "langchain_chroma",
-    "langchain-text-splitters",
-    "langgraph>=1.0.4",
-    "llama-stack-client==0.4.2",
-    "openai",
+    "langchain~=1.1.3",
+    "langchain_chroma~=1.1.0",
+    "langchain-text-splitters~=1.1.0",
+    "llama-stack-client~=0.4.2",
+    "openai==2.23.*",
     "pandas==2.2.*",
-    "pydantic==2.11.0",
+    "pydantic==2.11.*",
     "pygam~=0.12.0",
-    "scikit-learn==1.8.0",
+    "scikit-learn==1.8.*",
     "unitxt~=1.26.1",
 ]
+
+
+[project.urls]
+Homepage = "https://github.com/IBM/ai4rag"
+Repository = "https://github.com/IBM/ai4rag"
+Issues = "https://github.com/IBM/ai4rag/issues"
+Documentation = "https://ibm.github.io/ai4rag/"
+
 
 [project.optional-dependencies]
 dev = [
@@ -51,7 +58,6 @@ dev = [
     "ai4rag[docs]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
-    "pre-commit",
     "ipykernel",
     "pypdf",               # reading data from pdf
 ]
