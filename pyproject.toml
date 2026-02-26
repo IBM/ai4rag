@@ -8,7 +8,9 @@ description = "Automatic and optimized RAG Pattern generator"
 authors = [{ name = "IBM"}]
 maintainers = [
     { name = "Jakub Walaszczyk", email = "jwalaszc@redhat.com" },
+    { name = "Lukasz Cmielowski", email = "lcmielow@redhat.com" },
     { name = "Michal Steczko", email = "msteczko@redhat.com" },
+    { name = "Filip Komarzyniec", email = "fkomarzy@redhat.com"}
 ]
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -67,8 +69,8 @@ test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
 code_check = ["pylint", "black", "isort"]
 
 docs = [
-    "mkdocs>=1.6.0",
-    "mkdocs-material>=9.5.0",
+    "mkdocs~=1.6.0",
+    "mkdocs-material~=9.5",
     "mkdocstrings[python]>=0.25.0",
     "mkdocs-git-revision-date-localized-plugin>=1.2.0",
     "mkdocs-minify-plugin>=0.8.0",
