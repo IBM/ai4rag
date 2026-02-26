@@ -2,118 +2,118 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/about/changelog/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/about/license/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/core/experiment/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/core/hpo/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/evaluator/evaluator/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/rag/chunking/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/rag/embedding/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/rag/foundation-models/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/rag/retrieval/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/rag/vector-stores/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/api-reference/search-space/search-space/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/architecture/core-components/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/architecture/data-flow/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/architecture/overview/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/architecture/rag-components/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/development/code-style/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/development/contributing/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/development/testing/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/development/workflow/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/getting-started/installation/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/getting-started/quick-start/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/includes/abbreviations/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/user-guide/evaluation/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/user-guide/event-handlers/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/user-guide/optimizers/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/user-guide/overview/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/user-guide/provider-agnostic/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/latest/user-guide/search-space/</loc>
-         <lastmod>2026-02-23</lastmod>
+         <lastmod>2026-02-26</lastmod>
     </url>
 </urlset>
