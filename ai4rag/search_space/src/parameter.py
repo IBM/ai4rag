@@ -56,7 +56,7 @@ class Parameter(Generic[HashableType]):
     """
 
     name: str
-    param_type: Literal["B", "I", "R", "C"]
+    param_type: Literal["B", "I", "R", "C"] = "C"
     v_min: Optional[int | float] = None
     v_max: Optional[int | float] = None
     values: Optional[Sequence[HashableType]] = None
