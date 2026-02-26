@@ -6,9 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ---
+
+## [0.2.1](https://github.com/IBM/ai4rag/releases/tag/v0.2.1)
+
+### Changed
+- Default optimizer is now `GAMOptimizer`
+- Default retrieval methods no longer contain `window` method, as this is not supported for `ls_milvus` at the moment
+- `Parameter` no longer requires to specify `param_type`. `C` type is used as default
+
+### Fixed
+- Bug in `GAMOptimizer` that unabled its usage (failing during deepcopy)
+
 ## [0.2.0](https://github.com/IBM/ai4rag/releases/tag/v0.2.0)
 
-### Added 
+### Added
 - Support for `LocalEventHandler`
 - Support for external models introduced via `OpenAI` client
 - CI/CD tooling

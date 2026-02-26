@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import random
-from copy import deepcopy
+from copy import copy, deepcopy
 from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable
@@ -148,7 +148,7 @@ class GAMOptimizer(BaseOptimizer):
         Evaluations are performed until desired number of successful evaluations
         is reached or maximum number of evaluations is reached.
         """
-        combinations_local = deepcopy(self._search_space.combinations)
+        combinations_local = copy(self._search_space.combinations)
         random.shuffle(combinations_local)
 
         successful_evaluations = 0

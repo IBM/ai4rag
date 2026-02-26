@@ -38,10 +38,10 @@ graph TB
     A[Documents]
     B[Benchmark Data]
     C[Search Space Definition]
-    
+
     D[Experiment Engine]
     E[HPO Optimizer]
-    
+
     subgraph X[RAG Pattern]
         G[Chunking]
         H[Embedding]
@@ -55,7 +55,7 @@ graph TB
     N[Best RAG Pattern]
     O[Results Artifacts]
     P[Events Callbacks]
-    
+
     A --> D
     B --> D
     C --> D

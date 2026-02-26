@@ -12,8 +12,8 @@ __all__ = [
 _default_chunking_methods = ("recursive",)
 _default_chunk_sizes = (1024, 2048)
 _default_chunk_overlaps = (256, 512)
-_default_retrieval_methods = ("simple", "window")
-_default_window_sizes = (0, 1, 2, 3, 4, 5)
+_default_retrieval_methods = ("simple",)
+_default_window_sizes = (0,)
 _default_numbers_of_chunks = (3, 5, 10)
 
 
