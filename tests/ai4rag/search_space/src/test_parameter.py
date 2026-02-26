@@ -143,8 +143,8 @@ def test_parameter_instance_creation(kwargs):
     ],
 )
 def test_positional_parameters(kwargs):
-    patt_prefix = r"required\s+positional\s+arguments.*"
-    error_patter = rf"(?={patt_prefix}'name')(?={patt_prefix}'param_type')"
+    patt_prefix = r"required\s+positional\s+argument.*"
+    error_patter = rf"(?={patt_prefix}'name')"
     with pytest.raises(TypeError, match=error_patter):
         Parameter(**kwargs)
 

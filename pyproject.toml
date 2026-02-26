@@ -4,16 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ai4rag"
-description = "Automatic and optimised RAG Pattern generator"
+description = "Automatic and optimized RAG Pattern generator"
 authors = [{ name = "IBM"}]
 maintainers = [
     { name = "Jakub Walaszczyk", email = "jwalaszc@redhat.com" },
     { name = "Michal Steczko", email = "msteczko@redhat.com" },
 ]
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.12,<3.14"
 classifiers = [
     "Development Status :: 4 - Beta",
+    "License :: OSI Approved :: Apache Software License",
     "Natural Language :: English",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -40,6 +42,14 @@ dependencies = [
     "scikit-learn==1.8.*",
     "unitxt~=1.26.1",
 ]
+
+
+[project.urls]
+Homepage = "https://github.com/IBM/ai4rag"
+Repository = "https://github.com/IBM/ai4rag"
+Issues = "https://github.com/IBM/ai4rag/issues"
+Documentation = "https://ibm.github.io/ai4rag/"
+
 
 [project.optional-dependencies]
 dev = [

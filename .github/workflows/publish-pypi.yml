@@ -1,0 +1,175 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Branch, tag, or commit SHA to publish from (leave empty for default branch)'
+        required: false
+        type: string
+        default: ''
+      target:
+        description: 'PyPI target'
+        required: true
+        type: choice
+        options:
+          - testpypi
+          - pypi
+        default: testpypi
+
+permissions:
+  contents: read
+  id-token: write  # Required for trusted publishing
+
+jobs:
+  get-version:
+    name: Get version from code
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.extract-version.outputs.version }}
+      tag: ${{ steps.extract-version.outputs.tag }}
+      ref: ${{ steps.extract-version.outputs.ref }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Extract version from __init__.py
+        id: extract-version
+        run: |
+          # Get the actual ref we checked out
+          ACTUAL_REF="${{ inputs.ref }}"
+          if [ -z "$ACTUAL_REF" ]; then
+            ACTUAL_REF=$(git branch --show-current)
+          fi
+
+          VERSION=$(grep -E "^__version__ = " ai4rag/__init__.py | cut -d'"' -f2)
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Error: Version in __init__.py must be in format X.Y.Z (found: $VERSION)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "ref=$ACTUAL_REF" >> $GITHUB_OUTPUT
+          echo "✅ Publishing from: $ACTUAL_REF"
+          echo "✅ Version to publish: $VERSION"
+          echo "✅ Tag: v$VERSION"
+
+  build-sdist:
+    name: Build source distribution
+    runs-on: ubuntu-latest
+    needs: get-version
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Verify version
+        run: |
+          echo "Building version: ${{ needs.get-version.outputs.version }}"
+          grep __version__ ai4rag/__init__.py
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build source distribution
+        run: python -m build --sdist
+
+      - name: Upload sdist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-sdist
+          path: dist/*.tar.gz
+          retention-days: 7
+
+  build-wheels:
+    name: Build wheels on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    needs: get-version
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.12', '3.13']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Verify version
+        run: |
+          echo "Building version: ${{ needs.get-version.outputs.version }}"
+          grep __version__ ai4rag/__init__.py
+        shell: bash
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build wheel
+
+      - name: Build wheel
+        run: |
+          python -m build --wheel
+        env:
+          CIBW_BUILD: cp${{ matrix.python-version }}-*
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dist/*.whl
+          retention-days: 7
+
+  publish:
+    name: Publish to ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    needs: [get-version, build-sdist, build-wheels]
+    environment:
+      name: ${{ inputs.target }}
+      url: ${{ inputs.target == 'pypi' && 'https://pypi.org/p/ai4rag' || 'https://test.pypi.org/p/ai4rag' }}
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          path: dist
+          merge-multiple: true
+
+      - name: List distributions
+        run: |
+          echo "📍 Publishing from: ${{ needs.get-version.outputs.ref }}"
+          echo "📦 Version: ${{ needs.get-version.outputs.version }}"
+          echo "🏷️  Tag: ${{ needs.get-version.outputs.tag }}"
+          echo ""
+          echo "Distributions to publish:"
+          ls -lh dist/
+
+      - name: Publish to Test PyPI
+        if: inputs.target == 'testpypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          skip-existing: true
+          verbose: true
+
+      - name: Publish to PyPI
+        if: inputs.target == 'pypi'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
