@@ -1,25 +1,26 @@
 name: Deploy Documentation
 
 on:
-  push:
-    branches:
-      - dev
-  pull_request:
-    branches:
-      - main
-      - dev
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch to build docs from'
+        required: true
+        default: 'main'
+        type: string
 
 permissions:
   contents: write
 
 jobs:
-  build-and-deploy:
-    name: Documentation Build or Build and Deployment
+  deploy:
+    name: Build and Deploy Documentation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.inputs.branch || github.ref }}
           fetch-depth: 0  # Fetch all history for git-revision-date-localized plugin
           token: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN for authentication
 
@@ -34,17 +35,21 @@ jobs:
           pip install --upgrade pip
           pip install -e ".[docs]"
 
+      - name: Extract version
+        id: version
+        run: |
+          VERSION=$(python -c "import ai4rag; print(ai4rag.__version__)")
+          # Strip 'v' prefix if present
+          VERSION=${VERSION#v}
+          echo "docs_version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
       - name: Configure Git for mike
-        if: github.event_name != 'pull_request'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Build documentation (PR check)
-        if: github.event_name == 'pull_request'
-        run: mkdocs build --strict
-
-      - name: Deploy documentation (dev branch)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
+      - name: Deploy documentation (manual trigger)
+        if: github.event_name == 'workflow_dispatch'
         run: |
-          mike deploy --push dev
+          mike deploy --push ${{ steps.version.outputs.docs_version }}
