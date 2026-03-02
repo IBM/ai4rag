@@ -7,15 +7,26 @@ from typing import Any
 
 import pytest
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 
 
 class ConcreteFoundationModel(BaseFoundationModel[Any, dict]):
     """Concrete implementation of BaseFoundationModel for testing purposes."""
 
-    def chat(self, system_message: str, user_message: str) -> str:
+    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
         """Simple chat implementation for testing."""
-        return f"System: {system_message}, User: {user_message}"
+        # Create a mock response that mimics the structure of real model responses
+        class MockMessage:
+            def __init__(self, content: str):
+                self.content = content
+
+        class MockChoice:
+            def __init__(self, content: str):
+                self.message = MockMessage(content)
+
+        # Simulate processing the messages
+        response_content = f"Response to {len(messages)} messages"
+        return [MockChoice(response_content)]
 
 
 class TestFoundationModel:
@@ -34,14 +45,14 @@ class TestFoundationModel:
     @pytest.fixture
     def foundation_model(self, mock_client, model_params):
         """Create a concrete foundation model instance for testing."""
-        return ConcreteFoundationModel(client=mock_client, model_id="test-model-id", model_params=model_params)
+        return ConcreteFoundationModel(client=mock_client, model_id="test-model-id", params=model_params)
 
     def test_init(self, mock_client, model_params):
         """Test BaseFoundationModel initialization."""
-        model = ConcreteFoundationModel(client=mock_client, model_id="test-model-123", model_params=model_params)
+        model = ConcreteFoundationModel(client=mock_client, model_id="test-model-123", params=model_params)
         assert model.client == mock_client
         assert model.model_id == "test-model-123"
-        assert model.model_params == model_params
+        assert model.params == model_params
 
     def test_repr(self, foundation_model):
         """Test __repr__ returns model_id."""
@@ -54,14 +65,14 @@ class TestFoundationModel:
 
     def test_eq_same_model_id(self, mock_client, model_params):
         """Test equality when model_ids are the same."""
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="same-id", model_params=model_params)
-        model2 = ConcreteFoundationModel(client=mock_client, model_id="same-id", model_params={"different": "params"})
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="same-id", params=model_params)
+        model2 = ConcreteFoundationModel(client=mock_client, model_id="same-id", params={"different": "params"})
         assert model1 == model2
 
     def test_eq_different_model_id(self, mock_client, model_params):
         """Test inequality when model_ids are different."""
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params=model_params)
-        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", model_params=model_params)
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", params=model_params)
+        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", params=model_params)
         assert model1 != model2
 
     def test_eq_with_non_foundation_model(self, foundation_model):
@@ -85,31 +96,31 @@ class TestFoundationModel:
 
     def test_hash_consistency(self, mock_client, model_params):
         """Test that models with same model_id have same hash."""
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="same-id", model_params=model_params)
-        model2 = ConcreteFoundationModel(client=mock_client, model_id="same-id", model_params={"different": "params"})
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="same-id", params=model_params)
+        model2 = ConcreteFoundationModel(client=mock_client, model_id="same-id", params={"different": "params"})
         assert hash(model1) == hash(model2)
 
     def test_hash_different_for_different_ids(self, mock_client, model_params):
         """Test that models with different model_ids have different hashes."""
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params=model_params)
-        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", model_params=model_params)
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", params=model_params)
+        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", params=model_params)
         assert hash(model1) != hash(model2)
 
     def test_models_can_be_used_in_set(self, mock_client, model_params):
         """Test that BaseFoundationModel instances can be added to a set."""
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params=model_params)
-        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", model_params=model_params)
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", params=model_params)
+        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", params=model_params)
         model3 = ConcreteFoundationModel(
-            client=mock_client, model_id="model-1", model_params={"different": "params"}  # Same as model1
+            client=mock_client, model_id="model-1", params={"different": "params"}  # Same as model1
         )
         model_set = {model1, model2, model3}
         assert len(model_set) == 2  # model1 and model3 are considered equal
 
     def test_models_can_be_used_as_dict_keys(self, mock_client, model_params):
         """Test that BaseFoundationModel instances can be used as dictionary keys."""
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params=model_params)
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", params=model_params)
         model2 = ConcreteFoundationModel(
-            client=mock_client, model_id="model-1", model_params={"different": "params"}  # Same as model1
+            client=mock_client, model_id="model-1", params={"different": "params"}  # Same as model1
         )
         model_dict = {model1: "value1"}
         model_dict[model2] = "value2"
@@ -118,13 +129,18 @@ class TestFoundationModel:
 
     def test_chat_implementation(self, foundation_model):
         """Test that concrete implementation's chat method works."""
-        result = foundation_model.chat("system prompt", "user query")
-        assert result == "System: system prompt, User: user query"
+        messages = [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "user query"},
+        ]
+        result = foundation_model.chat(messages)
+        assert len(result) == 1
+        assert result[0].message.content == "Response to 2 messages"
 
     def test_chat_is_abstract(self):
         """Test that BaseFoundationModel.chat is abstract and cannot be instantiated without implementation."""
         with pytest.raises(TypeError) as exc_info:
-            BaseFoundationModel(client=None, model_id="test", model_params={})
+            BaseFoundationModel(client=None, model_id="test", params={})
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
     @pytest.mark.parametrize(
@@ -139,7 +155,7 @@ class TestFoundationModel:
     )
     def test_repr_various_model_ids(self, mock_client, model_params, model_id, expected_repr):
         """Test __repr__ with various model_id formats."""
-        model = ConcreteFoundationModel(client=mock_client, model_id=model_id, model_params=model_params)
+        model = ConcreteFoundationModel(client=mock_client, model_id=model_id, params=model_params)
         assert repr(model) == expected_repr
 
     def test_different_client_types(self, model_params):
@@ -149,23 +165,23 @@ class TestFoundationModel:
             pass
 
         client = CustomClient()
-        model = ConcreteFoundationModel(client=client, model_id="test-model", model_params=model_params)
+        model = ConcreteFoundationModel(client=client, model_id="test-model", params=model_params)
         assert isinstance(model.client, CustomClient)
 
     def test_different_param_types(self, mock_client):
         """Test that BaseFoundationModel works with different parameter types."""
         # Test with dict
-        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", model_params={"key": "value"})
-        assert model1.model_params == {"key": "value"}
+        model1 = ConcreteFoundationModel(client=mock_client, model_id="model-1", params={"key": "value"})
+        assert model1.params == {"key": "value"}
 
         # Test with None
-        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", model_params=None)
-        assert model2.model_params is None
+        model2 = ConcreteFoundationModel(client=mock_client, model_id="model-2", params=None)
+        assert model2.params is None
 
         # Test with custom object
         class CustomParams:
             pass
 
         params = CustomParams()
-        model3 = ConcreteFoundationModel(client=mock_client, model_id="model-3", model_params=params)
-        assert model3.model_params is params
+        model3 = ConcreteFoundationModel(client=mock_client, model_id="model-3", params=params)
+        assert model3.params is params

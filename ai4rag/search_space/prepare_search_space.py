@@ -8,7 +8,7 @@ from llama_stack_client import LlamaStackClient
 from pydantic import TypeAdapter, ValidationError
 
 from ai4rag import logger
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel, LSEmbeddingParams
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
 from ai4rag.search_space.prepare.validation_error_decoder import validation_error_decoder
@@ -34,7 +34,12 @@ def _get_default_llama_stack_models(client: LlamaStackClient) -> _DefaultModelsR
     foundation_models = [LSFoundationModel(model_id=m.id, client=client) for m in llms]
     embedding_models = [
         LSEmbeddingModel(
-            model_id=m.id, client=client, params={"embedding_dimension": m.custom_metadata["embedding_dimension"]}
+            model_id=m.id,
+            client=client,
+            params=LSEmbeddingParams(
+                embedding_dimension=m.custom_metadata.get("embedding_dimension")
+                or m.metadata.get("embedding_dimension")
+            ),
         )
         for m in embeddings
     ]
@@ -60,7 +65,7 @@ def _are_provided_models_available(
     for model in provided_models:
         m_id = model.model_id
         if m_id not in available_ids:
-            raise SearchSpaceValueError(f"Provided model with model_id: {m_id} is not available for the experiment.")
+            raise SearchSpaceValueError(f"Provided model with model_id: '{m_id}' is not available for the experiment.")
     return True
 
 
@@ -101,7 +106,7 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
         default_foundation_models = models["foundation_models"]
         default_embedding_models = models["embedding_models"]
     else:
-        raise SearchSpaceValueError(f"Unrecognized client type: {client.__class__.__name__}")
+        raise SearchSpaceValueError(f"Unrecognized client type: '{client.__class__.__name__}'")
 
     if validated_payload.foundation_models:
         _are_provided_models_available(validated_payload.foundation_models, default_foundation_models)
@@ -112,12 +117,10 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
     if validated_payload.foundation_models is not None:
         fms_param = Parameter(
             name="foundation_model",
-            param_type="C",
             values=[
                 LSFoundationModel(
                     model_id=fm.model_id,
                     client=client,
-                    model_params=fm.parameters.model_dump() if fm.parameters else {},
                 )
                 for fm in validated_payload.foundation_models
             ],
@@ -125,17 +128,17 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
     else:
         fms_param = Parameter(
             name="foundation_model",
-            param_type="C",
             values=default_foundation_models,
         )
 
     if validated_payload.embedding_models is not None:
         ems_param = Parameter(
             name="embedding_model",
-            param_type="C",
             values=[
                 LSEmbeddingModel(
-                    model_id=em.model_id, client=client, params=em.parameters.model_dump() if em.parameters else {}
+                    model_id=em.model_id,
+                    client=client,
+                    params=next(filter(lambda x: x.model_id == em.model_id, default_embedding_models), None).params,
                 )
                 for em in validated_payload.embedding_models
             ],
@@ -143,7 +146,6 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
     else:
         ems_param = Parameter(
             name="embedding_model",
-            param_type="C",
             values=default_embedding_models,
         )
 

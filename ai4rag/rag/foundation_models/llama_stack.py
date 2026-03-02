@@ -8,7 +8,7 @@ from annotated_types import Ge, Gt, Le
 from llama_stack_client import LlamaStackClient
 from pydantic import BaseModel
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
 
 
@@ -24,7 +24,7 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | M
         self,
         client: LlamaStackClient,
         model_id: str,
-        model_params: dict[str, Any] | ModelParameters | None = None,
+        params: dict[str, Any] | ModelParameters | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
@@ -32,23 +32,20 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | M
         super().__init__(
             client=client,
             model_id=model_id,
-            model_params=model_params,
+            params=params,
             system_message_text=system_message_text,
             user_message_text=user_message_text,
             context_template_text=context_template_text,
         )
 
-    def chat(self, system_message: str, user_message: str) -> str:
+    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
         """
         Chat completion for communication with selected foundation model.
 
         Parameters
         ----------
-        system_message : str
-            System messages in the str format.
-
-        user_message : str
-            User message in the str format.
+        messages : list[MessageTyped]
+            Messages to be included in the chat completion.
 
         Returns
         -------
@@ -57,11 +54,8 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | M
         """
         response_chat = self.client.chat.completions.create(
             model=self.model_id,
-            messages=[
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": user_message},
-            ],
+            messages=messages,
         )
-        answer = response_chat.choices[0].message.content
+        response_choices = response_chat.choices
 
-        return answer
+        return response_choices

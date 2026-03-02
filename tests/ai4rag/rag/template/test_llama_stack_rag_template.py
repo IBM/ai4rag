@@ -338,7 +338,13 @@ class TestLlamaStackRAGGenerate:
         mock.system_message_text = "You are a helpful assistant."
         mock.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         mock.context_template_text = "Document: {document}"
-        mock.chat.return_value = "This is the generated answer."
+
+        # Mock the chat response to match new API (returns list of choices)
+        mock_message = mocker.MagicMock()
+        mock_message.content = "This is the generated answer."
+        mock_choice = mocker.MagicMock()
+        mock_choice.message = mock_message
+        mock.chat.return_value = [mock_choice]
         return mock
 
     @pytest.fixture
@@ -420,8 +426,14 @@ class TestLlamaStackRAGGenerate:
         mock_foundation_model.chat.assert_called_once()
         call_args = mock_foundation_model.chat.call_args
 
+        # Verify messages list was passed correctly
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a helpful assistant."
+        assert messages[1]["role"] == "user"
         # Verify user message contains formatted context
-        user_message = call_args.kwargs["user_message"]
+        user_message = messages[1]["content"]
         assert "Document: Relevant document 1" in user_message
         assert "Document: Relevant document 2" in user_message
         assert "What is AI?" in user_message
@@ -442,8 +454,13 @@ class TestLlamaStackRAGGenerate:
         mock_foundation_model.chat.assert_called_once()
         call_args = mock_foundation_model.chat.call_args
 
-        assert call_args.kwargs["system_message"] == "You are a helpful assistant."
-        assert "What is AI?" in call_args.kwargs["user_message"]
+        # Verify messages list was passed correctly
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 2
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are a helpful assistant."
+        assert messages[1]["role"] == "user"
+        assert "What is AI?" in messages[1]["content"]
 
     def test_generate_returns_correct_answer(
         self,
@@ -513,7 +530,9 @@ class TestLlamaStackRAGGenerate:
 
         # Verify chat was called with empty context
         call_args = mock_foundation_model.chat.call_args
-        user_message = call_args.kwargs["user_message"]
+        messages = call_args.kwargs["messages"]
+        assert len(messages) == 2
+        user_message = messages[1]["content"]
         assert "What is AI?" in user_message
 
     def test_generate_with_single_retrieved_document(
@@ -557,7 +576,8 @@ class TestLlamaStackRAGGenerate:
 
         # Should use empty string when page_content is missing
         call_args = mock_foundation_model.chat.call_args
-        user_message = call_args.kwargs["user_message"]
+        messages = call_args.kwargs["messages"]
+        user_message = messages[1]["content"]
         assert "Document: " in user_message
         assert result["answer"] == "This is the generated answer."
 
@@ -620,7 +640,13 @@ class TestLlamaStackRAGGenerateStream:
         mock.system_message_text = "You are a helpful assistant."
         mock.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         mock.context_template_text = "Document: {document}"
-        mock.chat.return_value = "This is the generated answer."
+
+        # Mock the chat response to match new API (returns list of choices)
+        mock_message = mocker.MagicMock()
+        mock_message.content = "This is the generated answer."
+        mock_choice = mocker.MagicMock()
+        mock_choice.message = mock_message
+        mock.chat.return_value = [mock_choice]
         return mock
 
     @pytest.fixture
@@ -709,7 +735,9 @@ class TestLlamaStackRAGGenerateStream:
         mock_retriever,
     ):
         """Test that generate_stream yields the complete answer in single chunk."""
-        mock_foundation_model.chat.return_value = "This is a longer answer with multiple sentences."
+        # Update the mock to return a longer answer
+        mock_message = mock_foundation_model.chat.return_value[0].message
+        mock_message.content = "This is a longer answer with multiple sentences."
 
         rag = LlamaStackRAG(
             foundation_model=mock_foundation_model,
@@ -751,7 +779,13 @@ class TestLlamaStackRAGIntegration:
         foundation_model.system_message_text = "You are a helpful assistant."
         foundation_model.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         foundation_model.context_template_text = "Document: {document}"
-        foundation_model.chat.return_value = "The answer is 42."
+
+        # Mock the chat response to match new API (returns list of choices)
+        mock_message = mocker.MagicMock()
+        mock_message.content = "The answer is 42."
+        mock_choice = mocker.MagicMock()
+        mock_choice.message = mock_message
+        foundation_model.chat.return_value = [mock_choice]
 
         # Retriever
         retriever = mocker.MagicMock()
@@ -859,7 +893,13 @@ class TestLlamaStackRAGEdgeCases:
         mock.system_message_text = "System message"
         mock.user_message_text = "{question} {reference_documents}"
         mock.context_template_text = "{document}"
-        mock.chat.return_value = "Answer"
+
+        # Mock the chat response to match new API (returns list of choices)
+        mock_message = mocker.MagicMock()
+        mock_message.content = "Answer"
+        mock_choice = mocker.MagicMock()
+        mock_choice.message = mock_message
+        mock.chat.return_value = [mock_choice]
         return mock
 
     @pytest.fixture
