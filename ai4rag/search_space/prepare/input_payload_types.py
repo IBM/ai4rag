@@ -10,7 +10,6 @@ from pydantic import (
     ConfigDict,
 )
 
-
 config = ConfigDict(extra="forbid")
 
 

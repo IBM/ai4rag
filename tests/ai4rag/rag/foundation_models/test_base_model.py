@@ -15,6 +15,7 @@ class ConcreteFoundationModel(BaseFoundationModel[Any, dict]):
 
     def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
         """Simple chat implementation for testing."""
+
         # Create a mock response that mimics the structure of real model responses
         class MockMessage:
             def __init__(self, content: str):

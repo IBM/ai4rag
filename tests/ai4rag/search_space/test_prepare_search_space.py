@@ -161,11 +161,7 @@ class TestPrepareSearchSpaceWithLlamaStack:
 
         mock_client.models.list.return_value = [mock_llm, mock_embedding]
 
-        payload = {
-            "foundation_models": [
-                {"model_id": "custom-llm", "parameters": {"max_completion_tokens": 1024, "temperature": 0.7}}
-            ]
-        }
+        payload = {"foundation_models": [{"model_id": "custom-llm"}]}
 
         result = prepare_search_space_with_llama_stack(payload, mock_client)
 

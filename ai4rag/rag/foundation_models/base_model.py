@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar, TypedDict, Literal
+from typing import Generic, Literal, TypedDict, TypeVar
 
 from ai4rag.rag.foundation_models.utils import RAGPromptTemplateString
 from ai4rag.search_space.src.model_props import (
