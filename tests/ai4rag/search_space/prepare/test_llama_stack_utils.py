@@ -5,13 +5,12 @@ import pytest
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel, LSEmbeddingParams
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
 from ai4rag.search_space.prepare.llama_stack_utils import (
+    SearchSpaceValueError,
     _are_provided_models_available,
     _get_default_llama_stack_models,
     _validate_embedding_model,
     _validate_foundation_model,
-    SearchSpaceValueError,
 )
-
 
 
 class TestValidateFoundationModel:

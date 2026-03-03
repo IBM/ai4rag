@@ -20,7 +20,6 @@ from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
-
 __all__ = ["prepare_search_space_with_llama_stack"]
 
 
