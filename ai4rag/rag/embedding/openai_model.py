@@ -15,6 +15,24 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
     def __init__(self, client: OpenAI, model_id: str, params: dict[str, Any] | None = None):
         super().__init__(client=client, model_id=model_id, params=params)
 
+    @property
+    def params(self) -> dict[str, Any]:
+        return self._params
+
+    @params.setter
+    def params(self, params: dict[str, Any] | None) -> None:
+        if params is None:
+            self._params = {}
+        else:
+            self._params = params
+        if "embedding_dimension" not in self._params:
+            self._params["embedding_dimension"] = self._detect_embedding_dimension()
+
+    def _detect_embedding_dimension(self) -> int:
+        """Detect embedding dimension by making a minimal embedding call."""
+        embedding = self.client.embeddings.create(model=self.model_id, input="test").data[0].embedding
+        return len(embedding)
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embeds given list of strings.
 
