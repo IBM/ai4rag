@@ -111,13 +111,15 @@ class LlamaStackRAG(BaseRAGTemplate):
             question=question,
         )
 
-        answer = self.foundation_model.chat(
-            system_message=self.foundation_model.system_message_text,
-            user_message=user_message,
-        )
+        messages = [
+            {"role": "system", "content": self.foundation_model.system_message_text},
+            {"role": "user", "content": user_message},
+        ]
+
+        chat_response = self.foundation_model.chat(messages=messages)
 
         return {
-            "answer": answer,
+            "answer": chat_response[0].message.content,
             "reference_documents": reference_documents,
             "question": question,
         }

@@ -6,27 +6,44 @@ from random import random, seed
 from typing import Any
 
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 
 seed(42)
 
 
-class MockedFoundationModel(BaseFoundationModel):
+class MockedFoundationModel(BaseFoundationModel[None, dict[str, Any] | None]):
     def __init__(
         self,
         model_id: str,
-        model_params: dict[str, Any] | None = None,
+        params: dict[str, Any] | None = None,
         client: None = None,
+        system_message_text: str | None = None,
+        user_message_text: str | None = None,
+        context_template_text: str | None = None,
     ):
-        super().__init__(client, model_id, model_params)
+        super().__init__(
+            client=client,
+            model_id=model_id,
+            params=params,
+            system_message_text=system_message_text,
+            user_message_text=user_message_text,
+            context_template_text=context_template_text,
+        )
 
-    def chat(self, system_message: str, user_message: str) -> str:
-        return "I cannot answer this question, because I am just a mocked model."
+    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+        # Create a mock response that mimics the structure of real model responses
+        class MockMessage:
+            content = "I cannot answer this question, because I am just a mocked model."
+
+        class MockChoice:
+            message = MockMessage()
+
+        return [MockChoice()]
 
 
-class MockedEmbeddingModel(BaseEmbeddingModel):
+class MockedEmbeddingModel(BaseEmbeddingModel[None, dict[str, Any]]):
     def __init__(self, model_id: str, params: dict[str, Any], client: None = None):
-        super().__init__(client, model_id, params)
+        super().__init__(client=client, model_id=model_id, params=params)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         n = []
