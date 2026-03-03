@@ -124,7 +124,7 @@ class GAMOptimizer(BaseOptimizer):
         for _ in range(iterations_limit):
             self._run_iteration()
 
-        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] != 0]
+        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] >= 0]
         if not successful_evaluations:
             raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
 
@@ -157,7 +157,7 @@ class GAMOptimizer(BaseOptimizer):
         while successful_evaluations < self.settings.n_random_nodes:
             params = next(gen)
             score = self._objective_function(params=params)
-            if score >= 0:
+            if score > 0:
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
             params_with_score = params | {"score": score}
@@ -174,7 +174,6 @@ class GAMOptimizer(BaseOptimizer):
         """
         self._prepare_encoder()
         df = pd.DataFrame(data=self.evaluations)  # --> These are already known observations with scores.
-        df = df[df["score"].notna()].copy()
         data = df.drop(columns=["score"])
         target = df["score"]
 
@@ -253,7 +252,7 @@ class GAMOptimizer(BaseOptimizer):
 
         return remaining
 
-    def _objective_function(self, params: dict) -> float | None:
+    def _objective_function(self, params: dict) -> float:
         """
         Wrapper around the objective function provided to the optimizer.
 
@@ -264,9 +263,9 @@ class GAMOptimizer(BaseOptimizer):
 
         Returns
         -------
-        float | None
+        float
             Optimization score achieved for single node evaluation.
-            If None - iteration has ended up with a failed status.
+            Returns -1 if the iteration failed (used as a penalty sentinel).
         """
 
         try:
@@ -274,6 +273,6 @@ class GAMOptimizer(BaseOptimizer):
             loss = self.objective_function(params)
 
         except FailedIterationError:
-            loss = 0
+            loss = -1
 
         return loss

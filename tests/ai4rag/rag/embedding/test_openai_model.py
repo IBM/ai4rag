@@ -178,3 +178,11 @@ class TestOpenAIEmbeddingModel:
         assert embedding_1 == [0.1, 0.2]
         assert embedding_2 == [0.3, 0.4]
         assert mock_openai_client.embeddings.create.call_count == 2
+
+    def test_detect_embedding_dimension_api_failure(self, mocker):
+        """Test that _detect_embedding_dimension raises RuntimeError on API failure."""
+        mock_client = mocker.MagicMock()
+        mock_client.embeddings.create.side_effect = ConnectionError("Service unavailable")
+
+        with pytest.raises(RuntimeError, match="Failed to auto-detect embedding dimension"):
+            OpenAIEmbeddingModel(client=mock_client, model_id="text-embedding-ada-002", params=None)

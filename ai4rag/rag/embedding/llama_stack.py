@@ -49,8 +49,25 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
             self._params.embedding_dimension = self._detect_embedding_dimension()
 
     def _detect_embedding_dimension(self) -> int:
-        """Detect embedding dimension by making a minimal embedding call."""
-        embedding = self._embed_text(text_input="test")[0]
+        """Detect embedding dimension by making a minimal embedding call.
+
+        Note: This method is called during initialization when ``embedding_dimension``
+        is not explicitly provided.  It issues a real API request to the Llama Stack
+        server, so the server must be reachable at construction time.
+
+        Raises
+        ------
+        RuntimeError
+            When the embedding dimension cannot be determined (e.g. the server
+            is unreachable or the model is not available).
+        """
+        try:
+            embedding = self._embed_text(text_input="test")[0]
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to auto-detect embedding dimension for model '{self.model_id}'. "
+                "Provide 'embedding_dimension' explicitly or ensure the embedding service is reachable."
+            ) from exc
         return len(embedding)
 
     def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:

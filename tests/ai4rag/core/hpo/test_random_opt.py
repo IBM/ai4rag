@@ -159,7 +159,7 @@ class TestRandomOptimizer:
         objective_func.assert_called_once_with(params)
 
     def test_objective_function_wrapper_catches_failed_iteration_error(self, mock_search_space, optimizer_settings):
-        """Test that _objective_function catches FailedIterationError and returns None."""
+        """Test that _objective_function catches FailedIterationError and returns -1."""
         objective_func = MagicMock(side_effect=FailedIterationError("Iteration failed"))
 
         optimizer = RandomOptimizer(
@@ -171,7 +171,7 @@ class TestRandomOptimizer:
         params = {"param1": 10, "param2": "test"}
         result = optimizer._objective_function(params)
 
-        assert result is None
+        assert result == -1
         objective_func.assert_called_once_with(params)
 
     def test_search_shuffles_combinations(self, mock_search_space, optimizer_settings, mocker):
@@ -250,8 +250,8 @@ class TestRandomOptimizer:
             assert "param2" in evaluation
             assert "score" in evaluation
 
-    def test_search_filters_out_none_scores(self, mock_search_space, mocker):
-        """Test that search correctly filters out evaluations with None scores."""
+    def test_search_filters_out_failed_scores(self, mock_search_space, mocker):
+        """Test that search correctly filters out evaluations with negative scores (failures)."""
         settings = RandomOptSettings(max_evals=4)
         # Mix of successful and failed evaluations
         objective_func = MagicMock(

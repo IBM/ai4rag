@@ -29,8 +29,25 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
             self._params["embedding_dimension"] = self._detect_embedding_dimension()
 
     def _detect_embedding_dimension(self) -> int:
-        """Detect embedding dimension by making a minimal embedding call."""
-        embedding = self.client.embeddings.create(model=self.model_id, input="test").data[0].embedding
+        """Detect embedding dimension by making a minimal embedding call.
+
+        Note: This method is called during initialization when ``embedding_dimension``
+        is not present in the params dict.  It issues a real API request to the
+        OpenAI-compatible endpoint, so the service must be reachable at construction time.
+
+        Raises
+        ------
+        RuntimeError
+            When the embedding dimension cannot be determined (e.g. the service
+            is unreachable or the model is not available).
+        """
+        try:
+            embedding = self.client.embeddings.create(model=self.model_id, input="test").data[0].embedding
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to auto-detect embedding dimension for model '{self.model_id}'. "
+                "Provide 'embedding_dimension' explicitly or ensure the embedding service is reachable."
+            ) from exc
         return len(embedding)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
