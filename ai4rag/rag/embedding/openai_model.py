@@ -55,7 +55,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
     def _detect_context_length(self) -> int:
         """Detect maximum context length via binary search over probe sizes.
 
-        Performs a binary search between 256 and 8192 tokens to find the
+        Performs a binary search between 64 and 8192 tokens to find the
         largest input the model accepts.  Each probe consists of repeated
         words so that one word ≈ one token.  The search stops when the
         remaining interval is smaller than 256 tokens, keeping the number
@@ -66,7 +66,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
         RuntimeError
             When the context length cannot be determined (e.g. all probes fail).
         """
-        lo, hi, best = 256, 8192, None
+        lo, hi, best = 64, 8192, None
         while hi - lo >= 256:
             mid = (lo + hi) // 2
             probe_text = "word " * mid

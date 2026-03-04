@@ -65,7 +65,7 @@ def _validate_embedding_model(model: LSEmbeddingModel) -> bool:
         return True
     except Exception:  # pylint: disable=broad-exception-caught
         logger.warning(
-            "Embedding model '%s' does not respond and will be excluded fro msearch space.",
+            "Embedding model '%s' does not respond and will be excluded from search space.",
             model.model_id,
             exc_info=True,
         )

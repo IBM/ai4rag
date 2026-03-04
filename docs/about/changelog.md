@@ -17,7 +17,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - Foundation model `chat()` API now accepts structured message list instead of separate system/user message strings
-- HPO optimizers use `-1` penalty for failed iterations instead of `None` for better numerical handling
 - Default search space expanded with additional `chunk_size` (512) and `chunk_overlap` (128) values
 - Chunk size validation rule now requires `chunk_size > 2 * chunk_overlap`
 - `LSEmbeddingParams` refactored from `TypedDict` to `@dataclass`

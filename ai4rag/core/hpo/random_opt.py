@@ -49,7 +49,7 @@ class RandomOptimizer(BaseOptimizer):
             score = self._objective_function(combinations[idx])
             self._evaluated_combinations.append(combinations[idx] | {"score": score})
 
-        successful_evaluations = [ev for ev in self._evaluated_combinations if ev["score"] >= 0]
+        successful_evaluations = [ev for ev in self._evaluated_combinations if ev["score"] is not None]
 
         if not successful_evaluations:
             raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
@@ -58,7 +58,7 @@ class RandomOptimizer(BaseOptimizer):
 
         return best_config_with_score
 
-    def _objective_function(self, params: dict) -> float:
+    def _objective_function(self, params: dict) -> float | None:
         """
         Wrapper around the objective function provided to the optimizer.
 
@@ -69,9 +69,9 @@ class RandomOptimizer(BaseOptimizer):
 
         Returns
         -------
-        float
+        float | None
             Optimization score achieved for single node evaluation.
-            Returns -1 if the iteration failed (used as a penalty sentinel).
+            If None - iteration has ended up with a failed status.
         """
 
         try:
@@ -79,6 +79,7 @@ class RandomOptimizer(BaseOptimizer):
             loss = self.objective_function(params)
 
         except FailedIterationError:
-            loss = -1
+            # None is here to avoid penalization of iterations failing due to unknown reasons
+            loss = None
 
         return loss

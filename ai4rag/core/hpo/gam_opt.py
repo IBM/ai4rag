@@ -124,7 +124,7 @@ class GAMOptimizer(BaseOptimizer):
         for _ in range(iterations_limit):
             self._run_iteration()
 
-        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] >= 0]
+        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
         if not successful_evaluations:
             raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
 
@@ -157,7 +157,7 @@ class GAMOptimizer(BaseOptimizer):
         while successful_evaluations < self.settings.n_random_nodes:
             params = next(gen)
             score = self._objective_function(params=params)
-            if score > 0:
+            if score is not None:
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
             params_with_score = params | {"score": score}
@@ -174,6 +174,7 @@ class GAMOptimizer(BaseOptimizer):
         """
         self._prepare_encoder()
         df = pd.DataFrame(data=self.evaluations)  # --> These are already known observations with scores.
+        df = df[df["score"].notna()].copy()
         data = df.drop(columns=["score"])
         target = df["score"]
 
@@ -252,7 +253,7 @@ class GAMOptimizer(BaseOptimizer):
 
         return remaining
 
-    def _objective_function(self, params: dict) -> float:
+    def _objective_function(self, params: dict) -> float | None:
         """
         Wrapper around the objective function provided to the optimizer.
 
@@ -263,9 +264,9 @@ class GAMOptimizer(BaseOptimizer):
 
         Returns
         -------
-        float
+        float | None
             Optimization score achieved for single node evaluation.
-            Returns -1 if the iteration failed (used as a penalty sentinel).
+            If None - iteration has ended up with a failed status.
         """
 
         try:
@@ -273,6 +274,7 @@ class GAMOptimizer(BaseOptimizer):
             loss = self.objective_function(params)
 
         except FailedIterationError:
-            loss = -1
+            # None is here to avoid penalization of iterations failing due to unknown reasons
+            loss = None
 
         return loss

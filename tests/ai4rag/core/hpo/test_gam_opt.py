@@ -205,7 +205,7 @@ class TestGAMOptimizer:
         objective_func.assert_called_once_with(params)
 
     def test_objective_function_wrapper_catches_failed_iteration_error(self, mock_search_space, optimizer_settings):
-        """Test that _objective_function catches FailedIterationError and returns -1."""
+        """Test that _objective_function catches FailedIterationError and returns None."""
         objective_func = MagicMock(side_effect=FailedIterationError("Iteration failed"))
 
         optimizer = GAMOptimizer(
@@ -217,7 +217,7 @@ class TestGAMOptimizer:
         params = {"param1": "test", "param2": 10}
         result = optimizer._objective_function(params)
 
-        assert result == -1
+        assert result is None
         objective_func.assert_called_once_with(params)
 
     def test_get_iterations_limit(self, mock_search_space, optimizer_settings):
@@ -280,8 +280,8 @@ class TestGAMOptimizer:
             assert "score" in evaluation
 
     def test_evaluate_initial_random_nodes_with_failures(self, mock_search_space, optimizer_settings, mocker):
-        """Test evaluate_initial_random_nodes skips failed iterations (score=-1) when counting successes."""
-        # First fails (returns -1), second succeeds, third fails (returns -1), fourth succeeds, fifth succeeds
+        """Test evaluate_initial_random_nodes skips failed iterations (score=None) when counting successes."""
+        # First fails (returns None), second succeeds, third fails (returns None), fourth succeeds, fifth succeeds
         objective_func = MagicMock(
             side_effect=[
                 FailedIterationError("Failed"),
@@ -301,12 +301,12 @@ class TestGAMOptimizer:
 
         optimizer.evaluate_initial_random_nodes()
 
-        # Failures (score=-1) are NOT counted as successful, so we need 3 successes.
-        # Sequence: fail(-1), 0.7, fail(-1), 0.5, 0.3 → 5 total evaluations, 3 successful
+        # Failures (score=None) are NOT counted as successful, so we need 3 successes.
+        # Sequence: fail(None), 0.7, fail(None), 0.5, 0.3 → 5 total evaluations, 3 successful
         assert len(optimizer.evaluations) == 5
-        successful_evals = [e for e in optimizer.evaluations if e["score"] > 0]
+        successful_evals = [e for e in optimizer.evaluations if e["score"] is not None]
         assert len(successful_evals) == 3
-        failed_evals = [e for e in optimizer.evaluations if e["score"] == -1]
+        failed_evals = [e for e in optimizer.evaluations if e["score"] is None]
         assert len(failed_evals) == 2
 
     def test_evaluate_initial_random_nodes_stops_at_max_iterations(self, mock_search_space, mocker):
@@ -472,8 +472,9 @@ class TestGAMOptimizer:
         settings = GAMOptSettings(max_evals=5, n_random_nodes=2, evals_per_trial=1)
 
         # Mock LinearGAM
-        # After initial random evals (0.3 success, fail -1, need 1 more success),
+        # After initial random evals (0.3 success, fail None, need 1 more success),
         # we get 3 evals during random phase. Then 3 remaining for GAM iterations.
+        # Note: None scores are filtered out before GAM training, so GAM sees only 2 samples.
         mock_gam = MagicMock()
         mock_gam.predict.side_effect = [
             np.array([0.6, 0.7, 0.5]),  # First iteration: 3 remaining
@@ -484,7 +485,7 @@ class TestGAMOptimizer:
         objective_func = MagicMock(
             side_effect=[
                 0.3,  # Initial random 1 (success)
-                FailedIterationError("Failed"),  # Initial random 2 (returns -1, not counted)
+                FailedIterationError("Failed"),  # Initial random 2 (returns None, not counted)
                 0.5,  # Initial random 3 (success, reaches n_random_nodes=2)
                 0.8,  # GAM iteration 1
                 0.6,  # GAM iteration 2
@@ -504,7 +505,7 @@ class TestGAMOptimizer:
 
         result = optimizer.search()
 
-        # Should return the best successful evaluation (score >= 0)
+        # Should return the best successful evaluation (score is not None)
         assert result["score"] == 0.8
 
     def test_run_iteration_evaluates_best_predictions(self, mock_search_space, mocker):
@@ -536,20 +537,20 @@ class TestGAMOptimizer:
         # Should have evaluated evals_per_trial=2 more combinations
         assert len(optimizer.evaluations) == 4
 
-    def test_run_iteration_includes_failed_evaluations_in_training(self, mock_search_space, mocker):
-        """Test that _run_iteration includes failed evaluations (score=-1) when training GAM."""
+    def test_run_iteration_filters_out_none_scores_for_training(self, mock_search_space, mocker):
+        """Test that _run_iteration filters out None scores when training GAM."""
         settings = GAMOptSettings(max_evals=6, n_random_nodes=3, evals_per_trial=1)
 
         mock_gam = MagicMock()
         mock_gam.predict.return_value = np.array([0.6, 0.7])
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
-        # Need 3 successful evals (score > 0). Failure doesn't count.
-        # Sequence: 0.3 (ok), fail(-1), 0.5 (ok), 0.8 (ok) → 4 total, 3 successful
+        # Need 3 successful evals (score is not None). Failure doesn't count.
+        # Sequence: 0.3 (ok), fail(None), 0.5 (ok), 0.8 (ok) → 4 total, 3 successful
         objective_func = MagicMock(
             side_effect=[
                 0.3,
-                FailedIterationError("Failed"),  # This will return score=-1
+                FailedIterationError("Failed"),  # This will return score=None
                 0.5,
                 0.8,
                 0.6,  # extra for _run_iteration
@@ -569,16 +570,17 @@ class TestGAMOptimizer:
 
         optimizer.evaluate_initial_random_nodes()
 
-        # Should have 4 evaluations: [0.3, -1, 0.5, 0.8] (3 successful + 1 failure)
+        # Should have 4 evaluations: [0.3, None, 0.5, 0.8] (3 successful + 1 failure)
         assert len(optimizer.evaluations) == 4
         assert optimizer.evaluations[0]["score"] == 0.3
-        assert optimizer.evaluations[1]["score"] == -1  # Failed iteration
+        assert optimizer.evaluations[1]["score"] is None  # Failed iteration
         assert optimizer.evaluations[2]["score"] == 0.5
         assert optimizer.evaluations[3]["score"] == 0.8
 
         optimizer._run_iteration()
 
-        # GAM should be trained on all scores, including the -1 from failed iteration
+        # GAM should be trained only on non-None scores
+        # The fit call should receive only 3 samples (those with non-None scores)
         call_args = mock_gam.fit.call_args
-        assert call_args[0][0].shape[0] == 4  # X_train should have 4 samples
-        assert call_args[0][1].shape[0] == 4  # y_train should have 4 samples
+        assert call_args[0][0].shape[0] == 3  # X_train should have 3 samples
+        assert call_args[0][1].shape[0] == 3  # y_train should have 3 samples

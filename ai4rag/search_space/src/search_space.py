@@ -61,7 +61,7 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     """Check that estimated token count of a chunk fits the embedding model's context length.
 
     The chunk_size is in characters.  We convert to an estimated token count
-    using a conservative ratio of 4 characters per token (i.e. we
+    using a conservative ratio of 4.5 characters per token (i.e. we
     *overestimate* the number of tokens so that borderline cases are pruned
     rather than silently failing at runtime).
 

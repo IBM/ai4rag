@@ -34,5 +34,5 @@ class AI4RAGConstraints(BaseModel):
 
     model_config = config
 
-    embedding_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None
-    foundation_models: Optional[Annotated[list[AI4RAGEmbeddingModel], MinLen(1)]] = None
+    embedding_models: Optional[Annotated[list[AI4RAGEmbeddingModel], MinLen(1)]] = None
+    foundation_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None
