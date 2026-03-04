@@ -11,6 +11,7 @@ from ai4rag.search_space.src.search_space import (
     SearchSpaceValueError,
     _rule_adjust_window_to_retrieval_method,
     _rule_chunk_size_bigger_than_chunk_overlap,
+    _rule_chunk_size_within_embedding_context_length,
 )
 
 
@@ -57,6 +58,88 @@ def test_rule_adjust_window_to_retrieval_method(combination, expected_value):
 def test_rule_adjust_window_to_retrieval_method_raises():
     with pytest.raises(SearchSpaceValueError):
         _ = _rule_adjust_window_to_retrieval_method({"retrieval_method": "simple"})
+
+
+class _MockEmbeddingModelWithParams:
+    """Mock embedding model with params as a dataclass-like object."""
+
+    def __init__(self, context_length):
+        self.params = type("Params", (), {"context_length": context_length})()
+
+
+class _MockEmbeddingModelWithDictParams:
+    """Mock embedding model with params as a dict."""
+
+    def __init__(self, context_length):
+        self.params = {"context_length": context_length}
+
+
+@pytest.mark.parametrize(
+    "combination, expected_value",
+    (
+        # chunk_size=512 → estimated_tokens = 512 / 4 = 128, context=256 → True
+        (
+            {
+                "chunk_size": 512,
+                "chunk_overlap": 64,
+                "embedding_model": _MockEmbeddingModelWithParams(256),
+            },
+            True,
+        ),
+        # chunk_size=2048 → estimated_tokens = 2048 / 4 = 512, context=256 → False
+        (
+            {
+                "chunk_size": 2048,
+                "chunk_overlap": 512,
+                "embedding_model": _MockEmbeddingModelWithParams(256),
+            },
+            False,
+        ),
+        # Exact boundary: chunk_size=1024 → estimated_tokens = 256, context=256 → True
+        (
+            {
+                "chunk_size": 1024,
+                "chunk_overlap": 0,
+                "embedding_model": _MockEmbeddingModelWithParams(256),
+            },
+            True,
+        ),
+        # Dict-style params: chunk_size=512 → estimated_tokens = 128, context=256 → True
+        (
+            {
+                "chunk_size": 512,
+                "chunk_overlap": 0,
+                "embedding_model": _MockEmbeddingModelWithDictParams(256),
+            },
+            True,
+        ),
+        # Dict-style params: chunk_size=2048 → estimated_tokens = 512, context=256 → False
+        (
+            {
+                "chunk_size": 2048,
+                "chunk_overlap": 512,
+                "embedding_model": _MockEmbeddingModelWithDictParams(256),
+            },
+            False,
+        ),
+    ),
+)
+def test_rule_chunk_size_within_embedding_context_length(combination, expected_value):
+    val = _rule_chunk_size_within_embedding_context_length(combination)
+    assert val == expected_value
+
+
+def test_rule_chunk_size_within_embedding_context_length_no_context_length():
+    """Rule returns True when context_length is not available on the embedding model."""
+    mock_model = type("Model", (), {"params": type("Params", (), {"context_length": None})()})()
+    combination = {"chunk_size": 2048, "chunk_overlap": 512, "embedding_model": mock_model}
+    assert _rule_chunk_size_within_embedding_context_length(combination) is True
+
+
+def test_rule_chunk_size_within_embedding_context_length_missing_fields():
+    """Rule returns True when chunk_size, chunk_overlap or embedding_model are missing."""
+    assert _rule_chunk_size_within_embedding_context_length({"chunk_size": 512}) is True
+    assert _rule_chunk_size_within_embedding_context_length({}) is True
 
 
 class TestSearchSpace:

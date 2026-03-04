@@ -88,7 +88,8 @@ def _get_default_llama_stack_models(client: LlamaStackClient) -> _DefaultModelsR
             client=client,
             params=LSEmbeddingParams(
                 embedding_dimension=m.custom_metadata.get("embedding_dimension")
-                or m.metadata.get("embedding_dimension")
+                or m.metadata.get("embedding_dimension"),
+                context_length=m.custom_metadata.get("context_length") or m.metadata.get("context_length"),
             ),
         )
         for m in embeddings

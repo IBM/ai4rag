@@ -47,6 +47,8 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
             raise TypeError(f"Incorrect type of 'params' parameter: {type(params)}.")
         if self._params.embedding_dimension is None:
             self._params.embedding_dimension = self._detect_embedding_dimension()
+        if self._params.context_length is None:
+            self._params.context_length = self._detect_context_length()
 
     def _detect_embedding_dimension(self) -> int:
         """Detect embedding dimension by making a minimal embedding call.
@@ -69,6 +71,37 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
                 "Provide 'embedding_dimension' explicitly or ensure the embedding service is reachable."
             ) from exc
         return len(embedding)
+
+    def _detect_context_length(self) -> int:
+        """Detect maximum context length via binary search over probe sizes.
+
+        Performs a binary search between 256 and 8192 tokens to find the
+        largest input the model accepts.  Each probe consists of repeated
+        words so that one word ≈ one token.  The search stops when the
+        remaining interval is smaller than 256 tokens, keeping the number
+        of API calls to roughly 5.
+
+        Raises
+        ------
+        RuntimeError
+            When the context length cannot be determined (e.g. all probes fail).
+        """
+        lo, hi, best = 256, 8192, None
+        while hi - lo >= 256:
+            mid = (lo + hi) // 2
+            probe_text = "word " * mid
+            try:
+                self._embed_text(text_input=probe_text)
+                best = mid
+                lo = mid + 1
+            except Exception:  # pylint: disable=broad-exception-caught
+                hi = mid - 1
+        if best is not None:
+            return best
+        raise RuntimeError(
+            f"Failed to auto-detect 'context_length' for model '{self.model_id}'. "
+            "Provide 'context_length' explicitly or ensure the embedding service is reachable."
+        )
 
     def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:
         """Embeds documents.
