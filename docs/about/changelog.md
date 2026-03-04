@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0](https://github.com/IBM/ai4rag/releases/tag/v0.3.0)
+
+### Added
+- Auto-detection of embedding model `embedding_dimension` and `context_length` when not explicitly provided
+- Model availability validation against the Llama Stack server during search space preparation
+- Search space validation rule ensuring `chunk_size` respects embedding model context length
+- New `prepare_search_space_with_llama_stack` utility for streamlined search space setup
+
+### Changed
+- Foundation model `chat()` API now accepts structured message list instead of separate system/user message strings
+- HPO optimizers use `-1` penalty for failed iterations instead of `None` for better numerical handling
+- Default search space expanded with additional `chunk_size` (512) and `chunk_overlap` (128) values
+- Chunk size validation rule now requires `chunk_size > 2 * chunk_overlap`
+- `LSEmbeddingParams` refactored from `TypedDict` to `@dataclass`
+
+### Fixed
+- Embedding model backwards compatibility in vector store for both legacy dict and new dataclass params
+
 ## [0.2.1](https://github.com/IBM/ai4rag/releases/tag/v0.2.1)
 
 ### Changed
