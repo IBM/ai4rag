@@ -90,9 +90,7 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
         for em in validated_payload.embedding_models:
             matched_model = next(filter(lambda x, _id=em.model_id: x.model_id == _id, default_embedding_models), None)
             if matched_model is None:
-                raise SearchSpaceValueError(
-                    f"Embedding model '{em.model_id}' not found among available models."
-                )
+                raise SearchSpaceValueError(f"Embedding model '{em.model_id}' not found among available models.")
             embedding_models_values.append(
                 LSEmbeddingModel(model_id=em.model_id, client=client, params=matched_model.params)
             )
