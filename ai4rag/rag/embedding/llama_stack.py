@@ -47,6 +47,8 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
             raise TypeError(f"Incorrect type of 'params' parameter: {type(params)}.")
         if self._params.embedding_dimension is None:
             self._params.embedding_dimension = self._detect_embedding_dimension()
+        if self._params.context_length is None:
+            self._params.context_length = self._detect_context_length()
 
     def _detect_embedding_dimension(self) -> int:
         """Detect embedding dimension by making a minimal embedding call.
@@ -69,6 +71,31 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
                 "Provide 'embedding_dimension' explicitly or ensure the embedding service is reachable."
             ) from exc
         return len(embedding)
+
+    def _detect_context_length(self) -> int:
+        """Detect maximum context length by probing with increasing input sizes.
+
+        Sends probe texts of descending token counts and returns the largest
+        that the model accepts.  Each probe consists of repeated words so that
+        one word ≈ one token.
+
+        Raises
+        ------
+        RuntimeError
+            When the context length cannot be determined (e.g. all probes fail).
+        """
+        probe_sizes = [4096, 2048, 1024, 512, 256]
+        for size in probe_sizes:
+            probe_text = "word " * size
+            try:
+                self._embed_text(text_input=probe_text)
+                return size
+            except Exception:  # pylint: disable=broad-exception-caught
+                continue
+        raise RuntimeError(
+            f"Failed to auto-detect 'context_length' for model '{self.model_id}'. "
+            "Provide 'context_length' explicitly or ensure the embedding service is reachable."
+        )
 
     def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:
         """Embeds documents.

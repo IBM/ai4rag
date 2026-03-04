@@ -32,16 +32,16 @@ class TestOpenAIEmbeddingModel:
 
     @pytest.fixture
     def model_with_params(self, mock_openai_client):
-        """Create an OpenAIEmbeddingModel with parameters including embedding_dimension."""
+        """Create an OpenAIEmbeddingModel with parameters including embedding_dimension and context_length."""
         return OpenAIEmbeddingModel(
             client=mock_openai_client,
             model_id="text-embedding-ada-002",
-            params={"dimensions": 1536, "embedding_dimension": 1536},
+            params={"dimensions": 1536, "embedding_dimension": 1536, "context_length": 8191},
         )
 
     @pytest.fixture
     def model_without_params(self, mock_openai_client):
-        """Create an OpenAIEmbeddingModel without parameters (auto-detects embedding_dimension)."""
+        """Create an OpenAIEmbeddingModel without parameters (auto-detects embedding_dimension and context_length)."""
         return OpenAIEmbeddingModel(
             client=mock_openai_client,
             model_id="text-embedding-3-small",
@@ -53,17 +53,19 @@ class TestOpenAIEmbeddingModel:
         assert model_with_params.model_id == "text-embedding-ada-002"
         assert model_with_params.params["dimensions"] == 1536
         assert model_with_params.params["embedding_dimension"] == 1536
+        assert model_with_params.params["context_length"] == 8191
         assert model_with_params.client == mock_openai_client
         # No auto-detection call should have been made
         mock_openai_client.embeddings.create.assert_not_called()
 
     def test_init_without_params(self, model_without_params, mock_openai_client):
-        """Test initialization without parameters triggers auto-detection of embedding_dimension."""
+        """Test initialization without parameters triggers auto-detection of embedding_dimension and context_length."""
         assert model_without_params.model_id == "text-embedding-3-small"
         assert model_without_params.params["embedding_dimension"] == 5
+        assert model_without_params.params["context_length"] == 4096
         assert model_without_params.client == mock_openai_client
-        # Auto-detection call should have been made with "test"
-        mock_openai_client.embeddings.create.assert_called_once_with(model="text-embedding-3-small", input="test")
+        # 1 call for dimension + 1 call for context_length (first probe succeeds)
+        assert mock_openai_client.embeddings.create.call_count == 2
 
     def test_embed_documents(self, model_with_params, mock_openai_client, mocker):
         """Test embed_documents method."""
@@ -186,3 +188,64 @@ class TestOpenAIEmbeddingModel:
 
         with pytest.raises(RuntimeError, match="Failed to auto-detect embedding dimension"):
             OpenAIEmbeddingModel(client=mock_client, model_id="text-embedding-ada-002", params=None)
+
+    def test_detect_context_length_succeeds_at_first_probe(self, mock_openai_client, mocker):
+        """Test that context_length detection returns 4096 when the first probe succeeds."""
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
+            model_id="text-embedding-3-small",
+            params={"embedding_dimension": 1536},
+        )
+
+        assert model.params["context_length"] == 4096
+        mock_openai_client.embeddings.create.assert_called_once()
+
+    def test_detect_context_length_falls_back_to_smaller_probe(self, mocker):
+        """Test that context_length detection falls back to smaller probe sizes."""
+        mock_client = mocker.MagicMock()
+        response = _make_mock_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+
+        def side_effect(**kwargs):
+            text = kwargs.get("input", "")
+            if isinstance(text, str) and len(text) > 2048 * 5:
+                raise ValueError("Input too long")
+            return response
+
+        mock_client.embeddings.create.side_effect = side_effect
+
+        model = OpenAIEmbeddingModel(
+            client=mock_client,
+            model_id="test-model",
+            params={"embedding_dimension": 384},
+        )
+
+        assert model.params["context_length"] == 2048
+
+    def test_detect_context_length_all_probes_fail(self, mocker):
+        """Test that RuntimeError is raised when all context_length probes fail."""
+        mock_client = mocker.MagicMock()
+        dim_response = _make_mock_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return dim_response  # dimension detection
+            raise ValueError("Input too long")
+
+        mock_client.embeddings.create.side_effect = side_effect
+
+        with pytest.raises(RuntimeError, match="Failed to auto-detect context length"):
+            OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=None)
+
+    def test_detect_context_length_skipped_when_explicit(self, mock_openai_client):
+        """Test that context_length detection is skipped when explicitly provided."""
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
+            model_id="text-embedding-3-small",
+            params={"embedding_dimension": 1536, "context_length": 8191},
+        )
+
+        assert model.params["context_length"] == 8191
+        mock_openai_client.embeddings.create.assert_not_called()

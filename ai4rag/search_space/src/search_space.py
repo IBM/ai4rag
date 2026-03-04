@@ -57,6 +57,46 @@ def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
     return True
 
 
+def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
+    """Check that estimated token count of a chunk fits the embedding model's context length.
+
+    The chunk_size and chunk_overlap are in characters.  We convert to an
+    estimated token count using a conservative ratio of 4 characters per token
+    (i.e. we *overestimate* the number of tokens so that borderline cases are
+    pruned rather than silently failing at runtime).
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether the estimated token count fits within the embedding model's context length.
+    """
+    chunk_size = combination.get(AI4RAGParamNames.CHUNK_SIZE)
+    chunk_overlap = combination.get(AI4RAGParamNames.CHUNK_OVERLAP)
+    embedding_model = combination.get(AI4RAGParamNames.EMBEDDING_MODEL)
+
+    if chunk_size is None or chunk_overlap is None or embedding_model is None:
+        return True
+
+    context_length = getattr(getattr(embedding_model, "params", None), "context_length", None)
+    if context_length is None:
+        params = getattr(embedding_model, "params", None)
+        if isinstance(params, dict):
+            context_length = params.get("context_length")
+
+    if context_length is None:
+        return True
+
+    chars_per_token = 4
+    estimated_tokens = (chunk_size + 2 * chunk_overlap) / chars_per_token
+
+    return estimated_tokens <= context_length
+
+
 class SearchSpace:
     """
     Class that represents a search space used hyperparameter optimization.
@@ -185,6 +225,7 @@ class AI4RAGSearchSpace(SearchSpace):
     _rules = (
         _rule_chunk_size_bigger_than_chunk_overlap,
         _rule_adjust_window_to_retrieval_method,
+        _rule_chunk_size_within_embedding_context_length,
     )
 
     def __init__(self, params: list[Parameter] | None = None, rules: list[RuleFunction] | None = None):

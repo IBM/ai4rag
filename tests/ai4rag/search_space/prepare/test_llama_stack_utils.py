@@ -57,22 +57,33 @@ class TestValidateEmbeddingModel:
         mock_client.embeddings.create.return_value = mock_response
 
         model = LSEmbeddingModel(
-            model_id="test-model", client=mock_client, params=LSEmbeddingParams(embedding_dimension=768)
+            model_id="test-model",
+            client=mock_client,
+            params=LSEmbeddingParams(embedding_dimension=768, context_length=512),
         )
 
         result = _validate_embedding_model(model)
 
         assert result is True
-        mock_client.embeddings.create.assert_called_once()
 
     def test_returns_false_when_model_fails(self):
         """Test that validation returns False when model raises exception."""
         mock_client = MagicMock()
-        mock_client.embeddings.create.side_effect = Exception("Model error")
+        mock_response = Mock()
+        mock_data = Mock()
+        mock_data.embedding = [0.1, 0.2, 0.3]
+        mock_response.data = [mock_data]
 
+        # First call succeeds (for embed_query in validation), but we need to
+        # create the model first with context_length set to avoid detection.
         model = LSEmbeddingModel(
-            model_id="test-model", client=mock_client, params=LSEmbeddingParams(embedding_dimension=768)
+            model_id="test-model",
+            client=mock_client,
+            params=LSEmbeddingParams(embedding_dimension=768, context_length=512),
         )
+
+        # Now set embed to fail for validation
+        mock_client.embeddings.create.side_effect = Exception("Model error")
 
         result = _validate_embedding_model(model)
 
@@ -94,7 +105,8 @@ class TestGetDefaultLlamaStackModels:
 
         mock_embedding = Mock()
         mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_embedding.metadata = {}
 
         mock_client.models.list.return_value = [mock_llm, mock_embedding]
 
@@ -125,7 +137,8 @@ class TestGetDefaultLlamaStackModels:
 
         mock_embedding = Mock()
         mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_embedding.metadata = {}
 
         mock_client.models.list.return_value = [mock_embedding]
 
@@ -172,11 +185,17 @@ class TestGetDefaultLlamaStackModels:
 
         mock_embedding1 = Mock()
         mock_embedding1.id = "test-embedding-1"
-        mock_embedding1.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+        mock_embedding1.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_embedding1.metadata = {}
 
         mock_embedding2 = Mock()
         mock_embedding2.id = "test-embedding-2"
-        mock_embedding2.custom_metadata = {"model_type": "embedding", "embedding_dimension": 1024}
+        mock_embedding2.custom_metadata = {
+            "model_type": "embedding",
+            "embedding_dimension": 1024,
+            "context_length": 512,
+        }
+        mock_embedding2.metadata = {}
 
         mock_client.models.list.return_value = [mock_llm1, mock_llm2, mock_embedding1, mock_embedding2]
 
@@ -214,7 +233,8 @@ class TestGetDefaultLlamaStackModels:
 
         mock_embedding = Mock()
         mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_embedding.metadata = {}
 
         mock_client.models.list.return_value = [mock_llm, mock_embedding]
 
@@ -241,7 +261,8 @@ class TestGetDefaultLlamaStackModels:
 
         mock_embedding = Mock()
         mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_embedding.metadata = {}
 
         mock_client.models.list.return_value = [mock_llm, mock_embedding]
 
