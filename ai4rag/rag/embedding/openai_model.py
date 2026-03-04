@@ -33,7 +33,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
 
         Note: This method is called during initialization when ``embedding_dimension``
         is not present in the params dict.  It issues a real API request to the
-        OpenAI-compatible endpoint, so the service must be reachable at construction time.
+        OpenAI API compliant endpoint, so the service must be reachable at construction time.
 
         Raises
         ------
