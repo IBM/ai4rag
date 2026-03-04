@@ -141,7 +141,7 @@ class TestLSEmbeddingModel:
 
         mock_client.embeddings.create.side_effect = side_effect
 
-        with pytest.raises(RuntimeError, match="Failed to auto-detect context length"):
+        with pytest.raises(RuntimeError, match="Failed to auto-detect 'context_length'"):
             LSEmbeddingModel(client=mock_client, model_id="test-model", params=None)
 
     def test_detect_context_length_skipped_when_explicit(self, mock_ls_client):
