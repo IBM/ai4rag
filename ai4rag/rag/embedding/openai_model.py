@@ -67,7 +67,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
             When the context length cannot be determined (e.g. all probes fail).
         """
         lo, hi, best = 64, 8192, None
-        while hi - lo >= 256:
+        while hi - lo >= 64:
             mid = (lo + hi) // 2
             probe_text = "word " * mid
             try:
