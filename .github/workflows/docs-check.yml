@@ -1,0 +1,31 @@
+name: Documentation Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - dev
+
+jobs:
+  check:
+    name: Check Documentation Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch all history for git-revision-date-localized plugin
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[docs]"
+
+      - name: Build documentation
+        run: mkdocs build --strict

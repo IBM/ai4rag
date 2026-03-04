@@ -10,8 +10,8 @@ __all__ = [
 ]
 
 _default_chunking_methods = ("recursive",)
-_default_chunk_sizes = (1024, 2048)
-_default_chunk_overlaps = (256, 512)
+_default_chunk_sizes = (512, 1024, 2048)
+_default_chunk_overlaps = (128, 256, 512)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
 _default_numbers_of_chunks = (3, 5, 10)
@@ -28,32 +28,12 @@ def get_default_ai4rag_search_space_parameters() -> list[Parameter]:
     """
 
     default_search_space_parameters = [
-        Parameter(
-            name=AI4RAGParamNames.CHUNKING_METHOD,
-            param_type="C",
-            values=_default_chunking_methods,
-        ),
-        Parameter(
-            name=AI4RAGParamNames.CHUNK_SIZE,
-            param_type="C",
-            values=_default_chunk_sizes,
-        ),
-        Parameter(
-            name=AI4RAGParamNames.CHUNK_OVERLAP,
-            param_type="C",
-            values=_default_chunk_overlaps,
-        ),
-        Parameter(
-            name=AI4RAGParamNames.RETRIEVAL_METHOD,
-            param_type="C",
-            values=_default_retrieval_methods,
-        ),
-        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, param_type="C", values=_default_window_sizes),
-        Parameter(
-            name=AI4RAGParamNames.NUMBER_OF_CHUNKS,
-            param_type="C",
-            values=_default_numbers_of_chunks,
-        ),
+        Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
+        Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=_default_chunk_sizes),
+        Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=_default_chunk_overlaps),
+        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=_default_retrieval_methods),
+        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=_default_window_sizes),
+        Parameter(name=AI4RAGParamNames.NUMBER_OF_CHUNKS, values=_default_numbers_of_chunks),
     ]
 
     return default_search_space_parameters

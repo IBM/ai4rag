@@ -62,12 +62,17 @@ class LSVectorStore(BaseVectorStore):
             _vs = client.vector_stores.retrieve(reuse_collection_name)
             return _vs
 
+        # Handle both dict and LSEmbeddingParams for backward compatibility
+        if isinstance(embedding_model.params, dict):
+            embedding_dimension = embedding_model.params["embedding_dimension"]
+        else:
+            embedding_dimension = embedding_model.params.embedding_dimension
+
         _vs = client.vector_stores.create(
             extra_body={
                 "provider_id": provider_id,
-                # "provider_vector_store_id": collection_name,  # --> not working in 0.4.x
                 "embedding_model": embedding_model.model_id,
-                "embedding_dimension": embedding_model.params["embedding_dimension"],
+                "embedding_dimension": embedding_dimension,
             }
         )
 
@@ -129,13 +134,19 @@ class LSVectorStore(BaseVectorStore):
             Documents to add to the collection.
         """
 
+        # Handle both dict and LSEmbeddingParams for backward compatibility
+        if isinstance(self.embedding_model.params, dict):
+            embedding_dimension = self.embedding_model.params["embedding_dimension"]
+        else:
+            embedding_dimension = self.embedding_model.params.embedding_dimension
+
         chunks = [
             {
                 "content": doc.page_content,
                 "chunk_metadata": doc.metadata,
                 "chunk_id": doc.metadata["document_id"],
                 "embedding_model": self.embedding_model.model_id,
-                "embedding_dimension": self.embedding_model.params["embedding_dimension"],
+                "embedding_dimension": embedding_dimension,
             }
             for doc in documents
         ]

@@ -169,8 +169,8 @@ class GAMOptimizer(BaseOptimizer):
     def _run_iteration(self) -> None:
         """
         Run single optimization iteration that consists of training GAM model
-        to predict score for remaining nodes in the solutions space and chose
-        best n ones to further evaluation.
+        to predict score for remaining nodes in the solutions space and choose
+        the best n ones for further evaluation.
         """
         self._prepare_encoder()
         df = pd.DataFrame(data=self.evaluations)  # --> These are already known observations with scores.

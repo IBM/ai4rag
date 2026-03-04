@@ -132,7 +132,7 @@ class TestLlamaStackFoundationModel:
         """Create a LSFoundationModel with dict parameters."""
         return LSFoundationModel(
             model_id="test-model-id",
-            model_params={"max_completion_tokens": 1024, "temperature": 0.3},
+            params={"max_completion_tokens": 1024, "temperature": 0.3},
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -147,7 +147,7 @@ class TestLlamaStackFoundationModel:
         params = ModelParameters(max_completion_tokens=512, temperature=0.7)
         return LSFoundationModel(
             model_id="test-model-id",
-            model_params=params,
+            params=params,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -161,7 +161,7 @@ class TestLlamaStackFoundationModel:
         """Create a LSFoundationModel with None parameters."""
         return LSFoundationModel(
             model_id="test-model-id",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -171,7 +171,7 @@ class TestLlamaStackFoundationModel:
     def test_init_with_dict_params(self, model_with_dict_params, mock_llama_client):
         """Test initialization with dict parameters."""
         assert model_with_dict_params.model_id == "test-model-id"
-        assert model_with_dict_params.model_params == {"max_completion_tokens": 1024, "temperature": 0.3}
+        assert model_with_dict_params.params == {"max_completion_tokens": 1024, "temperature": 0.3}
         assert model_with_dict_params.client == mock_llama_client
         assert "question" in model_with_dict_params.user_message_text
         assert "document" in model_with_dict_params.context_template_text
@@ -179,15 +179,15 @@ class TestLlamaStackFoundationModel:
     def test_init_with_model_parameters(self, model_with_model_params, mock_llama_client):
         """Test initialization with ModelParameters object."""
         assert model_with_model_params.model_id == "test-model-id"
-        assert isinstance(model_with_model_params.model_params, ModelParameters)
-        assert model_with_model_params.model_params.max_completion_tokens == 512
-        assert model_with_model_params.model_params.temperature == 0.7
+        assert isinstance(model_with_model_params.params, ModelParameters)
+        assert model_with_model_params.params.max_completion_tokens == 512
+        assert model_with_model_params.params.temperature == 0.7
         assert model_with_model_params.client == mock_llama_client
 
     def test_init_with_none_params(self, model_with_none_params, mock_llama_client):
         """Test initialization with None parameters."""
         assert model_with_none_params.model_id == "test-model-id"
-        assert model_with_none_params.model_params is None
+        assert model_with_none_params.params is None
         assert model_with_none_params.client == mock_llama_client
 
     def test_user_message_text_custom(self, mock_llama_client, valid_context_template, valid_system_message):
@@ -195,7 +195,7 @@ class TestLlamaStackFoundationModel:
         custom_template = "Custom question: {question} and refs: {reference_documents}"
         model = LSFoundationModel(
             model_id="test-model",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=custom_template,
             context_template_text=valid_context_template,
@@ -213,7 +213,7 @@ class TestLlamaStackFoundationModel:
         )
         model = LSFoundationModel(
             model_id="llama-3-70b",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=None,
             context_template_text=valid_context_template,
@@ -227,7 +227,7 @@ class TestLlamaStackFoundationModel:
         custom_template = "Custom: {document}"
         model = LSFoundationModel(
             model_id="test-model",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=custom_template,
@@ -245,7 +245,7 @@ class TestLlamaStackFoundationModel:
         )
         model = LSFoundationModel(
             model_id="granite-13b",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=None,
@@ -261,7 +261,7 @@ class TestLlamaStackFoundationModel:
         system_msg = "Custom system message"
         model = LSFoundationModel(
             model_id="test-model",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -271,10 +271,12 @@ class TestLlamaStackFoundationModel:
 
     def test_chat_method(self, model_with_dict_params, mock_llama_client):
         """Test that chat method calls client correctly and returns response."""
-        system_msg = "You are helpful"
-        user_msg = "What is AI?"
+        messages = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "What is AI?"},
+        ]
 
-        response = model_with_dict_params.chat(system_msg, user_msg)
+        response = model_with_dict_params.chat(messages)
 
         # Verify the client was called
         mock_llama_client.chat.completions.create.assert_called_once()
@@ -284,36 +286,42 @@ class TestLlamaStackFoundationModel:
         assert call_args.kwargs["model"] == "test-model-id"
 
         # Verify messages were passed correctly
-        messages = call_args.kwargs["messages"]
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[0]["content"] == system_msg
-        assert messages[1]["role"] == "user"
-        assert messages[1]["content"] == user_msg
+        passed_messages = call_args.kwargs["messages"]
+        assert len(passed_messages) == 2
+        assert passed_messages[0]["role"] == "system"
+        assert passed_messages[0]["content"] == "You are helpful"
+        assert passed_messages[1]["role"] == "user"
+        assert passed_messages[1]["content"] == "What is AI?"
 
-        # Verify response
-        assert response == "Test response from model"
+        # Verify response - should return choices list
+        assert len(response) == 1
+        assert response[0].message.content == "Test response from model"
 
     def test_chat_method_extracts_content(self, model_with_dict_params, mock_llama_client):
-        """Test that chat method correctly extracts content from response."""
-        response = model_with_dict_params.chat("system", "user")
-        assert response == "Test response from model"
+        """Test that chat method correctly returns choices from response."""
+        messages = [
+            {"role": "system", "content": "system"},
+            {"role": "user", "content": "user"},
+        ]
+        response = model_with_dict_params.chat(messages)
+        assert len(response) == 1
+        assert response[0].message.content == "Test response from model"
 
     def test_chat_with_different_messages(self, model_with_dict_params, mock_llama_client):
         """Test chat with different message combinations."""
         test_cases = [
-            ("System prompt 1", "User query 1"),
-            ("", "User query 2"),
-            ("System prompt 3", ""),
-            ("Multi\nline\nsystem", "Multi\nline\nuser"),
+            [{"role": "system", "content": "System prompt 1"}, {"role": "user", "content": "User query 1"}],
+            [{"role": "system", "content": ""}, {"role": "user", "content": "User query 2"}],
+            [{"role": "system", "content": "System prompt 3"}, {"role": "user", "content": ""}],
+            [{"role": "system", "content": "Multi\nline\nsystem"}, {"role": "user", "content": "Multi\nline\nuser"}],
         ]
 
-        for sys_msg, usr_msg in test_cases:
-            model_with_dict_params.chat(sys_msg, usr_msg)
+        for test_messages in test_cases:
+            model_with_dict_params.chat(test_messages)
             call_args = mock_llama_client.chat.completions.create.call_args
-            messages = call_args.kwargs["messages"]
-            assert messages[0]["content"] == sys_msg
-            assert messages[1]["content"] == usr_msg
+            passed_messages = call_args.kwargs["messages"]
+            assert passed_messages[0]["content"] == test_messages[0]["content"]
+            assert passed_messages[1]["content"] == test_messages[1]["content"]
 
     def test_invalid_user_message_template_missing_placeholder(
         self, mock_llama_client, valid_context_template, valid_system_message
@@ -323,7 +331,7 @@ class TestLlamaStackFoundationModel:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             LSFoundationModel(
                 model_id="test-model",
-                model_params=None,
+                params=None,
                 client=mock_llama_client,
                 user_message_text=invalid_template,
                 context_template_text=valid_context_template,
@@ -339,7 +347,7 @@ class TestLlamaStackFoundationModel:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             LSFoundationModel(
                 model_id="test-model",
-                model_params=None,
+                params=None,
                 client=mock_llama_client,
                 user_message_text=invalid_template,
                 context_template_text=valid_context_template,
@@ -355,7 +363,7 @@ class TestLlamaStackFoundationModel:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             LSFoundationModel(
                 model_id="test-model",
-                model_params=None,
+                params=None,
                 client=mock_llama_client,
                 user_message_text=valid_user_message_template,
                 context_template_text=invalid_template,
@@ -371,7 +379,7 @@ class TestLlamaStackFoundationModel:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             LSFoundationModel(
                 model_id="test-model",
-                model_params=None,
+                params=None,
                 client=mock_llama_client,
                 user_message_text=valid_user_message_template,
                 context_template_text=invalid_template,
@@ -396,7 +404,7 @@ class TestLlamaStackFoundationModel:
         """Test that models with same model_id are equal."""
         model1 = LSFoundationModel(
             model_id="same-id",
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -404,7 +412,7 @@ class TestLlamaStackFoundationModel:
         )
         model2 = LSFoundationModel(
             model_id="same-id",
-            model_params={"different": "params"},
+            params={"different": "params"},
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -427,7 +435,7 @@ class TestLlamaStackFoundationModel:
         """Test initialization with various model IDs."""
         model = LSFoundationModel(
             model_id=model_id,
-            model_params=None,
+            params=None,
             client=mock_llama_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
