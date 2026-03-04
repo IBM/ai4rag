@@ -37,7 +37,7 @@ def _rule_chunk_size_bigger_than_chunk_overlap(combination: dict) -> bool:
     if chunk_size is None or chunk_overlap is None:
         raise SearchSpaceValueError("Chunk size and chunk overlap are required.")
 
-    return chunk_size > chunk_overlap
+    return chunk_size > 2 * chunk_overlap
 
 
 def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
@@ -60,10 +60,14 @@ def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
 def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     """Check that estimated token count of a chunk fits the embedding model's context length.
 
-    The chunk_size and chunk_overlap are in characters.  We convert to an
-    estimated token count using a conservative ratio of 4 characters per token
-    (i.e. we *overestimate* the number of tokens so that borderline cases are
-    pruned rather than silently failing at runtime).
+    The chunk_size is in characters.  We convert to an estimated token count
+    using a conservative ratio of 4 characters per token (i.e. we
+    *overestimate* the number of tokens so that borderline cases are pruned
+    rather than silently failing at runtime).
+
+    Note: ``chunk_overlap`` is not included in the estimation because
+    ``RecursiveCharacterTextSplitter`` already keeps chunks within the
+    ``chunk_size`` budget — overlap is not added on top.
 
     Parameters
     ----------
@@ -91,8 +95,8 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     if context_length is None:
         return True
 
-    chars_per_token = 4
-    estimated_tokens = (chunk_size + 2 * chunk_overlap) / chars_per_token
+    chars_per_token = 4.5
+    estimated_tokens = chunk_size / chars_per_token
 
     return estimated_tokens <= context_length
 

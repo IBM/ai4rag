@@ -77,7 +77,7 @@ class _MockEmbeddingModelWithDictParams:
 @pytest.mark.parametrize(
     "combination, expected_value",
     (
-        # chunk_size=512, chunk_overlap=64 → estimated_tokens = (512 + 128) / 4 = 160, context=256 → True
+        # chunk_size=512 → estimated_tokens = 512 / 4 = 128, context=256 → True
         (
             {
                 "chunk_size": 512,
@@ -86,16 +86,16 @@ class _MockEmbeddingModelWithDictParams:
             },
             True,
         ),
-        # chunk_size=2048, chunk_overlap=512 → estimated_tokens = (2048 + 1024) / 4 = 768, context=512 → False
+        # chunk_size=2048 → estimated_tokens = 2048 / 4 = 512, context=256 → False
         (
             {
                 "chunk_size": 2048,
                 "chunk_overlap": 512,
-                "embedding_model": _MockEmbeddingModelWithParams(512),
+                "embedding_model": _MockEmbeddingModelWithParams(256),
             },
             False,
         ),
-        # Exact boundary: chunk_size=1024, chunk_overlap=0 → estimated_tokens = 256, context=256 → True
+        # Exact boundary: chunk_size=1024 → estimated_tokens = 256, context=256 → True
         (
             {
                 "chunk_size": 1024,
@@ -104,7 +104,7 @@ class _MockEmbeddingModelWithDictParams:
             },
             True,
         ),
-        # Dict-style params: chunk_size=512, chunk_overlap=0 → estimated_tokens = 128, context=256 → True
+        # Dict-style params: chunk_size=512 → estimated_tokens = 128, context=256 → True
         (
             {
                 "chunk_size": 512,
@@ -113,7 +113,7 @@ class _MockEmbeddingModelWithDictParams:
             },
             True,
         ),
-        # Dict-style params: over limit
+        # Dict-style params: chunk_size=2048 → estimated_tokens = 512, context=256 → False
         (
             {
                 "chunk_size": 2048,

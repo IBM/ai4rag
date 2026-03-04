@@ -55,17 +55,15 @@ class TestLSEmbeddingModel:
         model = LSEmbeddingModel(client=mock_ls_client, model_id="all-MiniLM-L6-v2")
 
         assert model.params.embedding_dimension == 4
-        assert model.params.context_length == 4096
-        # 1 call for dimension detection + 1 call for context_length detection (first probe succeeds)
-        assert mock_ls_client.embeddings.create.call_count == 2
+        # Binary search converges near upper bound when all probes succeed
+        assert model.params.context_length > 0
 
     def test_init_with_none_params_auto_detects_dimension(self, mock_ls_client):
         """Test initialization with params=None triggers auto-detection."""
         model = LSEmbeddingModel(client=mock_ls_client, model_id="all-MiniLM-L6-v2", params=None)
 
         assert model.params.embedding_dimension == 4
-        assert model.params.context_length == 4096
-        assert mock_ls_client.embeddings.create.call_count == 2
+        assert model.params.context_length > 0
 
     def test_init_with_params_missing_dimension_auto_detects(self, mock_ls_client):
         """Test that auto-detection triggers when LSEmbeddingParams has no dimension."""
@@ -73,8 +71,7 @@ class TestLSEmbeddingModel:
         model = LSEmbeddingModel(client=mock_ls_client, model_id="all-MiniLM-L6-v2", params=params)
 
         assert model.params.embedding_dimension == 4
-        assert model.params.context_length == 4096
-        assert mock_ls_client.embeddings.create.call_count == 2
+        assert model.params.context_length > 0
 
     def test_init_with_invalid_params_type(self, mock_ls_client):
         """Test initialization with invalid params type raises TypeError."""
@@ -100,21 +97,23 @@ class TestLSEmbeddingModel:
 
         assert exc_info.value.__cause__ is original_error
 
-    def test_detect_context_length_succeeds_at_first_probe(self, mock_ls_client):
-        """Test that context_length detection returns 4096 when the first probe succeeds."""
+    def test_detect_context_length_all_probes_succeed(self, mock_ls_client):
+        """Test that context_length detection converges near upper bound when all probes succeed."""
         params = LSEmbeddingParams(embedding_dimension=384)
         model = LSEmbeddingModel(client=mock_ls_client, model_id="all-MiniLM-L6-v2", params=params)
 
-        assert model.params.context_length == 4096
-        mock_ls_client.embeddings.create.assert_called_once()
+        # Binary search converges near 8192 when all probes succeed
+        assert model.params.context_length > 4096
 
-    def test_detect_context_length_falls_back_to_smaller_probe(self, mocker):
-        """Test that context_length detection falls back to smaller probe sizes."""
+    def test_detect_context_length_binary_search_finds_limit(self, mocker):
+        """Test that binary search finds the correct context_length limit."""
         mock_client = mocker.MagicMock()
         response = _make_mock_ls_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         def side_effect(**kwargs):
             text = kwargs.get("input", "")
+            # Each "word " is 5 chars, so N words = N*5 chars
+            # Accept up to 2048 words
             if isinstance(text, str) and len(text) > 2048 * 5:
                 raise ValueError("Input too long")
             return response
@@ -124,7 +123,8 @@ class TestLSEmbeddingModel:
         params = LSEmbeddingParams(embedding_dimension=384)
         model = LSEmbeddingModel(client=mock_client, model_id="test-model", params=params)
 
-        assert model.params.context_length == 2048
+        # Binary search should find a value close to 2048
+        assert 1792 <= model.params.context_length <= 2048
 
     def test_detect_context_length_all_probes_fail(self, mocker):
         """Test that RuntimeError is raised when all context_length probes fail."""

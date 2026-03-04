@@ -73,25 +73,31 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
         return len(embedding)
 
     def _detect_context_length(self) -> int:
-        """Detect maximum context length by probing with increasing input sizes.
+        """Detect maximum context length via binary search over probe sizes.
 
-        Sends probe texts of descending token counts and returns the largest
-        that the model accepts.  Each probe consists of repeated words so that
-        one word ≈ one token.
+        Performs a binary search between 256 and 8192 tokens to find the
+        largest input the model accepts.  Each probe consists of repeated
+        words so that one word ≈ one token.  The search stops when the
+        remaining interval is smaller than 256 tokens, keeping the number
+        of API calls to roughly 5.
 
         Raises
         ------
         RuntimeError
             When the context length cannot be determined (e.g. all probes fail).
         """
-        probe_sizes = [4096, 2048, 1024, 512, 256]
-        for size in probe_sizes:
-            probe_text = "word " * size
+        lo, hi, best = 256, 8192, None
+        while hi - lo >= 256:
+            mid = (lo + hi) // 2
+            probe_text = "word " * mid
             try:
                 self._embed_text(text_input=probe_text)
-                return size
+                best = mid
+                lo = mid + 1
             except Exception:  # pylint: disable=broad-exception-caught
-                continue
+                hi = mid - 1
+        if best is not None:
+            return best
         raise RuntimeError(
             f"Failed to auto-detect 'context_length' for model '{self.model_id}'. "
             "Provide 'context_length' explicitly or ensure the embedding service is reachable."
