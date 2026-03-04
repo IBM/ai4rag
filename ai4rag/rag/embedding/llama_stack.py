@@ -17,7 +17,7 @@ __all__ = ["LSEmbeddingModel", "LSEmbeddingParams"]
 class LSEmbeddingParams:
     """LLamaStack parameters to be used to create embeddings."""
 
-    embedding_dimension: int
+    embedding_dimension: Optional[int] = None
     context_length: Optional[int] = None
     timeout: Optional[float | Timeout] = None
     model_type: Optional[str] = None
@@ -28,7 +28,7 @@ class LSEmbeddingParams:
 class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
     """Creates embeddings for LLamaStack client."""
 
-    def __init__(self, client: LlamaStackClient, model_id: str, params: dict | LSEmbeddingParams):
+    def __init__(self, client: LlamaStackClient, model_id: str, params: dict | LSEmbeddingParams | None = None):
         super().__init__(client=client, model_id=model_id, params=params)
 
     @property
@@ -36,13 +36,39 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
         return self._params
 
     @params.setter
-    def params(self, params: dict | LSEmbeddingParams) -> None:
-        if isinstance(params, LSEmbeddingParams):
+    def params(self, params: dict | LSEmbeddingParams | None) -> None:
+        if params is None:
+            self._params = LSEmbeddingParams()
+        elif isinstance(params, LSEmbeddingParams):
             self._params = params
         elif isinstance(params, dict):
             self._params = LSEmbeddingParams(**params)
         else:
             raise TypeError(f"Incorrect type of 'params' parameter: {type(params)}.")
+        if self._params.embedding_dimension is None:
+            self._params.embedding_dimension = self._detect_embedding_dimension()
+
+    def _detect_embedding_dimension(self) -> int:
+        """Detect embedding dimension by making a minimal embedding call.
+
+        Note: This method is called during initialization when ``embedding_dimension``
+        is not explicitly provided.  It issues a real API request to the Llama Stack
+        server, so the server must be reachable at construction time.
+
+        Raises
+        ------
+        RuntimeError
+            When the embedding dimension cannot be determined (e.g. the server
+            is unreachable or the model is not available).
+        """
+        try:
+            embedding = self._embed_text(text_input="test")[0]
+        except Exception as exc:
+            raise RuntimeError(
+                f"Failed to auto-detect embedding dimension for model '{self.model_id}'. "
+                "Provide 'embedding_dimension' explicitly or ensure the embedding service is reachable."
+            ) from exc
+        return len(embedding)
 
     def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:
         """Embeds documents.

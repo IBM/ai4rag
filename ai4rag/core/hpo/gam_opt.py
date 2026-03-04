@@ -124,7 +124,7 @@ class GAMOptimizer(BaseOptimizer):
         for _ in range(iterations_limit):
             self._run_iteration()
 
-        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
+        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] >= 0]
         if not successful_evaluations:
             raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
 
@@ -157,7 +157,7 @@ class GAMOptimizer(BaseOptimizer):
         while successful_evaluations < self.settings.n_random_nodes:
             params = next(gen)
             score = self._objective_function(params=params)
-            if score is not None:
+            if score > 0:
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
             params_with_score = params | {"score": score}
@@ -169,12 +169,11 @@ class GAMOptimizer(BaseOptimizer):
     def _run_iteration(self) -> None:
         """
         Run single optimization iteration that consists of training GAM model
-        to predict score for remaining nodes in the solutions space and chose
-        best n ones to further evaluation.
+        to predict score for remaining nodes in the solutions space and choose
+        the best n ones for further evaluation.
         """
         self._prepare_encoder()
         df = pd.DataFrame(data=self.evaluations)  # --> These are already known observations with scores.
-        df = df[df["score"].notna()].copy()
         data = df.drop(columns=["score"])
         target = df["score"]
 
@@ -253,7 +252,7 @@ class GAMOptimizer(BaseOptimizer):
 
         return remaining
 
-    def _objective_function(self, params: dict) -> float | None:
+    def _objective_function(self, params: dict) -> float:
         """
         Wrapper around the objective function provided to the optimizer.
 
@@ -264,9 +263,9 @@ class GAMOptimizer(BaseOptimizer):
 
         Returns
         -------
-        float | None
+        float
             Optimization score achieved for single node evaluation.
-            If None - iteration has ended up with a failed status.
+            Returns -1 if the iteration failed (used as a penalty sentinel).
         """
 
         try:
@@ -274,7 +273,6 @@ class GAMOptimizer(BaseOptimizer):
             loss = self.objective_function(params)
 
         except FailedIterationError:
-            # None is here to avoid penalization of iterations failing due to unknown reasons
-            loss = None
+            loss = -1
 
         return loss
