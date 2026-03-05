@@ -3,8 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
-from typing import Any, Literal, Sequence
 from dataclasses import asdict, is_dataclass
+from typing import Any, Literal, Sequence
 
 import pandas as pd
 from langchain_core.documents import Document
