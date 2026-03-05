@@ -293,18 +293,30 @@ class AI4RAGSearchSpace(SearchSpace):
 
     rules : list[RuleFunction]
         List of functions - called "rules" - that will be applied on each combination in the search space.
+
+    vector_store_type : str, default="ls_milvus"
+        Type of vector store. When "chroma", hybrid search parameters are excluded
+        from the default search space since ChromaDB does not support hybrid search.
     """
 
-    _rules = (
+    _base_rules = (
         _rule_chunk_size_bigger_than_chunk_overlap,
         _rule_adjust_window_to_retrieval_method,
         _rule_chunk_size_within_embedding_context_length,
+    )
+
+    _hybrid_rules = (
         _rule_search_mode_ranker_consistency,
         _rule_ranker_alpha_for_weighted_only,
     )
 
-    def __init__(self, params: list[Parameter] | None = None, rules: list[RuleFunction] | None = None):
-        default_search_space_parameters = get_default_ai4rag_search_space_parameters()
+    def __init__(
+        self,
+        params: list[Parameter] | None = None,
+        rules: list[RuleFunction] | None = None,
+        vector_store_type: str = "ls_milvus",
+    ):
+        default_search_space_parameters = get_default_ai4rag_search_space_parameters(vector_store_type)
         params = params or []
         self._validate_user_params(params)
 
@@ -312,7 +324,8 @@ class AI4RAGSearchSpace(SearchSpace):
             params, default_search_space_parameters
         )
 
-        _summed_rules = self._rules + rules if rules else self._rules
+        builtin_rules = self._base_rules + self._hybrid_rules if vector_store_type != "chroma" else self._base_rules
+        _summed_rules = builtin_rules + rules if rules else builtin_rules
         super().__init__(params, _summed_rules)
 
     @staticmethod

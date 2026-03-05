@@ -156,7 +156,9 @@ class TestModelsPreSelectorInit:
 
         assert selector.retrieval_params["search_mode"] == "hybrid"
 
-    def test_search_mode_independent_of_retrieval_method(self, documents, benchmark_data, embedding_models, foundation_models):
+    def test_search_mode_independent_of_retrieval_method(
+        self, documents, benchmark_data, embedding_models, foundation_models
+    ):
         """Test that search_mode is read from its own key, not retrieval_method."""
         selector = ModelsPreSelector(
             benchmark_data=benchmark_data,

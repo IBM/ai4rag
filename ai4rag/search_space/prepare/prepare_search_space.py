@@ -23,7 +23,11 @@ from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 __all__ = ["prepare_search_space_with_llama_stack"]
 
 
-def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: LlamaStackClient) -> AI4RAGSearchSpace:
+def prepare_search_space_with_llama_stack(
+    payload: dict[str, Any],
+    client: LlamaStackClient,
+    vector_store_type: str = "ls_milvus",
+) -> AI4RAGSearchSpace:
     """
     Prepare AutoRAGSearchSpace.
 
@@ -34,6 +38,10 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
 
     client : LlamaStackClient
         Client instance for listing and validating available models.
+
+    vector_store_type : str, default="ls_milvus"
+        Type of vector store. When "chroma", hybrid search parameters are excluded
+        from the default search space since ChromaDB does not support hybrid search.
 
     Returns
     -------
@@ -106,4 +114,5 @@ def prepare_search_space_with_llama_stack(payload: dict[str, Any], client: Llama
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param],
+        vector_store_type=vector_store_type,
     )
