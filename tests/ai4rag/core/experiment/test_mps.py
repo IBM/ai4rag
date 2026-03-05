@@ -130,6 +130,47 @@ def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, f
     return selector
 
 
+class TestModelsPreSelectorInit:
+    def test_default_search_mode(self, documents, benchmark_data, embedding_models, foundation_models):
+        """Test that search_mode defaults to 'vector'."""
+        selector = ModelsPreSelector(
+            benchmark_data=benchmark_data,
+            documents=documents,
+            foundation_models=foundation_models,
+            embedding_models=embedding_models,
+            metric="answer_correctness",
+        )
+
+        assert selector.retrieval_params["search_mode"] == "vector"
+
+    def test_custom_search_mode(self, documents, benchmark_data, embedding_models, foundation_models):
+        """Test that search_mode can be set via kwargs."""
+        selector = ModelsPreSelector(
+            benchmark_data=benchmark_data,
+            documents=documents,
+            foundation_models=foundation_models,
+            embedding_models=embedding_models,
+            metric="answer_correctness",
+            search_mode="hybrid",
+        )
+
+        assert selector.retrieval_params["search_mode"] == "hybrid"
+
+    def test_search_mode_independent_of_retrieval_method(self, documents, benchmark_data, embedding_models, foundation_models):
+        """Test that search_mode is read from its own key, not retrieval_method."""
+        selector = ModelsPreSelector(
+            benchmark_data=benchmark_data,
+            documents=documents,
+            foundation_models=foundation_models,
+            embedding_models=embedding_models,
+            metric="answer_correctness",
+            retrieval_method="window",
+        )
+
+        assert selector.retrieval_params["search_mode"] == "vector"
+        assert selector.retrieval_params["method"] == "window"
+
+
 class TestModelsPreSelector:
     def test_evaluate_patterns(self, fully_mocked_selector, caplog):
 

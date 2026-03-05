@@ -292,20 +292,6 @@ class TestLSVectorStoreHybridSearch:
         assert call_kwargs["params"]["mode"] == "vector"
         assert "ranker" not in call_kwargs["params"]
 
-    def test_search_with_keyword_mode(self, mock_embedding_model, mock_llama_stack_client):
-        """Test search with keyword mode."""
-        vector_store = LSVectorStore(
-            embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
-            provider_id="milvus",
-        )
-
-        vector_store.search("test query", k=5, search_mode="keyword")
-
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
-        assert call_kwargs["params"]["mode"] == "keyword"
-        assert "ranker" not in call_kwargs["params"]
-
     def test_search_with_hybrid_mode_rrf(self, mock_embedding_model, mock_llama_stack_client):
         """Test search with hybrid mode and RRF ranker."""
         vector_store = LSVectorStore(

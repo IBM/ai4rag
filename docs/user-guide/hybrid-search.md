@@ -68,7 +68,6 @@ Controls the search method used for retrieval.
 - **Type**: Categorical (`"C"`)
 - **Values**:
     - `"vector"` (default): Traditional dense vector search only
-    - `"keyword"`: Sparse keyword search only
     - `"hybrid"`: Combines both vector and keyword search
 
 **Example**:
@@ -143,7 +142,7 @@ Parameter(
 ```
 
 !!! note "When to use 0"
-    Set `ranker_k=0` when `search_mode` is `"vector"` or `"keyword"`, or when the ranker strategy doesn't use this parameter.
+    Set `ranker_k=0` when `search_mode` is `"vector"` or when the ranker strategy doesn't use this parameter.
 
 #### `ranker_alpha`
 
@@ -266,7 +265,7 @@ ai4rag automatically validates hybrid search configurations with built-in rules:
 
 ### Rule 1: Non-Hybrid Modes Must Use Sentinel Values
 
-When `search_mode` is `"vector"` or `"keyword"`, all ranker parameters must be sentinels:
+When `search_mode` is `"vector"`, all ranker parameters must be sentinels:
 
 - `ranker_strategy` must be `""`
 - `ranker_k` must be `0`

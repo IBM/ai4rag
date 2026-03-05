@@ -24,7 +24,7 @@ class Retriever:
         Number of chunks to retrieve.
 
     search_mode : str, default="vector"
-        Search mode passed to the vector store: "vector", "keyword", or "hybrid".
+        Search mode passed to the vector store: "vector" or "hybrid".
 
     ranker_strategy : str | None, default=None
         Ranking strategy for hybrid search: "rrf", "weighted", or "normalized".

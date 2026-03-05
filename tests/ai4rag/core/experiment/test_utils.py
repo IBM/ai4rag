@@ -524,6 +524,22 @@ class TestGetRetrievalParamsHybridSearch:
         assert "Missing or invalid values" in str(exc_info.value)
 
 
+class TestGetRetrievalParamsRaisesOnMissingMethod:
+    """Test that get_retrieval_params raises error when retrieval_method is missing."""
+
+    def test_raises_on_missing_retrieval_method(self):
+        rag_params = {
+            "window_size": 3,
+            "number_of_chunks": 5,
+            "search_mode": "vector",
+        }
+
+        with pytest.raises(RAGExperimentError) as exc_info:
+            get_retrieval_params(rag_params)
+
+        assert "Missing or invalid values" in str(exc_info.value)
+
+
 class TestRAGExperimentError:
     """Test suite for RAGExperimentError exception."""
 

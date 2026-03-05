@@ -108,7 +108,7 @@ class LSVectorStore(BaseVectorStore):
             If True, similarity scores will be returned in the response
 
         search_mode : str, default="vector"
-            Search mode: "vector", "keyword", or "hybrid".
+            Search mode: "vector" or "hybrid".
 
         ranker_strategy : str | None, default=None
             Ranking strategy for hybrid search: "rrf", "weighted", or "normalized".

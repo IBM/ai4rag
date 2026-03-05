@@ -48,7 +48,7 @@ class RAGParamsType(TypedDict):
     window_size: int
     number_of_chunks: int
     retrieval_method: Literal["simple", "window"]
-    search_mode: Literal["vector", "keyword", "hybrid"]
+    search_mode: Literal["vector", "hybrid"]
     ranker_strategy: str
     ranker_k: int
     ranker_alpha: int | float
