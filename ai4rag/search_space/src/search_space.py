@@ -95,7 +95,7 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     if context_length is None:
         return True
 
-    chars_per_token = 4.5
+    chars_per_token = 3.6
     estimated_tokens = chunk_size / chars_per_token
 
     return estimated_tokens <= context_length
