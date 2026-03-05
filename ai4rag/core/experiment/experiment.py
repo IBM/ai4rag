@@ -397,8 +397,8 @@ class AI4RAGExperiment:
 
         retriever = Retriever(
             vector_store=vector_store,
-            method=retrieval_method,
             number_of_chunks=number_of_chunks,
+            method=retrieval_method,
             search_mode=search_mode,
             ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
             ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
@@ -609,7 +609,7 @@ class AI4RAGExperiment:
                 "settings": {
                     "vector_store": vector_store_payload,
                     **indexing_payload,
-                    **retrieval_payload,
+                    "retrieval": retrieval_payload,
                     "generation": generation_payload,
                 },
             },

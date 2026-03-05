@@ -365,6 +365,7 @@ class TestGetRetrievalParams:
             "retrieval_method": "simple",
             "window_size": 3,
             "number_of_chunks": 5,
+            "search_mode": "vector",
         }
 
         result = get_retrieval_params(rag_params)
@@ -372,6 +373,7 @@ class TestGetRetrievalParams:
         assert result["retrieval_method"] == "simple"
         assert result["window_size"] == 3
         assert result["number_of_chunks"] == 5
+        assert result["search_mode"] == "vector"
 
     def test_get_retrieval_params_window_method(self):
         """Test get_retrieval_params with window retrieval method."""
@@ -379,6 +381,7 @@ class TestGetRetrievalParams:
             "retrieval_method": "window",
             "window_size": 5,
             "number_of_chunks": 10,
+            "search_mode": "vector",
         }
 
         result = get_retrieval_params(rag_params)
@@ -393,14 +396,15 @@ class TestGetRetrievalParams:
             "retrieval_method": "simple",
             "window_size": 0,
             "number_of_chunks": 5,
+            "search_mode": "vector",
         }
 
         result = get_retrieval_params(rag_params)
 
         assert result["window_size"] == 0
 
-    def test_get_retrieval_params_raises_on_missing_method(self):
-        """Test that get_retrieval_params raises error when retrieval_method is missing."""
+    def test_get_retrieval_params_raises_on_missing_search_mode(self):
+        """Test that get_retrieval_params raises error when search_mode is missing."""
         rag_params = {
             "window_size": 3,
             "number_of_chunks": 5,
@@ -416,6 +420,7 @@ class TestGetRetrievalParams:
         rag_params = {
             "retrieval_method": "simple",
             "number_of_chunks": 5,
+            "search_mode": "vector",
         }
 
         with pytest.raises(RAGExperimentError) as exc_info:
@@ -428,6 +433,7 @@ class TestGetRetrievalParams:
         rag_params = {
             "retrieval_method": "simple",
             "window_size": 3,
+            "search_mode": "vector",
         }
 
         with pytest.raises(RAGExperimentError) as exc_info:
@@ -435,10 +441,10 @@ class TestGetRetrievalParams:
 
         assert "Missing or invalid values" in str(exc_info.value)
 
-    def test_get_retrieval_params_raises_on_none_method(self):
-        """Test that get_retrieval_params raises error when method is None."""
+    def test_get_retrieval_params_raises_on_none_search_mode(self):
+        """Test that get_retrieval_params raises error when search_mode is None."""
         rag_params = {
-            "retrieval_method": None,
+            "search_mode": None,
             "window_size": 3,
             "number_of_chunks": 5,
         }
@@ -477,28 +483,15 @@ class TestGetRetrievalParamsHybridSearch:
             "retrieval_method": "simple",
             "window_size": 0,
             "number_of_chunks": 5,
+            "search_mode": "vector",
         }
 
         result = get_retrieval_params(rag_params)
 
-        assert result["search_mode"] is None
+        assert result["search_mode"] == "vector"
         assert result["ranker_strategy"] is None
         assert result["ranker_k"] is None
         assert result["ranker_alpha"] is None
-
-    def test_get_retrieval_params_with_keyword_mode(self):
-        """Test get_retrieval_params with keyword search mode."""
-        rag_params = {
-            "retrieval_method": "simple",
-            "window_size": 0,
-            "number_of_chunks": 5,
-            "search_mode": "keyword",
-        }
-
-        result = get_retrieval_params(rag_params)
-
-        assert result["search_mode"] == "keyword"
-        assert result["ranker_strategy"] is None
 
     def test_get_retrieval_params_with_weighted_ranker(self):
         """Test get_retrieval_params with weighted ranker and alpha."""

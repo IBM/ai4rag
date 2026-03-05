@@ -37,6 +37,7 @@ class TestRetrieverInit:
             vector_store=mock_vector_store,
             number_of_chunks=5,
             search_mode="hybrid",
+            method="simple",
             ranker_strategy="rrf",
             ranker_k=60,
         )
@@ -69,6 +70,7 @@ class TestRetrieverRetrieve:
             vector_store=mock_vector_store,
             number_of_chunks=3,
             search_mode="hybrid",
+            method="simple",
             ranker_strategy="rrf",
             ranker_k=60,
         )
@@ -88,6 +90,7 @@ class TestRetrieverRetrieve:
         retriever = Retriever(
             vector_store=mock_vector_store,
             number_of_chunks=5,
+            method="simple",
             search_mode="hybrid",
             ranker_strategy="weighted",
             ranker_k=60,
@@ -109,6 +112,7 @@ class TestRetrieverRetrieve:
         retriever = Retriever(
             vector_store=mock_vector_store,
             number_of_chunks=5,
+            method="simple",
             search_mode="hybrid",
             ranker_strategy="rrf",
             ranker_k=60,

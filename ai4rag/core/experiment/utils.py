@@ -68,7 +68,7 @@ class RAGRetrievalParamsType(TypedDict):
     retrieval_window_size: int
     number_of_retrieved_chunks: int
     retrieval_method: Literal["simple", "window"]
-    search_mode: Literal["vector", "keyword", "hybrid"]
+    search_mode: Literal["vector", "hybrid"]
     ranker_strategy: str
     ranker_k: int
     ranker_alpha: int | float
@@ -277,13 +277,18 @@ def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
     retrieval_params = {
         AI4RAGParamNames.WINDOW_SIZE: rag_params.get(AI4RAGParamNames.WINDOW_SIZE),
         AI4RAGParamNames.NUMBER_OF_CHUNKS: rag_params.get(AI4RAGParamNames.NUMBER_OF_CHUNKS),
-        AI4RAGParamNames.RETRIEVAL_METHOD: rag_params.get(AI4RAGParamNames.RETRIEVAL_METHOD),
         AI4RAGParamNames.SEARCH_MODE: rag_params.get(AI4RAGParamNames.SEARCH_MODE),
+        AI4RAGParamNames.RETRIEVAL_METHOD: rag_params.get(AI4RAGParamNames.RETRIEVAL_METHOD),
         AI4RAGParamNames.RANKER_STRATEGY: rag_params.get(AI4RAGParamNames.RANKER_STRATEGY),
         AI4RAGParamNames.RANKER_K: rag_params.get(AI4RAGParamNames.RANKER_K),
         AI4RAGParamNames.RANKER_ALPHA: rag_params.get(AI4RAGParamNames.RANKER_ALPHA),
     }
-    required_keys = (AI4RAGParamNames.WINDOW_SIZE, AI4RAGParamNames.NUMBER_OF_CHUNKS, AI4RAGParamNames.RETRIEVAL_METHOD)
+    required_keys = (
+        AI4RAGParamNames.WINDOW_SIZE,
+        AI4RAGParamNames.NUMBER_OF_CHUNKS,
+        AI4RAGParamNames.SEARCH_MODE,
+        AI4RAGParamNames.RETRIEVAL_METHOD,
+    )
     if any(retrieval_params.get(k) is None for k in required_keys):
         raise RAGExperimentError(f"Missing or invalid values in retrieval configuration: {retrieval_params}.")
 

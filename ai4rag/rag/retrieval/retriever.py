@@ -17,6 +17,9 @@ class Retriever:
     vector_store : BaseVectorStore
         Vector store / vector index to retrieve data from.
 
+    method : Literal["simple"]
+        Method describing how data should be retrieved.
+
     number_of_chunks : int
         Number of chunks to retrieve.
 
@@ -37,12 +40,14 @@ class Retriever:
         self,
         vector_store: BaseVectorStore,
         number_of_chunks: int,
+        method: Literal["simple"] = "simple",
         search_mode: str = "vector",
         ranker_strategy: str | None = None,
         ranker_k: int | None = None,
         ranker_alpha: float | None = None,
     ):
         self._vector_store = vector_store
+        self.method = method
         self.number_of_chunks = number_of_chunks
         self.search_mode = search_mode
         self.ranker_strategy = ranker_strategy
