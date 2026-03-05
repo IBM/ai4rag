@@ -449,6 +449,88 @@ class TestGetRetrievalParams:
         assert "Missing or invalid values" in str(exc_info.value)
 
 
+class TestGetRetrievalParamsHybridSearch:
+    """Test suite for get_retrieval_params with hybrid search parameters."""
+
+    def test_get_retrieval_params_with_hybrid_search(self):
+        """Test get_retrieval_params with all hybrid search parameters."""
+        rag_params = {
+            "retrieval_method": "simple",
+            "window_size": 0,
+            "number_of_chunks": 5,
+            "search_mode": "hybrid",
+            "ranker_strategy": "rrf",
+            "ranker_k": 60,
+            "ranker_alpha": 0,
+        }
+
+        result = get_retrieval_params(rag_params)
+
+        assert result["search_mode"] == "hybrid"
+        assert result["ranker_strategy"] == "rrf"
+        assert result["ranker_k"] == 60
+        assert result["ranker_alpha"] == 0
+
+    def test_get_retrieval_params_defaults_to_none_when_not_present(self):
+        """Test get_retrieval_params defaults hybrid params to None when not present."""
+        rag_params = {
+            "retrieval_method": "simple",
+            "window_size": 0,
+            "number_of_chunks": 5,
+        }
+
+        result = get_retrieval_params(rag_params)
+
+        assert result["search_mode"] is None
+        assert result["ranker_strategy"] is None
+        assert result["ranker_k"] is None
+        assert result["ranker_alpha"] is None
+
+    def test_get_retrieval_params_with_keyword_mode(self):
+        """Test get_retrieval_params with keyword search mode."""
+        rag_params = {
+            "retrieval_method": "simple",
+            "window_size": 0,
+            "number_of_chunks": 5,
+            "search_mode": "keyword",
+        }
+
+        result = get_retrieval_params(rag_params)
+
+        assert result["search_mode"] == "keyword"
+        assert result["ranker_strategy"] is None
+
+    def test_get_retrieval_params_with_weighted_ranker(self):
+        """Test get_retrieval_params with weighted ranker and alpha."""
+        rag_params = {
+            "retrieval_method": "simple",
+            "window_size": 0,
+            "number_of_chunks": 5,
+            "search_mode": "hybrid",
+            "ranker_strategy": "weighted",
+            "ranker_k": 60,
+            "ranker_alpha": 0.7,
+        }
+
+        result = get_retrieval_params(rag_params)
+
+        assert result["ranker_strategy"] == "weighted"
+        assert result["ranker_alpha"] == 0.7
+
+    def test_get_retrieval_params_still_validates_required_fields(self):
+        """Test that missing required fields still raise error even with hybrid params."""
+        rag_params = {
+            "search_mode": "hybrid",
+            "ranker_strategy": "rrf",
+            "ranker_k": 60,
+        }
+
+        with pytest.raises(RAGExperimentError) as exc_info:
+            get_retrieval_params(rag_params)
+
+        assert "Missing or invalid values" in str(exc_info.value)
+
+
 class TestRAGExperimentError:
     """Test suite for RAGExperimentError exception."""
 

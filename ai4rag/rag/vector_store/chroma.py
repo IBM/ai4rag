@@ -297,6 +297,10 @@ class ChromaVectorStore(BaseVectorStore):
         list[Document] | list[tuple[Document, float]]
             Found documents with or without scores.
         """
+        # Remove hybrid search kwargs not supported by ChromaDB
+        for _hybrid_kwarg in ("search_mode", "ranker_strategy", "ranker_k", "ranker_alpha"):
+            kwargs.pop(_hybrid_kwarg, None)
+
         if include_scores:
             result = self._vector_store.similarity_search_with_score(query, k=k, **kwargs)
         else:

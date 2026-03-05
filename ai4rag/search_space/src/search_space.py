@@ -10,7 +10,7 @@ from ai4rag.search_space.src.default_search_space import (
 )
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
-from ai4rag.utils.constants import AI4RAGParamNames
+from ai4rag.utils.constants import AI4RAGParamNames, RetrievalConstraints
 
 __all__ = ["SearchSpace", "AI4RAGSearchSpace"]
 
@@ -98,6 +98,76 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     estimated_tokens = chunk_size / chars_per_token
 
     return estimated_tokens <= context_length
+
+
+def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
+    """Ranker parameters must only be set when search_mode is 'hybrid'.
+
+    When search_mode is 'vector', all ranker params must be sentinels
+    (empty string for strategy, 0 for numeric params).
+    When search_mode is 'hybrid', ranker_strategy must be a non-empty string.
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether combination passes selected criterion.
+    """
+    search_mode = combination.get(AI4RAGParamNames.SEARCH_MODE)
+    ranker_strategy = combination.get(AI4RAGParamNames.RANKER_STRATEGY)
+    ranker_k = combination.get(AI4RAGParamNames.RANKER_K)
+    ranker_alpha = combination.get(AI4RAGParamNames.RANKER_ALPHA)
+
+    if search_mode == "vector":
+        if ranker_strategy and ranker_strategy != "":
+            return False
+        if ranker_k and ranker_k != 0:
+            return False
+        if ranker_alpha and ranker_alpha != 0:
+            return False
+        return True
+
+    if search_mode == "hybrid":
+        if ranker_strategy not in RetrievalConstraints.RANKER_STRATEGIES:
+            return False
+        return True
+
+    return True
+
+
+def _rule_ranker_alpha_for_weighted_only(combination: dict) -> bool:
+    """ranker_alpha is only applicable when ranker_strategy is 'weighted'.
+
+    For non-weighted strategies, ranker_alpha must be 0 (sentinel).
+    For weighted strategy, ranker_alpha must be > 0.
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether combination passes selected criterion.
+    """
+    ranker_strategy = combination.get(AI4RAGParamNames.RANKER_STRATEGY)
+    ranker_alpha = combination.get(AI4RAGParamNames.RANKER_ALPHA)
+
+    if ranker_strategy is None or ranker_alpha is None:
+        return True
+
+    if ranker_strategy != "weighted" and ranker_alpha != 0:
+        return False
+
+    if ranker_strategy == "weighted" and ranker_alpha == 0:
+        return False
+
+    return True
 
 
 class SearchSpace:
@@ -229,6 +299,8 @@ class AI4RAGSearchSpace(SearchSpace):
         _rule_chunk_size_bigger_than_chunk_overlap,
         _rule_adjust_window_to_retrieval_method,
         _rule_chunk_size_within_embedding_context_length,
+        _rule_search_mode_ranker_consistency,
+        _rule_ranker_alpha_for_weighted_only,
     )
 
     def __init__(self, params: list[Parameter] | None = None, rules: list[RuleFunction] | None = None):

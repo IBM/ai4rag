@@ -12,6 +12,8 @@ from ai4rag.search_space.src.search_space import (
     _rule_adjust_window_to_retrieval_method,
     _rule_chunk_size_bigger_than_chunk_overlap,
     _rule_chunk_size_within_embedding_context_length,
+    _rule_ranker_alpha_for_weighted_only,
+    _rule_search_mode_ranker_consistency,
 )
 
 
@@ -119,6 +121,62 @@ def test_rule_chunk_size_within_embedding_context_length_missing_fields():
     """Rule returns True when chunk_size, chunk_overlap or embedding_model are missing."""
     assert _rule_chunk_size_within_embedding_context_length({"chunk_size": 512}) is True
     assert _rule_chunk_size_within_embedding_context_length({}) is True
+
+
+@pytest.mark.parametrize(
+    "combination, expected_value",
+    (
+        # vector mode: all ranker params must be sentinels
+        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 0}, True),
+        # vector mode: ranker_strategy set -> False
+        ({"search_mode": "vector", "ranker_strategy": "rrf", "ranker_k": 0, "ranker_alpha": 0}, False),
+        # vector mode: ranker_k set -> False
+        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 60, "ranker_alpha": 0}, False),
+        # hybrid mode: ranker_strategy must be non-empty
+        ({"search_mode": "hybrid", "ranker_strategy": "rrf", "ranker_k": 60, "ranker_alpha": 0}, True),
+        ({"search_mode": "hybrid", "ranker_strategy": "weighted", "ranker_k": 60, "ranker_alpha": 0.5}, True),
+        ({"search_mode": "hybrid", "ranker_strategy": "normalized", "ranker_k": 0, "ranker_alpha": 0}, True),
+        # hybrid mode: empty ranker_strategy -> False
+        ({"search_mode": "hybrid", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 0}, False),
+    ),
+)
+def test_rule_search_mode_ranker_consistency(combination, expected_value):
+    val = _rule_search_mode_ranker_consistency(combination)
+    assert val == expected_value
+
+
+def test_rule_search_mode_ranker_consistency_missing_search_mode():
+    """Rule returns True when search_mode is not present (backward compat)."""
+    assert _rule_search_mode_ranker_consistency({"ranker_strategy": "rrf"}) is True
+
+
+@pytest.mark.parametrize(
+    "combination, expected_value",
+    (
+        # non-weighted strategy: alpha must be 0
+        ({"ranker_strategy": "rrf", "ranker_alpha": 0}, True),
+        ({"ranker_strategy": "normalized", "ranker_alpha": 0}, True),
+        # non-weighted strategy: alpha != 0 -> False
+        ({"ranker_strategy": "rrf", "ranker_alpha": 0.5}, False),
+        # weighted strategy: alpha must be > 0
+        ({"ranker_strategy": "weighted", "ranker_alpha": 0.5}, True),
+        ({"ranker_strategy": "weighted", "ranker_alpha": 0.7}, True),
+        # weighted strategy: alpha == 0 -> False
+        ({"ranker_strategy": "weighted", "ranker_alpha": 0}, False),
+        # empty strategy (sentinel): alpha must be 0
+        ({"ranker_strategy": "", "ranker_alpha": 0}, True),
+        ({"ranker_strategy": "", "ranker_alpha": 0.5}, False),
+    ),
+)
+def test_rule_ranker_alpha_for_weighted_only(combination, expected_value):
+    val = _rule_ranker_alpha_for_weighted_only(combination)
+    assert val == expected_value
+
+
+def test_rule_ranker_alpha_for_weighted_only_missing_fields():
+    """Rule returns True when fields are missing."""
+    assert _rule_ranker_alpha_for_weighted_only({}) is True
+    assert _rule_ranker_alpha_for_weighted_only({"ranker_strategy": "rrf"}) is True
 
 
 class TestSearchSpace:

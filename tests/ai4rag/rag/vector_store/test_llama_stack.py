@@ -251,6 +251,159 @@ class TestLSVectorStoreSearch:
             assert score == 0.9 - i * 0.1
 
 
+class TestLSVectorStoreHybridSearch:
+    """Test suite for LSVectorStore hybrid search functionality."""
+
+    @pytest.fixture
+    def mock_embedding_model(self):
+        """Create a mock embedding model."""
+        return MockLSEmbeddingModel()
+
+    @pytest.fixture
+    def mock_llama_stack_client(self):
+        """Create a mock LlamaStackClient with search results."""
+        mock_client = MagicMock()
+        mock_vs = MagicMock()
+        mock_vs.id = "test-vs-id"
+        mock_client.vector_stores.create.return_value = mock_vs
+
+        mock_chunk = MagicMock()
+        mock_chunk.content = "Test content"
+        mock_chunk.chunk_metadata.to_dict.return_value = {"doc_id": "doc1"}
+
+        mock_response = MagicMock()
+        mock_response.chunks = [mock_chunk]
+        mock_response.scores = [0.95]
+
+        mock_client.vector_io.query.return_value = mock_response
+        return mock_client
+
+    def test_search_default_vector_mode(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that search defaults to vector mode."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search("test query", k=5)
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        assert call_kwargs["params"]["mode"] == "vector"
+        assert "ranker" not in call_kwargs["params"]
+
+    def test_search_with_keyword_mode(self, mock_embedding_model, mock_llama_stack_client):
+        """Test search with keyword mode."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search("test query", k=5, search_mode="keyword")
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        assert call_kwargs["params"]["mode"] == "keyword"
+        assert "ranker" not in call_kwargs["params"]
+
+    def test_search_with_hybrid_mode_rrf(self, mock_embedding_model, mock_llama_stack_client):
+        """Test search with hybrid mode and RRF ranker."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60)
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        params = call_kwargs["params"]
+        assert params["mode"] == "hybrid"
+        assert params["ranker"]["strategy"] == "rrf"
+        assert params["ranker"]["params"]["k"] == 60
+
+    def test_search_with_hybrid_mode_weighted(self, mock_embedding_model, mock_llama_stack_client):
+        """Test search with hybrid mode and weighted ranker including alpha."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search(
+            "test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_k=60, ranker_alpha=0.7
+        )
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        params = call_kwargs["params"]
+        assert params["mode"] == "hybrid"
+        assert params["ranker"]["strategy"] == "weighted"
+        assert params["ranker"]["params"]["k"] == 60
+        assert params["ranker"]["params"]["alpha"] == 0.7
+
+    def test_search_with_hybrid_mode_normalized(self, mock_embedding_model, mock_llama_stack_client):
+        """Test search with hybrid mode and normalized ranker."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="normalized")
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        params = call_kwargs["params"]
+        assert params["mode"] == "hybrid"
+        assert params["ranker"]["strategy"] == "normalized"
+        assert params["ranker"]["params"] == {}
+
+    def test_search_hybrid_no_ranker_when_empty_strategy(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that no ranker dict is built when strategy is empty even in hybrid mode."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="")
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        assert "ranker" not in call_kwargs["params"]
+
+    def test_search_hybrid_alpha_not_set_for_rrf(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that alpha is not included in ranker params for non-weighted strategies."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        vector_store.search(
+            "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=0.5
+        )
+
+        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        ranker_params = call_kwargs["params"]["ranker"]["params"]
+        assert "alpha" not in ranker_params
+
+    def test_search_hybrid_with_scores(self, mock_embedding_model, mock_llama_stack_client):
+        """Test hybrid search with include_scores=True."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        result = vector_store.search(
+            "test query", k=5, include_scores=True, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60
+        )
+
+        assert isinstance(result, list)
+        assert len(result) == 1
+        assert isinstance(result[0], tuple)
+        assert result[0][1] == 0.95
+
+
 class TestLSVectorStoreAddDocuments:
     """Test suite for LSVectorStore.add_documents method."""
 

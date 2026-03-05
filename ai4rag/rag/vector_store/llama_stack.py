@@ -82,10 +82,19 @@ class LSVectorStore(BaseVectorStore):
     def collection_name(self) -> str:
         return self._collection_name
 
-    def search(self, query: str, k: int, include_scores: bool = False) -> list[Document] | list[tuple[Document, float]]:
+    def search(
+        self,
+        query: str,
+        k: int,
+        include_scores: bool = False,
+        search_mode: str = "vector",
+        ranker_strategy: str | None = None,
+        ranker_k: int | None = None,
+        ranker_alpha: float | None = None,
+        **kwargs,
+    ) -> list[Document] | list[tuple[Document, float]]:
         """
         Search for the chunks relevant to the query.
-        The method used will be simple similarity search.
 
         Parameters
         ----------
@@ -98,6 +107,19 @@ class LSVectorStore(BaseVectorStore):
         include_scores : bool, default=False
             If True, similarity scores will be returned in the response
 
+        search_mode : str, default="vector"
+            Search mode: "vector", "keyword", or "hybrid".
+
+        ranker_strategy : str | None, default=None
+            Ranking strategy for hybrid search: "rrf", "weighted", or "normalized".
+            Empty string means no ranker (used for non-hybrid modes).
+
+        ranker_k : int | None, default=None
+            Parameter k for the ranking function. 0 means not set.
+
+        ranker_alpha : float, default=None
+            Alpha parameter for weighted ranking strategy. 0 means not set.
+
         Returns
         -------
         list[Document] | list[tuple[Document, float]]
@@ -105,15 +127,17 @@ class LSVectorStore(BaseVectorStore):
         """
         params = {
             "max_chunks": k,
-            "mode": "vector",  # keyword and hybrid supported as well
-            # "ranker": {
-            #     "strategy": "rrf",  # also weighted and normalized
-            #     "params": {
-            #         "k": 60,
-            #         "weights": [0.5, 0.5]
-            #     }
-            # }
+            "mode": search_mode,
         }
+
+        if search_mode == "hybrid" and ranker_strategy:
+            ranker = {"strategy": ranker_strategy, "params": {}}
+            if ranker_k is not None and ranker_k > 0:
+                ranker["params"]["k"] = ranker_k
+            if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha > 0:
+                ranker["params"]["alpha"] = ranker_alpha
+            params["ranker"] = ranker
+
         resp = self.client.vector_io.query(query=query, vector_store_id=self._ls_vs.id, params=params)
 
         if include_scores:

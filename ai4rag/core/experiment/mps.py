@@ -114,7 +114,7 @@ class ModelsPreSelector:
         self.evaluator: BaseEvaluator = kwargs.get("evaluator", UnitxtEvaluator())
         self.retrieval_params = {
             "number_of_chunks": kwargs.get(AI4RAGParamNames.NUMBER_OF_CHUNKS, 3),
-            "method": kwargs.get(AI4RAGParamNames.RETRIEVAL_METHOD, "simple"),
+            "search_mode": kwargs.get(AI4RAGParamNames.RETRIEVAL_METHOD, "vector"),
         }
         self.chunking_params = {
             "chunk_size": kwargs.get(AI4RAGParamNames.CHUNK_SIZE, 512),

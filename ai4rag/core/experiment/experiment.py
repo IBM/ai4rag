@@ -386,12 +386,23 @@ class AI4RAGExperiment:
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
+        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE) or "vector"
+        if search_mode != "vector" and self.vector_store_type == "chroma":
+            raise RAGExperimentError(
+                f"Search mode '{search_mode}' is not supported with chroma vector store. "
+                "Only 'vector' mode is supported for chroma."
+            )
+
         logger.info("Using retriever with parameters: %s", retrieval_params)
 
         retriever = Retriever(
             vector_store=vector_store,
             method=retrieval_method,
             number_of_chunks=number_of_chunks,
+            search_mode=search_mode,
+            ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
+            ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
+            ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
         )
 
         rag_pattern = LlamaStackRAG(
@@ -553,10 +564,20 @@ class AI4RAGExperiment:
         retrieval_payload = {
             "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
             "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
+            "search_mode": evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.SEARCH_MODE, "vector"),
         }
 
         if evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]:
             retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
+
+        if retrieval_payload["search_mode"] == "hybrid":
+            retrieval_payload["ranker_strategy"] = evaluation_result.rag_params["retrieval"].get(
+                AI4RAGParamNames.RANKER_STRATEGY
+            )
+            retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
+            retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
+                AI4RAGParamNames.RANKER_ALPHA
+            )
 
         vector_store_payload = {
             "datasource_type": self.vector_store_type,
