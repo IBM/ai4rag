@@ -264,8 +264,15 @@ class TestGetDefaultSearchSpaceParameters:
         assert params_default == params_milvus
 
     def test_common_params_present_for_both_types(self):
-        common_params = {"chunking_method", "chunk_size", "chunk_overlap", "retrieval_method", "window_size",
-                         "number_of_chunks", "search_mode"}
+        common_params = {
+            "chunking_method",
+            "chunk_size",
+            "chunk_overlap",
+            "retrieval_method",
+            "window_size",
+            "number_of_chunks",
+            "search_mode",
+        }
         for vs_type in ("ls_milvus", "chroma"):
             params = get_default_ai4rag_search_space_parameters(vector_store_type=vs_type)
             param_names = {p.name for p in params}
