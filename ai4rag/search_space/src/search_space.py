@@ -80,10 +80,9 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
         Whether the estimated token count fits within the embedding model's context length.
     """
     chunk_size = combination.get(AI4RAGParamNames.CHUNK_SIZE)
-    chunk_overlap = combination.get(AI4RAGParamNames.CHUNK_OVERLAP)
     embedding_model = combination.get(AI4RAGParamNames.EMBEDDING_MODEL)
 
-    if chunk_size is None or chunk_overlap is None or embedding_model is None:
+    if chunk_size is None or embedding_model is None:
         return True
 
     context_length = getattr(getattr(embedding_model, "params", None), "context_length", None)

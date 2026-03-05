@@ -81,7 +81,6 @@ class _MockEmbeddingModelWithDictParams:
         (
             {
                 "chunk_size": 512,
-                "chunk_overlap": 64,
                 "embedding_model": _MockEmbeddingModelWithParams(256),
             },
             True,
@@ -90,7 +89,6 @@ class _MockEmbeddingModelWithDictParams:
         (
             {
                 "chunk_size": 2048,
-                "chunk_overlap": 512,
                 "embedding_model": _MockEmbeddingModelWithParams(256),
             },
             False,
@@ -99,26 +97,7 @@ class _MockEmbeddingModelWithDictParams:
         (
             {
                 "chunk_size": 1024,
-                "chunk_overlap": 0,
                 "embedding_model": _MockEmbeddingModelWithParams(256),
-            },
-            True,
-        ),
-        # Dict-style params: chunk_size=512 → estimated_tokens = 128, context=256 → True
-        (
-            {
-                "chunk_size": 512,
-                "chunk_overlap": 0,
-                "embedding_model": _MockEmbeddingModelWithDictParams(256),
-            },
-            True,
-        ),
-        # Dict-style params: chunk_size=2048 → estimated_tokens = 512, context=256 → False
-        (
-            {
-                "chunk_size": 2048,
-                "chunk_overlap": 512,
-                "embedding_model": _MockEmbeddingModelWithDictParams(256),
             },
             False,
         ),
