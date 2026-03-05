@@ -386,7 +386,7 @@ class AI4RAGExperiment:
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
-        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE) or "vector"
+        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
         if search_mode != "vector" and self.vector_store_type == "chroma":
             raise RAGExperimentError(
                 f"Search mode '{search_mode}' is not supported with chroma vector store. "
