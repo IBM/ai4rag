@@ -268,6 +268,8 @@ class ChromaVectorStore(BaseVectorStore):
         ]
         return window_documents
 
+    _HYBRID_KWARGS = frozenset({"search_mode", "ranker_strategy", "ranker_k", "ranker_alpha"})
+
     def search(
         self,
         query: str,
@@ -297,10 +299,11 @@ class ChromaVectorStore(BaseVectorStore):
         list[Document] | list[tuple[Document, float]]
             Found documents with or without scores.
         """
+        filtered_kwargs = {k_: v for k_, v in kwargs.items() if k_ not in self._HYBRID_KWARGS}
         if include_scores:
-            result = self._vector_store.similarity_search_with_score(query, k=k, **kwargs)
+            result = self._vector_store.similarity_search_with_score(query, k=k, **filtered_kwargs)
         else:
-            result = self._vector_store.similarity_search(query, k=k, **kwargs)
+            result = self._vector_store.similarity_search(query, k=k, **filtered_kwargs)
 
         return result
 

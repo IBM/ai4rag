@@ -179,6 +179,7 @@ nav:
       - Overview: user-guide/overview.md
       - Provider Agnostic: user-guide/provider-agnostic.md
       - Search Space: user-guide/search-space.md
+      - Hybrid Search: user-guide/hybrid-search.md
       - Optimizers: user-guide/optimizers.md
       - Evaluation: user-guide/evaluation.md
       - Event Handlers: user-guide/event-handlers.md

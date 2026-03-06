@@ -173,3 +173,96 @@ class TestPrepareSearchSpaceWithLlamaStack:
 
         with pytest.raises(SearchSpaceValueError, match="Unrecognized client type"):
             prepare_search_space_with_llama_stack(payload, mock_client)
+
+    def test_chroma_vector_store_excludes_hybrid_params(self, mocker):
+        """Test that chroma vector store type excludes hybrid search parameters."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "default-llm"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            return_value=True,
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            return_value=True,
+        )
+
+        result = prepare_search_space_with_llama_stack({}, mock_client, vector_store_type="chroma")
+
+        param_names = [p.name for p in result.params]
+        assert "search_mode" in param_names
+        assert "ranker_strategy" not in param_names
+        assert "ranker_k" not in param_names
+        assert "ranker_alpha" not in param_names
+
+        search_mode_param = result["search_mode"]
+        assert search_mode_param.values == ("vector",)
+
+    def test_ls_milvus_vector_store_includes_hybrid_params(self, mocker):
+        """Test that ls_milvus vector store type includes hybrid search parameters."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "default-llm"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            return_value=True,
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            return_value=True,
+        )
+
+        result = prepare_search_space_with_llama_stack({}, mock_client, vector_store_type="ls_milvus")
+
+        param_names = [p.name for p in result.params]
+        assert "search_mode" in param_names
+        assert "ranker_strategy" in param_names
+        assert "ranker_k" in param_names
+        assert "ranker_alpha" in param_names
+
+    def test_default_vector_store_type_is_ls_milvus(self, mocker):
+        """Test that default vector_store_type is ls_milvus (includes hybrid params)."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "default-llm"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            return_value=True,
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            return_value=True,
+        )
+
+        result = prepare_search_space_with_llama_stack({}, mock_client)
+
+        param_names = [p.name for p in result.params]
+        assert "ranker_strategy" in param_names
