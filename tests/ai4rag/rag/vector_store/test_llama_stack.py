@@ -569,6 +569,7 @@ class TestLSVectorStoreInitializeVectorStore:
         mock_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
         mock_client.vector_stores.create.assert_not_called()
 
+
 class TestLSVectorStoreSearchValidation:
     """Test suite for LSVectorStore._validate_search_params."""
 

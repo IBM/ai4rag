@@ -325,7 +325,6 @@ class AI4RAGExperiment:
                 "Only 'vector' mode is supported for chroma."
             )
 
-
         context_template_text = foundation_model.context_template_text
         system_message_text = foundation_model.system_message_text
         user_message_text = foundation_model.user_message_text

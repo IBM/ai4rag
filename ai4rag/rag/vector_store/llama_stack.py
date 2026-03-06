@@ -94,7 +94,9 @@ class LSVectorStore(BaseVectorStore):
     ) -> None:
         """Validate hybrid search parameter consistency."""
         if search_mode not in LSVectorStore._VALID_SEARCH_MODES:
-            raise ValueError(f"Invalid search_mode '{search_mode}'. Must be one of {LSVectorStore._VALID_SEARCH_MODES}.")
+            raise ValueError(
+                f"Invalid search_mode '{search_mode}'. Must be one of {LSVectorStore._VALID_SEARCH_MODES}."
+            )
 
         has_strategy = ranker_strategy is not None and ranker_strategy != ""
         has_k = ranker_k is not None and ranker_k > 0
@@ -108,8 +110,7 @@ class LSVectorStore(BaseVectorStore):
                 )
             if has_k:
                 raise ValueError(
-                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', "
-                    f"but search_mode='{search_mode}'."
+                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', " f"but search_mode='{search_mode}'."
                 )
             if has_alpha:
                 raise ValueError(
