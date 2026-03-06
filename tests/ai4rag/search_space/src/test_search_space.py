@@ -127,18 +127,20 @@ def test_rule_chunk_size_within_embedding_context_length_missing_fields():
 @pytest.mark.parametrize(
     "combination, expected_value",
     (
-        # vector mode: all ranker params must be sentinels
-        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 0}, True),
+        # vector mode: all ranker params must be sentinels ("", 0, 1)
+        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 1}, True),
         # vector mode: ranker_strategy set -> False
-        ({"search_mode": "vector", "ranker_strategy": "rrf", "ranker_k": 0, "ranker_alpha": 0}, False),
+        ({"search_mode": "vector", "ranker_strategy": "rrf", "ranker_k": 0, "ranker_alpha": 1}, False),
         # vector mode: ranker_k set -> False
-        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 60, "ranker_alpha": 0}, False),
+        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 60, "ranker_alpha": 1}, False),
+        # vector mode: ranker_alpha not sentinel -> False
+        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 0.5}, False),
         # hybrid mode: ranker_strategy must be non-empty
-        ({"search_mode": "hybrid", "ranker_strategy": "rrf", "ranker_k": 60, "ranker_alpha": 0}, True),
+        ({"search_mode": "hybrid", "ranker_strategy": "rrf", "ranker_k": 60, "ranker_alpha": 1}, True),
         ({"search_mode": "hybrid", "ranker_strategy": "weighted", "ranker_k": 60, "ranker_alpha": 0.5}, True),
-        ({"search_mode": "hybrid", "ranker_strategy": "normalized", "ranker_k": 0, "ranker_alpha": 0}, True),
+        ({"search_mode": "hybrid", "ranker_strategy": "normalized", "ranker_k": 0, "ranker_alpha": 1}, True),
         # hybrid mode: empty ranker_strategy -> False
-        ({"search_mode": "hybrid", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 0}, False),
+        ({"search_mode": "hybrid", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 1}, False),
     ),
 )
 def test_rule_search_mode_ranker_consistency(combination, expected_value):
@@ -154,18 +156,20 @@ def test_rule_search_mode_ranker_consistency_missing_search_mode():
 @pytest.mark.parametrize(
     "combination, expected_value",
     (
-        # non-weighted strategy: alpha must be 0
-        ({"ranker_strategy": "rrf", "ranker_alpha": 0}, True),
-        ({"ranker_strategy": "normalized", "ranker_alpha": 0}, True),
-        # non-weighted strategy: alpha != 0 -> False
+        # non-weighted strategy: alpha must be 1 (sentinel)
+        ({"ranker_strategy": "rrf", "ranker_alpha": 1}, True),
+        ({"ranker_strategy": "normalized", "ranker_alpha": 1}, True),
+        # non-weighted strategy: alpha != 1 -> False
         ({"ranker_strategy": "rrf", "ranker_alpha": 0.5}, False),
-        # weighted strategy: alpha must be > 0
+        ({"ranker_strategy": "rrf", "ranker_alpha": 0}, False),
+        # weighted strategy: alpha must not be 1
         ({"ranker_strategy": "weighted", "ranker_alpha": 0.5}, True),
         ({"ranker_strategy": "weighted", "ranker_alpha": 0.7}, True),
-        # weighted strategy: alpha == 0 -> False
-        ({"ranker_strategy": "weighted", "ranker_alpha": 0}, False),
-        # empty strategy (sentinel): alpha must be 0
-        ({"ranker_strategy": "", "ranker_alpha": 0}, True),
+        ({"ranker_strategy": "weighted", "ranker_alpha": 0}, True),
+        # weighted strategy: alpha == 1 -> False
+        ({"ranker_strategy": "weighted", "ranker_alpha": 1}, False),
+        # empty strategy (sentinel): alpha must be 1
+        ({"ranker_strategy": "", "ranker_alpha": 1}, True),
         ({"ranker_strategy": "", "ranker_alpha": 0.5}, False),
     ),
 )
@@ -317,7 +321,7 @@ class TestAI4RAGSearchSpaceVectorStoreType:
             if search_mode == "vector":
                 assert combination["ranker_strategy"] == ""
                 assert combination["ranker_k"] == 0
-                assert combination["ranker_alpha"] == 0
+                assert combination["ranker_alpha"] == 1
             elif search_mode == "hybrid":
                 assert combination["ranker_strategy"] in ("rrf", "weighted", "normalized")
 

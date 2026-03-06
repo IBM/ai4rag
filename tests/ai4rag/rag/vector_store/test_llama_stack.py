@@ -638,13 +638,13 @@ class TestLSVectorStoreSearchValidation:
         """Test that ranker_k=0 sentinel on vector mode does not raise."""
         LSVectorStore._validate_search_params("vector", None, 0, None)
 
-    def test_zero_ranker_alpha_on_vector_mode_is_valid(self):
-        """Test that ranker_alpha=0 sentinel on vector mode does not raise."""
-        LSVectorStore._validate_search_params("vector", None, None, 0)
+    def test_sentinel_ranker_alpha_on_vector_mode_is_valid(self):
+        """Test that ranker_alpha=1 sentinel on vector mode does not raise."""
+        LSVectorStore._validate_search_params("vector", None, None, 1)
 
-    def test_zero_alpha_with_rrf_is_valid(self):
-        """Test that ranker_alpha=0 sentinel with rrf strategy does not raise."""
-        LSVectorStore._validate_search_params("hybrid", "rrf", 60, 0)
+    def test_sentinel_alpha_with_rrf_is_valid(self):
+        """Test that ranker_alpha=1 sentinel with rrf strategy does not raise."""
+        LSVectorStore._validate_search_params("hybrid", "rrf", 60, 1)
 
     # --- valid configurations ---
 
@@ -665,7 +665,7 @@ class TestLSVectorStoreSearchValidation:
         LSVectorStore._validate_search_params("hybrid", "normalized", None, None)
 
     def test_valid_hybrid_weighted_zero_alpha(self):
-        """Test that hybrid mode with weighted strategy and zero alpha sentinel is valid."""
+        """Test that hybrid mode with weighted strategy and alpha=0 (100% sparse) is valid."""
         LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0)
 
 

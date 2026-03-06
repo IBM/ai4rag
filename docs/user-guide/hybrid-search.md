@@ -143,8 +143,8 @@ Weight parameter for the `"weighted"` ranking strategy.
 - **Name**: `AI4RAGParamNames.RANKER_ALPHA`
 - **Type**: Categorical (`"C"`) or Real/Float (`"R"`)
 - **Values**:
-    - `0`: Sentinel value when not applicable
-    - For `"weighted"`: Weight between 0 and 1 (e.g., `0.7` = 70% dense, 30% sparse)
+    - `1`: Sentinel value when not applicable (means vector-only / 100% dense)
+    - For `"weighted"`: Weight between 0 and 1 (e.g., `0.7` = 70% dense, 30% sparse; `0` = 100% sparse)
 
 **Example (Categorical)**:
 
@@ -152,12 +152,12 @@ Weight parameter for the `"weighted"` ranking strategy.
 Parameter(
     name=AI4RAGParamNames.RANKER_ALPHA,
     param_type="C",
-    values=[0, 0.3, 0.5, 0.7]
+    values=[1, 0.3, 0.5, 0.7]
 )
 ```
 
-!!! note "When to use 0"
-    Set `ranker_alpha=0` when `ranker_strategy` is not `"weighted"`.
+!!! note "When to use 1"
+    Set `ranker_alpha=1` when `ranker_strategy` is not `"weighted"`. The value `1` acts as a sentinel meaning "100% dense / vector-only".
 
 ---
 
@@ -191,7 +191,7 @@ Where:
 Parameter(name=AI4RAGParamNames.SEARCH_MODE, param_type="C", values=["hybrid"]),
 Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, param_type="C", values=["rrf"]),
 Parameter(name=AI4RAGParamNames.RANKER_K, param_type="C", values=[30, 60, 100]),
-Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[0]),  # Not used
+Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[1]),  # Not used for RRF
 ```
 
 ---
@@ -244,7 +244,7 @@ Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="R", v_min=0.0, v_max=1
 Parameter(name=AI4RAGParamNames.SEARCH_MODE, param_type="C", values=["hybrid"]),
 Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, param_type="C", values=["normalized"]),
 Parameter(name=AI4RAGParamNames.RANKER_K, param_type="C", values=[0]),  # Depends on implementation
-Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[0]),  # Depends on implementation
+Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[1]),  # Not used for normalized
 ```
 
 ---
@@ -259,7 +259,7 @@ When `search_mode` is `"vector"`, all ranker parameters must be sentinels:
 
 - `ranker_strategy` must be `""`
 - `ranker_k` must be `0`
-- `ranker_alpha` must be `0`
+- `ranker_alpha` must be `1` (meaning 100% dense / vector-only)
 
 !!! example "Valid Configuration"
     ```python
@@ -267,7 +267,7 @@ When `search_mode` is `"vector"`, all ranker parameters must be sentinels:
         "search_mode": "vector",
         "ranker_strategy": "",
         "ranker_k": 0,
-        "ranker_alpha": 0
+        "ranker_alpha": 1
     }
     ```
 
@@ -277,7 +277,7 @@ When `search_mode` is `"vector"`, all ranker parameters must be sentinels:
         "search_mode": "vector",
         "ranker_strategy": "rrf",  # ERROR: ranker_strategy must be "" for vector mode
         "ranker_k": 60,
-        "ranker_alpha": 0
+        "ranker_alpha": 1
     }
     ```
 
@@ -293,7 +293,7 @@ When `search_mode` is `"hybrid"`, `ranker_strategy` must be non-empty.
         "search_mode": "hybrid",
         "ranker_strategy": "rrf",
         "ranker_k": 60,
-        "ranker_alpha": 0
+        "ranker_alpha": 1
     }
     ```
 
@@ -303,7 +303,7 @@ When `search_mode` is `"hybrid"`, `ranker_strategy` must be non-empty.
         "search_mode": "hybrid",
         "ranker_strategy": "",  # ERROR: must specify a ranker strategy
         "ranker_k": 0,
-        "ranker_alpha": 0
+        "ranker_alpha": 1
     }
     ```
 
@@ -313,8 +313,8 @@ When `search_mode` is `"hybrid"`, `ranker_strategy` must be non-empty.
 
 `ranker_alpha` must be:
 
-- `0` when `ranker_strategy` is NOT `"weighted"`
-- Non-zero (> 0) when `ranker_strategy` is `"weighted"`
+- `1` (sentinel) when `ranker_strategy` is NOT `"weighted"`
+- Not `1` when `ranker_strategy` is `"weighted"` (valid range: 0 to <1, where 0 = 100% sparse)
 
 !!! example "Valid Configuration"
     ```python
@@ -332,7 +332,7 @@ When `search_mode` is `"hybrid"`, `ranker_strategy` must be non-empty.
         "search_mode": "hybrid",
         "ranker_strategy": "rrf",
         "ranker_k": 60,
-        "ranker_alpha": 0.5  # ERROR: ranker_alpha must be 0 for non-weighted strategies
+        "ranker_alpha": 0.5  # ERROR: ranker_alpha must be 1 for non-weighted strategies
     }
     ```
 
@@ -380,7 +380,7 @@ search_space = AI4RAGSearchSpace(
         Parameter(name=AI4RAGParamNames.SEARCH_MODE, param_type="C", values=["hybrid"]),
         Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, param_type="C", values=["rrf"]),
         Parameter(name=AI4RAGParamNames.RANKER_K, param_type="C", values=[30, 60, 100]),
-        Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[0]),
+        Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[1]),
     ]
 )
 ```
@@ -404,8 +404,8 @@ search_space = AI4RAGSearchSpace(
         Parameter(name=AI4RAGParamNames.SEARCH_MODE, param_type="C", values=["hybrid"]),
         Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, param_type="C", values=["weighted"]),
         Parameter(name=AI4RAGParamNames.RANKER_K, param_type="C", values=[0]),  # Not used
-        # Explore different weightings
-        Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[0.3, 0.5, 0.7, 0.9]),
+        # Explore different weightings (0 = 100% sparse, 0.5 = balanced, 0.9 = mostly dense)
+        Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[0, 0.3, 0.5, 0.7, 0.9]),
     ]
 )
 ```
@@ -449,11 +449,11 @@ search_space = AI4RAGSearchSpace(
             param_type="C",
             values=[0, 30, 60]
         ),
-        # Weighted alpha (0 when not weighted)
+        # Weighted alpha (1 = sentinel for non-weighted / vector-only)
         Parameter(
             name=AI4RAGParamNames.RANKER_ALPHA,
             param_type="C",
-            values=[0, 0.5, 0.7]
+            values=[1, 0.5, 0.7]
         ),
     ]
 )
@@ -463,8 +463,8 @@ search_space = AI4RAGSearchSpace(
     `ai4rag`'s built-in validation rules automatically filter invalid combinations:
 
     - When `search_mode="vector"`, only combinations with sentinel ranker params are kept
-    - When `search_mode="hybrid"` and `ranker_strategy="rrf"`, only `ranker_alpha=0` is valid
-    - When `search_mode="hybrid"` and `ranker_strategy="weighted"`, only non-zero `ranker_alpha` is valid
+    - When `search_mode="hybrid"` and `ranker_strategy="rrf"`, only `ranker_alpha=1` (sentinel) is valid
+    - When `search_mode="hybrid"` and `ranker_strategy="weighted"`, `ranker_alpha` must not be `1`
 
 ---
 
@@ -552,10 +552,10 @@ experiment = AI4RAGExperiment(
 
 **Solution**: Check that:
 
-- When `search_mode="vector"`: all ranker params are sentinels (`""`, `0`)
+- When `search_mode="vector"`: all ranker params are sentinels (`""`, `0`, `1` for alpha)
 - When `search_mode="hybrid"`: `ranker_strategy` is non-empty
-- When `ranker_strategy="weighted"`: `ranker_alpha > 0`
-- When `ranker_strategy` is NOT `"weighted"`: `ranker_alpha = 0`
+- When `ranker_strategy="weighted"`: `ranker_alpha` is not `1`
+- When `ranker_strategy` is NOT `"weighted"`: `ranker_alpha = 1`
 
 ---
 

@@ -467,7 +467,7 @@ class TestGetRetrievalParamsHybridSearch:
             "search_mode": "hybrid",
             "ranker_strategy": "rrf",
             "ranker_k": 60,
-            "ranker_alpha": 0,
+            "ranker_alpha": 1,
         }
 
         result = get_retrieval_params(rag_params)
@@ -475,7 +475,7 @@ class TestGetRetrievalParamsHybridSearch:
         assert result["search_mode"] == "hybrid"
         assert result["ranker_strategy"] == "rrf"
         assert result["ranker_k"] == 60
-        assert result["ranker_alpha"] == 0
+        assert result["ranker_alpha"] == 1
 
     def test_get_retrieval_params_defaults_to_none_when_not_present(self):
         """Test get_retrieval_params defaults hybrid params to None when not present."""

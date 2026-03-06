@@ -98,7 +98,7 @@ class LSVectorStore(BaseVectorStore):
 
         has_strategy = ranker_strategy is not None and ranker_strategy != ""
         has_k = ranker_k is not None and ranker_k > 0
-        has_alpha = ranker_alpha is not None and ranker_alpha > 0
+        has_alpha = ranker_alpha is not None and ranker_alpha != 1
 
         if search_mode != "hybrid":
             if has_strategy:
@@ -166,7 +166,7 @@ class LSVectorStore(BaseVectorStore):
             Parameter k for the ranking function. 0 means not set.
 
         ranker_alpha : float, default=None
-            Alpha parameter for weighted ranking strategy. 0 means not set.
+            Alpha parameter for weighted ranking strategy. 1 means not set (vector-only sentinel).
 
         Returns
         -------
@@ -183,7 +183,7 @@ class LSVectorStore(BaseVectorStore):
             ranker = {"strategy": ranker_strategy, "params": {}}
             if ranker_k is not None and ranker_k > 0:
                 ranker["params"]["k"] = ranker_k
-            if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha > 0:
+            if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
                 ranker["params"]["alpha"] = ranker_alpha
             params["ranker"] = ranker
 

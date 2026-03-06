@@ -104,7 +104,7 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     """Ranker parameters must only be set when search_mode is 'hybrid'.
 
     When search_mode is 'vector', all ranker params must be sentinels
-    (empty string for strategy, 0 for numeric params).
+    (empty string for strategy, 0 for ranker_k, 1 for ranker_alpha).
     When search_mode is 'hybrid', ranker_strategy must be a non-empty string.
 
     Parameters
@@ -127,7 +127,7 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
             return False
         if ranker_k:
             return False
-        if ranker_alpha:
+        if ranker_alpha != 1:
             return False
         return True
 
@@ -142,8 +142,8 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
 def _rule_ranker_alpha_for_weighted_only(combination: dict) -> bool:
     """ranker_alpha is only applicable when ranker_strategy is 'weighted'.
 
-    For non-weighted strategies, ranker_alpha must be 0 (sentinel).
-    For weighted strategy, ranker_alpha must be > 0.
+    For non-weighted strategies, ranker_alpha must be 1 (sentinel meaning vector-only).
+    For weighted strategy, ranker_alpha must not be 1.
 
     Parameters
     ----------
@@ -161,10 +161,10 @@ def _rule_ranker_alpha_for_weighted_only(combination: dict) -> bool:
     if ranker_strategy is None or ranker_alpha is None:
         return True
 
-    if ranker_strategy != "weighted" and ranker_alpha != 0:
+    if ranker_strategy != "weighted" and ranker_alpha != 1:
         return False
 
-    if ranker_strategy == "weighted" and ranker_alpha == 0:
+    if ranker_strategy == "weighted" and ranker_alpha == 1:
         return False
 
     return True
