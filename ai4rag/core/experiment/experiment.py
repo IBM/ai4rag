@@ -315,6 +315,17 @@ class AI4RAGExperiment:
 
         logger.info("Using indexing params: %s", indexing_params)
 
+        retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
+        number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
+
+        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
+        if search_mode != "vector" and self.vector_store_type == "chroma":
+            raise RAGExperimentError(
+                f"Search mode '{search_mode}' is not supported with chroma vector store. "
+                "Only 'vector' mode is supported for chroma."
+            )
+
+
         context_template_text = foundation_model.context_template_text
         system_message_text = foundation_model.system_message_text
         user_message_text = foundation_model.user_message_text
@@ -385,16 +396,6 @@ class AI4RAGExperiment:
                 level=LogLevel.INFO,
                 message=f"Using index {collection_name}.",
                 step=ExperimentStep.EMBEDDING,
-            )
-
-        retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
-        number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
-
-        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
-        if search_mode != "vector" and self.vector_store_type == "chroma":
-            raise RAGExperimentError(
-                f"Search mode '{search_mode}' is not supported with chroma vector store. "
-                "Only 'vector' mode is supported for chroma."
             )
 
         logger.info("Using retriever with parameters: %s", retrieval_params)

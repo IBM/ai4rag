@@ -23,7 +23,7 @@ class Retriever:
     number_of_chunks : int
         Number of chunks to retrieve.
 
-    search_mode : str, default="vector"
+    search_mode : Literal["vector", "hybrid"], default="vector"
         Search mode passed to the vector store: "vector" or "hybrid".
 
     ranker_strategy : str | None, default=None
@@ -41,7 +41,7 @@ class Retriever:
         vector_store: BaseVectorStore,
         number_of_chunks: int,
         method: Literal["simple"] = "simple",
-        search_mode: str = "vector",
+        search_mode: Literal["vector", "hybrid"] = "vector",
         ranker_strategy: str | None = None,
         ranker_k: int | None = None,
         ranker_alpha: float | None = None,
@@ -68,6 +68,12 @@ class Retriever:
             list of documents with their metadata corresponding to the query.
         """
         _number_of_chunks = kwargs.get("number_of_chunks", self.number_of_chunks)
+
+        if self.search_mode == "vector":
+            return self._vector_store.search(
+                query,
+                k=_number_of_chunks,
+            )
 
         return self._vector_store.search(
             query,

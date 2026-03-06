@@ -343,34 +343,29 @@ class TestLSVectorStoreHybridSearch:
         assert params["ranker"]["strategy"] == "normalized"
         assert params["ranker"]["params"] == {}
 
-    def test_search_hybrid_no_ranker_when_empty_strategy(self, mock_embedding_model, mock_llama_stack_client):
-        """Test that no ranker dict is built when strategy is empty even in hybrid mode."""
+    def test_search_hybrid_empty_strategy_raises(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that empty ranker_strategy with hybrid mode raises ValueError."""
         vector_store = LSVectorStore(
             embedding_model=mock_embedding_model,
             client=mock_llama_stack_client,
             provider_id="milvus",
         )
 
-        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="")
+        with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
+            vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="")
 
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
-        assert "ranker" not in call_kwargs["params"]
-
-    def test_search_hybrid_alpha_not_set_for_rrf(self, mock_embedding_model, mock_llama_stack_client):
-        """Test that alpha is not included in ranker params for non-weighted strategies."""
+    def test_search_hybrid_alpha_with_rrf_raises(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that non-zero ranker_alpha with a non-weighted strategy raises ValueError."""
         vector_store = LSVectorStore(
             embedding_model=mock_embedding_model,
             client=mock_llama_stack_client,
             provider_id="milvus",
         )
 
-        vector_store.search(
-            "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=0.5
-        )
-
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
-        ranker_params = call_kwargs["params"]["ranker"]["params"]
-        assert "alpha" not in ranker_params
+        with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when ranker_strategy='weighted'"):
+            vector_store.search(
+                "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=0.5
+            )
 
     def test_search_hybrid_with_scores(self, mock_embedding_model, mock_llama_stack_client):
         """Test hybrid search with include_scores=True."""
@@ -573,6 +568,109 @@ class TestLSVectorStoreInitializeVectorStore:
         assert result == mock_vs
         mock_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
         mock_client.vector_stores.create.assert_not_called()
+
+class TestLSVectorStoreSearchValidation:
+    """Test suite for LSVectorStore._validate_search_params."""
+
+    # --- invalid search_mode ---
+
+    def test_invalid_search_mode_raises(self):
+        """Test that an unrecognised search_mode raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid search_mode 'keyword'"):
+            LSVectorStore._validate_search_params("keyword", None, None, None)
+
+    def test_unknown_search_mode_raises(self):
+        """Test that a completely unknown search_mode raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid search_mode 'foobar'"):
+            LSVectorStore._validate_search_params("foobar", None, None, None)
+
+    # --- ranker params leaked into non-hybrid mode ---
+
+    def test_ranker_strategy_on_vector_mode_raises(self):
+        """Test that a non-empty ranker_strategy with vector mode raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_strategy='rrf' is only valid when search_mode='hybrid'"):
+            LSVectorStore._validate_search_params("vector", "rrf", None, None)
+
+    def test_ranker_k_on_vector_mode_raises(self):
+        """Test that a positive ranker_k with vector mode raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_k=60 is only valid when search_mode='hybrid'"):
+            LSVectorStore._validate_search_params("vector", None, 60, None)
+
+    def test_ranker_alpha_on_vector_mode_raises(self):
+        """Test that a positive ranker_alpha with vector mode raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when search_mode='hybrid'"):
+            LSVectorStore._validate_search_params("vector", None, None, 0.5)
+
+    # --- hybrid mode missing ranker_strategy ---
+
+    def test_hybrid_mode_none_strategy_raises(self):
+        """Test that hybrid mode with ranker_strategy=None raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
+            LSVectorStore._validate_search_params("hybrid", None, None, None)
+
+    def test_hybrid_mode_empty_strategy_raises(self):
+        """Test that hybrid mode with ranker_strategy='' raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
+            LSVectorStore._validate_search_params("hybrid", "", None, None)
+
+    # --- invalid ranker_strategy value ---
+
+    def test_invalid_ranker_strategy_raises(self):
+        """Test that an unrecognised ranker_strategy raises ValueError."""
+        with pytest.raises(ValueError, match="Invalid ranker_strategy='bogus'"):
+            LSVectorStore._validate_search_params("hybrid", "bogus", None, None)
+
+    # --- ranker_alpha used with non-weighted strategy ---
+
+    def test_alpha_with_rrf_strategy_raises(self):
+        """Test that ranker_alpha > 0 with rrf strategy raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_alpha=0.7 is only valid when ranker_strategy='weighted'"):
+            LSVectorStore._validate_search_params("hybrid", "rrf", 60, 0.7)
+
+    def test_alpha_with_normalized_strategy_raises(self):
+        """Test that ranker_alpha > 0 with normalized strategy raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_alpha=0.3 is only valid when ranker_strategy='weighted'"):
+            LSVectorStore._validate_search_params("hybrid", "normalized", None, 0.3)
+
+    # --- sentinel values must not trigger errors ---
+
+    def test_zero_ranker_k_on_vector_mode_is_valid(self):
+        """Test that ranker_k=0 sentinel on vector mode does not raise."""
+        LSVectorStore._validate_search_params("vector", None, 0, None)
+
+    def test_zero_ranker_alpha_on_vector_mode_is_valid(self):
+        """Test that ranker_alpha=0 sentinel on vector mode does not raise."""
+        LSVectorStore._validate_search_params("vector", None, None, 0)
+
+    def test_zero_alpha_with_rrf_is_valid(self):
+        """Test that ranker_alpha=0 sentinel with rrf strategy does not raise."""
+        LSVectorStore._validate_search_params("hybrid", "rrf", 60, 0)
+
+    # --- valid configurations ---
+
+    def test_valid_vector_mode_no_ranker(self):
+        """Test that vector mode with no ranker params is valid."""
+        LSVectorStore._validate_search_params("vector", None, None, None)
+
+    def test_valid_hybrid_rrf(self):
+        """Test that hybrid mode with rrf strategy and ranker_k is valid."""
+        LSVectorStore._validate_search_params("hybrid", "rrf", 60, None)
+
+    def test_valid_hybrid_weighted_with_alpha(self):
+        """Test that hybrid mode with weighted strategy and alpha is valid."""
+        LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0.7)
+
+    def test_valid_hybrid_normalized(self):
+        """Test that hybrid mode with normalized strategy is valid."""
+        LSVectorStore._validate_search_params("hybrid", "normalized", None, None)
+
+    def test_valid_hybrid_weighted_zero_alpha(self):
+        """Test that hybrid mode with weighted strategy and zero alpha sentinel is valid."""
+        LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0)
+
+
+class TestLSVectorStoreInitializeVectorStore:
+    """Test suite for LSVectorStore._initialize_ls_vector_store static method."""
 
     def test_initialize_includes_embedding_params(self):
         """Test that initialization includes embedding parameters."""

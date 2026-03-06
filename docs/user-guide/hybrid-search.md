@@ -1,6 +1,7 @@
 # Hybrid Search
 
-Hybrid search combines dense vector search with sparse keyword-based search to improve retrieval quality in RAG systems. This feature is available in ai4rag when using Milvus as your vector store.
+Hybrid search combines dense vector search with sparse keyword-based search to improve retrieval quality in RAG systems.
+This feature is available in `ai4rag` when using Milvus as your vector store.
 
 ## What is Hybrid Search?
 
@@ -130,17 +131,6 @@ Parameter(
 )
 ```
 
-**Example (Integer)**:
-
-```python
-Parameter(
-    name=AI4RAGParamNames.RANKER_K,
-    param_type="I",
-    v_min=30,
-    v_max=100
-)
-```
-
 !!! note "When to use 0"
     Set `ranker_k=0` when `search_mode` is `"vector"` or when the ranker strategy doesn't use this parameter.
 
@@ -261,7 +251,7 @@ Parameter(name=AI4RAGParamNames.RANKER_ALPHA, param_type="C", values=[0]),  # De
 
 ## Validation Rules
 
-ai4rag automatically validates hybrid search configurations with built-in rules:
+`ai4rag` automatically validates hybrid search configurations with built-in rules:
 
 ### Rule 1: Non-Hybrid Modes Must Use Sentinel Values
 
@@ -470,7 +460,7 @@ search_space = AI4RAGSearchSpace(
 ```
 
 !!! note "Validation"
-    ai4rag's built-in validation rules automatically filter invalid combinations:
+    `ai4rag`'s built-in validation rules automatically filter invalid combinations:
 
     - When `search_mode="vector"`, only combinations with sentinel ranker params are kept
     - When `search_mode="hybrid"` and `ranker_strategy="rrf"`, only `ranker_alpha=0` is valid
@@ -596,12 +586,12 @@ experiment = AI4RAGExperiment(
 
 ## Summary
 
-Hybrid search in ai4rag combines the best of semantic and keyword-based retrieval:
+Hybrid search in `ai4rag` combines the best of semantic and keyword-based retrieval:
 
 - **Use `search_mode="hybrid"`** to enable hybrid search (requires `ls_milvus`)
 - **Choose a ranker strategy**: `"rrf"` (general-purpose), `"weighted"` (fine control), or `"normalized"`
 - **Configure strategy parameters**: `ranker_k` for RRF, `ranker_alpha` for weighted
 - **Let the optimizer explore**: Include both vector and hybrid modes to find the best approach
-- **Validation is automatic**: ai4rag enforces rules to prevent invalid configurations
+- **Validation is automatic**: `ai4rag` enforces rules to prevent invalid configurations
 
 Hybrid search is particularly valuable when your knowledge base contains specialized terminology or when users search for specific terms that pure semantic search might miss.

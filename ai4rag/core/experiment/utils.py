@@ -267,7 +267,7 @@ def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
     Returns
     -------
     RAGRetrievalParamsType
-        retrieval_method, retrieval_window_size, number_of_retrieved_chunks.
+        retrieval_method, retrieval_window_size, number_of_retrieved_chunks, search_mode.
 
     Raises
     ------

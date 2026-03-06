@@ -13,6 +13,9 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 class LSVectorStore(BaseVectorStore):
     """LLamaStack client wrapper used for communication with vector store (single index/collection)."""
 
+    _VALID_SEARCH_MODES = ("vector", "hybrid")
+    _VALID_RANKER_STRATEGIES = ("rrf", "weighted", "normalized")
+
     def __init__(
         self,
         embedding_model: LSEmbeddingModel,
@@ -82,6 +85,51 @@ class LSVectorStore(BaseVectorStore):
     def collection_name(self) -> str:
         return self._collection_name
 
+    @staticmethod
+    def _validate_search_params(
+        search_mode: str,
+        ranker_strategy: str | None,
+        ranker_k: int | None,
+        ranker_alpha: float | None,
+    ) -> None:
+        """Validate hybrid search parameter consistency."""
+        if search_mode not in LSVectorStore._VALID_SEARCH_MODES:
+            raise ValueError(f"Invalid search_mode '{search_mode}'. Must be one of {LSVectorStore._VALID_SEARCH_MODES}.")
+
+        has_strategy = ranker_strategy is not None and ranker_strategy != ""
+        has_k = ranker_k is not None and ranker_k > 0
+        has_alpha = ranker_alpha is not None and ranker_alpha > 0
+
+        if search_mode != "hybrid":
+            if has_strategy:
+                raise ValueError(
+                    f"ranker_strategy='{ranker_strategy}' is only valid when search_mode='hybrid', "
+                    f"but search_mode='{search_mode}'."
+                )
+            if has_k:
+                raise ValueError(
+                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', "
+                    f"but search_mode='{search_mode}'."
+                )
+            if has_alpha:
+                raise ValueError(
+                    f"ranker_alpha={ranker_alpha} is only valid when search_mode='hybrid', "
+                    f"but search_mode='{search_mode}'."
+                )
+        else:
+            if not has_strategy:
+                raise ValueError("ranker_strategy must be set when search_mode='hybrid'.")
+            if ranker_strategy not in LSVectorStore._VALID_RANKER_STRATEGIES:
+                raise ValueError(
+                    f"Invalid ranker_strategy='{ranker_strategy}'. "
+                    f"Must be one of {LSVectorStore._VALID_RANKER_STRATEGIES}."
+                )
+            if has_alpha and ranker_strategy != "weighted":
+                raise ValueError(
+                    f"ranker_alpha={ranker_alpha} is only valid when ranker_strategy='weighted', "
+                    f"but ranker_strategy='{ranker_strategy}'."
+                )
+
     def search(
         self,
         query: str,
@@ -125,6 +173,7 @@ class LSVectorStore(BaseVectorStore):
         list[Document] | list[tuple[Document, float]]
             List of chunks as Document instances with or without scores, depending on the input.
         """
+        self._validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
         params = {
             "max_chunks": k,
             "mode": search_mode,

@@ -59,10 +59,6 @@ class TestRetrieverRetrieve:
         mock_vector_store.search.assert_called_once_with(
             "test query",
             k=5,
-            search_mode="vector",
-            ranker_strategy=None,
-            ranker_k=None,
-            ranker_alpha=None,
         )
 
     def test_retrieve_passes_hybrid_params(self, mock_vector_store):
