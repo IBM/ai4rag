@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
+from dataclasses import asdict, is_dataclass
 from typing import Any, Literal, Sequence
 
 import pandas as pd
@@ -300,12 +301,15 @@ class AI4RAGExperiment:
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
 
         distance_metric = EmbeddingModels.get_distance_metric(embedding_model.model_id)
-
+        embedding_params_dict = (
+            asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
+        )
         indexing_params = {
             "chunking": chunking_params,
             "embedding": {
                 "model_id": embedding_model.model_id,
                 "distance_metric": distance_metric,
+                "embedding_params": embedding_params_dict,
             },
         }
 
