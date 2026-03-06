@@ -69,12 +69,6 @@ class Retriever:
         """
         _number_of_chunks = kwargs.get("number_of_chunks", self.number_of_chunks)
 
-        if self.search_mode == "vector":
-            return self._vector_store.search(
-                query,
-                k=_number_of_chunks,
-            )
-
         return self._vector_store.search(
             query,
             k=_number_of_chunks,
