@@ -51,7 +51,7 @@ def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
 
     if window_size == 0 and retrieval_method == "window":
         return False
-    elif window_size > 0 and retrieval_method == "simple":
+    if window_size > 0 and retrieval_method == "simple":
         return False
 
     return True
@@ -123,11 +123,7 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     ranker_alpha = combination.get(AI4RAGParamNames.RANKER_ALPHA)
 
     if search_mode == "vector":
-        if ranker_strategy:
-            return False
-        if ranker_k:
-            return False
-        if ranker_alpha != 1:
+        if ranker_strategy or ranker_k or ranker_alpha != 1:
             return False
         return True
 
@@ -216,11 +212,13 @@ class SearchSpace:
 
     @property
     def params(self) -> list[Parameter]:
+        """Get params."""
         return self._params
 
     @params.setter
     def params(self, params: list[Parameter]) -> None:
-        if len(params) != len(set([param.name for param in params])):
+        """Set params."""
+        if len(params) != len({param.name for param in params}):
             raise SearchSpaceValueError("Parameters must have unique names.")
 
         self._params = params
@@ -388,6 +386,6 @@ class AI4RAGSearchSpace(SearchSpace):
         default_params = {param.name: param for param in default_search_space_params}
 
         selected_params_dict = default_params | user_params
-        selected_params = [v for v in selected_params_dict.values()]
+        selected_params = list(selected_params_dict.values())
 
         return selected_params

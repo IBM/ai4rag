@@ -4,8 +4,6 @@
 # -----------------------------------------------------------------------------
 from typing import Literal
 
-from langchain_core.documents import Document
-
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 

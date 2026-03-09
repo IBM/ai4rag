@@ -9,17 +9,17 @@ __all__ = [
     "BaseChunker",
 ]
 
-ChunkType = TypeVar("ChunkType")
+ChunkT = TypeVar("ChunkT")
 
 
-class BaseChunker(ABC, Generic[ChunkType]):
+class BaseChunker(ABC, Generic[ChunkT]):
     """
     Responsible for handling splitting document operations
     in the RAG application.
     """
 
     @abstractmethod
-    def split_documents(self, documents: Sequence[ChunkType]) -> list[ChunkType]:
+    def split_documents(self, documents: Sequence[ChunkT]) -> list[ChunkT]:
         """
         Split series of documents into smaller parts based on
         the provided chunker settings.

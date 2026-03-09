@@ -3,14 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from string import Formatter
-from typing import Any, Generic, Literal, Protocol, Self, TypeVar, overload
-
-from ai4rag.search_space.src.model_props import (
-    CONTEXT_TEXT_PLACEHOLDER,
-    QUESTION_PLACEHOLDER,
-    REFERENCE_DOCUMENTS_PLACEHOLDER,
-)
+from typing import Any, Generic, Protocol, Self, TypeVar, overload
 
 T = TypeVar("T")
 CT = TypeVar("CT", bound="Comparable")
@@ -69,6 +62,7 @@ class OneOf(Validator[T]):
     def validate(self, obj, value: T):
         if value not in self.options:
             raise ConstraintsValidationError(
-                f"Expected {value!r} to be one of {self.options!r} for {type(obj).__name__} on attribute {self.private_name[1:]}"
+                f"Expected {value!r} to be one of {self.options!r} for {type(obj).__name__} "
+                f"on attribute {self.private_name[1:]}."
             )
         return value

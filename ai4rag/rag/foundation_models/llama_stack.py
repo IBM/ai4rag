@@ -11,8 +11,12 @@ from pydantic import BaseModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
 
+# pylint: disable=duplicate-code
+
 
 class ModelParameters(BaseModel):
+    """Parameters to use for LSFoundationModel."""
+
     max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
@@ -55,6 +59,8 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | M
         response_chat = self.client.chat.completions.create(
             model=self.model_id,
             messages=messages,
+            max_completion_tokens=self.params.max_completion_tokens,
+            temperature=self.params.temperature,
         )
         response_choices = response_chat.choices
 

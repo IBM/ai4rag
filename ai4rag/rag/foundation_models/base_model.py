@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Generic, Literal, TypedDict, TypeVar
+from typing import Generic, TypedDict, TypeVar
 
 from ai4rag.rag.foundation_models.utils import RAGPromptTemplateString
 from ai4rag.search_space.src.model_props import (
@@ -17,11 +17,14 @@ FoundationModelParamsT = TypeVar("FoundationModelParamsT")
 
 
 class MessageTyped(TypedDict):
+    """Type of the messages used by the client."""
+
     role: str
     content: str
 
 
 class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
+    """Interface definition for the foundation model used for `ai4rag`."""
 
     user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")
     context_template_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="context_template_text")
@@ -65,4 +68,4 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
 
     @abstractmethod
     def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
-        """Docstring here"""
+        """Chat with the model base on the client capabilities."""

@@ -232,4 +232,5 @@ class LSVectorStore(BaseVectorStore):
         )
 
     def clean_collection(self):
+        """Remove content of the collection and remove vector store instance."""
         self.client.vector_stores.delete(self._ls_vs.id)

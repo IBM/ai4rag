@@ -8,6 +8,8 @@ from openai import OpenAI
 
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 
+# pylint: disable=duplicate-code
+
 
 class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | None]):
     """Wrapper for OpenAI client handled foundation models."""

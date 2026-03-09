@@ -84,6 +84,7 @@ class ChromaVectorStore(BaseVectorStore):
 
     @property
     def distance_metric(self) -> str:
+        """Get used distance metric."""
         return self._distance_metric
 
     @distance_metric.setter
@@ -101,9 +102,11 @@ class ChromaVectorStore(BaseVectorStore):
 
     @property
     def collection_name(self) -> str:
+        """Dynamically get collection name."""
         return self._collection_name
 
     def clear(self) -> None:
+        """Clear the vector store."""
         all_docs_ids = self._vector_store.get()["ids"]
         if len(all_docs_ids) > 0:
             self.delete(all_docs_ids)
@@ -145,18 +148,20 @@ class ChromaVectorStore(BaseVectorStore):
                         result.append(Document(page_content=content_str, metadata=metadata))
                     else:
                         logger.warning(
-                            f"Document: {doc} is incorrect. Metadata needs to be given with 'metadata' attribute and it needs to be a serializable dict. Skipping."
+                            "Document: %s is incorrect. Metadata needs to be given with 'metadata' "
+                            "attribute and it needs to be a serializable dict. Skipping.",
+                            doc,
                         )
                         continue
                 else:
-                    logger.warning(f"Document: {doc} is incorrect. Field 'content' is required")
+                    logger.warning("Document: %s is incorrect. Field 'content' is required.", doc)
                     continue
             else:
                 try:
                     result.append(Document(page_content=doc.page_content, metadata=doc.metadata))
                 except AttributeError:
                     logger.warning(
-                        f"Document: {doc} is not a dict, nor string, nor LangChain Document-like object. Skipping."
+                        "Document: %s is not a dict, nor string, nor LangChain Document-like object. Skipping.", doc
                     )
 
         return result
@@ -189,16 +194,15 @@ class ChromaVectorStore(BaseVectorStore):
                     zip(*{hashlib.sha256(str(doc).encode(errors="replace")).hexdigest(): doc for doc in docs}.items()),
                 )
             )
-        else:
-            return [], []
+        return [], []
 
-    def add_documents(self, content: list, **kwargs: Any) -> list[str]:
+    def add_documents(self, documents: list, **kwargs: Any) -> list[str]:
         """
         Embed and add documents to the vector store.
 
         Parameters
         ----------
-        content : list
+        documents : list
             Documents to be embedded and added to the vector store.
 
         Returns
@@ -209,11 +213,11 @@ class ChromaVectorStore(BaseVectorStore):
         max_batch_size = kwargs.get("max_batch_size")
         if max_batch_size is None:
             try:
-                max_batch_size = self._vector_store._client.get_max_batch_size()  # type: ignore[attr-defined]
+                max_batch_size = self._vector_store._client.get_max_batch_size()  # pylint: disable=protected-access
             except AttributeError:
                 max_batch_size = 10_000
 
-        ids, docs = self._process_documents(content)
+        ids, docs = self._process_documents(documents)
         if len(docs) > max_batch_size:
             batch_ids = []
 
@@ -226,8 +230,8 @@ class ChromaVectorStore(BaseVectorStore):
                     )
                 )
             return batch_ids
-        else:
-            return self._vector_store.add_documents(docs, ids=ids, **kwargs)
+
+        return self._vector_store.add_documents(docs, ids=ids, **kwargs)
 
     def _get_window_documents(self, doc_id: str, seq_nums_window: list[int]) -> list[Document]:
         """
@@ -349,12 +353,12 @@ class ChromaVectorStore(BaseVectorStore):
         if not include_scores:
             documents = cast(list[Document], documents)
             return [self._window_extend_and_merge(document, window_size) for document in documents]
-        else:
-            documents_and_scores = cast(list[tuple[Document, float]], documents)
-            documents = [t[0] for t in documents_and_scores]
-            scores = [t[1] for t in documents_and_scores]
-            extended_documents = [self._window_extend_and_merge(document, window_size) for document in documents]
-            return list(zip(extended_documents, scores))
+
+        documents_and_scores = cast(list[tuple[Document, float]], documents)
+        documents = [t[0] for t in documents_and_scores]
+        scores = [t[1] for t in documents_and_scores]
+        extended_documents = [self._window_extend_and_merge(document, window_size) for document in documents]
+        return list(zip(extended_documents, scores))
 
     def delete(self, ids: list[str], **kwargs: Any) -> None:
         """Delete by vector ID or other criteria. Sor more details see LangChain documentation

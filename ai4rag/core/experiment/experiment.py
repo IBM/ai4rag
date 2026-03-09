@@ -30,14 +30,14 @@ from ai4rag.core.experiment.utils import (
 )
 from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
-from ai4rag.core.hpo.random_opt import FailedIterationError, RandomOptimizer
+from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.chunking import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
+from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.models import EmbeddingModels
 from ai4rag.search_space.src.parameter import Parameter
@@ -46,6 +46,7 @@ from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 
 
+# pylint: disable=too-many-instance-attributes
 class AI4RAGExperiment:
     """
     Class responsible for conducting AutoRAG experiment, that consists of
@@ -122,6 +123,7 @@ class AI4RAGExperiment:
         It consists of statuses, RAG pattern objects, scores and settings.
     """
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         documents: list[Document],
@@ -247,7 +249,8 @@ class AI4RAGExperiment:
             Best embedding models and foundation models found in pre-selection.
         """
         _log_start_mps = (
-            f"Starting foundation models pre-selection with following foundation models: {[str(fm) for fm in foundation_models]} "
+            f"Starting foundation models pre-selection with following "
+            f"foundation models: {[str(fm) for fm in foundation_models]} "
             f"and following embedding models: {[str(em) for em in embedding_models]}."
         )
         logger.info(_log_start_mps)
@@ -278,6 +281,7 @@ class AI4RAGExperiment:
 
         return selected_models
 
+    # pylint: disable=too-many-locals, too-many-statements
     def run_single_evaluation(self, rag_params: RAGParamsType) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
@@ -381,7 +385,10 @@ class AI4RAGExperiment:
 
             self.event_handler.on_status_change(
                 level=LogLevel.INFO,
-                message=f"Embedding chunks using the {embedding_model.model_id} model. Building index: {collection_name}.",
+                message=(
+                    f"Embedding chunks using the {embedding_model.model_id} model. "
+                    f"Building index: {collection_name}."
+                ),
                 step=ExperimentStep.EMBEDDING,
             )
 
@@ -409,7 +416,7 @@ class AI4RAGExperiment:
             ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
         )
 
-        rag_pattern = LlamaStackRAG(
+        rag_pattern = SimpleRAG(
             foundation_model=foundation_model,
             retriever=retriever,
         )
