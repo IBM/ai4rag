@@ -34,9 +34,9 @@ jobs:
         run: |
           isort --check-only --diff ai4rag/
 
-#      - name: Run Pylint
-#        run: |
-#          pylint ai4rag/
+      - name: Run Pylint
+        run: |
+          pylint ai4rag/
 
       - name: Run copyright check
         run: |
