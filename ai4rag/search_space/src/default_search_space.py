@@ -15,6 +15,8 @@ _default_chunk_sizes = (512, 1024, 2048)
 _default_chunk_overlaps = (128, 256, 512)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
+_default_chroma_retrieval_methods = ("simple", "window")
+_default_chroma_window_sizes = (0, 1, 3, 5)
 _default_numbers_of_chunks = (3, 5, 10)
 _default_search_modes = ("vector", "hybrid")
 _default_ranker_strategies = ("", "rrf", "weighted", "normalized")
@@ -38,12 +40,19 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "ls_milv
         Parameters that will be used for creating AI4RAGSearchSpace
     """
 
+    if vector_store_type == "chroma":
+        retrieval_methods = _default_chroma_retrieval_methods
+        window_sizes = _default_chroma_window_sizes
+    else:
+        retrieval_methods = _default_retrieval_methods
+        window_sizes = _default_window_sizes
+
     default_search_space_parameters = [
         Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
         Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=_default_chunk_sizes),
         Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=_default_chunk_overlaps),
-        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=_default_retrieval_methods),
-        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=_default_window_sizes),
+        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=retrieval_methods),
+        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=window_sizes),
         Parameter(name=AI4RAGParamNames.NUMBER_OF_CHUNKS, values=_default_numbers_of_chunks),
     ]
 
