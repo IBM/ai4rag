@@ -47,7 +47,9 @@ if __name__ == "__main__":
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[LSFoundationModel(model_id="vllm-inference-llama-3-1/redhataillama-31-8b-instruct", client=client)],
+                values=[
+                    LSFoundationModel(model_id="vllm-inference-llama-3-1/redhataillama-31-8b-instruct", client=client)
+                ],
             ),
             Parameter(
                 name="embedding_model",
@@ -60,7 +62,7 @@ if __name__ == "__main__":
                     )
                 ],
             ),
-        ]
+        ],
     )
 
     # search_space = AI4RAGSearchSpace(
