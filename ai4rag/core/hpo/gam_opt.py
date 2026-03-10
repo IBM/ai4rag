@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import random
-from copy import copy, deepcopy
+from copy import copy
 from dataclasses import dataclass
 from math import ceil
 from typing import Any, Callable
@@ -15,7 +15,6 @@ from sklearn.preprocessing import LabelEncoder
 
 from ai4rag import logger
 from ai4rag.core.hpo.base_optimizer import BaseOptimizer, FailedIterationError, OptimizationError, OptimizerSettings
-from ai4rag.core.hpo.utils import handle_missing_values_in_combinations_being_explored
 from ai4rag.search_space.src.search_space import SearchSpace
 
 __all__ = ["GAMOptSettings", "GAMOptimizer"]
@@ -166,6 +165,7 @@ class GAMOptimizer(BaseOptimizer):
             if len(self.evaluations) == self.max_iterations:
                 break
 
+    # pylint: disable=too-many-locals
     def _run_iteration(self) -> None:
         """
         Run single optimization iteration that consists of training GAM model
@@ -190,9 +190,7 @@ class GAMOptimizer(BaseOptimizer):
             self._search_space.combinations, self._evaluated_combinations
         )
 
-        remaining_evaluations_df = handle_missing_values_in_combinations_being_explored(
-            pd.DataFrame(remaining_evaluations)
-        )
+        remaining_evaluations_df = pd.DataFrame(remaining_evaluations)
 
         # Optimize encoding: build array directly
         encoded_data_to_predict = np.column_stack(
@@ -222,7 +220,6 @@ class GAMOptimizer(BaseOptimizer):
         if not self._encoders_with_columns:
             logger.debug("Preparing encoder for %s...", self.__class__.__name__)
             df = pd.DataFrame(data=self._search_space.combinations)
-            df = handle_missing_values_in_combinations_being_explored(df)
             for column in df.columns:
                 self._encoders_with_columns.append((column, LabelEncoder().fit(df[column])))
             logger.debug("Encoder for %s has been prepared.", self.__class__.__name__)
@@ -253,6 +250,7 @@ class GAMOptimizer(BaseOptimizer):
 
         return remaining
 
+    # pylint: disable=duplicate-code
     def _objective_function(self, params: dict) -> float | None:
         """
         Wrapper around the objective function provided to the optimizer.

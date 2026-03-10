@@ -80,7 +80,7 @@ Refer to the [Llama Stack documentation](https://llamastack.github.io/docs/) for
 ### 3. Start the Server
 
 ```bash
-llama-stack run <your-config.yaml>
+llama-stack run <your-CONFIG.yaml>
 ```
 
 Note the server URL and API key for use in `ai4rag`.

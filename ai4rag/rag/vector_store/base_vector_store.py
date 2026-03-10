@@ -26,7 +26,7 @@ class BaseVectorStore(ABC):
         self.reuse_collection_name = reuse_collection_name
 
     @abstractmethod
-    def search(self, query: str, k: int) -> list[dict]:
+    def search(self, query: str, k: int, **kwargs) -> list[dict]:
         """
         Search for the chunks relevant to the query.
         The method used will be simple similarity search.

@@ -16,7 +16,7 @@ from ..foundation_models.base_model import BaseFoundationModel
 from .base_template import BaseRAGTemplate, RAGTemplateError
 
 
-class LlamaStackRAG(BaseRAGTemplate):
+class SimpleRAG(BaseRAGTemplate):
     """
     RAG template using Llama Stack components for embedding, vector store,
     retrieval, and foundation model, with LangChain for document chunking.
@@ -59,7 +59,7 @@ class LlamaStackRAG(BaseRAGTemplate):
 
         self.chunker = chunker
 
-    def build_index(self, documents: list[Document]) -> None:
+    def build_index(self, documents: list[Document], **kwargs) -> None:
         """
         Index documents into the vector store.
 
@@ -77,7 +77,7 @@ class LlamaStackRAG(BaseRAGTemplate):
 
         self.vector_store.add_documents(chunks)
 
-    def generate(self, question: str, **retrieval_kwargs) -> dict[str, Any]:
+    def generate(self, question: str, **kwargs) -> dict[str, Any]:
         """
         Generate an answer for a question using RAG pipeline.
 
@@ -86,8 +86,8 @@ class LlamaStackRAG(BaseRAGTemplate):
         question : str
             The user's question.
 
-        **retrieval_kwargs
-            Additional parameters for retrieval (e.g., number_of_chunks).
+        **kwargs
+            Additional parameters (e.g., number_of_chunks).
 
         Returns
         -------
@@ -97,7 +97,7 @@ class LlamaStackRAG(BaseRAGTemplate):
             - "reference_documents": The retrieved document chunks
             - "question": The original question
         """
-        reference_documents = self.retriever.retrieve(question, **retrieval_kwargs)
+        reference_documents = self.retriever.retrieve(question, **kwargs)
 
         context = "\n".join(
             [
@@ -124,7 +124,7 @@ class LlamaStackRAG(BaseRAGTemplate):
             "question": question,
         }
 
-    def generate_stream(self, question: str, **retrieval_kwargs):
+    def generate_stream(self, question: str, **kwargs):
         """
         Generate a streaming answer for a question using RAG pipeline.
 
@@ -136,13 +136,13 @@ class LlamaStackRAG(BaseRAGTemplate):
         question : str
             The user's question.
 
-        **retrieval_kwargs
-            Additional parameters for retrieval (e.g., number_of_chunks).
+        **kwargs
+            Additional parameters (e.g., number_of_chunks).
 
         Yields
         ------
         str
             Chunks of the generated answer.
         """
-        result = self.generate(question, **retrieval_kwargs)
+        result = self.generate(question, **kwargs)
         yield result["answer"]

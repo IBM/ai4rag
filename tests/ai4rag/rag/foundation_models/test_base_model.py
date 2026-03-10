@@ -77,19 +77,16 @@ class TestFoundationModel:
         assert model1 != model2
 
     def test_eq_with_non_foundation_model(self, foundation_model):
-        """Test equality with non-BaseFoundationModel object raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            foundation_model == "not-a-foundation-model"
+        """Test equality with non-BaseFoundationModel object returns NotImplemented."""
+        assert foundation_model.__eq__("not-a-foundation-model") is NotImplemented
 
     def test_eq_with_none(self, foundation_model):
-        """Test equality with None raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            foundation_model == None
+        """Test equality with None returns NotImplemented."""
+        assert foundation_model.__eq__(None) is NotImplemented
 
     def test_eq_with_dict(self, foundation_model):
-        """Test equality with dict raises NotImplementedError."""
-        with pytest.raises(NotImplementedError):
-            foundation_model == {"model_id": "test-model-id"}
+        """Test equality with dict returns NotImplemented."""
+        assert foundation_model.__eq__({"model_id": "test-model-id"}) is NotImplemented
 
     def test_hash(self, foundation_model):
         """Test __hash__ returns hash of model_id."""

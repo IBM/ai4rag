@@ -331,12 +331,6 @@ class TestGAMOptimizer:
         """Test the _prepare_encoder method."""
         objective_func = MagicMock(return_value=0.5)
 
-        # Mock handle_missing_values to return dataframe as is
-        mock_handle_missing = mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
-
         optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
@@ -357,11 +351,6 @@ class TestGAMOptimizer:
     def test_prepare_encoder_called_only_once(self, mock_search_space, optimizer_settings, mocker):
         """Test that _prepare_encoder only prepares encoders once."""
         objective_func = MagicMock(return_value=0.5)
-
-        mock_handle_missing = mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -391,10 +380,6 @@ class TestGAMOptimizer:
         objective_func = MagicMock(side_effect=[0.3, 0.5, 0.9])  # 2 initial + 1 from iteration
 
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
-        mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -430,10 +415,6 @@ class TestGAMOptimizer:
 
         objective_func = MagicMock(side_effect=[0.3, 0.5, 0.8, 0.6, 0.4])
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
-        mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -492,10 +473,6 @@ class TestGAMOptimizer:
             ]
         )
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
-        mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -520,10 +497,6 @@ class TestGAMOptimizer:
 
         objective_func = MagicMock(side_effect=[0.3, 0.5, 0.8, 0.6])  # 2 initial + 2 from iteration
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
-        mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -557,10 +530,6 @@ class TestGAMOptimizer:
             ]
         )
         mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
-        mocker.patch(
-            "ai4rag.core.hpo.gam_opt.handle_missing_values_in_combinations_being_explored",
-            side_effect=lambda df: df,
-        )
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,

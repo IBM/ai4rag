@@ -83,6 +83,10 @@ class AI4RAGParamNames(metaclass=ConstantMeta):
     RETRIEVAL_METHOD = "retrieval_method"
     WINDOW_SIZE = "window_size"
     NUMBER_OF_CHUNKS = "number_of_chunks"
+    SEARCH_MODE = "search_mode"
+    RANKER_STRATEGY = "ranker_strategy"
+    RANKER_K = "ranker_k"
+    RANKER_ALPHA = "ranker_alpha"
     GENERATION = "generation"
 
 
@@ -130,6 +134,10 @@ class RetrievalConstraints(metaclass=ConstantMeta):
     METHODS = ["window", "simple"]
     MIN_WINDOW_SIZE = 0
     MAX_WINDOW_SIZE = 4
+    SEARCH_MODES = ["vector", "hybrid"]
+    RANKER_STRATEGIES = ["rrf", "weighted", "normalized"]
+    MIN_RANKER_K = 1
+    MAX_RANKER_K = 100
 
 
 class DefaultVectorStoreFieldNames(metaclass=ConstantMeta):

@@ -8,6 +8,8 @@ from openai import OpenAI
 
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 
+# pylint: disable=duplicate-code
+
 
 class OpenAIEmbeddingModel(BaseEmbeddingModel):
     """Class wrapping independently deployed embedding model with OpenAI client."""
@@ -17,10 +19,12 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
 
     @property
     def params(self) -> dict[str, Any]:
+        """Get model params."""
         return self._params
 
     @params.setter
     def params(self, params: dict[str, Any] | None) -> None:
+        """Set model params."""
         if params is None:
             self._params = {}
         else:

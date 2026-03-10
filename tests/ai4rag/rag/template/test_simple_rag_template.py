@@ -7,11 +7,11 @@ import pytest
 from langchain_core.documents import Document
 
 from ai4rag.rag.template.base_template import RAGTemplateError
-from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
+from ai4rag.rag.template.simple_rag_template import SimpleRAG
 
 
 class TestLlamaStackRAGInitialization:
-    """Test suite for LlamaStackRAG initialization."""
+    """Test suite for SimpleRAG initialization."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -45,7 +45,7 @@ class TestLlamaStackRAGInitialization:
 
     def test_init_with_required_params_only(self, mock_foundation_model, mock_retriever):
         """Test initialization with only required parameters."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -64,7 +64,7 @@ class TestLlamaStackRAGInitialization:
         mock_vector_store,
     ):
         """Test initialization with all parameters."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -79,7 +79,7 @@ class TestLlamaStackRAGInitialization:
 
     def test_init_with_optional_chunker(self, mock_foundation_model, mock_retriever, mock_chunker):
         """Test initialization with optional chunker."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -95,7 +95,7 @@ class TestLlamaStackRAGInitialization:
         mock_embedding_model,
     ):
         """Test initialization with optional embedding model."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             embedding_model=mock_embedding_model,
@@ -111,7 +111,7 @@ class TestLlamaStackRAGInitialization:
         mock_vector_store,
     ):
         """Test initialization with optional vector store."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             vector_store=mock_vector_store,
@@ -125,8 +125,8 @@ class TestLlamaStackRAGInitialization:
         mock_foundation_model,
         mock_retriever,
     ):
-        """Test that LlamaStackRAG properly inherits from BaseRAGTemplate."""
-        rag = LlamaStackRAG(
+        """Test that SimpleRAG properly inherits from BaseRAGTemplate."""
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -138,7 +138,7 @@ class TestLlamaStackRAGInitialization:
 
 
 class TestLlamaStackRAGBuildIndex:
-    """Test suite for LlamaStackRAG.build_index method."""
+    """Test suite for SimpleRAG.build_index method."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -184,7 +184,7 @@ class TestLlamaStackRAGBuildIndex:
         sample_documents,
     ):
         """Test that build_index chunks documents and adds them to vector store."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -209,7 +209,7 @@ class TestLlamaStackRAGBuildIndex:
         mock_retriever,
     ):
         """Test that build_index raises RAGTemplateError when chunker is None."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=None,
@@ -226,7 +226,7 @@ class TestLlamaStackRAGBuildIndex:
         mocker,
     ):
         """Test that build_index fails with AttributeError when vector_store is None."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -245,7 +245,7 @@ class TestLlamaStackRAGBuildIndex:
         mock_vector_store,
     ):
         """Test that build_index works when embedding_model is None but other components are present."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -264,7 +264,7 @@ class TestLlamaStackRAGBuildIndex:
         mock_retriever,
     ):
         """Test that build_index raises RAGTemplateError when all components are None."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=None,
@@ -284,7 +284,7 @@ class TestLlamaStackRAGBuildIndex:
     ):
         """Test build_index with empty document list."""
         mock_chunker.split_documents.return_value = []
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -313,7 +313,7 @@ class TestLlamaStackRAGBuildIndex:
         ]
         mock_chunker.split_documents.return_value = large_chunk_list
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
             chunker=mock_chunker,
@@ -329,7 +329,7 @@ class TestLlamaStackRAGBuildIndex:
 
 
 class TestLlamaStackRAGGenerate:
-    """Test suite for LlamaStackRAG.generate method."""
+    """Test suite for SimpleRAG.generate method."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -363,7 +363,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns a dict with answer, reference_documents, and question."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -381,7 +381,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate calls retriever.retrieve."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -396,7 +396,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate passes retrieval kwargs to retriever."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -415,7 +415,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate builds context correctly from retrieved documents."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -444,7 +444,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate calls foundation model's chat method."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -468,7 +468,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns the answer from foundation model."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -483,7 +483,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns the reference documents."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -500,7 +500,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns the original question."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -517,7 +517,7 @@ class TestLlamaStackRAGGenerate:
         """Test generate when retriever returns no documents."""
         mock_retriever.retrieve.return_value = []
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -545,7 +545,7 @@ class TestLlamaStackRAGGenerate:
             Document(page_content="Single document", metadata={"document_id": "doc1"}),
         ]
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -567,7 +567,7 @@ class TestLlamaStackRAGGenerate:
         del mock_doc.page_content  # Ensure page_content doesn't exist
         mock_retriever.retrieve.return_value = [mock_doc]
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -587,7 +587,7 @@ class TestLlamaStackRAGGenerate:
         mock_retriever,
     ):
         """Test generate with various question types."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -620,7 +620,7 @@ class TestLlamaStackRAGGenerate:
         retrieval_kwargs,
     ):
         """Parameterized test for generate with various retrieval kwargs."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -631,7 +631,7 @@ class TestLlamaStackRAGGenerate:
 
 
 class TestLlamaStackRAGGenerateStream:
-    """Test suite for LlamaStackRAG.generate_stream method."""
+    """Test suite for SimpleRAG.generate_stream method."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -664,7 +664,7 @@ class TestLlamaStackRAGGenerateStream:
         mock_retriever,
     ):
         """Test that generate_stream returns a generator."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -682,7 +682,7 @@ class TestLlamaStackRAGGenerateStream:
         mock_retriever,
     ):
         """Test that generate_stream yields the answer."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -699,7 +699,7 @@ class TestLlamaStackRAGGenerateStream:
         mocker,
     ):
         """Test that generate_stream calls generate method internally."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -718,7 +718,7 @@ class TestLlamaStackRAGGenerateStream:
         mocker,
     ):
         """Test that generate_stream passes kwargs to generate."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -739,7 +739,7 @@ class TestLlamaStackRAGGenerateStream:
         mock_message = mock_foundation_model.chat.return_value[0].message
         mock_message.content = "This is a longer answer with multiple sentences."
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -755,7 +755,7 @@ class TestLlamaStackRAGGenerateStream:
         mock_retriever,
     ):
         """Test generate_stream with various questions."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -769,7 +769,7 @@ class TestLlamaStackRAGGenerateStream:
 
 
 class TestLlamaStackRAGIntegration:
-    """Integration tests for LlamaStackRAG full workflow."""
+    """Integration tests for SimpleRAG full workflow."""
 
     @pytest.fixture
     def complete_rag_system(self, mocker):
@@ -822,7 +822,7 @@ class TestLlamaStackRAGIntegration:
 
     def test_full_rag_workflow(self, complete_rag_system):
         """Test complete RAG workflow: build index then generate answer."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=complete_rag_system["foundation_model"],
             retriever=complete_rag_system["retriever"],
             chunker=complete_rag_system["chunker"],
@@ -853,7 +853,7 @@ class TestLlamaStackRAGIntegration:
 
     def test_multiple_generate_calls_after_single_build_index(self, complete_rag_system):
         """Test multiple generate calls after a single build_index."""
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=complete_rag_system["foundation_model"],
             retriever=complete_rag_system["retriever"],
             chunker=complete_rag_system["chunker"],
@@ -911,7 +911,7 @@ class TestLlamaStackRAGEdgeCases:
         """Test generate with empty question string."""
         mock_retriever.retrieve.return_value = []
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -926,7 +926,7 @@ class TestLlamaStackRAGEdgeCases:
         """Test generate with very long question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -941,7 +941,7 @@ class TestLlamaStackRAGEdgeCases:
         """Test generate with special characters in question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -956,7 +956,7 @@ class TestLlamaStackRAGEdgeCases:
         """Test generate with Unicode characters in question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -970,7 +970,7 @@ class TestLlamaStackRAGEdgeCases:
         """Test generate with multiline question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = LlamaStackRAG(
+        rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )

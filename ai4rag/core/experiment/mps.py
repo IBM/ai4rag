@@ -21,7 +21,7 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.llama_stack_rag_template import LlamaStackRAG
+from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
 from ai4rag.utils.constants import AI4RAGParamNames
@@ -34,6 +34,8 @@ class PreSelectorError(Exception):
 
 
 class MPSEvaluationResultsTyped(TypedDict):
+    """Typing helper for evaluation results coming from ModelsPreSelector."""
+
     foundation_model: BaseFoundationModel
     embedding_model: BaseEmbeddingModel
     scores: dict
@@ -115,6 +117,7 @@ class ModelsPreSelector:
         self.retrieval_params = {
             "number_of_chunks": kwargs.get(AI4RAGParamNames.NUMBER_OF_CHUNKS, 3),
             "method": kwargs.get(AI4RAGParamNames.RETRIEVAL_METHOD, "simple"),
+            "search_mode": kwargs.get(AI4RAGParamNames.SEARCH_MODE, "vector"),
         }
         self.chunking_params = {
             "chunk_size": kwargs.get(AI4RAGParamNames.CHUNK_SIZE, 512),
@@ -254,11 +257,11 @@ class ModelsPreSelector:
         logger.debug("MPS: Embedding documents ...")
         try:
             vector_store.add_documents(chunked_documents)
-        except Exception as err:
+        except Exception as err:  # pylint: disable=broad-exception-caught
             logger.warning("Failed to create in-memory vector index due to: %s.", repr(err), exc_info=True)
             try:
                 vector_store.add_documents(chunked_documents)
-            except Exception as exc:
+            except Exception as exc:  # pylint: disable=broad-exception-caught
                 raise PreSelectorError(f"Failed to create in-memory vector index due to: {repr(exc)}.") from exc
         logger.debug("MPS: Embedding documents finished!")
 
@@ -282,7 +285,7 @@ class ModelsPreSelector:
             Evaluation scores per model.
         """
 
-        rag = LlamaStackRAG(foundation_model=foundation_model, retriever=retriever)
+        rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
 
         inference_response = query_rag(
             rag=rag,

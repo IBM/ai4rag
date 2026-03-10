@@ -13,6 +13,9 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 class LSVectorStore(BaseVectorStore):
     """LLamaStack client wrapper used for communication with vector store (single index/collection)."""
 
+    _VALID_SEARCH_MODES = ("vector", "hybrid")
+    _VALID_RANKER_STRATEGIES = ("rrf", "weighted", "normalized")
+
     def __init__(
         self,
         embedding_model: LSEmbeddingModel,
@@ -82,10 +85,65 @@ class LSVectorStore(BaseVectorStore):
     def collection_name(self) -> str:
         return self._collection_name
 
-    def search(self, query: str, k: int, include_scores: bool = False) -> list[Document] | list[tuple[Document, float]]:
+    @staticmethod
+    def _validate_search_params(
+        search_mode: str,
+        ranker_strategy: str | None,
+        ranker_k: int | None,
+        ranker_alpha: float | None,
+    ) -> None:
+        """Validate hybrid search parameter consistency."""
+        if search_mode not in LSVectorStore._VALID_SEARCH_MODES:
+            raise ValueError(
+                f"Invalid search_mode '{search_mode}'. Must be one of {LSVectorStore._VALID_SEARCH_MODES}."
+            )
+
+        has_strategy = ranker_strategy is not None and ranker_strategy != ""
+        has_k = ranker_k is not None and ranker_k > 0
+        has_alpha = ranker_alpha is not None and ranker_alpha != 1
+
+        if search_mode != "hybrid":
+            if has_strategy:
+                raise ValueError(
+                    f"ranker_strategy='{ranker_strategy}' is only valid when search_mode='hybrid', "
+                    f"but search_mode='{search_mode}'."
+                )
+            if has_k:
+                raise ValueError(
+                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', " f"but search_mode='{search_mode}'."
+                )
+            if has_alpha:
+                raise ValueError(
+                    f"ranker_alpha={ranker_alpha} is only valid when search_mode='hybrid', "
+                    f"but search_mode='{search_mode}'."
+                )
+        else:
+            if not has_strategy:
+                raise ValueError("ranker_strategy must be set when search_mode='hybrid'.")
+            if ranker_strategy not in LSVectorStore._VALID_RANKER_STRATEGIES:
+                raise ValueError(
+                    f"Invalid ranker_strategy='{ranker_strategy}'. "
+                    f"Must be one of {LSVectorStore._VALID_RANKER_STRATEGIES}."
+                )
+            if has_alpha and ranker_strategy != "weighted":
+                raise ValueError(
+                    f"ranker_alpha={ranker_alpha} is only valid when ranker_strategy='weighted', "
+                    f"but ranker_strategy='{ranker_strategy}'."
+                )
+
+    def search(
+        self,
+        query: str,
+        k: int,
+        include_scores: bool = False,
+        search_mode: str = "vector",
+        ranker_strategy: str | None = None,
+        ranker_k: int | None = None,
+        ranker_alpha: float | None = None,
+        **kwargs,
+    ) -> list[Document] | list[tuple[Document, float]]:
         """
         Search for the chunks relevant to the query.
-        The method used will be simple similarity search.
 
         Parameters
         ----------
@@ -98,22 +156,38 @@ class LSVectorStore(BaseVectorStore):
         include_scores : bool, default=False
             If True, similarity scores will be returned in the response
 
+        search_mode : str, default="vector"
+            Search mode: "vector" or "hybrid".
+
+        ranker_strategy : str | None, default=None
+            Ranking strategy for hybrid search: "rrf", "weighted", or "normalized".
+            Empty string means no ranker (used for non-hybrid modes).
+
+        ranker_k : int | None, default=None
+            Parameter k for the ranking function. 0 means not set.
+
+        ranker_alpha : float, default=None
+            Alpha parameter for weighted ranking strategy. 1 means not set (vector-only sentinel).
+
         Returns
         -------
         list[Document] | list[tuple[Document, float]]
             List of chunks as Document instances with or without scores, depending on the input.
         """
+        self._validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
         params = {
             "max_chunks": k,
-            "mode": "vector",  # keyword and hybrid supported as well
-            # "ranker": {
-            #     "strategy": "rrf",  # also weighted and normalized
-            #     "params": {
-            #         "k": 60,
-            #         "weights": [0.5, 0.5]
-            #     }
-            # }
+            "mode": search_mode,
         }
+
+        if search_mode == "hybrid" and ranker_strategy:
+            ranker = {"strategy": ranker_strategy, "params": {}}
+            if ranker_k is not None and ranker_k > 0:
+                ranker["params"]["k"] = ranker_k
+            if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
+                ranker["params"]["alpha"] = ranker_alpha
+            params["ranker"] = ranker
+
         resp = self.client.vector_io.query(query=query, vector_store_id=self._ls_vs.id, params=params)
 
         if include_scores:
@@ -158,4 +232,5 @@ class LSVectorStore(BaseVectorStore):
         )
 
     def clean_collection(self):
+        """Remove content of the collection and remove vector store instance."""
         self.client.vector_stores.delete(self._ls_vs.id)

@@ -21,7 +21,11 @@ from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
-    client = LlamaStackClient(base_url="http://localhost:8321")
+    # from dotenv import load_dotenv, find_dotenv
+    # load_dotenv(find_dotenv())
+
+    # client = LlamaStackClient(base_url="http://localhost:8321")
+    client = LlamaStackClient()
 
     # change to direct to your local documents path
     documents_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "documents"
@@ -37,46 +41,49 @@ if __name__ == "__main__":
     optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
 
     # Edit configurations of search space
-    # search_space = AI4RAGSearchSpace(
-    #     params=[
-    #         Parameter(
-    #             name="foundation_model",
-    #             param_type="C",
-    #             values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
-    #         ),
-    #         Parameter(
-    #             name="embedding_model",
-    #             param_type="C",
-    #             values=[
-    #                 LSEmbeddingModel(
-    #                     model_id="ollama/nomic-embed-text:latest",
-    #                     client=client,
-    #                     params={"embedding_dimension": 768, "context_length": 8192},
-    #                 )
-    #             ],
-    #         ),
-    #     ]
-    # )
-
     search_space = AI4RAGSearchSpace(
+        vector_store_type="chroma",
         params=[
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[MockedFoundationModel(model_id="mocked_fm_1"), MockedFoundationModel(model_id="mocked_fm_2")],
+                values=[
+                    LSFoundationModel(model_id="vllm-inference-llama-3-1/redhataillama-31-8b-instruct", client=client)
+                ],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
-                    MockedEmbeddingModel(
-                        model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}
-                    ),
+                    LSEmbeddingModel(
+                        model_id="vllm-embedding/granite-278m-multilingual-1",
+                        client=client,
+                        params={"embedding_dimension": 768, "context_length": 512},
+                    )
                 ],
             ),
-            Parameter(name="retrieval_method", param_type="C", values=["simple"]),
-        ]
+        ],
     )
+
+    # search_space = AI4RAGSearchSpace(
+    #     vector_store_type="chroma",
+    #     params=[
+    #         Parameter(
+    #             name="foundation_model",
+    #             param_type="C",
+    #             values=[MockedFoundationModel(model_id="mocked_fm_1"), MockedFoundationModel(model_id="mocked_fm_2")],
+    #         ),
+    #         Parameter(
+    #             name="embedding_model",
+    #             param_type="C",
+    #             values=[
+    #                 MockedEmbeddingModel(
+    #                     model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}
+    #                 ),
+    #             ],
+    #         ),
+    #     ]
+    # )
 
     experiment = AI4RAGExperiment(
         client=client,
@@ -84,7 +91,7 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
-        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_mocks"),
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_experiment"),
         vector_store_type="chroma",
     )
 
