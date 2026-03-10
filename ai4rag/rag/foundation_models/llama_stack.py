@@ -45,10 +45,12 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | L
 
     @property
     def params(self) -> LSModelParameters:
+        """Get models params."""
         return self._params
 
     @params.setter
     def params(self, params: dict | LSModelParameters | None) -> None:
+        """Set models params."""
         if isinstance(params, dict):
             self._params = LSModelParameters(**params)
         elif isinstance(params, LSModelParameters):

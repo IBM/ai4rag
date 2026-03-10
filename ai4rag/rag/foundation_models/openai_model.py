@@ -44,10 +44,12 @@ class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIM
 
     @property
     def params(self) -> OpenAIModelParameters:
+        """Get model params."""
         return self._params
 
     @params.setter
     def params(self, params: dict | OpenAIModelParameters | None) -> None:
+        """Set models params."""
         if isinstance(params, dict):
             self._params = OpenAIModelParameters(**params)
         elif isinstance(params, OpenAIModelParameters):
