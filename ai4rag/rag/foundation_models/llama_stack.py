@@ -33,6 +33,8 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | M
         user_message_text: str | None = None,
         context_template_text: str | None = None,
     ):
+        params = params or ModelParameters()
+
         super().__init__(
             client=client,
             model_id=model_id,

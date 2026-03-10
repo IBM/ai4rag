@@ -55,11 +55,11 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         return self.model_id
 
     def __str__(self) -> str:
-        return repr(self)
+        return self.model_id
 
     def __eq__(self, other: object) -> bool:
         if not isinstance(other, BaseFoundationModel):
-            raise NotImplementedError
+            return NotImplemented
 
         return self.model_id == other.model_id
 

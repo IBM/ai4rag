@@ -561,17 +561,6 @@ class AI4RAGExperiment:
         evaluation_results_json : list
             Prepared partial payload for the streamed content.
         """
-        metrics = []
-        for metric in self.metrics:
-            scores = evaluation_result.scores["scores"][metric]
-            single_metric = {
-                "metric_name": metric,
-                "mean": scores["mean"],
-                "ci_low": scores["ci_low"],
-                "ci_high": scores["ci_high"],
-            }
-            metrics.append(single_metric)
-
         retrieval_payload = {
             "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
             "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
@@ -607,32 +596,27 @@ class AI4RAGExperiment:
         generation_payload = evaluation_result.rag_params.get("generation")
 
         payload = {
-            "metrics": {"test_data": metrics},
-            "rag_pattern": {
-                "composition_steps": [
-                    "model_selection",
-                    "chunking",
-                    "embeddings",
-                    "retrieval",
-                    "generation",
-                ],
-                "name": evaluation_result.pattern_name,
-                "settings": {
-                    "vector_store": vector_store_payload,
-                    **indexing_payload,
-                    "retrieval": retrieval_payload,
-                    "generation": generation_payload,
-                },
+            "pattern_name": evaluation_result.pattern_name,
+            "scores": {
+                "scores": evaluation_result.scores["scores"],
+                "question_scores": evaluation_result.scores["question_scores"],
             },
-            "duration_seconds": int(evaluation_result.execution_time),
+            "execution_time": int(evaluation_result.execution_time),
+            "final_score": evaluation_result.final_score,
+            "schema_version": "1.0",
+            "producer": "ai4rag",
+            "settings": {
+                "vector_store": vector_store_payload,
+                **indexing_payload,
+                "retrieval": retrieval_payload,
+                "generation": generation_payload,
+            },
             "iteration": len(self.results),
-            "max_combinations": self.search_space.max_combinations,
         }
 
         self.event_handler.on_pattern_creation(
             payload=payload,
             evaluation_results=evaluation_results_json,
-            pattern_name=evaluation_result.pattern_name,
         )
 
     def _evaluate_response(

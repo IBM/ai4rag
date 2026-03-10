@@ -27,7 +27,7 @@ class LocalEventHandler(BaseEventHandler):
 
     def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
         logger.info("LocalEventHandler ::: Pattern creation ::: %s", payload)
-        pattern_name = payload.get("rag_pattern", {}).get("name", "default_pattern_name")
+        pattern_name = payload.get("pattern_name", "default_pattern_name")
 
         if self.output_path:
             dir_path = self.output_path / pattern_name

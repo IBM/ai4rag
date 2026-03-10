@@ -23,6 +23,9 @@ class BaseEmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
     def __repr__(self) -> str:
         return str(self)
 
+    def __hash__(self):
+        return hash(self.model_id)
+
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed documents.
