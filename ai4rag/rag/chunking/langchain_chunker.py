@@ -47,14 +47,13 @@ class LangChainChunker(BaseChunker[Document]):
         self.method = method
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.separators = kwargs.pop("separators", ["\n\n", "(?<=\. )", "\n", " ", ""])
+        self.separators = kwargs.pop("separators", ["\n\n", r"(?<=\. )", "\n", " ", ""])
         self._text_splitter = self._get_text_splitter()
 
     def __eq__(self, other: object) -> bool:
         if isinstance(other, LangChainChunker):
             return self.to_dict() == other.to_dict()
-        else:
-            return NotImplemented
+        return NotImplemented
 
     def _get_text_splitter(self) -> TextSplitter:
         """Create an instance of TextSplitter based on the settings."""
@@ -72,7 +71,7 @@ class LangChainChunker(BaseChunker[Document]):
 
             case _:
                 raise ValueError(
-                    "Chunker method '{}' is not supported. Use one of {}".format(self.method, self.supported_methods)
+                    f"Chunker method '{self.method}' is not supported. Use one of {self.supported_methods}."
                 )
 
         return text_splitter

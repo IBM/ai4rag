@@ -5,7 +5,8 @@
 
 import pytest
 
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel, OpenAIModelParameters
+from ai4rag.utils.constants import ChatGenerationConstants
 
 
 class TestOpenAIFoundationModel:
@@ -43,7 +44,7 @@ class TestOpenAIFoundationModel:
         """Create an OpenAIFoundationModel with dict parameters."""
         return OpenAIFoundationModel(
             model_id="gpt-4",
-            params={"temperature": 0.3, "max_tokens": 1024},
+            params={"temperature": 0.3, "max_completion_tokens": 1024},
             client=mock_openai_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -67,15 +68,19 @@ class TestOpenAIFoundationModel:
     def test_init_with_dict_params(self, model_with_dict_params, mock_openai_client):
         """Test initialization with dict parameters."""
         assert model_with_dict_params.model_id == "gpt-4"
-        assert model_with_dict_params.params == {"temperature": 0.3, "max_tokens": 1024}
+        assert isinstance(model_with_dict_params.params, OpenAIModelParameters)
+        assert model_with_dict_params.params.max_completion_tokens == 1024
+        assert model_with_dict_params.params.temperature == 0.3
         assert model_with_dict_params.client == mock_openai_client
         assert "question" in model_with_dict_params.user_message_text
         assert "document" in model_with_dict_params.context_template_text
 
     def test_init_with_none_params(self, model_with_none_params, mock_openai_client):
-        """Test initialization with None parameters."""
+        """Test initialization with None parameters uses defaults."""
         assert model_with_none_params.model_id == "gpt-3.5-turbo"
-        assert model_with_none_params.params is None
+        assert isinstance(model_with_none_params.params, OpenAIModelParameters)
+        assert model_with_none_params.params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
+        assert model_with_none_params.params.temperature == ChatGenerationConstants.TEMPERATURE
         assert model_with_none_params.client == mock_openai_client
 
     def test_system_message_text_assignment(

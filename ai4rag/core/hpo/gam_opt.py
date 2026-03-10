@@ -165,6 +165,7 @@ class GAMOptimizer(BaseOptimizer):
             if len(self.evaluations) == self.max_iterations:
                 break
 
+    # pylint: disable=too-many-locals
     def _run_iteration(self) -> None:
         """
         Run single optimization iteration that consists of training GAM model
@@ -249,6 +250,7 @@ class GAMOptimizer(BaseOptimizer):
 
         return remaining
 
+    # pylint: disable=duplicate-code
     def _objective_function(self, params: dict) -> float | None:
         """
         Wrapper around the objective function provided to the optimizer.

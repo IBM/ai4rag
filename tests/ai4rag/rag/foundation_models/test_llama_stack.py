@@ -8,75 +8,75 @@ from pydantic import ValidationError
 
 from ai4rag.rag.foundation_models.llama_stack import (
     LSFoundationModel,
-    ModelParameters,
+    LSModelParameters,
 )
 from ai4rag.utils.constants import ChatGenerationConstants
 from ai4rag.utils.validators import ConstraintsValidationError
 
 
 class TestModelParameters:
-    """Test suite for ModelParameters class."""
+    """Test suite for OpenAIModelParameters class."""
 
     def test_default_values(self):
-        """Test ModelParameters with default values."""
-        params = ModelParameters()
+        """Test OpenAIModelParameters with default values."""
+        params = LSModelParameters()
         assert params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
         assert params.temperature == ChatGenerationConstants.TEMPERATURE
 
     def test_custom_values(self):
-        """Test ModelParameters with custom valid values."""
-        params = ModelParameters(max_completion_tokens=1024, temperature=0.5)
+        """Test OpenAIModelParameters with custom valid values."""
+        params = LSModelParameters(max_completion_tokens=1024, temperature=0.5)
         assert params.max_completion_tokens == 1024
         assert params.temperature == 0.5
 
     def test_max_completion_tokens_positive(self):
         """Test that max_completion_tokens must be positive."""
-        params = ModelParameters(max_completion_tokens=1)
+        params = LSModelParameters(max_completion_tokens=1)
         assert params.max_completion_tokens == 1
 
     def test_max_completion_tokens_zero_invalid(self):
         """Test that max_completion_tokens cannot be zero."""
         with pytest.raises(ValidationError) as exc_info:
-            ModelParameters(max_completion_tokens=0)
+            LSModelParameters(max_completion_tokens=0)
         assert "greater than 0" in str(exc_info.value).lower()
 
     def test_max_completion_tokens_negative_invalid(self):
         """Test that max_completion_tokens cannot be negative."""
         with pytest.raises(ValidationError) as exc_info:
-            ModelParameters(max_completion_tokens=-100)
+            LSModelParameters(max_completion_tokens=-100)
         assert "greater than 0" in str(exc_info.value).lower()
 
     def test_temperature_minimum_boundary(self):
         """Test temperature at minimum boundary (0)."""
-        params = ModelParameters(temperature=0.0)
+        params = LSModelParameters(temperature=0.0)
         assert params.temperature == 0.0
 
     def test_temperature_maximum_boundary(self):
         """Test temperature at maximum boundary (1)."""
-        params = ModelParameters(temperature=1.0)
+        params = LSModelParameters(temperature=1.0)
         assert params.temperature == 1.0
 
     def test_temperature_below_minimum_invalid(self):
         """Test that temperature below 0 is invalid."""
         with pytest.raises(ValidationError) as exc_info:
-            ModelParameters(temperature=-0.1)
+            LSModelParameters(temperature=-0.1)
         assert "greater than or equal to 0" in str(exc_info.value).lower()
 
     def test_temperature_above_maximum_invalid(self):
         """Test that temperature above 1 is invalid."""
         with pytest.raises(ValidationError) as exc_info:
-            ModelParameters(temperature=1.1)
+            LSModelParameters(temperature=1.1)
         assert "less than or equal to 1" in str(exc_info.value).lower()
 
     def test_max_completion_tokens_float_invalid(self):
         """Test that max_completion_tokens must be an integer."""
         with pytest.raises(ValidationError) as exc_info:
-            ModelParameters(max_completion_tokens=100.5)
+            LSModelParameters(max_completion_tokens=100.5)
         assert "int" in str(exc_info.value).lower()
 
     def test_temperature_int_coerced_to_float(self):
         """Test that integer temperature values are accepted and coerced to float."""
-        params = ModelParameters(temperature=0)
+        params = LSModelParameters(temperature=0)
         assert params.temperature == 0.0
         assert isinstance(params.temperature, float)
 
@@ -92,7 +92,7 @@ class TestModelParameters:
     )
     def test_valid_parameter_combinations(self, max_tokens, temp):
         """Parameterized test for valid parameter combinations."""
-        params = ModelParameters(max_completion_tokens=max_tokens, temperature=temp)
+        params = LSModelParameters(max_completion_tokens=max_tokens, temperature=temp)
         assert params.max_completion_tokens == max_tokens
         assert params.temperature == temp
 
@@ -143,8 +143,8 @@ class TestLlamaStackFoundationModel:
     def model_with_model_params(
         self, mock_llama_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
-        """Create a LSFoundationModel with ModelParameters."""
-        params = ModelParameters(max_completion_tokens=512, temperature=0.7)
+        """Create a LSFoundationModel with OpenAIModelParameters."""
+        params = LSModelParameters(max_completion_tokens=512, temperature=0.7)
         return LSFoundationModel(
             model_id="test-model-id",
             params=params,
@@ -171,23 +171,27 @@ class TestLlamaStackFoundationModel:
     def test_init_with_dict_params(self, model_with_dict_params, mock_llama_client):
         """Test initialization with dict parameters."""
         assert model_with_dict_params.model_id == "test-model-id"
-        assert model_with_dict_params.params == {"max_completion_tokens": 1024, "temperature": 0.3}
+        assert isinstance(model_with_dict_params.params, LSModelParameters)
+        assert model_with_dict_params.params.max_completion_tokens == 1024
+        assert model_with_dict_params.params.temperature == 0.3
         assert model_with_dict_params.client == mock_llama_client
         assert "question" in model_with_dict_params.user_message_text
         assert "document" in model_with_dict_params.context_template_text
 
     def test_init_with_model_parameters(self, model_with_model_params, mock_llama_client):
-        """Test initialization with ModelParameters object."""
+        """Test initialization with OpenAIModelParameters object."""
         assert model_with_model_params.model_id == "test-model-id"
-        assert isinstance(model_with_model_params.params, ModelParameters)
+        assert isinstance(model_with_model_params.params, LSModelParameters)
         assert model_with_model_params.params.max_completion_tokens == 512
         assert model_with_model_params.params.temperature == 0.7
         assert model_with_model_params.client == mock_llama_client
 
     def test_init_with_none_params(self, model_with_none_params, mock_llama_client):
-        """Test initialization with None parameters."""
+        """Test initialization with None parameters uses defaults."""
         assert model_with_none_params.model_id == "test-model-id"
-        assert model_with_none_params.params is None
+        assert isinstance(model_with_none_params.params, LSModelParameters)
+        assert model_with_none_params.params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
+        assert model_with_none_params.params.temperature == ChatGenerationConstants.TEMPERATURE
         assert model_with_none_params.client == mock_llama_client
 
     def test_user_message_text_custom(self, mock_llama_client, valid_context_template, valid_system_message):

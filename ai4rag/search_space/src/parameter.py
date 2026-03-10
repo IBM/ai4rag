@@ -39,10 +39,12 @@ def _get_hashable_repr(dct: dict):
 
 
 class HashableProtocol(Protocol):
+    """Protocol definition for hashable types."""
+
     def __hash__(self) -> int: ...
 
 
-HashableType = TypeVar("HashableType", bound=HashableProtocol)
+HashableT = TypeVar("HashableT", bound=HashableProtocol)
 
 
 class ParameterValueError(ValueError):
@@ -50,7 +52,7 @@ class ParameterValueError(ValueError):
 
 
 @dataclass(frozen=True)
-class Parameter(Generic[HashableType]):
+class Parameter(Generic[HashableT]):
     """
     Representation of the general parameter used in optimization process.
     """
@@ -59,7 +61,7 @@ class Parameter(Generic[HashableType]):
     param_type: Literal["B", "I", "R", "C"] = "C"
     v_min: Optional[int | float] = None
     v_max: Optional[int | float] = None
-    values: Optional[Sequence[HashableType]] = None
+    values: Optional[Sequence[HashableT]] = None
 
     def __post_init__(self):
         """Perform basic validations for Parameter initializations."""

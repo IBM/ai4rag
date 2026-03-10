@@ -26,16 +26,16 @@ class LocalEventHandler(BaseEventHandler):
         logger.info("LocalEventHandler ::: %s ::: %s ::: %s", level, step, message)
 
     def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
-        logger.info("LocalEventHandler ::: Pattern creation ::: ", payload)
-        pattern_name = payload.get("rag_pattern", {}).get("name", "default_pattern_name")
+        logger.info("LocalEventHandler ::: Pattern creation ::: %s", payload)
+        pattern_name = payload.get("pattern_name", "default_pattern_name")
 
         if self.output_path:
             dir_path = self.output_path / pattern_name
             dir_path.mkdir(exist_ok=False, parents=True)
 
             evaluation_results_path = dir_path / "evaluation_results.json"
-            with open(evaluation_results_path, mode="w") as file:
+            with open(evaluation_results_path, encoding="utf-8", mode="w") as file:
                 json.dump(evaluation_results, file)
 
-            with open(dir_path / "pattern.json", mode="w") as file2:
+            with open(dir_path / "pattern.json", encoding="utf-8", mode="w") as file2:
                 json.dump(payload, file2)

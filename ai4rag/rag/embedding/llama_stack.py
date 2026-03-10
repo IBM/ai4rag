@@ -10,6 +10,8 @@ from llama_stack_client import LlamaStackClient
 
 from .base_model import BaseEmbeddingModel
 
+# pylint: disable=duplicate-code
+
 __all__ = ["LSEmbeddingModel", "LSEmbeddingParams"]
 
 
@@ -33,10 +35,12 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
 
     @property
     def params(self) -> LSEmbeddingParams:
+        """Get model params."""
         return self._params
 
     @params.setter
     def params(self, params: dict | LSEmbeddingParams | None) -> None:
+        """Set model params."""
         if params is None:
             self._params = LSEmbeddingParams()
         elif isinstance(params, LSEmbeddingParams):
