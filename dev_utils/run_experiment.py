@@ -21,8 +21,9 @@ from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
-    from dotenv import load_dotenv, find_dotenv
-    load_dotenv(find_dotenv())
+    # from dotenv import load_dotenv, find_dotenv
+    # load_dotenv(find_dotenv())
+
     # client = LlamaStackClient(base_url="http://localhost:8321")
     client = LlamaStackClient()
 
@@ -88,7 +89,7 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
-        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_mocks"),
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_experiment"),
         vector_store_type="chroma",
     )
 
