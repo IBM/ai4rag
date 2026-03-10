@@ -14,26 +14,25 @@ from ai4rag.utils.constants import ChatGenerationConstants
 # pylint: disable=duplicate-code
 
 
-class ModelParameters(BaseModel):
+class LSModelParameters(BaseModel):
     """Parameters to use for LSFoundationModel."""
 
     max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | ModelParameters | None]):
+class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | LSModelParameters | None]):
     """Integration point to use any model via Llama-stack API / client"""
 
     def __init__(
         self,
         client: LlamaStackClient,
         model_id: str,
-        params: dict[str, Any] | ModelParameters | None = None,
+        params: dict[str, Any] | LSModelParameters | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
     ):
-        params = params or ModelParameters()
 
         super().__init__(
             client=client,
@@ -43,6 +42,19 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | M
             user_message_text=user_message_text,
             context_template_text=context_template_text,
         )
+
+    @property
+    def params(self) -> LSModelParameters:
+        return self._params
+
+    @params.setter
+    def params(self, params: dict | LSModelParameters | None) -> None:
+        if isinstance(params, dict):
+            self._params = LSModelParameters(**params)
+        elif isinstance(params, LSModelParameters):
+            self._params = params
+        else:
+            self._params = LSModelParameters()
 
     def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
         """
