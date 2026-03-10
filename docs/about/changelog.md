@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0](https://github.com/IBM/ai4rag/releases/tag/v0.4.0)
+
+### Added
+- Hybrid search support for `ls_milvus` vector store: new `search_mode` ("vector" or "hybrid"), `ranker_strategy` ("rrf", "weighted", "normalized"), `ranker_k`, and `ranker_alpha` parameters
+- Search space validation rules for hybrid search consistency (`_rule_search_mode_ranker_consistency`, `_rule_ranker_alpha_for_weighted_only`)
+- `AI4RAGSearchSpace` now accepts `vector_store_type` parameter to tailor default parameters and validation rules per vector store
+- Default search space for `chroma` now includes `window` retrieval method and window sizes (0, 1, 3, 5)
+- Embedding params are now serialized and included in indexing params passed to the vector store
+- `__hash__` method added to `BaseEmbeddingModel` based on `model_id`
+- New documentation page for hybrid search (`docs/user-guide/hybrid-search.md`)
+
+### Changed
+- `LlamaStackRAG` renamed to `SimpleRAG` and moved from `llama_stack_rag_template.py` to `simple_rag_template.py` to reflect its provider-agnostic nature
+- `Retriever` now accepts and forwards `search_mode`, `ranker_strategy`, `ranker_k`, and `ranker_alpha` to the vector store
+- `LSVectorStore.search()` now accepts hybrid search parameters and validates their consistency
+- Event stream payload restructured: `pattern_name`, `scores`, `execution_time`, `final_score`, `schema_version`, and `producer` are now top-level fields; `settings.retrieval` includes `search_mode` and ranker details for hybrid mode
+- `get_default_ai4rag_search_space_parameters()` now accepts `vector_store_type` to control which parameters are included in the default search space
+
+### Fixed
+- Fixed incorrect logger call in `LocalEventHandler.on_pattern_creation` (missing format argument)
+- Added `encoding="utf-8"` to file open calls in `LocalEventHandler`
+
+---
+
 ## [0.3.0](https://github.com/IBM/ai4rag/releases/tag/v0.3.0)
 
 ### Added
