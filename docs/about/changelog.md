@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.1](https://github.com/IBM/ai4rag/releases/tag/v0.4.1)
+
+### Changed
+- Updated hybrid search reranker API to match Llama Stack 0.5.x: `ranker` → `reranker_type`/`reranker_params`, `k` → `impact_factor` (for RRF strategy)
+- `ranker_k` parameter is now only passed for `rrf` ranker strategy (previously passed for all strategies)
+- Bumped `llama-stack-client` dependency from `~=0.4.2` to `~=0.5.0`
+- Updated documentation and installation instructions to require Llama Stack >= 0.5.0
+
+---
+
 ## [0.4.0](https://github.com/IBM/ai4rag/releases/tag/v0.4.0)
 
 ### Added
