@@ -290,7 +290,7 @@ class TestLSVectorStoreHybridSearch:
 
         call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
         assert call_kwargs["params"]["mode"] == "vector"
-        assert "ranker" not in call_kwargs["params"]
+        assert "reranker_type" not in call_kwargs["params"]
 
     def test_search_with_hybrid_mode_rrf(self, mock_embedding_model, mock_llama_stack_client):
         """Test search with hybrid mode and RRF ranker."""
@@ -305,8 +305,8 @@ class TestLSVectorStoreHybridSearch:
         call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
         assert params["mode"] == "hybrid"
-        assert params["ranker"]["strategy"] == "rrf"
-        assert params["ranker"]["params"]["k"] == 60
+        assert params["reranker_type"] == "rrf"
+        assert params["reranker_params"]["impact_factor"] == 60
 
     def test_search_with_hybrid_mode_weighted(self, mock_embedding_model, mock_llama_stack_client):
         """Test search with hybrid mode and weighted ranker including alpha."""
@@ -323,9 +323,8 @@ class TestLSVectorStoreHybridSearch:
         call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
         assert params["mode"] == "hybrid"
-        assert params["ranker"]["strategy"] == "weighted"
-        assert params["ranker"]["params"]["k"] == 60
-        assert params["ranker"]["params"]["alpha"] == 0.7
+        assert params["reranker_type"] == "weighted"
+        assert params["reranker_params"]["alpha"] == 0.7
 
     def test_search_with_hybrid_mode_normalized(self, mock_embedding_model, mock_llama_stack_client):
         """Test search with hybrid mode and normalized ranker."""
@@ -340,8 +339,8 @@ class TestLSVectorStoreHybridSearch:
         call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
         assert params["mode"] == "hybrid"
-        assert params["ranker"]["strategy"] == "normalized"
-        assert params["ranker"]["params"] == {}
+        assert params["reranker_type"] == "normalized"
+        assert params["reranker_params"] == {}
 
     def test_search_hybrid_empty_strategy_raises(self, mock_embedding_model, mock_llama_stack_client):
         """Test that empty ranker_strategy with hybrid mode raises ValueError."""
