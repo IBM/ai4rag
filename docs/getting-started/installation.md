@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) Llama Stack Server**: With at least one foundation model, one embedding model, and vector database configured
+- **(Optional) Llama Stack Server** >= 0.5.0: With at least one foundation model, one embedding model, and vector database configured
 
 
 !!! note "External models and vector database integration"
@@ -64,7 +64,7 @@ Follow these steps:
 ### 1. Install Llama Stack
 
 ```bash
-pip install llama-stack
+pip install "llama-stack>=0.5.0"
 ```
 
 ### 2. Configure Your Stack

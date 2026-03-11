@@ -181,12 +181,13 @@ class LSVectorStore(BaseVectorStore):
         }
 
         if search_mode == "hybrid" and ranker_strategy:
-            ranker = {"strategy": ranker_strategy, "params": {}}
-            if ranker_k is not None and ranker_k > 0:
-                ranker["params"]["k"] = ranker_k
+            params["reranker_type"] = ranker_strategy
+            reranker_params = {}
+            if ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
+                reranker_params["impact_factor"] = ranker_k
             if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
-                ranker["params"]["alpha"] = ranker_alpha
-            params["ranker"] = ranker
+                reranker_params["alpha"] = ranker_alpha
+            params["reranker_params"] = reranker_params
 
         resp = self.client.vector_io.query(query=query, vector_store_id=self._ls_vs.id, params=params)
 
