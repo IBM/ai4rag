@@ -125,6 +125,11 @@ class LSVectorStore(BaseVectorStore):
                     f"Invalid ranker_strategy='{ranker_strategy}'. "
                     f"Must be one of {LSVectorStore._VALID_RANKER_STRATEGIES}."
                 )
+            if has_k and ranker_strategy != "rrf":
+                raise ValueError(
+                    f"ranker_k={ranker_k} is only valid when ranker_strategy='rrf', "
+                    f"but ranker_strategy='{ranker_strategy}'."
+                )
             if has_alpha and ranker_strategy != "weighted":
                 raise ValueError(
                     f"ranker_alpha={ranker_alpha} is only valid when ranker_strategy='weighted', "

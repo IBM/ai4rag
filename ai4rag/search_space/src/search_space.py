@@ -135,6 +135,37 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     return True
 
 
+def _rule_ranker_k_for_rrf_only(combination: dict) -> bool:
+    """ranker_k is only applicable when ranker_strategy is 'rrf'.
+
+    For non-rrf strategies, ranker_k must be 0 (sentinel meaning unused).
+    For rrf strategy, ranker_k must not be 0.
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether combination passes selected criterion.
+    """
+    ranker_strategy = combination.get(AI4RAGParamNames.RANKER_STRATEGY)
+    ranker_k = combination.get(AI4RAGParamNames.RANKER_K)
+
+    if ranker_strategy is None or ranker_k is None:
+        return True
+
+    if ranker_strategy != "rrf" and ranker_k != 0:
+        return False
+
+    if ranker_strategy == "rrf" and ranker_k == 0:
+        return False
+
+    return True
+
+
 def _rule_ranker_alpha_for_weighted_only(combination: dict) -> bool:
     """ranker_alpha is only applicable when ranker_strategy is 'weighted'.
 
@@ -305,6 +336,7 @@ class AI4RAGSearchSpace(SearchSpace):
 
     _hybrid_rules = (
         _rule_search_mode_ranker_consistency,
+        _rule_ranker_k_for_rrf_only,
         _rule_ranker_alpha_for_weighted_only,
     )
 

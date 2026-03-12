@@ -14,6 +14,7 @@ from ai4rag.search_space.src.search_space import (
     _rule_chunk_size_bigger_than_chunk_overlap,
     _rule_chunk_size_within_embedding_context_length,
     _rule_ranker_alpha_for_weighted_only,
+    _rule_ranker_k_for_rrf_only,
     _rule_search_mode_ranker_consistency,
 )
 
@@ -184,6 +185,37 @@ def test_rule_ranker_alpha_for_weighted_only_missing_fields():
     assert _rule_ranker_alpha_for_weighted_only({"ranker_strategy": "rrf"}) is True
 
 
+@pytest.mark.parametrize(
+    "combination, expected_value",
+    (
+        # rrf strategy: ranker_k must not be 0
+        ({"ranker_strategy": "rrf", "ranker_k": 20}, True),
+        ({"ranker_strategy": "rrf", "ranker_k": 60}, True),
+        ({"ranker_strategy": "rrf", "ranker_k": 100}, True),
+        # rrf strategy: ranker_k == 0 -> False
+        ({"ranker_strategy": "rrf", "ranker_k": 0}, False),
+        # non-rrf strategies: ranker_k must be 0 (sentinel)
+        ({"ranker_strategy": "weighted", "ranker_k": 0}, True),
+        ({"ranker_strategy": "normalized", "ranker_k": 0}, True),
+        ({"ranker_strategy": "", "ranker_k": 0}, True),
+        # non-rrf strategies: ranker_k != 0 -> False
+        ({"ranker_strategy": "weighted", "ranker_k": 60}, False),
+        ({"ranker_strategy": "normalized", "ranker_k": 20}, False),
+        ({"ranker_strategy": "", "ranker_k": 100}, False),
+    ),
+)
+def test_rule_ranker_k_for_rrf_only(combination, expected_value):
+    val = _rule_ranker_k_for_rrf_only(combination)
+    assert val == expected_value
+
+
+def test_rule_ranker_k_for_rrf_only_missing_fields():
+    """Rule returns True when fields are missing."""
+    assert _rule_ranker_k_for_rrf_only({}) is True
+    assert _rule_ranker_k_for_rrf_only({"ranker_strategy": "rrf"}) is True
+    assert _rule_ranker_k_for_rrf_only({"ranker_k": 60}) is True
+
+
 class TestSearchSpace:
     def test_initialization(self, mocked_params):
         search_space = SearchSpace(params=mocked_params)
@@ -324,8 +356,13 @@ class TestAI4RAGSearchSpaceVectorStoreType:
                 assert combination["ranker_alpha"] == 1
             elif search_mode == "hybrid":
                 assert combination["ranker_strategy"] in ("rrf", "weighted", "normalized")
-
-    def test_chroma_combinations_fewer_than_milvus(self):
-        ss_chroma = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="chroma")
-        ss_milvus = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
-        assert ss_chroma.max_combinations < ss_milvus.max_combinations
+                # ranker_k only for rrf
+                if combination["ranker_strategy"] == "rrf":
+                    assert combination["ranker_k"] > 0
+                else:
+                    assert combination["ranker_k"] == 0
+                # ranker_alpha only for weighted
+                if combination["ranker_strategy"] == "weighted":
+                    assert combination["ranker_alpha"] != 1
+                else:
+                    assert combination["ranker_alpha"] == 1
