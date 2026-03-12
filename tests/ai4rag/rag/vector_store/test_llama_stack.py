@@ -316,9 +316,7 @@ class TestLSVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        vector_store.search(
-            "test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_k=60, ranker_alpha=0.7
-        )
+        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_alpha=0.7)
 
         call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
@@ -620,6 +618,18 @@ class TestLSVectorStoreSearchValidation:
         with pytest.raises(ValueError, match="Invalid ranker_strategy='bogus'"):
             LSVectorStore._validate_search_params("hybrid", "bogus", None, None)
 
+    # --- ranker_k used with non-rrf strategy ---
+
+    def test_ranker_k_with_weighted_strategy_raises(self):
+        """Test that ranker_k > 0 with weighted strategy raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_k=60 is only valid when ranker_strategy='rrf'"):
+            LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0.7)
+
+    def test_ranker_k_with_normalized_strategy_raises(self):
+        """Test that ranker_k > 0 with normalized strategy raises ValueError."""
+        with pytest.raises(ValueError, match="ranker_k=20 is only valid when ranker_strategy='rrf'"):
+            LSVectorStore._validate_search_params("hybrid", "normalized", 20, None)
+
     # --- ranker_alpha used with non-weighted strategy ---
 
     def test_alpha_with_rrf_strategy_raises(self):
@@ -658,7 +668,7 @@ class TestLSVectorStoreSearchValidation:
 
     def test_valid_hybrid_weighted_with_alpha(self):
         """Test that hybrid mode with weighted strategy and alpha is valid."""
-        LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0.7)
+        LSVectorStore._validate_search_params("hybrid", "weighted", None, 0.7)
 
     def test_valid_hybrid_normalized(self):
         """Test that hybrid mode with normalized strategy is valid."""
@@ -666,7 +676,7 @@ class TestLSVectorStoreSearchValidation:
 
     def test_valid_hybrid_weighted_zero_alpha(self):
         """Test that hybrid mode with weighted strategy and alpha=0 (100% sparse) is valid."""
-        LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0)
+        LSVectorStore._validate_search_params("hybrid", "weighted", None, 0)
 
 
 class TestLSVectorStoreInitializeVectorStore:
