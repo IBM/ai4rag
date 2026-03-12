@@ -128,8 +128,12 @@ def test_rule_chunk_size_within_embedding_context_length_missing_fields():
 @pytest.mark.parametrize(
     "combination, expected_value",
     (
-        # vector mode: all ranker params must be sentinels ("", 0, 1)
+        # vector mode: all ranker params must be sentinels ("", 0, 1) or None for alpha
         ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 1}, True),
+        # vector mode: ranker_alpha=None is also accepted as sentinel
+        ({"search_mode": "vector", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": None}, True),
+        # vector mode: ranker params absent (all None via .get) -> True
+        ({"search_mode": "vector"}, True),
         # vector mode: ranker_strategy set -> False
         ({"search_mode": "vector", "ranker_strategy": "rrf", "ranker_k": 0, "ranker_alpha": 1}, False),
         # vector mode: ranker_k set -> False
@@ -269,17 +273,17 @@ _REQUIRED_PARAMS = [
 
 
 class TestGetDefaultSearchSpaceParameters:
-    def test_ls_milvus_includes_hybrid_params(self):
+    def test_ls_milvus_excludes_hybrid_params_by_default(self):
         params = get_default_ai4rag_search_space_parameters(vector_store_type="ls_milvus")
         param_names = {p.name for p in params}
 
         assert "search_mode" in param_names
-        assert "ranker_strategy" in param_names
-        assert "ranker_k" in param_names
-        assert "ranker_alpha" in param_names
+        assert "ranker_strategy" not in param_names
+        assert "ranker_k" not in param_names
+        assert "ranker_alpha" not in param_names
 
         search_mode_param = next(p for p in params if p.name == "search_mode")
-        assert "hybrid" in search_mode_param.values
+        assert search_mode_param.values == ("vector",)
 
     def test_chroma_excludes_hybrid_params(self):
         params = get_default_ai4rag_search_space_parameters(vector_store_type="chroma")
@@ -316,10 +320,13 @@ class TestGetDefaultSearchSpaceParameters:
 
 
 class TestAI4RAGSearchSpaceVectorStoreType:
-    def test_ls_milvus_has_hybrid_params(self):
+    def test_ls_milvus_excludes_hybrid_params_by_default(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
         param_names = {p.name for p in ss.params}
-        assert _HYBRID_PARAM_NAMES.issubset(param_names)
+        assert "search_mode" in param_names
+        assert not _HYBRID_PARAM_NAMES.intersection({"ranker_strategy", "ranker_k", "ranker_alpha"}).intersection(
+            param_names
+        )
 
     def test_chroma_excludes_hybrid_params(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="chroma")
@@ -337,7 +344,10 @@ class TestAI4RAGSearchSpaceVectorStoreType:
     def test_default_vector_store_type_is_ls_milvus(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS))
         param_names = {p.name for p in ss.params}
-        assert _HYBRID_PARAM_NAMES.issubset(param_names)
+        assert "search_mode" in param_names
+        assert not _HYBRID_PARAM_NAMES.intersection({"ranker_strategy", "ranker_k", "ranker_alpha"}).intersection(
+            param_names
+        )
 
     def test_chroma_does_not_apply_hybrid_rules(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="chroma")
@@ -346,8 +356,22 @@ class TestAI4RAGSearchSpaceVectorStoreType:
             assert "ranker_k" not in combination
             assert "ranker_alpha" not in combination
 
-    def test_ls_milvus_applies_hybrid_rules(self):
+    def test_ls_milvus_default_only_vector_mode(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
+        for combination in ss.combinations:
+            assert combination.get("search_mode") == "vector"
+            assert "ranker_strategy" not in combination
+            assert "ranker_k" not in combination
+            assert "ranker_alpha" not in combination
+
+    def test_ls_milvus_user_provided_hybrid_params_apply_rules(self):
+        hybrid_params = list(_REQUIRED_PARAMS) + [
+            Parameter(name="search_mode", values=("vector", "hybrid")),
+            Parameter(name="ranker_strategy", values=("", "rrf", "weighted")),
+            Parameter(name="ranker_k", values=(0, 60)),
+            Parameter(name="ranker_alpha", values=(1, 0.5)),
+        ]
+        ss = AI4RAGSearchSpace(params=hybrid_params, vector_store_type="ls_milvus")
         for combination in ss.combinations:
             search_mode = combination.get("search_mode")
             if search_mode == "vector":
@@ -356,12 +380,10 @@ class TestAI4RAGSearchSpaceVectorStoreType:
                 assert combination["ranker_alpha"] == 1
             elif search_mode == "hybrid":
                 assert combination["ranker_strategy"] in ("rrf", "weighted", "normalized")
-                # ranker_k only for rrf
                 if combination["ranker_strategy"] == "rrf":
                     assert combination["ranker_k"] > 0
                 else:
                     assert combination["ranker_k"] == 0
-                # ranker_alpha only for weighted
                 if combination["ranker_strategy"] == "weighted":
                     assert combination["ranker_alpha"] != 1
                 else:
