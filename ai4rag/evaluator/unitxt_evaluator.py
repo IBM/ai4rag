@@ -4,7 +4,6 @@
 # -----------------------------------------------------------------------------
 from typing import Sequence
 
-import numpy as np
 import pandas as pd
 from unitxt.eval_utils import evaluate
 
@@ -76,7 +75,7 @@ class UnitxtEvaluator(BaseEvaluator):
             Scores calculated for each question in the evaluation data.
         """
         reversed_metrics_mapping = {v: k for k, v in self.METRIC_TYPE_MAP.items()}
-        scores_df.replace("", np.nan, inplace=True)
+        scores_df = scores_df.mask(scores_df == "")
         raw_ret_dict = scores_df.round(4).to_dict()
         without_id = {
             reversed_metrics_mapping[key]: val for key, val in raw_ret_dict.items() if key in reversed_metrics_mapping
@@ -102,11 +101,10 @@ class UnitxtEvaluator(BaseEvaluator):
             Transformed confidence interval data that will be further processed.
         """
         reversed_metrics_mapping = {v: k for k, v in self.METRIC_TYPE_MAP.items()}
-        ci_table.replace(np.nan, None, inplace=True)
         ci_dict = ci_table.to_dict()
 
         def round_or_none(x: float | None) -> float | None:
-            return None if x is None else round(x, 4)
+            return None if x is None or pd.isna(x) else round(x, 4)
 
         returned_ci = {}
         for key, val in ci_dict.items():
