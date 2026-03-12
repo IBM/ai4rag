@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.2](https://github.com/IBM/ai4rag/releases/tag/v0.4.2)
+
+### Added
+- Search space validation rule `_rule_ranker_k_for_rrf_only` ensuring `ranker_k` is only used with `rrf` ranker strategy
+- Vector store validation that `ranker_k` is only valid when `ranker_strategy='rrf'`
+
+### Changed
+- Removed `numpy` dependency from `UnitxtEvaluator`; replaced with pandas-native `DataFrame.mask()` and `pd.isna()`
+- Default search space: added `4096` to default chunk sizes
+- Default search space: simplified hybrid search defaults — removed `normalized` ranker strategy, reduced `ranker_k` values to `(0, 60)` and `ranker_alpha` values to `(1, 0.5)`
+
+---
+
 ## [0.4.1](https://github.com/IBM/ai4rag/releases/tag/v0.4.1)
 
 ### Changed
