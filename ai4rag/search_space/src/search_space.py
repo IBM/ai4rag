@@ -123,7 +123,7 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     ranker_alpha = combination.get(AI4RAGParamNames.RANKER_ALPHA)
 
     if search_mode == "vector":
-        if ranker_strategy or ranker_k or ranker_alpha != 1:
+        if ranker_strategy or ranker_k or ranker_alpha not in (1, None):
             return False
         return True
 

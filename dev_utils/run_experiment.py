@@ -21,8 +21,9 @@ from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
-    # from dotenv import load_dotenv, find_dotenv
-    # load_dotenv(find_dotenv())
+    from dotenv import find_dotenv, load_dotenv
+
+    load_dotenv(find_dotenv())
 
     # client = LlamaStackClient(base_url="http://localhost:8321")
     client = LlamaStackClient()
@@ -38,11 +39,11 @@ if __name__ == "__main__":
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
     # Configure optimizer
-    optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=2)
+    optimizer_settings = GAMOptSettings(max_evals=8, n_random_nodes=4)
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
-        vector_store_type="chroma",
+        vector_store_type="ls_milvus",
         params=[
             Parameter(
                 name="foundation_model",
@@ -91,8 +92,8 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
-        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chroma_experiment"),
-        vector_store_type="chroma",
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "ls_milvus_hybrid_off_narrowed_ss"),
+        vector_store_type="ls_milvus",
     )
 
     experiment.search(skip_mps=True)
