@@ -155,6 +155,7 @@ class AI4RAGExperiment:
         )
         self.n_mps_foundation_models = kwargs.pop("n_mps_fm", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS)
         self.n_mps_embedding_models = kwargs.pop("n_mps_em", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
+        self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -522,11 +523,16 @@ class AI4RAGExperiment:
 
         optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
 
-        # In the search kwargs user may pass different optimizer instance for testing purposes
+        optimizer_kwargs = {}
+        if self.known_observations is not None:
+            optimizer_kwargs["known_observations"] = self.known_observations
+
+        # In the search kwargs user may pass different optimizer class for testing purposes
         optimizer = optimizer_class(
             objective_function=objective_function,
             search_space=self.search_space,
             settings=self.optimizer_settings,
+            **optimizer_kwargs,
         )
         logger.info(
             "Using optimizer: %s with optimizer settings: %s",
@@ -595,6 +601,8 @@ class AI4RAGExperiment:
 
         generation_payload = evaluation_result.rag_params.get("generation")
 
+        n_known = len(self.known_observations) if self.known_observations else 0
+
         payload = {
             "pattern_name": evaluation_result.pattern_name,
             "scores": {
@@ -611,7 +619,7 @@ class AI4RAGExperiment:
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
             },
-            "iteration": len(self.results),
+            "iteration": len(self.results) + n_known,
         }
 
         self.event_handler.on_pattern_creation(
@@ -721,4 +729,5 @@ class AI4RAGExperiment:
             Pattern name.
             Example: "Pattern7"
         """
-        return f"Pattern{len(self.results) + 1}"
+        n_known = len(self.known_observations) if self.known_observations else 0
+        return f"Pattern{n_known + len(self.results) + 1}"

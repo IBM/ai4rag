@@ -86,7 +86,7 @@ namespaces = false
 
 
 [tool.pytest.ini_options]
-python_files = ["tests/*.py"]
+python_files = ["tests/unit/*.py"]
 log_cli = false
 log_level = "INFO"
 
@@ -104,7 +104,7 @@ line-length = 120
 profile = "black"
 py_version = 313
 line_length = 120
-skip = ["tests/", "scripts/",  "dev_utils/"]
+skip = ["scripts/"]
 
 
 [tool.pylint]

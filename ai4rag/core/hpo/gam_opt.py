@@ -71,13 +71,18 @@ class GAMOptimizer(BaseOptimizer):
         objective_function: Callable[[dict], float],
         search_space: SearchSpace,
         settings: GAMOptSettings,
+        known_observations: list[dict] | None = None,
     ):
         super().__init__(objective_function, search_space, settings)
         self.settings = settings
         self.evaluations = []
-        self.max_iterations = self.settings.max_evals
         self._evaluated_combinations = []
         self._encoders_with_columns: list[tuple[str, LabelEncoder]] = []
+
+        if known_observations:
+            self._load_known_observations(known_observations)
+
+        self.max_iterations = self.settings.max_evals
 
     @property
     def max_iterations(self) -> int:
@@ -141,16 +146,58 @@ class GAMOptimizer(BaseOptimizer):
         iterations_limit = ceil((self.max_iterations - len(self.evaluations)) / self.settings.evals_per_trial)
         return iterations_limit
 
+    def _load_known_observations(self, known_observations: list[dict]) -> None:
+        """
+        Load known observations to warm-start the optimizer.
+
+        Parameters
+        ----------
+        known_observations : list[dict]
+            List of previously evaluated parameter combinations with scores.
+            Each dict must contain the same keys as search space combinations
+            plus a "score" key.
+
+        Raises
+        ------
+        ValueError
+            When any observation is missing the "score" key.
+        """
+        for idx, obs in enumerate(known_observations):
+            if "score" not in obs:
+                raise ValueError(f"Known observation at index {idx} is missing the 'score' key.")
+
+            params = {k: v for k, v in obs.items() if k != "score"}
+            self._evaluated_combinations.append(params)
+            self.evaluations.append(obs.copy())
+
+        logger.info("Loaded %d known observations into the optimizer.", len(known_observations))
+
     def evaluate_initial_random_nodes(self) -> None:
         """
         Perform evaluation of randomly chosen n nodes from the solutions space.
         Evaluations are performed until desired number of successful evaluations
         is reached or maximum number of evaluations is reached.
+
+        When the optimizer has been warm-started with known observations,
+        already-successful evaluations count toward the n_random_nodes target
+        and already-evaluated combinations are excluded from candidates.
         """
-        combinations_local = copy(self._search_space.combinations)
+        successful_evaluations = sum(1 for e in self.evaluations if e["score"] is not None)
+
+        if successful_evaluations >= self.settings.n_random_nodes:
+            logger.info(
+                "Skipping random evaluation phase: %d known successful evaluations >= n_random_nodes (%d).",
+                successful_evaluations,
+                self.settings.n_random_nodes,
+            )
+            return
+
+        if len(self.evaluations) >= self.max_iterations:
+            return
+
+        combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
         random.shuffle(combinations_local)
 
-        successful_evaluations = 0
         gen = (x for x in combinations_local)
 
         while successful_evaluations < self.settings.n_random_nodes:

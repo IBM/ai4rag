@@ -553,3 +553,228 @@ class TestGAMOptimizer:
         call_args = mock_gam.fit.call_args
         assert call_args[0][0].shape[0] == 3  # X_train should have 3 samples
         assert call_args[0][1].shape[0] == 3  # y_train should have 3 samples
+
+
+class TestGAMOptimizerKnownObservations:
+    """Test warm-start behavior with known observations."""
+
+    @pytest.fixture
+    def mock_search_space(self):
+        """Create a mock search space with predefined combinations."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"param1": "a", "param2": 1},
+            {"param1": "b", "param2": 2},
+            {"param1": "c", "param2": 3},
+            {"param1": "d", "param2": 4},
+            {"param1": "e", "param2": 5},
+            {"param1": "f", "param2": 6},
+        ]
+        mock_space.max_combinations = 6
+        return mock_space
+
+    def test_known_observations_pre_populate(self, mock_search_space):
+        """Test that known observations pre-populate evaluations and _evaluated_combinations."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+            {"param1": "b", "param2": 2, "score": 0.7},
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        assert len(optimizer.evaluations) == 2
+        assert len(optimizer._evaluated_combinations) == 2
+        assert optimizer.evaluations[0] == {"param1": "a", "param2": 1, "score": 0.3}
+        assert optimizer._evaluated_combinations[0] == {"param1": "a", "param2": 1}
+
+    def test_known_observations_skip_random_phase(self, mock_search_space):
+        """When enough known observations exist, random phase is skipped entirely."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+            {"param1": "b", "param2": 2, "score": 0.7},
+            {"param1": "c", "param2": 3, "score": 0.5},
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+        objective_func = MagicMock()
+
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        optimizer.evaluate_initial_random_nodes()
+
+        # Objective function should not have been called
+        objective_func.assert_not_called()
+        # Evaluations should still be the 3 known ones
+        assert len(optimizer.evaluations) == 3
+
+    def test_known_observations_partial_random_phase(self, mock_search_space, mocker):
+        """When known observations < n_random_nodes, only the gap is filled."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+        objective_func = MagicMock(side_effect=[0.5, 0.8])
+        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
+
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        optimizer.evaluate_initial_random_nodes()
+
+        # Should have called objective function only 2 times (to fill the gap from 1 to 3)
+        assert objective_func.call_count == 2
+        assert len(optimizer.evaluations) == 3
+
+    def test_known_observations_excludes_already_evaluated(self, mock_search_space, mocker):
+        """Known observation combinations are excluded from random phase candidates."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+        objective_func = MagicMock(side_effect=[0.5, 0.8])
+        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
+
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        optimizer.evaluate_initial_random_nodes()
+
+        # The known combination should not have been re-evaluated
+        for call_args in objective_func.call_args_list:
+            assert call_args != ({"param1": "a", "param2": 1},)
+
+    def test_known_observations_validation_missing_score(self, mock_search_space):
+        """Error when a known observation is missing the 'score' key."""
+        known = [
+            {"param1": "a", "param2": 1},  # missing score
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+
+        with pytest.raises(ValueError, match="missing the 'score' key"):
+            GAMOptimizer(
+                objective_function=MagicMock(),
+                search_space=mock_search_space,
+                settings=settings,
+                known_observations=known,
+            )
+
+    def test_known_observations_with_none_scores(self, mock_search_space, mocker):
+        """Known observations with None scores don't count as successful."""
+        known = [
+            {"param1": "a", "param2": 1, "score": None},
+            {"param1": "b", "param2": 2, "score": 0.7},
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+        objective_func = MagicMock(side_effect=[0.5, 0.8])
+        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
+
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        optimizer.evaluate_initial_random_nodes()
+
+        # 1 successful known + 2 new = 3 successful, meeting n_random_nodes=3
+        assert objective_func.call_count == 2
+        successful = [e for e in optimizer.evaluations if e["score"] is not None]
+        assert len(successful) == 3
+
+    def test_known_observations_count_toward_max_iterations(self, mock_search_space, mocker):
+        """Known observations count toward max_iterations budget."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+            {"param1": "b", "param2": 2, "score": 0.7},
+            {"param1": "c", "param2": 3, "score": 0.5},
+        ]
+        settings = GAMOptSettings(max_evals=4, n_random_nodes=3)
+
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.6, 0.7, 0.8])
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        objective_func = MagicMock(return_value=0.9)
+
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        result = optimizer.search()
+
+        # max_evals=4, 3 known, so only 1 new evaluation via GAM
+        assert objective_func.call_count == 1
+        assert len(optimizer.evaluations) == 4
+        assert result["score"] == 0.9
+
+    def test_search_full_warm_start(self, mock_search_space, mocker):
+        """End-to-end search with warm start skips random phase and runs GAM iterations."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+            {"param1": "b", "param2": 2, "score": 0.7},
+            {"param1": "c", "param2": 3, "score": 0.5},
+        ]
+        settings = GAMOptSettings(max_evals=5, n_random_nodes=3, evals_per_trial=1)
+
+        mock_gam = MagicMock()
+        mock_gam.predict.side_effect = [
+            np.array([0.8, 0.6, 0.4]),  # 3 remaining after known
+            np.array([0.7, 0.5]),  # 2 remaining
+        ]
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        objective_func = MagicMock(side_effect=[0.9, 0.6])
+
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        result = optimizer.search()
+
+        # Random phase skipped (3 known >= n_random_nodes=3)
+        # GAM iterations: ceil((5 - 3) / 1) = 2 iterations, each evaluating 1
+        assert objective_func.call_count == 2
+        assert len(optimizer.evaluations) == 5
+        assert result["score"] == 0.9
+
+    def test_known_observations_are_copied(self, mock_search_space):
+        """Ensure known observations are copied and original list is not mutated."""
+        known = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+        ]
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
+
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=mock_search_space,
+            settings=settings,
+            known_observations=known,
+        )
+
+        # Mutating optimizer's evaluations should not affect the original
+        optimizer.evaluations[0]["score"] = 999
+        assert known[0]["score"] == 0.3
