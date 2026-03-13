@@ -23,6 +23,12 @@ class BaseEmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
     def __repr__(self) -> str:
         return str(self)
 
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, BaseEmbeddingModel):
+            return NotImplemented
+
+        return self.model_id == other.model_id
+
     def __hash__(self):
         return hash(self.model_id)
 
