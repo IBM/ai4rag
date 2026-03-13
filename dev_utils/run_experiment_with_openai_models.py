@@ -32,7 +32,7 @@ if __name__ == "__main__":
     documents_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "documents"
 
     # change to direct to your benchmark_data.json
-    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "watsonx_benchmark.json"
+    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "benchmark_data.json"
 
     file_store = FileStore(documents_path)
     documents = file_store.load_as_documents()

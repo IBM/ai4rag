@@ -601,6 +601,8 @@ class AI4RAGExperiment:
 
         generation_payload = evaluation_result.rag_params.get("generation")
 
+        n_known = len(self.known_observations) if self.known_observations else 0
+
         payload = {
             "pattern_name": evaluation_result.pattern_name,
             "scores": {
@@ -617,7 +619,7 @@ class AI4RAGExperiment:
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
             },
-            "iteration": len(self.results),
+            "iteration": len(self.results) + n_known,
         }
 
         self.event_handler.on_pattern_creation(
