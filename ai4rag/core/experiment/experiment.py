@@ -155,6 +155,7 @@ class AI4RAGExperiment:
         )
         self.n_mps_foundation_models = kwargs.pop("n_mps_fm", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS)
         self.n_mps_embedding_models = kwargs.pop("n_mps_em", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
+        self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -520,31 +521,24 @@ class AI4RAGExperiment:
                 name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
             )
 
-        optimizer_arg = kwargs.get("optimizer", GAMOptimizer)
+        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
 
-        if isinstance(optimizer_arg, type) and issubclass(optimizer_arg, BaseOptimizer):
-            optimizer = optimizer_arg(
-                objective_function=objective_function,
-                search_space=self.search_space,
-                settings=self.optimizer_settings,
-            )
-            logger.info(
-                "Using optimizer: %s with optimizer settings: %s",
-                optimizer_arg.__name__,
-                self.optimizer_settings.to_dict(),
-            )
-        elif isinstance(optimizer_arg, BaseOptimizer):
-            optimizer = optimizer_arg
-            optimizer.objective_function = objective_function
-            logger.info(
-                "Using pre-initialized optimizer: %s with %d known observations.",
-                optimizer.__class__.__name__,
-                len(getattr(optimizer, "evaluations", [])),
-            )
-        else:
-            raise RAGExperimentError(
-                f"'optimizer' must be a BaseOptimizer subclass or instance, got {type(optimizer_arg)}."
-            )
+        optimizer_kwargs = {}
+        if self.known_observations is not None:
+            optimizer_kwargs["known_observations"] = self.known_observations
+
+        # In the search kwargs user may pass different optimizer class for testing purposes
+        optimizer = optimizer_class(
+            objective_function=objective_function,
+            search_space=self.search_space,
+            settings=self.optimizer_settings,
+            **optimizer_kwargs,
+        )
+        logger.info(
+            "Using optimizer: %s with optimizer settings: %s",
+            optimizer_class.__name__,
+            self.optimizer_settings.to_dict(),
+        )
 
         try:
             _ = optimizer.search()
@@ -733,4 +727,5 @@ class AI4RAGExperiment:
             Pattern name.
             Example: "Pattern7"
         """
-        return f"Pattern{len(self.results) + 1}"
+        n_known = len(self.known_observations) if self.known_observations else 0
+        return f"Pattern{n_known + len(self.results) + 1}"
