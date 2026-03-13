@@ -119,7 +119,7 @@ ai4rag follows [Semantic Versioning](https://semver.org/):
 
 ## Release Process
 
-Releases are created by merging the `dev` branch into `main` with a merge commit and git tag.
+Releases are created by maintainers by tagging a commit on `main`.
 
 See [Development Workflow](../development/workflow.md#creating-a-release) for detailed release procedures.
 

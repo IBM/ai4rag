@@ -94,9 +94,9 @@ pytest
 ### 2. Create a Branch
 
 ```bash
-# Update dev branch
-git checkout dev
-git pull upstream dev
+# Update main branch
+git checkout main
+git pull upstream main
 
 # Create feature branch
 git checkout -b feature/your-feature-name
@@ -149,7 +149,7 @@ Signed-off-by: Your Name <your.email@example.com>"
 # Push to your fork
 git push origin feature/your-feature-name
 
-# Open PR on GitHub targeting `dev` branch
+# Open PR on GitHub targeting `main` branch
 ```
 
 ---
@@ -165,7 +165,7 @@ Before submitting, ensure:
 - [ ] New code has tests
 - [ ] Documentation is updated
 - [ ] Commits are signed off
-- [ ] PR targets `dev` branch
+- [ ] PR targets `main` branch
 - [ ] PR description explains changes clearly
 
 ### PR Template

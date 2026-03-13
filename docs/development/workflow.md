@@ -6,27 +6,35 @@ This document describes the development workflow for contributing to ai4rag.
 
 ## Branch Strategy
 
-ai4rag uses a **two-branch workflow**:
+ai4rag uses a **single-branch workflow**:
 
-- **`main`**: Production-ready releases only
-- **`dev`**: Active development and integration
+- **`main`**: The default branch for all development
+- **Feature branches**: Created from `main` for each change, merged back via PR
+
+Maintainers create tagged releases directly from `main` when ready.
 
 ```mermaid
 %%{init: {'theme':'base', 'themeVariables': { 'git0':'#0f62fe', 'git1':'#08bdba', 'gitBranchLabel0':'#ffffff', 'gitBranchLabel1':'#ffffff', 'commitLabelColor':'#ffffff', 'commitLabelBackground':'#525252', 'tagLabelColor':'#ffffff', 'tagLabelBackground':'#0f62fe'}}}%%
 gitGraph
     commit id: "Initial"
-    branch dev
-    checkout dev
+    branch feature/a
     commit id: "Feature A"
+    checkout main
+    merge feature/a id: "Merge A"
+    branch feature/b
     commit id: "Feature B"
+    checkout main
+    merge feature/b id: "Merge B"
+    commit id: "Release v0.2.0" tag: "v0.2.0"
+    branch feature/c
     commit id: "Feature C"
     checkout main
-    merge dev id: "Release v0.2.0" tag: "v0.2.0"
-    checkout dev
+    merge feature/c id: "Merge C"
+    branch feature/d
     commit id: "Feature D"
-    commit id: "Feature E"
     checkout main
-    merge dev id: "Release v0.3.0" tag: "v0.3.0"
+    merge feature/d id: "Merge D"
+    commit id: "Release v0.3.0" tag: "v0.3.0"
 ```
 
 ---
@@ -35,12 +43,12 @@ gitGraph
 
 ### 1. Create a Feature Branch
 
-All development starts from `dev`:
+All development starts from `main`:
 
 ```bash
-# Ensure dev is up to date
-git checkout dev
-git pull origin dev
+# Ensure main is up to date
+git checkout main
+git pull origin main
 
 # Create a feature branch
 git checkout -b feature/your-feature-name
@@ -86,7 +94,7 @@ Signed-off-by: Your Name <your.email@example.com>"
 # Push your branch
 git push origin feature/your-feature-name
 
-# Create a PR on GitHub targeting the `dev` branch
+# Create a PR on GitHub targeting the `main` branch
 ```
 
 **PR Guidelines:**
@@ -117,22 +125,22 @@ git push origin feature/your-feature-name
 
 - At least **1 LGTM** (Looks Good To Me) from maintainers
 - All CI checks passing (tests, linters)
-- No merge conflicts with `dev`
+- No merge conflicts with `main`
 
 ### 5. PR Merge (Squash)
 
-Once approved, maintainers will **squash and merge** your PR into `dev`:
+Once approved, maintainers will **squash and merge** your PR into `main`:
 
 - All commits are squashed into a single commit
 - Commit message is the PR title and description
 - Feature branch is deleted after merge
 
 ```
-feature/your-feature-name → dev (squash merge)
+feature/your-feature-name → main (squash merge)
 ```
 
 !!! note "Why Squash?"
-    Squashing keeps the `dev` branch history clean with one commit per feature/fix, making it easier to track changes.
+    Squashing keeps the `main` branch history clean with one commit per feature/fix, making it easier to track changes.
 
 ---
 
@@ -140,12 +148,12 @@ feature/your-feature-name → dev (squash merge)
 
 ### Creating a Release
 
-Releases are created by merging `dev` into `main` with a **merge commit** (not squash):
+Releases are created by maintainers by tagging a commit on `main`:
 
 ```bash
-# 1. Ensure dev is ready for release
-git checkout dev
-git pull origin dev
+# 1. Ensure main is up to date
+git checkout main
+git pull origin main
 
 # 2. Run full test suite
 pytest
@@ -158,49 +166,30 @@ pytest
 
 # 5. Commit version bump
 git commit -s -m "Bump version to 0.3.0"
-git push origin dev
+git push origin main
 
-# 6. Merge dev into main (merge commit, not squash)
-git checkout main
-git pull origin main
-git merge --no-ff dev -m "Release v0.3.0
-
-Merge dev branch for version 0.3.0 release.
-
-Changes:
-- Feature A
-- Feature B
-- Bug fix C
-"
-
-# 7. Tag the release
+# 6. Tag the release
 git tag -a v0.3.0 -m "Release version 0.3.0"
 
-# 8. Push main and tags
-git push origin main
+# 7. Push tag
 git push origin v0.3.0
 
-# 9. Create GitHub Release
+# 8. Create GitHub Release
 # Use GitHub UI to create release from tag with changelog
 ```
 
-**Release Commit Structure:**
+**Release History:**
 
 ```
 main branch:
-  - Release v0.1.0 (merge commit from dev)
-  - Release v0.2.0 (merge commit from dev)
-  - Release v0.3.0 (merge commit from dev)
-
-dev branch:
   - Feature A (squashed PR)
   - Feature B (squashed PR)
   - Bug fix C (squashed PR)
+  - Bump version to 0.2.0          ← tagged v0.2.0
   - Feature D (squashed PR)
+  - Feature E (squashed PR)
+  - Bump version to 0.3.0          ← tagged v0.3.0
 ```
-
-!!! warning "Merge Commits for Releases"
-    Always use `--no-ff` when merging `dev` into `main` to preserve the development history and make releases clearly identifiable.
 
 ---
 
@@ -208,16 +197,15 @@ dev branch:
 
 ```mermaid
 graph TB
-    A[Create feature branch from dev] --> B[Develop and commit]
-    B --> C[Push and open PR to dev]
+    A[Create feature branch from main] --> B[Develop and commit]
+    B --> C[Push and open PR to main]
     C --> D[Code review]
     D --> E{Approved?}
     E -->|No| B
-    E -->|Yes| F[Squash merge to dev]
+    E -->|Yes| F[Squash merge to main]
     F --> G{Ready for release?}
     G -->|No| A
-    G -->|Yes| H[Merge dev to main]
-    H --> I[Tag release]
+    G -->|Yes| H[Tag release on main]
 ```
 
 ---
@@ -267,7 +255,7 @@ Signed-off-by: John Doe <john.doe@example.com>
 
 ### Continuous Integration
 
-On every PR to `dev`: Coming soon...
+On every PR to `main`: Coming soon...
 
 ### Continuous Deployment
 
@@ -299,8 +287,8 @@ pip install -e ".[dev]"
 
 ```bash
 # 1. Create feature branch
-git checkout dev
-git pull origin dev
+git checkout main
+git pull origin main
 git checkout -b feature/my-feature
 
 # 2. Make changes
