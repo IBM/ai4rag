@@ -32,6 +32,11 @@ class BaseEmbeddingModel(ABC, Generic[ClientT, EmbeddingParamsT]):
     def __hash__(self):
         return hash(self.model_id)
 
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, BaseEmbeddingModel):
+            return NotImplemented
+        return self.model_id < other.model_id
+
     @abstractmethod
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embed documents.

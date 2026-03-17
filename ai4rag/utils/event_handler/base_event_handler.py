@@ -4,8 +4,14 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from enum import StrEnum
+from typing import NotRequired, TypedDict
 
-__all__ = ["BaseEventHandler", "LogLevel"]
+__all__ = [
+    "BaseEventHandler",
+    "LogLevel",
+    "PatternPayload",
+    "EvaluationRecord",
+]
 
 
 class LogLevel(StrEnum):
@@ -14,6 +20,117 @@ class LogLevel(StrEnum):
     INFO = "info"
     WARNING = "warning"
     ERROR = "error"
+
+
+# ---------------------------------------------------------------------------
+# TypedDicts for on_pattern_creation – payload
+# ---------------------------------------------------------------------------
+
+
+class MetricCI(TypedDict):
+    """Aggregate score with confidence interval for a single metric."""
+
+    mean: float
+    ci_low: float | None
+    ci_high: float | None
+
+
+class PatternScores(TypedDict):
+    """Scores section of :class:`PatternPayload`."""
+
+    scores: dict[str, MetricCI]
+    question_scores: dict[str, dict[str, float]]
+
+
+class VectorStoreSettings(TypedDict):
+    """Vector store configuration used by a RAG pattern."""
+
+    datasource_type: str
+    collection_name: str
+
+
+class ChunkingSettings(TypedDict):
+    """Chunking parameters used during indexing."""
+
+    method: str
+    chunk_size: int
+    chunk_overlap: int
+
+
+class EmbeddingSettings(TypedDict):
+    """Embedding model configuration used during indexing."""
+
+    model_id: str
+    distance_metric: str
+    embedding_params: dict
+
+
+class RetrievalSettings(TypedDict, total=False):
+    """Retrieval parameters. ``window_size`` and ranker fields are optional."""
+
+    method: NotRequired[str]
+    number_of_chunks: NotRequired[int]
+    search_mode: NotRequired[str]
+    # present only when retrieval_method == "window"
+    window_size: NotRequired[int]
+    # present only when search_mode == "hybrid"
+    ranker_strategy: NotRequired[str]
+    ranker_k: NotRequired[int]
+    ranker_alpha: NotRequired[float]
+
+
+class GenerationSettings(TypedDict):
+    """Foundation model configuration used during generation."""
+
+    model_id: str
+    context_template_text: str
+    user_message_text: str
+    system_message_text: str
+
+
+class PatternSettings(TypedDict):
+    """Full settings block of :class:`PatternPayload`."""
+
+    vector_store: VectorStoreSettings
+    chunking: ChunkingSettings
+    embedding: EmbeddingSettings
+    retrieval: RetrievalSettings
+    generation: GenerationSettings
+
+
+class PatternPayload(TypedDict):
+    """Payload passed to :meth:`BaseEventHandler.on_pattern_creation`."""
+
+    pattern_name: str
+    scores: PatternScores
+    execution_time: int
+    final_score: float
+    schema_version: str
+    producer: str
+    settings: PatternSettings
+    iteration: int
+
+
+# ---------------------------------------------------------------------------
+# TypedDicts for on_pattern_creation – evaluation_results
+# ---------------------------------------------------------------------------
+
+
+class AnswerContext(TypedDict):
+    """Single retrieved chunk with its source document."""
+
+    text: str
+    document_id: str
+
+
+class EvaluationRecord(TypedDict):
+    """Per-question evaluation entry in the ``evaluation_results`` list."""
+
+    question: str
+    correct_answers: list[str]
+    answer: str
+    answer_contexts: list[AnswerContext]
+    scores: dict[str, float]
 
 
 class BaseEventHandler(ABC):
@@ -40,7 +157,9 @@ class BaseEventHandler(ABC):
         """
 
     @abstractmethod
-    def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
+    def on_pattern_creation(
+        self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
+    ) -> None:
         """
         Method called when single RAG pattern's evaluation is completed.
 
@@ -50,97 +169,88 @@ class BaseEventHandler(ABC):
             Information about RAG pattern's location and name, calculated scores
             and message.
 
-            Example:
+            Example content:
 
-            name --> Pattern 1
-            iteration --> which pattern we are evaluating
-
-            payload = {
-                "metrics": {
-                    "test_data": {
-                        "answer_correctness": {
-                            "mean": 0.7,
-                            "ci_low": 0.6,
-                            "ci_high": 0.8,
-                        },
+            {
+                'pattern_name': 'Pattern1',
+                'scores': {
+                    'scores': {
+                        'answer_correctness': {'mean': 0.0, 'ci_low': None, 'ci_high': None},
+                        'faithfulness': {'mean': 0.0909, 'ci_low': 0.0145, 'ci_high': 0.016},
+                        'context_correctness': {'mean': 0.0, 'ci_low': None, 'ci_high': None},
+                    },
+                    'question_scores': {
+                        'answer_correctness': {'q0': 0, 'q1': 0, 'q2': 0},
+                        'faithfulness': {'q0': 0.0909, 'q1': 0.0909, 'q2': 0.0909},
+                        'context_correctness': {'q0': 0, 'q1': 0, 'q2': 0},
                     },
                 },
-                "context": {
-                    "rag_pattern": {
-                        "composition_steps" : [
-                            "chunking", "embeddings", "vector_store", "retrieval", "generation"
-                        ],
-                        "duration": 3507.9,
-                        "location": {},
-                        "name": "Pattern 1",
-                        "settings": {
-                            "chunking": {
-                                "method": "recursive",
-                                "chunk_size": 256,
-                                "overlap": 128
-                            },
-                            "embeddings": {
-                                "truncate_strategy": "left",
-                                "input_size": 384,
-                                "model_name": "ibm/slate.30m.english.rtrvr"
-                            },
-                            "vector_store": {
-                                "database": "milvus",
-                                "index_name": "XD_1234_index_5678",
-                                "distance_metric": "euclidean"
-                                "operation": "upsert",
-                                "document_schema": {...},
-                            },
-                            "retrieval": {
-                                "method": "simple",
-                                "number_of_chunks": 5
-                            },
-                            "generation": {
-                                "model_name": "mistralai/mixtral-8x7b-instruct-v0-1",
-                                "parameters": {
-                                    "max_new_tokens": 256
-                                },
-                                "chat_template_messages": {
-                                    "system_message_text": "...",
-                                    "user_message_text": "...",
-                                }
-                                "context_template_text": "...",
-                            }
-                        }
+                'execution_time': 0,
+                'final_score': 0.0909,
+                'schema_version': '1.0',
+                'producer': 'ai4rag',
+                'settings': {
+                    'vector_store': {'datasource_type': 'chroma', 'collection_name': 'ai4rag_20260317092550'},
+                    'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},
+                    'embedding': {
+                        'model_id': 'mock-em-1',
+                        'distance_metric': 'cosine',
+                        'embedding_params': {'embedding_dimension': 64},
+                    },
+                    'retrieval': {'method': 'window', 'number_of_chunks': 3, 'search_mode': 'vector', 'window_size': 3},
+                    'generation': {
+                        'model_id': 'mock-fm-2',
+                        'context_template_text': '{document}',
+                        'user_message_text': '\n\nContext:\n{reference_documents}:\n\nQuestion: {question}.\n
+                        'system_message_text': 'System instruction...'
                     }
-                    "iteration": 1,
-                    "max_combinations": 100
-                }
+                },
+                'iteration': 0,
             }
+
 
         evaluation_results : dict
             Results from single pattern evaluation.
 
+            [
+                {
+                    'question': 'What is topic_0 about?',
+                    'correct_answers': ['topic_0 is central to understanding the broader subject.'],
+                    'answer': 'I cannot answer this question, because I am just a mocked model.',
+                    'answer_contexts': [{'text': 'Content of document...', 'document_id': 'doc_4'}],
+                    'scores': {'answer_correctness': 0, 'faithfulness': 0.0909, 'context_correctness': 0},
+                },
+            ]
+
             Example content:
             "data": [
                 {
-                    "question_id": "0",
+                    "question": "<question_1>"
                     "answer": "<model's answer>",
                     "answer_contexts": [
                         {"text": "<content1_text>", "document_id": "document_1.pdf"},
                         {"text": "<content2_text>", "document_id": "document_2.pdf"},
                     ]
+                    'correct_answers': ['correct_answer_for_question_1'],
                     "scores": {
                         "answer_correctness": 0.79,
+                        "faithfulness": 0.55,
                         "context_correctness": 0.65,
                     }
                 },
                 {
-                    "question_id": "1",
+                    "question": "<question_2>",
                     "answer": "<model's answer>",
                     "answer_contexts": [
                         {"text": "<content3_text>", "document_id": "document_3.pdf"},
                         {"text": "<content4_text>", "document_id": "document_4.pdf"},
                     ]
+                    "correct_naswers": ["correct_answer_1_for_question_2", "correct_answer_2_for_question_3"],
                     "scores": {
                         "answer_correctness": 0.79,
+                        "faithfulness": 0.55,
                         "context_correctness": 0.65,
-                    }
-                }
+                    },
+                },
             ]
         """
