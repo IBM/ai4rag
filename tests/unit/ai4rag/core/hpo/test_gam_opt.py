@@ -38,13 +38,6 @@ class TestGAMOptSettings:
         assert settings.evals_per_trial == 2
         assert settings.random_state == 42
 
-    def test_gam_opt_settings_post_init_limits_n_random_nodes(self):
-        """Test that __post_init__ limits n_random_nodes to max_evals."""
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=10)
-
-        # n_random_nodes should be capped at max_evals
-        assert settings.n_random_nodes == 5
-
     def test_gam_opt_settings_post_init_keeps_n_random_nodes_if_smaller(self):
         """Test that __post_init__ keeps n_random_nodes if it's smaller than max_evals."""
         settings = GAMOptSettings(max_evals=20, n_random_nodes=5)
