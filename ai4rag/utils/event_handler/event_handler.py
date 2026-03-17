@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 import json
 from pathlib import Path
+from typing import Any
 
 from ai4rag import logger
 
@@ -55,7 +56,7 @@ class KFPEventHandler(BaseEventHandler):
 
     def __init__(self):
         self.status_changes: list[dict] = []
-        self.patterns: list[dict[str, PatternPayload | EvaluationRecord | Any]] = []
+        self.patterns: list[dict[str, Any]] = []
         self._last_step: str | None = None
 
     def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:

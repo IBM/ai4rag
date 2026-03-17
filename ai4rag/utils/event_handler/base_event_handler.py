@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import NotRequired, TypedDict
+from typing import TypedDict
 
 __all__ = [
     "BaseEventHandler",
@@ -68,15 +68,15 @@ class EmbeddingSettings(TypedDict):
 class RetrievalSettings(TypedDict, total=False):
     """Retrieval parameters. ``window_size`` and ranker fields are optional."""
 
-    method: NotRequired[str]
-    number_of_chunks: NotRequired[int]
-    search_mode: NotRequired[str]
+    method: str
+    number_of_chunks: int
+    search_mode: str
     # present only when retrieval_method == "window"
-    window_size: NotRequired[int]
+    window_size: int
     # present only when search_mode == "hybrid"
-    ranker_strategy: NotRequired[str]
-    ranker_k: NotRequired[int]
-    ranker_alpha: NotRequired[float]
+    ranker_strategy: str
+    ranker_k: int
+    ranker_alpha: float
 
 
 class GenerationSettings(TypedDict):
@@ -212,18 +212,9 @@ class BaseEventHandler(ABC):
         evaluation_results : dict
             Results from single pattern evaluation.
 
-            [
-                {
-                    'question': 'What is topic_0 about?',
-                    'correct_answers': ['topic_0 is central to understanding the broader subject.'],
-                    'answer': 'I cannot answer this question, because I am just a mocked model.',
-                    'answer_contexts': [{'text': 'Content of document...', 'document_id': 'doc_4'}],
-                    'scores': {'answer_correctness': 0, 'faithfulness': 0.0909, 'context_correctness': 0},
-                },
-            ]
-
             Example content:
-            "data": [
+
+            [
                 {
                     "question": "<question_1>"
                     "answer": "<model's answer>",
@@ -245,7 +236,7 @@ class BaseEventHandler(ABC):
                         {"text": "<content3_text>", "document_id": "document_3.pdf"},
                         {"text": "<content4_text>", "document_id": "document_4.pdf"},
                     ]
-                    "correct_naswers": ["correct_answer_1_for_question_2", "correct_answer_2_for_question_3"],
+                    "correct_answers": ["correct_answer_1_for_question_2", "correct_answer_2_for_question_3"],
                     "scores": {
                         "answer_correctness": 0.79,
                         "faithfulness": 0.55,
