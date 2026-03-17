@@ -66,6 +66,11 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
     def __hash__(self):
         return hash(self.model_id)
 
+    def __lt__(self, other: object) -> bool:
+        if not isinstance(other, BaseFoundationModel):
+            return NotImplemented
+        return self.model_id < other.model_id
+
     @abstractmethod
     def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
         """Chat with the model base on the client capabilities."""

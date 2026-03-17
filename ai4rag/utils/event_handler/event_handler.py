@@ -4,10 +4,11 @@
 # -----------------------------------------------------------------------------
 import json
 from pathlib import Path
+from typing import Any
 
 from ai4rag import logger
 
-from .base_event_handler import BaseEventHandler, LogLevel
+from .base_event_handler import BaseEventHandler, EvaluationRecord, LogLevel, PatternPayload
 
 
 class LocalEventHandler(BaseEventHandler):
@@ -25,7 +26,9 @@ class LocalEventHandler(BaseEventHandler):
     def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:
         logger.info("LocalEventHandler ::: %s ::: %s ::: %s", level, step, message)
 
-    def on_pattern_creation(self, payload: dict, evaluation_results: list, **kwargs) -> None:
+    def on_pattern_creation(
+        self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
+    ) -> None:
         logger.info("LocalEventHandler ::: Pattern creation ::: %s", payload)
         pattern_name = payload.get("pattern_name", "default_pattern_name")
 
@@ -39,3 +42,29 @@ class LocalEventHandler(BaseEventHandler):
 
             with open(dir_path / "pattern.json", encoding="utf-8", mode="w") as file2:
                 json.dump(payload, file2)
+
+
+class KFPEventHandler(BaseEventHandler):
+    """Event handler that aggregates status changes and created patterns for post-experiment use.
+
+    All status changes are collected in :attr:`status_changes` and all pattern results in
+    :attr:`patterns`. When ``step`` is omitted from :meth:`on_status_change`, the last known
+    step value is reused so every entry always carries a step label.
+
+    To be used within kubeflow-pipelines components.
+    """
+
+    def __init__(self):
+        self.status_changes: list[dict] = []
+        self.patterns: list[dict[str, Any]] = []
+        self._last_step: str | None = None
+
+    def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:
+        if step is not None:
+            self._last_step = step
+        self.status_changes.append({"level": level, "message": message, "step": self._last_step})
+
+    def on_pattern_creation(
+        self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
+    ) -> None:
+        self.patterns.append({"payload": payload, "evaluation_results": evaluation_results, **kwargs})
