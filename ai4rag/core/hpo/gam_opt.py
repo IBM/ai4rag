@@ -32,9 +32,6 @@ class GAMOptSettings(OptimizerSettings):
     evals_per_trial: int = 1
     random_state: int = 64
 
-    def __post_init__(self):
-        self.n_random_nodes = min(self.n_random_nodes, self.max_evals)
-
 
 class GAMOptimizer(BaseOptimizer):
     """
