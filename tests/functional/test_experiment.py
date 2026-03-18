@@ -36,7 +36,10 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def client():
-    return LlamaStackClient()
+    return LlamaStackClient(
+        base_url=os.environ["AI4RAG_TEST_BASE_URL"],
+        api_key=os.environ["AI4RAG_TEST_API_KEY"],
+    )
 
 
 @pytest.fixture(scope="module")
@@ -111,7 +114,7 @@ class TestExperimentChroma:
         assert best_eval.final_score is not None
         assert 0 <= best_eval.final_score <= 1
 
-        answer = best_eval.rag_pattern.generate("What is greedy decoding?")
+        answer = best_eval.rag_pattern.generate("What is greedy decoding?").get("answer")
         assert isinstance(answer, str)
         assert len(answer) > 0
 
@@ -151,7 +154,7 @@ class TestExperimentLsMilvus:
         assert best_eval.final_score is not None
         assert 0 <= best_eval.final_score <= 1
 
-        answer = best_eval.rag_pattern.generate("What is greedy decoding?")
+        answer = best_eval.rag_pattern.generate("What is greedy decoding?").get("answer")
         assert isinstance(answer, str)
         assert len(answer) > 0
 
