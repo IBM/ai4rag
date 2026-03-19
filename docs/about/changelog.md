@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0](https://github.com/IBM/ai4rag/releases/tag/v0.5.0)
+
+### Added
+- `KFPEventHandler`: new event handler for Kubeflow Pipelines (KFP) integration, enabling experiment progress tracking inside KFP pipeline components
+- `known_observations` parameter on `GAMOptimiser` and `AI4RAGExperiment`, allowing the optimizer to be pre-seeded with prior evaluation results so redundant evaluations are skipped
+- `__hash__` method on `BaseFoundationModel` based on `model_id`
+- New functional test suite under `tests/functional/` with end-to-end experiment coverage using mocked models
+
+### Changed
+- `GAMOptSettings`: removed lower-bound constraints on `n_random_nodes` and `max_evals`; both now accept `0`, which is required for KFP pipeline component usage
+- Bumped `llama-stack-client` dependency from `~=0.5.0` to `~=0.6.0`
+- Hybrid search disabled by default in the default search space due to upstream Llama Stack instability
+- `BaseEventHandler` payload TypedDicts enriched with full structured types (`MetricCI`, `PatternScores`, `VectorStoreSettings`, `ChunkingSettings`, etc.)
+- Tests reorganized into `tests/unit/` and `tests/functional/` subdirectories
+- Documentation and development workflow guides updated
+
+### Fixed
+- Fixed crash when the `metadata` field is absent from the `models.list()` response returned by Llama Stack
+
+---
+
 ## [0.4.2](https://github.com/IBM/ai4rag/releases/tag/v0.4.2)
 
 ### Added
