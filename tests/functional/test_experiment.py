@@ -37,8 +37,8 @@ pytestmark = pytest.mark.skipif(
 @pytest.fixture(scope="module")
 def client():
     return LlamaStackClient(
-        base_url=os.environ["AI4RAG_TEST_BASE_URL"],
-        api_key=os.environ["AI4RAG_TEST_API_KEY"],
+        base_url=os.environ["LLAMA_STACK_CLIENT_BASE_URL"],
+        api_key=os.environ["LLAMA_STACK_CLIENT_API_KEY"],
     )
 
 

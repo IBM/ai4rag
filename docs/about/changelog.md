@@ -7,13 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.4.3](https://github.com/IBM/ai4rag/releases/tag/v0.4.3)
-
-### Changed
-- Updated Llama Stack Client version to 0.6.x: to match the latest Llama Stack Server changes.
-
----
-
 ## [0.4.2](https://github.com/IBM/ai4rag/releases/tag/v0.4.2)
 
 ### Added
