@@ -36,8 +36,8 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 ai4RAG can run experiments using a [Llama Stack](https://github.com/llamastack/llama-stack) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
 
-- **Client:** [llama-stack-client](https://pypi.org/project/llama-stack-client/) >= 0.5.0 (Python package used by ai4RAG; installs with this project).
-- **Server:** [Llama Stack](https://github.com/llamastack/llama-stack) >= 0.5.0.
+- **Client:** [llama-stack-client](https://pypi.org/project/llama-stack-client/) >= 0.6.0 (Python package used by ai4RAG; installs with this project).
+- **Server:** [Llama Stack](https://github.com/llamastack/llama-stack) >= 0.6.0.
 - **API reference:** [Llama Stack API docs](https://llamastack.github.io/docs/) — HTTP API used by the client.
 
 **Features used by ai4rag**
