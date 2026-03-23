@@ -72,5 +72,5 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         return self.model_id < other.model_id
 
     @abstractmethod
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """Chat with the model base on the client capabilities."""

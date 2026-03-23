@@ -87,6 +87,7 @@ class AI4RAGParamNames(metaclass=ConstantMeta):
     RANKER_STRATEGY = "ranker_strategy"
     RANKER_K = "ranker_k"
     RANKER_ALPHA = "ranker_alpha"
+    CONTEXTUAL_RETRIEVAL = "contextual_retrieval"
     GENERATION = "generation"
 
 

@@ -58,7 +58,7 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | L
         else:
             self._params = LSModelParameters()
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """
         Chat completion for communication with selected foundation model.
 
@@ -67,16 +67,26 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | L
         messages : list[MessageTyped]
             Messages to be included in the chat completion.
 
+        **kwargs
+            Additional parameters forwarded to the chat completions API
+            (e.g. ``response_format``).
+
         Returns
         -------
         str
             Chat response from the model.
         """
+
+        chat_params = {
+            "max_completion_tokens": self.params.max_completion_tokens,
+            "temperature": self.params.temperature,
+        }
+        updated_chat_params = chat_params | kwargs
+
         response_chat = self.client.chat.completions.create(
             model=self.model_id,
             messages=messages,
-            max_completion_tokens=self.params.max_completion_tokens,
-            temperature=self.params.temperature,
+            **updated_chat_params,
         )
         response_choices = response_chat.choices
 

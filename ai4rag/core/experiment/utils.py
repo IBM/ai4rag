@@ -52,6 +52,7 @@ class RAGParamsType(TypedDict):
     ranker_strategy: str
     ranker_k: int
     ranker_alpha: int | float
+    contextual_retrieval: bool
 
 
 class RAGChunkingParamsType(TypedDict):
@@ -60,6 +61,7 @@ class RAGChunkingParamsType(TypedDict):
     chunk_size: int
     chunk_overlap: int | float
     chunking_method: Literal["recursive"]
+    contextual_retrieval: bool
 
 
 class RAGRetrievalParamsType(TypedDict):
@@ -242,13 +244,21 @@ def get_chunking_params(rag_params: RAGParamsType) -> RAGChunkingParamsType:
     """
     chunking_params = {
         k: rag_params.get(k)
-        for k in [AI4RAGParamNames.CHUNKING_METHOD, AI4RAGParamNames.CHUNK_SIZE, AI4RAGParamNames.CHUNK_OVERLAP]
+        for k in [
+            AI4RAGParamNames.CHUNKING_METHOD,
+            AI4RAGParamNames.CHUNK_SIZE,
+            AI4RAGParamNames.CHUNK_OVERLAP,
+        ]
     }
     chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = _get_chunk_overlap(
         chunking_params[AI4RAGParamNames.CHUNK_SIZE], chunking_params[AI4RAGParamNames.CHUNK_OVERLAP]
     )
     if any(v is None for v in chunking_params.values()):
         raise RAGExperimentError(f"Missing or invalid values in chunking configuration: {chunking_params}.")
+
+    chunking_params[AI4RAGParamNames.CONTEXTUAL_RETRIEVAL] = rag_params.get(
+        AI4RAGParamNames.CONTEXTUAL_RETRIEVAL, False
+    )
 
     return chunking_params
 

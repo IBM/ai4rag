@@ -57,7 +57,7 @@ class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIM
         else:
             self._params = OpenAIModelParameters()
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """
         Chat completion for communication with selected foundation model.
 
@@ -65,6 +65,10 @@ class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIM
         ----------
         messages : list[MessageTyped]
             Messages to be included in the chat completion.
+
+        **kwargs
+            Additional parameters forwarded to the chat completions API
+            (e.g. ``response_format``).
 
         Returns
         -------
@@ -74,6 +78,7 @@ class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIM
         response_chat = self.client.chat.completions.create(
             model=self.model_id,
             messages=messages,
+            **kwargs,
         )
         response_choices = response_chat.choices
 

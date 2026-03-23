@@ -67,4 +67,8 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "ls_milv
             ]
         )
 
+    default_search_space_parameters.append(
+        Parameter(name=AI4RAGParamNames.CONTEXTUAL_RETRIEVAL, values=(False,)),
+    )
+
     return default_search_space_parameters

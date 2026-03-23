@@ -95,7 +95,11 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
         return True
 
     chars_per_token = 3.6
-    estimated_tokens = chunk_size / chars_per_token
+
+    contextual = combination.get(AI4RAGParamNames.CONTEXTUAL_RETRIEVAL, False)
+    max_context_chars = 100 * chars_per_token if contextual else 0
+
+    estimated_tokens = (chunk_size + max_context_chars) / chars_per_token
 
     return estimated_tokens <= context_length
 

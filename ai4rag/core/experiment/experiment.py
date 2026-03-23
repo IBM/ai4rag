@@ -33,7 +33,7 @@ from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.chunking import LangChainChunker
+from ai4rag.rag.chunking import ContextualChunker, LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
@@ -318,6 +318,10 @@ class AI4RAGExperiment:
             },
         }
 
+        if chunking_params.get(AI4RAGParamNames.CONTEXTUAL_RETRIEVAL, False):
+            context_model = self._get_context_model()
+            indexing_params["context_model_id"] = context_model.model_id
+
         logger.info("Using indexing params: %s", indexing_params)
 
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
@@ -370,16 +374,23 @@ class AI4RAGExperiment:
             chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
             chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
             chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
+            contextual_retrieval = chunking_params.get(AI4RAGParamNames.CONTEXTUAL_RETRIEVAL, False)
 
             chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+
+            if contextual_retrieval:
+                context_model = self._get_context_model()
+                chunker = ContextualChunker(base_chunker=chunker, context_model=context_model)
+
             chunked_documents = chunker.split_documents(self.documents)
 
             if self.event_handler:
+                _ctx_msg = " with contextual retrieval" if contextual_retrieval else ""
                 self.event_handler.on_status_change(
                     level=LogLevel.INFO,
                     message=(
                         f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
-                        f"and chunk_overlap: {chunk_overlap}."
+                        f"and chunk_overlap: {chunk_overlap}{_ctx_msg}."
                     ),
                     step=ExperimentStep.CHUNKING,
                 )
@@ -590,12 +601,17 @@ class AI4RAGExperiment:
             "collection_name": evaluation_result.collection,
         }
 
+        chunking_payload = {
+            "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
+            "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
+            "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
+        }
+        if evaluation_result.indexing_params["chunking"].get(AI4RAGParamNames.CONTEXTUAL_RETRIEVAL, False):
+            chunking_payload["contextual_retrieval"] = True
+            chunking_payload["context_model_id"] = evaluation_result.indexing_params.get("context_model_id")
+
         indexing_payload = {
-            "chunking": {
-                "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
-                "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
-                "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
-            },
+            "chunking": chunking_payload,
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
 
@@ -717,6 +733,19 @@ class AI4RAGExperiment:
             return collection_name
 
         return None
+
+    def _get_context_model(self) -> BaseFoundationModel:
+        """Get the foundation model to use for contextual retrieval.
+
+        Uses the first foundation model defined in the search space.
+
+        Returns
+        -------
+        BaseFoundationModel
+            Foundation model instance for generating chunk contexts.
+        """
+        foundation_models = self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values
+        return foundation_models[0]
 
     def _create_pattern_name(self) -> str:
         """
