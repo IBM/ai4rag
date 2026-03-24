@@ -87,6 +87,7 @@ class AI4RAGParamNames(metaclass=ConstantMeta):
     RANKER_STRATEGY = "ranker_strategy"
     RANKER_K = "ranker_k"
     RANKER_ALPHA = "ranker_alpha"
+    INCLUDE_CHUNK_METADATA = "include_chunk_metadata"
     GENERATION = "generation"
 
 
@@ -123,7 +124,7 @@ class ChunkingConstraints(metaclass=ConstantMeta):
     MAX_CHUNK_SIZE = 2048
     MIN_CHUNK_OVERLAP = 64
     MAX_CHUNK_OVERLAP = 512
-    METHODS = ["recursive", "semantic"]
+    METHODS = ["recursive", "markdown", "markdown_header"]
 
 
 class RetrievalConstraints(metaclass=ConstantMeta):

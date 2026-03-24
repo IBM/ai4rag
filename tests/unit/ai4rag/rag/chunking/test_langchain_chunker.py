@@ -378,6 +378,117 @@ class TestLangChainChunkerStaticMethods:
         assert result[3].metadata["start_index"] == 10
 
 
+class TestLangChainChunkerMarkdownMethod:
+    """Test suite for LangChainChunker with method='markdown'."""
+
+    def test_init_markdown(self):
+        chunker = LangChainChunker(method="markdown", chunk_size=1024, chunk_overlap=128)
+        assert chunker.method == "markdown"
+        assert chunker._text_splitter is not None
+
+    def test_markdown_split(self):
+        content = "# Title\nSome text here.\n\n## Section\nMore text.\n\n### Sub\nDetails."
+        docs = [Document(page_content=content, metadata={"document_id": "md1"})]
+        chunker = LangChainChunker(method="markdown", chunk_size=1024, chunk_overlap=0)
+        chunks = chunker.split_documents(docs)
+        assert len(chunks) > 0
+        assert all(isinstance(c, Document) for c in chunks)
+        for chunk in chunks:
+            assert chunk.metadata["document_id"] == "md1"
+            assert "sequence_number" in chunk.metadata
+
+    def test_markdown_respects_chunk_size(self):
+        content = "# Title\n" + ("Word " * 500) + "\n## Section\n" + ("More " * 500)
+        docs = [Document(page_content=content, metadata={"document_id": "md2"})]
+        chunker = LangChainChunker(method="markdown", chunk_size=100, chunk_overlap=10)
+        chunks = chunker.split_documents(docs)
+        for chunk in chunks:
+            assert len(chunk.page_content) <= 110  # Allow small margin
+
+    def test_markdown_to_dict(self):
+        chunker = LangChainChunker(method="markdown", chunk_size=512, chunk_overlap=64)
+        d = chunker.to_dict()
+        assert d["method"] == "markdown"
+        assert d["chunk_size"] == 512
+        assert "headers_to_split_on" not in d
+
+    def test_markdown_from_dict_round_trip(self):
+        original = LangChainChunker(method="markdown", chunk_size=512, chunk_overlap=64)
+        recreated = LangChainChunker.from_dict(original.to_dict())
+        assert original == recreated
+
+
+class TestLangChainChunkerMarkdownHeaderMethod:
+    """Test suite for LangChainChunker with method='markdown_header'."""
+
+    @pytest.fixture
+    def markdown_documents(self):
+        content = "# Intro\nIntro text.\n## Methods\nMethod details.\n### Sub\nSub details."
+        return [Document(page_content=content, metadata={"document_id": "md1"})]
+
+    def test_init_markdown_header(self):
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0)
+        assert chunker.method == "markdown_header"
+        assert chunker._text_splitter is not None
+
+    def test_init_custom_headers(self):
+        custom = [("#", "H1"), ("##", "H2")]
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0, headers_to_split_on=custom)
+        assert chunker.headers_to_split_on == custom
+
+    def test_split_by_headers(self, markdown_documents):
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0)
+        chunks = chunker.split_documents(markdown_documents)
+        assert len(chunks) > 0
+        assert all(isinstance(c, Document) for c in chunks)
+
+    def test_preserves_document_id(self, markdown_documents):
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0)
+        chunks = chunker.split_documents(markdown_documents)
+        for chunk in chunks:
+            assert chunk.metadata["document_id"] == "md1"
+
+    def test_assigns_start_index(self, markdown_documents):
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0)
+        chunks = chunker.split_documents(markdown_documents)
+        for chunk in chunks:
+            assert "start_index" in chunk.metadata
+
+    def test_assigns_sequence_numbers(self, markdown_documents):
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0)
+        chunks = chunker.split_documents(markdown_documents)
+        seq_nums = [c.metadata["sequence_number"] for c in chunks]
+        assert seq_nums == list(range(1, len(chunks) + 1))
+
+    def test_refinement_with_chunk_size(self):
+        long_section = "A " * 500
+        content = f"# Section\n{long_section}\n## Another\nShort."
+        docs = [Document(page_content=content, metadata={"document_id": "long"})]
+        chunker = LangChainChunker(method="markdown_header", chunk_size=100, chunk_overlap=10)
+        chunks = chunker.split_documents(docs)
+        # The long section should be refined into multiple chunks
+        assert len(chunks) > 2
+
+    def test_no_refinement_with_zero_chunk_size(self, markdown_documents):
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0)
+        chunks = chunker.split_documents(markdown_documents)
+        assert len(chunks) > 0
+
+    def test_to_dict_includes_headers(self):
+        custom = [("#", "H1"), ("##", "H2")]
+        chunker = LangChainChunker(method="markdown_header", chunk_size=0, chunk_overlap=0, headers_to_split_on=custom)
+        d = chunker.to_dict()
+        assert d["headers_to_split_on"] == custom
+
+    def test_from_dict_round_trip(self):
+        custom = [("#", "H1"), ("##", "H2")]
+        original = LangChainChunker(
+            method="markdown_header", chunk_size=512, chunk_overlap=64, headers_to_split_on=custom
+        )
+        recreated = LangChainChunker.from_dict(original.to_dict())
+        assert original == recreated
+
+
 class TestLangChainChunkerEdgeCases:
     """Test suite for edge cases and error handling."""
 

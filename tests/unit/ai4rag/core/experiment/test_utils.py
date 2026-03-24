@@ -355,6 +355,40 @@ class TestGetChunkingParams:
 
         assert result["chunk_overlap"] == 512
 
+    def test_get_chunking_params_markdown_header_defaults(self):
+        """Test get_chunking_params with markdown_header defaults to sentinel values."""
+        rag_params = {
+            "chunking_method": "markdown_header",
+        }
+        result = get_chunking_params(rag_params)
+        assert result["chunking_method"] == "markdown_header"
+        assert result["chunk_size"] == 0
+        assert result["chunk_overlap"] == 0
+
+    def test_get_chunking_params_markdown_uses_overlap(self):
+        """Test get_chunking_params with method='markdown' uses chunk_overlap normally."""
+        rag_params = {
+            "chunking_method": "markdown",
+            "chunk_size": 512,
+            "chunk_overlap": 0.25,
+        }
+        result = get_chunking_params(rag_params)
+        assert result["chunking_method"] == "markdown"
+        assert result["chunk_size"] == 512
+        assert result["chunk_overlap"] == 128
+
+    def test_get_chunking_params_markdown_header_with_refinement(self):
+        """Test get_chunking_params with markdown_header and refinement chunk_size."""
+        rag_params = {
+            "chunking_method": "markdown_header",
+            "chunk_size": 1024,
+            "chunk_overlap": 128,
+        }
+        result = get_chunking_params(rag_params)
+        assert result["chunking_method"] == "markdown_header"
+        assert result["chunk_size"] == 1024
+        assert result["chunk_overlap"] == 128
+
 
 class TestGetRetrievalParams:
     """Test suite for get_retrieval_params function."""

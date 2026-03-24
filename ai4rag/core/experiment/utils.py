@@ -44,7 +44,7 @@ class RAGParamsType(TypedDict):
     foundation_model: BaseFoundationModel
     chunk_size: int
     chunk_overlap: int | float
-    chunking_method: Literal["recursive"]
+    chunking_method: Literal["recursive", "markdown", "markdown_header"]
     window_size: int
     number_of_chunks: int
     retrieval_method: Literal["simple", "window"]
@@ -52,6 +52,7 @@ class RAGParamsType(TypedDict):
     ranker_strategy: str
     ranker_k: int
     ranker_alpha: int | float
+    include_chunk_metadata: bool
 
 
 class RAGChunkingParamsType(TypedDict):
@@ -59,7 +60,7 @@ class RAGChunkingParamsType(TypedDict):
 
     chunk_size: int
     chunk_overlap: int | float
-    chunking_method: Literal["recursive"]
+    chunking_method: Literal["recursive", "markdown", "markdown_header"]
 
 
 class RAGRetrievalParamsType(TypedDict):
@@ -244,9 +245,21 @@ def get_chunking_params(rag_params: RAGParamsType) -> RAGChunkingParamsType:
         k: rag_params.get(k)
         for k in [AI4RAGParamNames.CHUNKING_METHOD, AI4RAGParamNames.CHUNK_SIZE, AI4RAGParamNames.CHUNK_OVERLAP]
     }
-    chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = _get_chunk_overlap(
-        chunking_params[AI4RAGParamNames.CHUNK_SIZE], chunking_params[AI4RAGParamNames.CHUNK_OVERLAP]
-    )
+
+    method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
+    if method in ("markdown_header",):
+        chunking_params.setdefault(AI4RAGParamNames.CHUNK_SIZE, 0)
+        chunking_params.setdefault(AI4RAGParamNames.CHUNK_OVERLAP, 0)
+        if chunking_params[AI4RAGParamNames.CHUNK_SIZE] is None:
+            chunking_params[AI4RAGParamNames.CHUNK_SIZE] = 0
+        if chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] is None:
+            chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = 0
+
+    if chunking_params.get(AI4RAGParamNames.CHUNK_SIZE) and chunking_params.get(AI4RAGParamNames.CHUNK_SIZE) > 0:
+        chunking_params[AI4RAGParamNames.CHUNK_OVERLAP] = _get_chunk_overlap(
+            chunking_params[AI4RAGParamNames.CHUNK_SIZE], chunking_params[AI4RAGParamNames.CHUNK_OVERLAP]
+        )
+
     if any(v is None for v in chunking_params.values()):
         raise RAGExperimentError(f"Missing or invalid values in chunking configuration: {chunking_params}.")
 

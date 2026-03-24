@@ -11,6 +11,7 @@ from ai4rag.search_space.src.search_space import (
     SearchSpace,
     SearchSpaceValueError,
     _rule_adjust_window_to_retrieval_method,
+    _rule_chunk_params_consistency_with_method,
     _rule_chunk_size_bigger_than_chunk_overlap,
     _rule_chunk_size_within_embedding_context_length,
     _rule_ranker_alpha_for_weighted_only,
@@ -218,6 +219,34 @@ def test_rule_ranker_k_for_rrf_only_missing_fields():
     assert _rule_ranker_k_for_rrf_only({}) is True
     assert _rule_ranker_k_for_rrf_only({"ranker_strategy": "rrf"}) is True
     assert _rule_ranker_k_for_rrf_only({"ranker_k": 60}) is True
+
+
+@pytest.mark.parametrize(
+    "combination, expected_value",
+    (
+        ({"chunking_method": "markdown_header", "chunk_size": 0}, True),
+        ({"chunking_method": "markdown_header", "chunk_size": 1024}, True),
+        ({"chunking_method": "recursive", "chunk_size": 0}, False),
+        ({"chunking_method": "recursive", "chunk_size": 512}, True),
+        ({"chunking_method": "markdown", "chunk_size": 0}, False),
+        ({"chunking_method": "markdown", "chunk_size": 1024}, True),
+    ),
+)
+def test_rule_chunk_params_consistency_with_method(combination, expected_value):
+    val = _rule_chunk_params_consistency_with_method(combination)
+    assert val == expected_value
+
+
+def test_rule_chunk_params_consistency_with_method_missing_fields():
+    """Rule returns True when fields are missing."""
+    assert _rule_chunk_params_consistency_with_method({}) is True
+    assert _rule_chunk_params_consistency_with_method({"chunking_method": "recursive"}) is True
+    assert _rule_chunk_params_consistency_with_method({"chunk_size": 512}) is True
+
+
+def test_rule_chunk_size_bigger_than_chunk_overlap_skips_zero():
+    """When chunk_size is 0 (sentinel), the rule passes."""
+    assert _rule_chunk_size_bigger_than_chunk_overlap({"chunk_size": 0, "chunk_overlap": 0}) is True
 
 
 class TestSearchSpace:

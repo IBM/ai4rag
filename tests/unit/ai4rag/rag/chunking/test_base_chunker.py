@@ -5,6 +5,7 @@
 from typing import Any
 
 import pytest
+from langchain_core.documents import Document
 
 from ai4rag.rag.chunking.base_chunker import BaseChunker
 
@@ -129,3 +130,40 @@ class TestBaseChunker:
         assert isinstance(chunker_int, BaseChunker)
         result = chunker_int.split_documents([10, 20, 30])
         assert result == [5, 10, 15]
+
+
+class TestBaseChunkerStaticMethods:
+    """Test suite for static methods on BaseChunker."""
+
+    def test_set_document_id_in_metadata_if_missing(self):
+        documents = [
+            Document(page_content="Content 1", metadata={}),
+            Document(page_content="Content 2", metadata={}),
+        ]
+        BaseChunker._set_document_id_in_metadata_if_missing(documents)
+        for doc in documents:
+            assert "document_id" in doc.metadata
+            assert isinstance(doc.metadata["document_id"], str)
+
+    def test_set_document_id_preserves_existing(self):
+        documents = [Document(page_content="Content", metadata={"document_id": "existing"})]
+        BaseChunker._set_document_id_in_metadata_if_missing(documents)
+        assert documents[0].metadata["document_id"] == "existing"
+
+    def test_set_sequence_number_in_metadata(self):
+        chunks = [
+            Document(page_content="Chunk 1", metadata={"document_id": "doc1", "start_index": 0}),
+            Document(page_content="Chunk 2", metadata={"document_id": "doc1", "start_index": 10}),
+        ]
+        result = BaseChunker._set_sequence_number_in_metadata(chunks)
+        assert result[0].metadata["sequence_number"] == 1
+        assert result[1].metadata["sequence_number"] == 2
+
+    def test_set_sequence_number_sorts_by_start_index(self):
+        chunks = [
+            Document(page_content="Chunk 2", metadata={"document_id": "doc1", "start_index": 10}),
+            Document(page_content="Chunk 1", metadata={"document_id": "doc1", "start_index": 0}),
+        ]
+        result = BaseChunker._set_sequence_number_in_metadata(chunks)
+        assert result[0].metadata["start_index"] == 0
+        assert result[1].metadata["start_index"] == 10

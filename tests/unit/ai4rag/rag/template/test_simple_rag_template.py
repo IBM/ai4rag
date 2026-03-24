@@ -7,7 +7,7 @@ import pytest
 from langchain_core.documents import Document
 
 from ai4rag.rag.template.base_template import RAGTemplateError
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.simple_rag_template import SimpleRAG, _enrich_chunk_content
 
 
 class TestLlamaStackRAGInitialization:
@@ -979,3 +979,157 @@ class TestLlamaStackRAGEdgeCases:
         result = rag.generate(multiline_question)
 
         assert result["question"] == multiline_question
+
+
+class TestEnrichChunkContent:
+    """Test suite for _enrich_chunk_content helper function."""
+
+    def test_full_markdown_metadata(self):
+        """Test enrichment with full markdown header metadata."""
+        doc = Document(
+            page_content="To install the package, run pip install ai4rag.",
+            metadata={
+                "document_id": "installation_guide.md",
+                "Header 1": "Getting Started",
+                "Header 2": "Prerequisites",
+            },
+        )
+        result = _enrich_chunk_content(doc)
+        assert result == (
+            "Source: installation_guide.md\n"
+            "Section: Getting Started > Prerequisites\n\n"
+            "To install the package, run pip install ai4rag."
+        )
+
+    def test_only_document_id(self):
+        """Test enrichment with only document_id (non-markdown chunking)."""
+        doc = Document(
+            page_content="Some content.",
+            metadata={"document_id": "readme.md", "sequence_number": 3},
+        )
+        result = _enrich_chunk_content(doc)
+        assert result == "Source: readme.md\n\nSome content."
+
+    def test_no_relevant_metadata(self):
+        """Test enrichment with no relevant metadata returns raw page_content."""
+        doc = Document(
+            page_content="Raw content.",
+            metadata={"sequence_number": 1},
+        )
+        result = _enrich_chunk_content(doc)
+        assert result == "Raw content."
+
+    def test_partial_headers(self):
+        """Test enrichment with only Header 1 present."""
+        doc = Document(
+            page_content="Content under a single header.",
+            metadata={"document_id": "doc.md", "Header 1": "Introduction"},
+        )
+        result = _enrich_chunk_content(doc)
+        assert result == ("Source: doc.md\n" "Section: Introduction\n\n" "Content under a single header.")
+
+    def test_all_three_headers(self):
+        """Test enrichment with all three header levels."""
+        doc = Document(
+            page_content="Deep content.",
+            metadata={
+                "document_id": "guide.md",
+                "Header 1": "Chapter",
+                "Header 2": "Section",
+                "Header 3": "Subsection",
+            },
+        )
+        result = _enrich_chunk_content(doc)
+        assert "Section: Chapter > Section > Subsection" in result
+
+    def test_headers_without_document_id(self):
+        """Test enrichment with headers but no document_id."""
+        doc = Document(
+            page_content="Content.",
+            metadata={"Header 1": "Intro", "Header 2": "Setup"},
+        )
+        result = _enrich_chunk_content(doc)
+        assert result == "Section: Intro > Setup\n\nContent."
+
+
+class TestSimpleRAGIncludeChunkMetadata:
+    """Test suite for SimpleRAG with include_chunk_metadata flag."""
+
+    @pytest.fixture
+    def mock_foundation_model(self, mocker):
+        """Create a mock foundation model."""
+        mock = mocker.MagicMock()
+        mock.system_message_text = "You are a helpful assistant."
+        mock.user_message_text = "Question: {question}\nReferences: {reference_documents}"
+        mock.context_template_text = "Document: {document}"
+        mock_message = mocker.MagicMock()
+        mock_message.content = "Generated answer."
+        mock_choice = mocker.MagicMock()
+        mock_choice.message = mock_message
+        mock.chat.return_value = [mock_choice]
+        return mock
+
+    @pytest.fixture
+    def mock_retriever(self, mocker):
+        """Create a mock retriever returning docs with markdown metadata."""
+        mock = mocker.MagicMock()
+        mock.retrieve.return_value = [
+            Document(
+                page_content="Install with pip.",
+                metadata={"document_id": "guide.md", "Header 1": "Setup"},
+            ),
+            Document(
+                page_content="Run pytest.",
+                metadata={"document_id": "guide.md", "Header 1": "Testing"},
+            ),
+        ]
+        return mock
+
+    def test_generate_with_metadata_enabled(self, mock_foundation_model, mock_retriever):
+        """Test that include_chunk_metadata=True enriches context sent to LLM."""
+        rag = SimpleRAG(
+            foundation_model=mock_foundation_model,
+            retriever=mock_retriever,
+            include_chunk_metadata=True,
+        )
+        rag.generate("How to install?")
+
+        call_args = mock_foundation_model.chat.call_args
+        user_message = call_args.kwargs["messages"][1]["content"]
+        assert "Source: guide.md" in user_message
+        assert "Section: Setup" in user_message
+        assert "Install with pip." in user_message
+
+    def test_generate_with_metadata_disabled(self, mock_foundation_model, mock_retriever):
+        """Test that include_chunk_metadata=False uses raw page_content (regression)."""
+        rag = SimpleRAG(
+            foundation_model=mock_foundation_model,
+            retriever=mock_retriever,
+            include_chunk_metadata=False,
+        )
+        rag.generate("How to install?")
+
+        call_args = mock_foundation_model.chat.call_args
+        user_message = call_args.kwargs["messages"][1]["content"]
+        assert "Source: guide.md" not in user_message
+        assert "Document: Install with pip." in user_message
+
+    def test_generate_metadata_default_is_false(self, mock_foundation_model, mock_retriever):
+        """Test that include_chunk_metadata defaults to False."""
+        rag = SimpleRAG(
+            foundation_model=mock_foundation_model,
+            retriever=mock_retriever,
+        )
+        assert rag.include_chunk_metadata is False
+
+    def test_reference_documents_are_raw(self, mock_foundation_model, mock_retriever):
+        """Test that reference_documents in return dict are raw Documents, not enriched."""
+        rag = SimpleRAG(
+            foundation_model=mock_foundation_model,
+            retriever=mock_retriever,
+            include_chunk_metadata=True,
+        )
+        result = rag.generate("How to install?")
+
+        assert result["reference_documents"][0].page_content == "Install with pip."
+        assert result["reference_documents"][1].page_content == "Run pytest."

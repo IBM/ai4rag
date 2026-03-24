@@ -17,7 +17,7 @@ from ai4rag.core.experiment.exception_handler import (
 from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
+from ai4rag.rag.chunking.chunker_factory import get_chunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
@@ -424,7 +424,11 @@ class ModelsPreSelector:
             Chunked documents.
         """
         logger.debug("MPS: Chunking documents...")
-        chunker = LangChainChunker(**self.chunking_params)
+        chunker = get_chunker(
+            chunking_method=self.chunking_params.get("method", "recursive"),
+            chunk_size=self.chunking_params.get("chunk_size", 512),
+            chunk_overlap=self.chunking_params.get("chunk_overlap", 128),
+        )
 
         chunked_documents = chunker.split_documents(documents)
 

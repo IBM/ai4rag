@@ -7,13 +7,45 @@ from typing import Any
 
 from langchain_core.documents import Document
 
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
+from ai4rag.rag.chunking.base_chunker import BaseChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.vector_store.llama_stack import LSVectorStore
 
 from ..embedding.base_model import BaseEmbeddingModel
 from ..foundation_models.base_model import BaseFoundationModel
 from .base_template import BaseRAGTemplate, RAGTemplateError
+
+
+def _enrich_chunk_content(doc: Document) -> str:
+    """Build a prefixed string from a chunk's metadata and content.
+
+    Parameters
+    ----------
+    doc : Document
+        A LangChain Document whose metadata may contain ``document_id``,
+        ``Header 1``, ``Header 2``, and/or ``Header 3``.
+
+    Returns
+    -------
+    str
+        The page content preceded by source/section lines when metadata is present.
+    """
+    metadata = getattr(doc, "metadata", {})
+    page_content = getattr(doc, "page_content", "")
+
+    prefix_parts = []
+
+    doc_id = metadata.get("document_id")
+    if doc_id:
+        prefix_parts.append(f"Source: {doc_id}")
+
+    headers = [metadata[k] for k in ("Header 1", "Header 2", "Header 3") if k in metadata]
+    if headers:
+        prefix_parts.append(f"Section: {' > '.join(headers)}")
+
+    if prefix_parts:
+        return "\n".join(prefix_parts) + "\n\n" + page_content
+    return page_content
 
 
 class SimpleRAG(BaseRAGTemplate):
@@ -32,23 +64,29 @@ class SimpleRAG(BaseRAGTemplate):
     retriever : Retriever
         Initialized retriever for document retrieval.
 
-    chunker : LangChainChunker | None, default=None
-        Initialized LangChain chunker for document splitting.
+    chunker : BaseChunker | None, default=None
+        Initialized chunker for document splitting.
 
     embedding_model : LSEmbeddingModel | None, default=None
         Initialized Llama Stack embedding model.
 
     vector_store : LSVectorStore | None, default=None
         Initialized Llama Stack vector store.
+
+    include_chunk_metadata : bool, default=False
+        When True, enriches each retrieved chunk with a structured prefix
+        (source document and section headers) before passing it to the LLM.
     """
 
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        chunker: LangChainChunker | None = None,
+        chunker: BaseChunker | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
         vector_store: LSVectorStore | None = None,
+        include_chunk_metadata: bool = False,
     ):
         super().__init__(
             foundation_model=foundation_model,
@@ -58,6 +96,7 @@ class SimpleRAG(BaseRAGTemplate):
         )
 
         self.chunker = chunker
+        self.include_chunk_metadata = include_chunk_metadata
 
     def build_index(self, documents: list[Document], **kwargs) -> None:
         """
@@ -101,7 +140,11 @@ class SimpleRAG(BaseRAGTemplate):
 
         context = "\n".join(
             [
-                self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
+                self.foundation_model.context_template_text.format(
+                    document=(
+                        _enrich_chunk_content(doc) if self.include_chunk_metadata else getattr(doc, "page_content", "")
+                    )
+                )
                 for doc in reference_documents
             ]
         )

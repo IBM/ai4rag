@@ -61,7 +61,7 @@ dev = [
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "ipykernel",
-    "pypdf",               # reading data from pdf
+    "docling",             # document text extraction
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]

@@ -33,7 +33,7 @@ from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.chunking import LangChainChunker
+from ai4rag.rag.chunking.chunker_factory import get_chunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
@@ -334,6 +334,8 @@ class AI4RAGExperiment:
         system_message_text = foundation_model.system_message_text
         user_message_text = foundation_model.user_message_text
 
+        include_chunk_metadata = rag_params.get(AI4RAGParamNames.INCLUDE_CHUNK_METADATA, False)
+
         rag_params = {
             "retrieval": retrieval_params,
             "generation": {
@@ -341,6 +343,7 @@ class AI4RAGExperiment:
                 "context_template_text": context_template_text,
                 "user_message_text": user_message_text,
                 "system_message_text": system_message_text,
+                "include_chunk_metadata": include_chunk_metadata,
             },
         }
 
@@ -371,7 +374,7 @@ class AI4RAGExperiment:
             chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
             chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
 
-            chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            chunker = get_chunker(chunking_method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             chunked_documents = chunker.split_documents(self.documents)
 
             if self.event_handler:
@@ -417,9 +420,12 @@ class AI4RAGExperiment:
             ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
         )
 
+        include_chunk_metadata = rag_params.get(AI4RAGParamNames.INCLUDE_CHUNK_METADATA, False)
+
         rag_pattern = SimpleRAG(
             foundation_model=foundation_model,
             retriever=retriever,
+            include_chunk_metadata=include_chunk_metadata,
         )
 
         _rag_log = (
@@ -590,12 +596,17 @@ class AI4RAGExperiment:
             "collection_name": evaluation_result.collection,
         }
 
+        chunking_payload = {
+            "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
+        }
+        _chunk_size = evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE]
+        _chunk_overlap = evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP]
+        if _chunk_size > 0:
+            chunking_payload["chunk_size"] = _chunk_size
+            chunking_payload["chunk_overlap"] = _chunk_overlap
+
         indexing_payload = {
-            "chunking": {
-                "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
-                "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
-                "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
-            },
+            "chunking": chunking_payload,
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
 

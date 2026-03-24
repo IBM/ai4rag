@@ -37,7 +37,39 @@ def _rule_chunk_size_bigger_than_chunk_overlap(combination: dict) -> bool:
     if chunk_size is None or chunk_overlap is None:
         raise SearchSpaceValueError("Chunk size and chunk overlap are required.")
 
+    if chunk_size == 0:
+        return True
+
     return chunk_size > 2 * chunk_overlap
+
+
+def _rule_chunk_params_consistency_with_method(combination: dict) -> bool:
+    """Ensure chunk_size/chunk_overlap are consistent with the chunking method.
+
+    For "recursive" and "markdown": chunk_size must be > 0.
+    For "markdown_header": chunk_size == 0 is allowed
+    (pure structural splitting with no refinement).
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether combination passes selected criterion.
+    """
+    chunking_method = combination.get(AI4RAGParamNames.CHUNKING_METHOD)
+    chunk_size = combination.get(AI4RAGParamNames.CHUNK_SIZE)
+
+    if chunking_method is None or chunk_size is None:
+        return True
+
+    if chunking_method in ("recursive", "markdown") and chunk_size == 0:
+        return False
+
+    return True
 
 
 def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
@@ -330,6 +362,7 @@ class AI4RAGSearchSpace(SearchSpace):
 
     _base_rules = (
         _rule_chunk_size_bigger_than_chunk_overlap,
+        _rule_chunk_params_consistency_with_method,
         _rule_adjust_window_to_retrieval_method,
         _rule_chunk_size_within_embedding_context_length,
     )
