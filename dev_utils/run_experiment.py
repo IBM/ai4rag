@@ -29,37 +29,35 @@ if __name__ == "__main__":
     client = LlamaStackClient()
 
     # change to direct to your local documents path
-    documents_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "documents"
+    documents_path = _filepath.parents[1] / "local" / "data" / "ai_arxiv_pdf_sample" / "documents"
 
     # change to direct to your benchmark_data.json
-    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "watsonx_sample" / "benchmark_data.json"
+    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "ai_arxiv_pdf_sample" / "benchmark_data.json"
 
     file_store = FileStore(documents_path)
     documents = file_store.load_as_documents()
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
     # Configure optimizer
-    optimizer_settings = GAMOptSettings(max_evals=8, n_random_nodes=4)
+    optimizer_settings = GAMOptSettings(max_evals=16, n_random_nodes=4)
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
-        vector_store_type="ls_milvus",
+        vector_store_type="chroma",
         params=[
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[
-                    LSFoundationModel(model_id="vllm-inference-llama-3-1/redhataillama-31-8b-instruct", client=client)
-                ],
+                values=[LSFoundationModel(model_id="vllm-inference-qwen/qwen25-7b-instruct", client=client)],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
                     LSEmbeddingModel(
-                        model_id="vllm-embedding/granite-278m-multilingual-1",
+                        model_id="vllm-embedding/bge-m3",
                         client=client,
-                        params={"embedding_dimension": 768, "context_length": 512},
+                        params={"embedding_dimension": 1024, "context_length": 8192},
                     )
                 ],
             ),
@@ -92,8 +90,8 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
-        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "ls_milvus_hybrid_off_narrowed_ss"),
-        vector_store_type="ls_milvus",
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "aiarxiv_chunkers"),
+        vector_store_type="chroma",
     )
 
     experiment.search(skip_mps=True)

@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Copyright IBM Corp. 2025-2026
+# Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from typing import Any
@@ -41,7 +41,4 @@ def get_chunker(chunking_method: str, chunk_size: int, chunk_overlap: int, **kwa
     if chunking_method in _SUPPORTED_METHODS:
         return LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap, **kwargs)
 
-    raise ValueError(
-        f"Chunking method '{chunking_method}' is not supported. "
-        f"Use one of {_SUPPORTED_METHODS}."
-    )
+    raise ValueError(f"Chunking method '{chunking_method}' is not supported. " f"Use one of {_SUPPORTED_METHODS}.")
