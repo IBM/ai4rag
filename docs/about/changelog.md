@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Markdown text splitters**: New `markdown` and `markdown_header` chunking methods via LangChain, expanding beyond the default `recursive` strategy
+    - `markdown`: Uses markdown-aware separators (headers, code blocks, lists) with standard `chunk_size`/`chunk_overlap`
+    - `markdown_header`: Splits at header boundaries (`#`, `##`, `###`), preserving header hierarchy in chunk metadata; supports pure structural splitting (`chunk_size=0`) or refinement (`chunk_size>0`) for oversized sections
+- **Chunker factory** (`get_chunker()`): Creates the appropriate chunker instance based on chunking method name, decoupling experiment engine from specific chunker implementations
+- **Chunk metadata enrichment** (`include_chunk_metadata`): New search space parameter that prefixes retrieved chunks with source document ID and section headers before passing to the LLM, giving it visibility into chunk provenance
+- Search space validation rule `_rule_chunk_params_consistency_with_method` ensuring `chunk_size`/`chunk_overlap` are consistent with the chunking method
+- New user guide page: [Chunking Strategies](../user-guide/chunking-strategies.md)
+
+### Changed
+- `BaseChunker` now contains shared static methods (`_set_document_id_in_metadata_if_missing`, `_set_sequence_number_in_metadata`) moved from `LangChainChunker`
+- `SimpleRAG` chunker type widened from `LangChainChunker` to `BaseChunker`
+- Default search space now includes all three chunking methods (`recursive`, `markdown`, `markdown_header`) and `include_chunk_metadata`
+- `_rule_chunk_size_bigger_than_chunk_overlap` now skips validation when `chunk_size == 0` (structural-only splitting)
+- Experiment engine uses `get_chunker()` factory instead of directly instantiating `LangChainChunker`
+- Chroma vector store `_get_window_documents` now preserves full chunk metadata (not just `sequence_number` and `document_id`)
+
+---
+
 ## [0.5.0](https://github.com/IBM/ai4rag/releases/tag/v0.5.0)
 
 ### Added

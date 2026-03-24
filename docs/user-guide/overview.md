@@ -9,9 +9,10 @@ Welcome to the ai4rag user guide. This section provides comprehensive documentat
 This user guide covers:
 
 1. **[Search Space](search-space.md)**: How to define and constrain parameter search spaces
-2. **[Optimizers](optimizers.md)**: Understanding HPO algorithms and their configuration
-3. **[Evaluation](evaluation.md)**: Metrics, scoring, and result interpretation
-4. **[Event Handlers](event-handlers.md)**: Tracking and monitoring experiments
+2. **[Chunking Strategies](chunking-strategies.md)**: Markdown-aware splitting and chunk metadata enrichment
+3. **[Optimizers](optimizers.md)**: Understanding HPO algorithms and their configuration
+4. **[Evaluation](evaluation.md)**: Metrics, scoring, and result interpretation
+5. **[Event Handlers](event-handlers.md)**: Tracking and monitoring experiments
 
 ---
 
