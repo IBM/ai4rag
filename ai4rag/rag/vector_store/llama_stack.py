@@ -204,7 +204,7 @@ class LSVectorStore(BaseVectorStore):
 
         return [Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()) for chunk in resp.chunks]
 
-    def add_documents(self, documents: list[Document]) -> None:
+    def add_documents(self, documents: list[Document], **kwargs) -> None:
         """
         Add documents to the collection.
 
@@ -213,6 +213,7 @@ class LSVectorStore(BaseVectorStore):
         documents : Sequence[Document]
             Documents to add to the collection.
         """
+        batch_size = kwargs.get("batch_size", 2048)
 
         # Handle both dict and LSEmbeddingParams for backward compatibility
         if isinstance(self.embedding_model.params, dict):
@@ -232,10 +233,12 @@ class LSVectorStore(BaseVectorStore):
         ]
         embeddings = self.embedding_model.embed_documents([doc.page_content for doc in documents])
         full_chunks = [chunk | {"embedding": embedding} for chunk, embedding in zip(chunks, embeddings)]
-        self.client.vector_io.insert(
-            vector_store_id=self._ls_vs.id,
-            chunks=full_chunks,
-        )
+
+        for idx in range(0, len(full_chunks), batch_size):
+            self.client.vector_io.insert(
+                vector_store_id=self._ls_vs.id,
+                chunks=full_chunks[idx : idx + batch_size],
+            )
 
     def clean_collection(self):
         """Remove content of the collection and remove vector store instance."""

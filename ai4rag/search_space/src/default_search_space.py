@@ -11,8 +11,8 @@ __all__ = [
 
 # Note: "" and 0 are sentinels for unused params; ranker_alpha uses 1 as sentinel (0 means 100% sparse)
 _default_chunking_methods = ("recursive",)
-_default_chunk_sizes = (512, 1024, 2048, 4096)
-_default_chunk_overlaps = (128, 256, 512)
+_default_chunk_sizes = (1024, 2048)
+_default_chunk_overlaps = (128, 256)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
 _default_chroma_retrieval_methods = ("simple", "window")
@@ -63,7 +63,10 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "ls_milv
     else:
         default_search_space_parameters.extend(
             [
-                Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("vector",)),
+                Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=_default_search_modes),
+                Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, values=_default_ranker_strategies),
+                Parameter(name=AI4RAGParamNames.RANKER_K, values=_default_ranker_k),
+                Parameter(name=AI4RAGParamNames.RANKER_ALPHA, values=_default_ranker_alpha),
             ]
         )
 

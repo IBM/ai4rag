@@ -169,6 +169,24 @@ class TestLSEmbeddingModel:
         assert embeddings[0] == [0.1, 0.2, 0.3]
         assert embeddings[1] == [0.4, 0.5, 0.6]
 
+    def test_embed_documents_batches_large_input(self, mock_ls_client, mocker):
+        """Test embed_documents batches inputs exceeding 2048 texts."""
+        model = LSEmbeddingModel(
+            client=mock_ls_client,
+            model_id="all-MiniLM-L6-v2",
+            params=LSEmbeddingParams(embedding_dimension=3, context_length=512),
+        )
+
+        batch1_response = _make_mock_ls_embedding_response(mocker, [[0.1] for _ in range(2048)])
+        batch2_response = _make_mock_ls_embedding_response(mocker, [[0.2] for _ in range(100)])
+        mock_ls_client.embeddings.create.side_effect = [batch1_response, batch2_response]
+
+        texts = [f"text{i}" for i in range(2148)]
+        embeddings = model.embed_documents(texts)
+
+        assert len(embeddings) == 2148
+        assert mock_ls_client.embeddings.create.call_count == 2
+
     def test_embed_query(self, mock_ls_client, mocker):
         """Test embed_query method."""
         model = LSEmbeddingModel(

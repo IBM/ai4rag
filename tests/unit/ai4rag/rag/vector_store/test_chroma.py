@@ -260,11 +260,6 @@ class TestChromaVectorStoreAddDocuments:
 
     def test_add_documents_basic(self, mocker, mock_embedding_model, mock_chroma_client):
         """Test add_documents with basic documents."""
-        # Configure mock to raise AttributeError when accessing _client.get_max_batch_size()
-        # This will cause the code to default to max_batch_size=10_000
-        mock_client_internal = MagicMock()
-        mock_client_internal.get_max_batch_size.side_effect = AttributeError("No get_max_batch_size")
-        mock_chroma_client._client = mock_client_internal
         mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
         vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
         content = [Document(page_content="Doc 1"), Document(page_content="Doc 2")]
@@ -275,11 +270,6 @@ class TestChromaVectorStoreAddDocuments:
 
     def test_add_documents_with_strings(self, mocker, mock_embedding_model, mock_chroma_client):
         """Test add_documents with string content."""
-        # Configure mock to raise AttributeError when accessing _client.get_max_batch_size()
-        # This will cause the code to default to max_batch_size=10_000
-        mock_client_internal = MagicMock()
-        mock_client_internal.get_max_batch_size.side_effect = AttributeError("No get_max_batch_size")
-        mock_chroma_client._client = mock_client_internal
         mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
         vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
         content = ["Doc 1", "Doc 2"]
@@ -291,12 +281,11 @@ class TestChromaVectorStoreAddDocuments:
         """Test add_documents with batching when exceeding max_batch_size."""
         mock_client = MagicMock()
         mock_client.get.return_value = {"ids": []}
-        mock_client._client.get_max_batch_size.return_value = 2
         mock_client.add_documents.return_value = ["id1", "id2"]
         mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
         vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
         content = ["Doc 1", "Doc 2", "Doc 3", "Doc 4", "Doc 5"]
-        result = vector_store.add_documents(content)
+        result = vector_store.add_documents(content, max_batch_size=2)
         # Should be called multiple times due to batching
         assert mock_client.add_documents.call_count >= 2
         assert isinstance(result, list)
@@ -311,18 +300,18 @@ class TestChromaVectorStoreAddDocuments:
         assert mock_chroma_client.add_documents.call_count >= 2
         assert isinstance(result, list)
 
-    def test_add_documents_with_no_max_batch_size_attribute(self, mocker, mock_embedding_model):
-        """Test add_documents when client doesn't have get_max_batch_size method."""
+    def test_add_documents_with_default_max_batch_size(self, mocker, mock_embedding_model):
+        """Test add_documents uses default max_batch_size of 2048."""
         mock_client = MagicMock()
         mock_client.get.return_value = {"ids": []}
-        del mock_client._client  # Remove _client attribute
         mock_client.add_documents.return_value = ["id1"]
         mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
         vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
         content = ["Doc 1"]
         result = vector_store.add_documents(content)
-        # Should use default max_batch_size of 10_000
+        # Should use default max_batch_size of 2048
         assert isinstance(result, list)
+        mock_client.add_documents.assert_called_once()
 
 
 class TestChromaVectorStoreSearch:

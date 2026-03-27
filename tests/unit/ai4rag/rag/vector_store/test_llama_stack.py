@@ -493,6 +493,20 @@ class TestLSVectorStoreAddDocuments:
 
         mock_embed_model.embed_documents.assert_called_once_with(["Test"])
 
+    def test_add_documents_batches_large_input(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that add_documents batches inserts exceeding batch_size."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
+
+        vector_store.add_documents(docs, batch_size=2)
+
+        assert mock_llama_stack_client.vector_io.insert.call_count == 3
+
 
 class TestLSVectorStoreCleanCollection:
     """Test suite for LSVectorStore.clean_collection method."""

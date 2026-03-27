@@ -208,8 +208,8 @@ class TestPrepareSearchSpaceWithLlamaStack:
         search_mode_param = result["search_mode"]
         assert search_mode_param.values == ("vector",)
 
-    def test_ls_milvus_vector_store_excludes_hybrid_params_by_default(self, mocker):
-        """Test that ls_milvus vector store type excludes hybrid search parameters by default."""
+    def test_ls_milvus_vector_store_includes_hybrid_params_by_default(self, mocker):
+        """Test that ls_milvus vector store type includes hybrid search parameters by default."""
         mock_client = MagicMock(spec=LlamaStackClient)
 
         mock_llm = Mock()
@@ -235,15 +235,16 @@ class TestPrepareSearchSpaceWithLlamaStack:
 
         param_names = [p.name for p in result.params]
         assert "search_mode" in param_names
-        assert "ranker_strategy" not in param_names
-        assert "ranker_k" not in param_names
-        assert "ranker_alpha" not in param_names
+        assert "ranker_strategy" in param_names
+        assert "ranker_k" in param_names
+        assert "ranker_alpha" in param_names
 
         search_mode_param = result["search_mode"]
-        assert search_mode_param.values == ("vector",)
+        assert "vector" in search_mode_param.values
+        assert "hybrid" in search_mode_param.values
 
     def test_default_vector_store_type_is_ls_milvus(self, mocker):
-        """Test that default vector_store_type is ls_milvus (excludes hybrid params by default)."""
+        """Test that default vector_store_type is ls_milvus (includes hybrid params by default)."""
         mock_client = MagicMock(spec=LlamaStackClient)
 
         mock_llm = Mock()
@@ -269,4 +270,6 @@ class TestPrepareSearchSpaceWithLlamaStack:
 
         param_names = [p.name for p in result.params]
         assert "search_mode" in param_names
-        assert "ranker_strategy" not in param_names
+        assert "ranker_strategy" in param_names
+        assert "ranker_k" in param_names
+        assert "ranker_alpha" in param_names
