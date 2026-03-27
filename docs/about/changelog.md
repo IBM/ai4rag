@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.1](https://github.com/IBM/ai4rag/releases/tag/v0.5.1)
+
+### Added
+- Batch processing for Llama Stack embeddings (2048 chunk limit) and vector store document insertion, preventing failures with large document sets
+
+### Changed
+- Hybrid search re-enabled by default in the `ls_milvus` default search space (was disabled in 0.5.0 due to upstream instability)
+- Default chunk sizes narrowed from `(512, 1024, 2048, 4096)` to `(1024, 2048)` and overlaps from `(128, 256, 512)` to `(128, 256)` for faster optimization
+- Chroma vector store batch size simplified to a fixed default of 2048 instead of querying client internals
+
+---
+
 ## [0.5.0](https://github.com/IBM/ai4rag/releases/tag/v0.5.0)
 
 ### Added
