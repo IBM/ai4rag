@@ -210,12 +210,7 @@ class ChromaVectorStore(BaseVectorStore):
         list[str]
             List of documents IDs.
         """
-        max_batch_size = kwargs.get("max_batch_size")
-        if max_batch_size is None:
-            try:
-                max_batch_size = self._vector_store._client.get_max_batch_size()  # pylint: disable=protected-access
-            except AttributeError:
-                max_batch_size = 10_000
+        max_batch_size = kwargs.get("max_batch_size", 2048)
 
         ids, docs = self._process_documents(documents)
         if len(docs) > max_batch_size:
@@ -263,10 +258,7 @@ class ChromaVectorStore(BaseVectorStore):
         window_documents = [
             Document(
                 page_content=text,
-                metadata={
-                    self._chunk_sequence_number_field: metadata[self._chunk_sequence_number_field],
-                    self._document_name_field: doc_id,
-                },
+                metadata=metadata,
             )
             for text, metadata in zip(texts, metadatas)
         ]
