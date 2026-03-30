@@ -45,7 +45,7 @@ def get_vector_store(
                 reuse_collection_name=reuse_collection_name,
             )
 
-        case str() as vs_type if vs_type.startswith("ls_"):
+        case str() as vs_type if vs_type.startswith("ls_") and len(vs_type) > 3:
             provider_id = vs_type[3:]
             vs = LSVectorStore(
                 embedding_model=embedding_model,

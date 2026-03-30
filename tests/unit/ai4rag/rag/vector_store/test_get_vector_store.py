@@ -166,6 +166,24 @@ class TestGetVectorStoreLlamaStack:
                 client=None,
             )
 
+    def test_get_vector_store_ls_empty_provider_id_raises_error(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that ls_ with no provider_id raises ValueError."""
+        with pytest.raises(ValueError, match="not supported"):
+            get_vector_store(
+                vs_type="ls_",
+                embedding_model=mock_embedding_model,
+                client=mock_llama_stack_client,
+            )
+
+    def test_get_vector_store_ls_prefix_is_case_sensitive(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that ls_ prefix matching is case-sensitive."""
+        with pytest.raises(ValueError):
+            get_vector_store(
+                vs_type="LS_MILVUS",
+                embedding_model=mock_embedding_model,
+                client=mock_llama_stack_client,
+            )
+
 
 class TestGetVectorStoreInvalidType:
     """Test suite for get_vector_store with invalid type."""
