@@ -203,7 +203,7 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",  # or "chroma" for in-memory
+    vector_store_type="ls_milvus",  # "ls_<provider_id>" for Llama Stack, or "chroma" for in-memory
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<path_to_store_results>"),  # Tracks progress
 )

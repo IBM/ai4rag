@@ -31,8 +31,9 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "ls_milv
     Parameters
     ----------
     vector_store_type : str, default="ls_milvus"
-        Type of vector store. When "chroma", hybrid search parameters are excluded
-        since ChromaDB does not support hybrid search.
+        Type of vector store. Use "ls_<provider_id>" for Llama Stack vector stores
+        (e.g., "ls_milvus", "ls_qdrant"). When "chroma", hybrid search parameters
+        are excluded since ChromaDB does not support hybrid search.
 
     Returns
     -------

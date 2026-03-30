@@ -76,8 +76,8 @@ class TestGetVectorStoreChroma:
         assert isinstance(vector_store, ChromaVectorStore)
 
 
-class TestGetVectorStoreLSMilvus:
-    """Test suite for get_vector_store with ls_milvus type."""
+class TestGetVectorStoreLlamaStack:
+    """Test suite for get_vector_store with ls_ prefix types."""
 
     @pytest.fixture
     def mock_embedding_model(self):
@@ -124,7 +124,7 @@ class TestGetVectorStoreLSMilvus:
         mock_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
 
     def test_get_vector_store_ls_milvus_uses_milvus_provider(self, mock_embedding_model, mock_llama_stack_client):
-        """Test that ls_milvus uses milvus provider_id."""
+        """Test that ls_milvus extracts milvus as provider_id."""
         vector_store = get_vector_store(
             vs_type="ls_milvus",
             embedding_model=mock_embedding_model,
@@ -134,14 +134,54 @@ class TestGetVectorStoreLSMilvus:
         call_kwargs = mock_llama_stack_client.vector_stores.create.call_args.kwargs
         assert call_kwargs["extra_body"]["provider_id"] == "milvus"
 
-    def test_get_vector_store_ls_milvus_requires_client(self, mock_embedding_model):
-        """Test that ls_milvus requires a client parameter."""
-        # This should raise an error or handle None client gracefully
+    @pytest.mark.parametrize(
+        "vs_type, expected_provider_id",
+        [
+            ("ls_qdrant", "qdrant"),
+            ("ls_faiss", "faiss"),
+            ("ls_chromadb", "chromadb"),
+            ("ls_milvus", "milvus"),
+        ],
+    )
+    def test_get_vector_store_ls_prefix_extracts_provider_id(
+        self, mock_embedding_model, mock_llama_stack_client, vs_type, expected_provider_id
+    ):
+        """Test that any ls_ prefix type extracts the correct provider_id."""
+        vector_store = get_vector_store(
+            vs_type=vs_type,
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+        )
+
+        assert isinstance(vector_store, LSVectorStore)
+        call_kwargs = mock_llama_stack_client.vector_stores.create.call_args.kwargs
+        assert call_kwargs["extra_body"]["provider_id"] == expected_provider_id
+
+    def test_get_vector_store_ls_prefix_requires_client(self, mock_embedding_model):
+        """Test that ls_ prefix types require a client parameter."""
         with pytest.raises(AttributeError):
-            vector_store = get_vector_store(
+            get_vector_store(
                 vs_type="ls_milvus",
                 embedding_model=mock_embedding_model,
                 client=None,
+            )
+
+    def test_get_vector_store_ls_empty_provider_id_raises_error(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that ls_ with no provider_id raises ValueError."""
+        with pytest.raises(ValueError, match="not supported"):
+            get_vector_store(
+                vs_type="ls_",
+                embedding_model=mock_embedding_model,
+                client=mock_llama_stack_client,
+            )
+
+    def test_get_vector_store_ls_prefix_is_case_sensitive(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that ls_ prefix matching is case-sensitive."""
+        with pytest.raises(ValueError):
+            get_vector_store(
+                vs_type="LS_MILVUS",
+                embedding_model=mock_embedding_model,
+                client=mock_llama_stack_client,
             )
 
 
@@ -221,7 +261,7 @@ class TestGetVectorStoreEdgeCases:
 
     def test_get_vector_store_similar_type_names(self, mock_embedding_model):
         """Test that similar but incorrect type names raise errors."""
-        invalid_types = ["chromadb", "chroma_db", "milvus", "ls_milvus_"]
+        invalid_types = ["chromadb", "chroma_db", "milvus"]
 
         for invalid_type in invalid_types:
             with pytest.raises(ValueError):
@@ -255,8 +295,8 @@ class TestGetVectorStoreReturnTypes:
         assert callable(vector_store.search)
         assert callable(vector_store.add_documents)
 
-    def test_ls_milvus_returns_base_vector_store_interface(self, mock_embedding_model):
-        """Test that ls_milvus vector store implements BaseVectorStore interface."""
+    def test_ls_prefix_returns_base_vector_store_interface(self, mock_embedding_model):
+        """Test that ls_ prefix vector store implements BaseVectorStore interface."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-id"
@@ -298,8 +338,8 @@ class TestGetVectorStoreWithNoneParameters:
         # Should use auto-generated collection name
         assert vector_store.collection_name is not None
 
-    def test_get_vector_store_ls_milvus_with_none_collection_name(self, mock_embedding_model):
-        """Test ls_milvus with None collection name creates new store."""
+    def test_get_vector_store_ls_prefix_with_none_collection_name(self, mock_embedding_model):
+        """Test ls_ prefix type with None collection name creates new store."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "new-vs-id"

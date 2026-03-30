@@ -48,9 +48,7 @@ if __name__ == "__main__":
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[
-                    LSFoundationModel(model_id="vllm-inference-qwen/qwen25-7b-instruct", client=client)
-                ],
+                values=[LSFoundationModel(model_id="vllm-inference-qwen/qwen25-7b-instruct", client=client)],
             ),
             Parameter(
                 name="embedding_model",
@@ -63,10 +61,7 @@ if __name__ == "__main__":
                     )
                 ],
             ),
-            Parameter(
-                name="search_mode",
-                values=["hybrid"]
-            )
+            Parameter(name="search_mode", values=["hybrid"]),
         ],
     )
 
