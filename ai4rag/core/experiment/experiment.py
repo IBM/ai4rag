@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 import time
 from dataclasses import asdict, is_dataclass
-from typing import Any, Literal, Sequence
+from typing import Any, Sequence
 
 import pandas as pd
 from langchain_core.documents import Document
@@ -75,7 +75,7 @@ class AI4RAGExperiment:
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimization.
 
-    vector_store_type : Literal["chroma", "ls_milvus"]
+    vector_store_type : str
         Specific type of Vector Data Base that will be used during the experiment.
 
     optimizer_settings : OptimizerSettings
@@ -129,7 +129,7 @@ class AI4RAGExperiment:
         documents: list[Document],
         benchmark_data: pd.DataFrame,
         search_space: AI4RAGSearchSpace,
-        vector_store_type: Literal["chroma", "ls_milvus"],
+        vector_store_type: str,
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
         client: LlamaStackClient | Any = None,

@@ -175,7 +175,7 @@ Chunking (chunk_size, chunk_overlap)
     ↓
 Embedding Model (embedding_model)
     ↓
-Vector Store (ls_milvus or chroma)
+Vector Store (ls_<provider_id> or chroma)
 ```
 
 ### Query Phase (Per Configuration)

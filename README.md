@@ -177,7 +177,8 @@ optimizer_settings = GAMOptSettings(
 Using the information from the previous steps, create an experiment and run the ai4rag optimization engine.
 
 > [!note]
-> To use Milvus via Llama Stack, specify `"ls_milvus"` as the `vector_store_type`.
+> For Llama Stack vector stores, use the `"ls_<provider_id>"` format where `<provider_id>` matches your Llama Stack
+> provider configuration (e.g., `"ls_milvus"`, `"ls_qdrant"`).
 > To use ChromaDB in-memory, specify `"chroma"`.
 
 ```python
