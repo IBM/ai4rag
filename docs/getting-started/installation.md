@@ -94,7 +94,7 @@ Store your Llama Stack credentials securely in a `.env` file:
 ```bash
 # .env
 BASE_URL="<llama_stack_server_url>"
-API_KEY="<llama_stack_server_api_key>"
+APIKEY="<llama_stack_server_api_key>"
 ```
 
 !!! warning "Security"
@@ -109,7 +109,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 base_url = os.getenv("BASE_URL")
-api_key = os.getenv("API_KEY")
+api_key = os.getenv("APIKEY")
 ```
 
 ---
