@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.3](https://github.com/IBM/ai4rag/releases/tag/v0.5.3)
+
+### Changed
+- Bumped `llama-stack-client` dependency from `~=0.6.0` to `~=0.7.1`
+- Updated documentation and installation instructions to require Llama Stack >= 0.7.0
+
+---
+
 ## [0.5.2](https://github.com/IBM/ai4rag/releases/tag/v0.5.2)
 
 ### Changed
