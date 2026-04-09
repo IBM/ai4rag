@@ -124,7 +124,7 @@ class TestExperimentLsMilvus:
 
     def test_experiment_ls_milvus_ls_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
-            vector_store_type="ls_milvus",
+            vector_store_type="ls_milvus-lite",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -140,7 +140,7 @@ class TestExperimentLsMilvus:
             search_space=search_space,
             optimizer_settings=optimizer_settings,
             event_handler=_make_event_handler("ls_milvus_ls_models"),
-            vector_store_type="ls_milvus",
+            vector_store_type="ls_milvus-lite",
         )
 
         experiment.search(skip_mps=True)
