@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.4](https://github.com/IBM/ai4rag/releases/tag/v0.5.4)
+
+### Fixed
+- Fixed chunk ID collisions in `LSVectorStore` — chunks from the same document no longer share the same `chunk_id`; IDs are now derived from chunk content via hashing
+- Fixed `chunk_metadata` in `LSVectorStore` to only contain `document_id`, with full document metadata preserved in a separate `metadata` field
+
+---
+
 ## [0.5.3](https://github.com/IBM/ai4rag/releases/tag/v0.5.3)
 
 ### Changed

@@ -224,8 +224,11 @@ class LSVectorStore(BaseVectorStore):
         chunks = [
             {
                 "content": doc.page_content,
-                "chunk_metadata": doc.metadata,
-                "chunk_id": doc.metadata["document_id"],
+                "chunk_metadata": {
+                    "document_id": doc.metadata["document_id"],
+                },
+                "metadata": doc.metadata,
+                "chunk_id": str(hash(doc.page_content)),
                 "embedding_model": self.embedding_model.model_id,
                 "embedding_dimension": embedding_dimension,
             }
