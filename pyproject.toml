@@ -86,7 +86,7 @@ namespaces = false
 
 
 [tool.pytest.ini_options]
-python_files = ["tests/unit/*.py"]
+python_files = ["tests/*.py"]
 log_cli = false
 log_level = "INFO"
 

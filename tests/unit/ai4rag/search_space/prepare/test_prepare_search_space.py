@@ -273,3 +273,130 @@ class TestPrepareSearchSpaceWithLlamaStack:
         assert "ranker_strategy" in param_names
         assert "ranker_k" in param_names
         assert "ranker_alpha" in param_names
+
+    def test_user_specifies_not_responding_foundation_model(self, mocker):
+        """Error when user requests a foundation model that is registered but not responding."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm_ok = Mock()
+        mock_llm_ok.id = "llm-ok"
+        mock_llm_ok.custom_metadata = {"model_type": "llm"}
+
+        mock_llm_bad = Mock()
+        mock_llm_bad.id = "llm-bad"
+        mock_llm_bad.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value = [mock_llm_ok, mock_llm_bad, mock_embedding]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            side_effect=lambda m: m.model_id != "llm-bad",
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            return_value=True,
+        )
+
+        payload = {"foundation_models": [{"model_id": "llm-bad"}]}
+
+        with pytest.raises(SearchSpaceValueError, match="llm-bad.*registered but do not respond"):
+            prepare_search_space_with_llama_stack(payload, mock_client)
+
+    def test_user_specifies_not_responding_embedding_model(self, mocker):
+        """Error when user requests an embedding model that is registered but not responding."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "default-llm"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_emb_ok = Mock()
+        mock_emb_ok.id = "emb-ok"
+        mock_emb_ok.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_emb_ok.metadata = {}
+
+        mock_emb_bad = Mock()
+        mock_emb_bad.id = "emb-bad"
+        mock_emb_bad.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_emb_bad.metadata = {}
+
+        mock_client.models.list.return_value = [mock_llm, mock_emb_ok, mock_emb_bad]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            return_value=True,
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            side_effect=lambda m: m.model_id != "emb-bad",
+        )
+
+        payload = {"embedding_models": [{"model_id": "emb-bad"}]}
+
+        with pytest.raises(SearchSpaceValueError, match="emb-bad.*registered but do not respond"):
+            prepare_search_space_with_llama_stack(payload, mock_client)
+
+    def test_user_specifies_unregistered_foundation_model(self, mocker):
+        """Error when user requests a foundation model not registered in llama-stack."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "llm-ok"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            return_value=True,
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            return_value=True,
+        )
+
+        payload = {"foundation_models": [{"model_id": "llm-unknown"}]}
+
+        with pytest.raises(SearchSpaceValueError, match="llm-unknown.*not registered within llama-stack"):
+            prepare_search_space_with_llama_stack(payload, mock_client)
+
+    def test_user_picks_available_model_while_others_fail(self, mocker):
+        """User selects a responding model — succeeds even when other registered models fail."""
+        mock_client = MagicMock(spec=LlamaStackClient)
+
+        mock_llm_ok = Mock()
+        mock_llm_ok.id = "llm-ok"
+        mock_llm_ok.custom_metadata = {"model_type": "llm"}
+
+        mock_llm_bad = Mock()
+        mock_llm_bad.id = "llm-bad"
+        mock_llm_bad.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value = [mock_llm_ok, mock_llm_bad, mock_embedding]
+
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            side_effect=lambda m: m.model_id != "llm-bad",
+        )
+        mocker.patch(
+            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            return_value=True,
+        )
+
+        payload = {"foundation_models": [{"model_id": "llm-ok"}]}
+        result = prepare_search_space_with_llama_stack(payload, mock_client)
+
+        fm_ids = [m.model_id for m in result["foundation_model"].values]
+        assert fm_ids == ["llm-ok"]
