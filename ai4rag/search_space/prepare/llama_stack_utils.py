@@ -179,14 +179,14 @@ def _are_provided_models_available(
     error_messages = []
     if user_not_responding_models:
         error_messages.append(
-            f"Provided models: `{user_not_responding_models}` are registered but do not respond. "
-            f"Remove these models from the experiment configuration and try again."
+            f"Provided models: {user_not_responding_models} are registered but do not respond. "
+            "Remove these models from the experiment configuration and try again."
         )
 
     if user_unavailable_models:
         error_messages.append(
-            f"Provided models: `{user_unavailable_models}` are not registered within llama-stack. "
-            f"Register these models or try a different model for the experiment."
+            f"Provided models: {user_unavailable_models} are not registered within llama-stack. "
+            "Register these models or try a different model for the experiment."
         )
 
     if error_messages:
