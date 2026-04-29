@@ -9,6 +9,7 @@ from llama_stack_client import LlamaStackClient
 from ai4rag import logger
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel, LSEmbeddingParams
 from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+from ai4rag.search_space.prepare.input_payload_types import AI4RAGEmbeddingModel, AI4RAGFoundationModel
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
@@ -117,12 +118,14 @@ def _get_default_llama_stack_models(client: LlamaStackClient) -> _DefaultModelsR
 
     if not foundation_models:
         raise SearchSpaceValueError(
-            "There are no available models of type 'llm' or the ones registered are not responding. "
+            "There are no available models of type 'llm' or the ones registered are not responding: "
+            f"{[m.model_id for m in not_responding_foundation_models]}. "
             "Please look at the full logs."
         )
     if not embedding_models:
         raise SearchSpaceValueError(
-            "There are no available models of type 'embedding' or the ones registered are not responding. "
+            "There are no available models of type 'embedding' or the ones registered are not responding: "
+            f"{[m.model_id for m in not_responding_embedding_models]}. "
             "Please look at the full logs."
         )
 
@@ -138,7 +141,7 @@ def _get_default_llama_stack_models(client: LlamaStackClient) -> _DefaultModelsR
 
 
 def _are_provided_models_available(
-    provided_models: list,
+    provided_models: list[AI4RAGFoundationModel] | list[AI4RAGEmbeddingModel],
     available_models: list[LSFoundationModel | LSEmbeddingModel],
     not_responding_models: list[LSFoundationModel | LSEmbeddingModel],
 ) -> None:
@@ -147,11 +150,11 @@ def _are_provided_models_available(
 
     Parameters
     ----------
-    provided_models : list
+    provided_models : list[AI4RAGFoundationModel] | list[AI4RAGEmbeddingModel]
         Models provided by the user in the input payload.
 
     available_models : list[LSFoundationModel | LSEmbeddingModel]
-        Models registered within llama-stack.
+        Models registered within llama-stack that passed validation (respond to requests).
 
     not_responding_models : list[LSFoundationModel | LSEmbeddingModel]
         Models that are registered within llama-stack but do not respond.
@@ -173,18 +176,18 @@ def _are_provided_models_available(
         if m.model_id not in available_model_ids and m.model_id not in not_responding_model_ids
     ]
 
-    log = []
+    error_messages = []
     if user_not_responding_models:
-        log.append(
+        error_messages.append(
             f"Provided models: `{user_not_responding_models}` are registered but do not respond. "
             f"Remove these models from the experiment configuration and try again."
         )
 
     if user_unavailable_models:
-        log.append(
+        error_messages.append(
             f"Provided models: `{user_unavailable_models}` are not registered within llama-stack. "
-            f"Register these models or try different model for the experiment."
+            f"Register these models or try a different model for the experiment."
         )
 
-    if log:
-        raise SearchSpaceValueError("\n".join(log))
+    if error_messages:
+        raise SearchSpaceValueError("\n".join(error_messages))
