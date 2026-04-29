@@ -5,7 +5,6 @@
 from typing import Any
 
 from llama_stack_client import LlamaStackClient
-from pydantic import TypeAdapter, ValidationError
 
 from ai4rag import logger
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
@@ -15,7 +14,6 @@ from ai4rag.search_space.prepare.llama_stack_utils import (
     _are_provided_models_available,
     _get_default_llama_stack_models,
 )
-from ai4rag.search_space.prepare.validation_error_decoder import validation_error_decoder
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -56,13 +54,7 @@ def prepare_search_space_with_llama_stack(
     """
     logger.info("Preparing search space based on provided constraints: %s.", payload)
 
-    payload_model = TypeAdapter(AI4RAGConstraints)
-
-    try:
-        validated_payload = payload_model.validate_python(payload)
-    except ValidationError as ve:
-        # we want to catch only the first error
-        validation_error_decoder(ve.errors()[0])
+    validated_payload = AI4RAGConstraints(**payload)
 
     if isinstance(client, LlamaStackClient):
         models = _get_default_llama_stack_models(client)

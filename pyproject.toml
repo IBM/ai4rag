@@ -93,7 +93,6 @@ log_level = "INFO"
 [tool.coverage.run]
 # Skipping function templates for notebooks
 omit = [
-    "ai4rag/search_space/prepare/validation_error_decoder.py",
     "ai4rag/core/experiment/experiment.py",
 ]
 
