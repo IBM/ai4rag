@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 from llama_stack_client import LlamaStackClient
+from pydantic import ValidationError
 
 from ai4rag.search_space.prepare import prepare_search_space_with_llama_stack
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
@@ -162,7 +163,7 @@ class TestPrepareSearchSpaceWithLlamaStack:
         # Invalid payload with unrecognized parameter
         payload = {"invalid_parameter": "value"}
 
-        with pytest.raises(SearchSpaceValueError, match="Unknown validation error|invalid_parameter"):
+        with pytest.raises(ValidationError, match="Unknown validation error|invalid_parameter"):
             prepare_search_space_with_llama_stack(payload, mock_client)
 
     def test_non_llama_stack_client_raises_error(self):
