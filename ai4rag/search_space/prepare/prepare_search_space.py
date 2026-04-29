@@ -72,9 +72,17 @@ def prepare_search_space_with_llama_stack(
         raise SearchSpaceValueError(f"Unrecognized client type: '{client.__class__.__name__}'")
 
     if validated_payload.foundation_models:
-        _are_provided_models_available(validated_payload.foundation_models, default_foundation_models)
+        _are_provided_models_available(
+            provided_models=validated_payload.foundation_models,
+            available_models=default_foundation_models,
+            not_responding_models=models["not_responding_foundation_models"],
+        )
     if validated_payload.embedding_models:
-        _are_provided_models_available(validated_payload.embedding_models, default_embedding_models)
+        _are_provided_models_available(
+            provided_models=validated_payload.embedding_models,
+            available_models=default_embedding_models,
+            not_responding_models=models["not_responding_embedding_models"],
+        )
 
     # Transform user models into llama-stack based models
     if validated_payload.foundation_models is not None:
@@ -112,6 +120,9 @@ def prepare_search_space_with_llama_stack(
             name="embedding_model",
             values=default_embedding_models,
         )
+
+    logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])
+    logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param],

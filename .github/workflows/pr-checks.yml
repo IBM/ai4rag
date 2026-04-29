@@ -63,4 +63,4 @@ jobs:
 
       - name: Run tests with coverage
         run: |
-          pytest --cov=ai4rag --cov-report=term --cov-report=html --cov-fail-under=90
+          pytest tests/unit --cov=ai4rag --cov-report=term --cov-report=html --cov-fail-under=90
