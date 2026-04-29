@@ -250,4 +250,5 @@ class TestModelsPreSelector:
         models = pre_selector.select_models(n_embedding_models=n_em, n_foundation_models=n_fm)
         assert len(models.get("foundation_models")) == n_fm
         assert len(models.get("embedding_models")) == n_em
-        assert f"Selecting the best {n_em} embedding models and {n_fm} foundation models." in caplog.text
+        assert "Starting models pre-selection..." in caplog.text
+        assert f"Selected the best {n_em} embedding model(s) and {n_fm} foundation model(s)." in caplog.text

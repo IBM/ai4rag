@@ -319,7 +319,9 @@ class ModelsPreSelector:
         """
 
         logger.info(
-            "Selecting the best %s embedding models and %s foundation models.", n_embedding_models, n_foundation_models
+            "Search space contains %s foundation model(s) and %s embedding model(s). Starting models pre-selection...",
+            len(self.foundation_models),
+            len(self.embedding_models),
         )
         top_models_with_scores = self._mean_based_scoring()
 
@@ -340,6 +342,12 @@ class ModelsPreSelector:
             "foundation_models": foundation_models[:n_foundation_models],
             "embedding_models": embedding_models[:n_embedding_models],
         }
+
+        logger.info(
+            "Selected the best %s embedding model(s) and %s foundation model(s).",
+            len(ret["embedding_models"]),
+            len(ret["foundation_models"]),
+        )
 
         return ret
 
