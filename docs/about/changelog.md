@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.5](https://github.com/IBM/ai4rag/releases/tag/v0.5.5)
+
+### Changed
+- Improved error messages when models registered in Llama Stack do not respond — errors now distinguish between "not registered" and "registered but not responding" models, with actionable guidance
+- Improved pre-selector logging to show total model counts before selection and selected counts after
+- Added logging of selected foundation and embedding models during search space preparation
+- Removed `pydantic`-based payload validation overhead in `prepare_search_space_with_llama_stack` — replaced with direct dataclass instantiation
+- Removed `validation_error_decoder` module and `pydantic` dependency from search space preparation
+
+---
+
 ## [0.5.4](https://github.com/IBM/ai4rag/releases/tag/v0.5.4)
 
 ### Fixed
