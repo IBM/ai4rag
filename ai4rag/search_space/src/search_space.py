@@ -328,8 +328,9 @@ class AI4RAGSearchSpace(SearchSpace):
         List of functions - called "rules" - that will be applied on each combination in the search space.
 
     vector_store_type : str, default="ls_milvus"
-        Type of vector store. When "chroma", hybrid search parameters are excluded
-        from the default search space since ChromaDB does not support hybrid search.
+        Type of vector store. Use "ls_<provider_id>" for Llama Stack vector stores
+        (e.g., "ls_milvus", "ls_qdrant"). When "chroma", hybrid search parameters
+        are excluded from the default search space since ChromaDB does not support hybrid search.
     """
 
     _base_rules = (

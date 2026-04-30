@@ -5,7 +5,6 @@
 from typing import Any
 
 from llama_stack_client import LlamaStackClient
-from pydantic import TypeAdapter, ValidationError
 
 from ai4rag import logger
 from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
@@ -15,7 +14,6 @@ from ai4rag.search_space.prepare.llama_stack_utils import (
     _are_provided_models_available,
     _get_default_llama_stack_models,
 )
-from ai4rag.search_space.prepare.validation_error_decoder import validation_error_decoder
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -40,8 +38,9 @@ def prepare_search_space_with_llama_stack(
         Client instance for listing and validating available models.
 
     vector_store_type : str, default="ls_milvus"
-        Type of vector store. When "chroma", hybrid search parameters are excluded
-        from the default search space since ChromaDB does not support hybrid search.
+        Type of vector store. Use "ls_<provider_id>" for Llama Stack vector stores
+        (e.g., "ls_milvus", "ls_qdrant"). When "chroma", hybrid search parameters
+        are excluded from the default search space since ChromaDB does not support hybrid search.
 
     Returns
     -------
@@ -55,13 +54,7 @@ def prepare_search_space_with_llama_stack(
     """
     logger.info("Preparing search space based on provided constraints: %s.", payload)
 
-    payload_model = TypeAdapter(AI4RAGConstraints)
-
-    try:
-        validated_payload = payload_model.validate_python(payload)
-    except ValidationError as ve:
-        # we want to catch only the first error
-        validation_error_decoder(ve.errors()[0])
+    validated_payload = AI4RAGConstraints(**payload)
 
     if isinstance(client, LlamaStackClient):
         models = _get_default_llama_stack_models(client)
@@ -71,9 +64,17 @@ def prepare_search_space_with_llama_stack(
         raise SearchSpaceValueError(f"Unrecognized client type: '{client.__class__.__name__}'")
 
     if validated_payload.foundation_models:
-        _are_provided_models_available(validated_payload.foundation_models, default_foundation_models)
+        _are_provided_models_available(
+            provided_models=validated_payload.foundation_models,
+            available_models=default_foundation_models,
+            not_responding_models=models["not_responding_foundation_models"],
+        )
     if validated_payload.embedding_models:
-        _are_provided_models_available(validated_payload.embedding_models, default_embedding_models)
+        _are_provided_models_available(
+            provided_models=validated_payload.embedding_models,
+            available_models=default_embedding_models,
+            not_responding_models=models["not_responding_embedding_models"],
+        )
 
     # Transform user models into llama-stack based models
     if validated_payload.foundation_models is not None:
@@ -111,6 +112,9 @@ def prepare_search_space_with_llama_stack(
             name="embedding_model",
             values=default_embedding_models,
         )
+
+    logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])
+    logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param],

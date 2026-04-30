@@ -40,13 +40,13 @@ Consider enabling hybrid search when:
 ## Prerequisites
 
 !!! warning "Vector Store Requirement"
-    Hybrid search is **only supported with `ls_milvus`** (Milvus via Llama Stack). It is **NOT available with ChromaDB**.
+    Hybrid search is **only supported with Llama Stack vector stores** (i.e., `vector_store_type` with `ls_` prefix, e.g., `"ls_milvus"`). It is **NOT available with ChromaDB**.
 
 Ensure your experiment is configured with:
 
 ```python
 experiment = AI4RAGExperiment(
-    vector_store_type="ls_milvus",  # Required for hybrid search
+    vector_store_type="ls_milvus",  # Any "ls_<provider_id>" works; required for hybrid search
     # ... other parameters
 )
 ```
@@ -535,11 +535,11 @@ print("Hybrid avg score:", hybrid_results["objective_value"].mean())
 
 **Cause**: You're using `vector_store_type="chroma"`.
 
-**Solution**: Switch to Milvus via Llama Stack:
+**Solution**: Switch to a Llama Stack vector store:
 
 ```python
 experiment = AI4RAGExperiment(
-    vector_store_type="ls_milvus",  # Required
+    vector_store_type="ls_milvus",  # Any "ls_<provider_id>" format works
     # ...
 )
 ```
@@ -588,7 +588,7 @@ experiment = AI4RAGExperiment(
 
 Hybrid search in `ai4rag` combines the best of semantic and keyword-based retrieval:
 
-- **Use `search_mode="hybrid"`** to enable hybrid search (requires `ls_milvus`)
+- **Use `search_mode="hybrid"`** to enable hybrid search (requires a Llama Stack vector store, i.e., `ls_` prefix)
 - **Choose a ranker strategy**: `"rrf"` (general-purpose), `"weighted"` (fine control), or `"normalized"`
 - **Configure strategy parameters**: `ranker_k` for RRF, `ranker_alpha` for weighted
 - **Let the optimizer explore**: Include both vector and hybrid modes to find the best approach

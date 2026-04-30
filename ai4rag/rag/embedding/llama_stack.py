@@ -129,6 +129,8 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embeds given list of strings.
+        For llama-stack the maximum batch size supported is 2048 chunks,
+        hence we need to do it iteratively.
 
         Parameters
         ----------
@@ -140,7 +142,11 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
         list[list[float]]
             Embeddings made from the list of texts.
         """
-        return self._embed_text(text_input=texts)
+        resp = []
+        for idx in range(0, len(texts), 2048):
+            resp.extend(self._embed_text(text_input=texts[idx : idx + 2048]))
+
+        return resp
 
     def embed_query(self, query: str) -> list[float]:
         """Embeds given query.

@@ -273,17 +273,18 @@ _REQUIRED_PARAMS = [
 
 
 class TestGetDefaultSearchSpaceParameters:
-    def test_ls_milvus_excludes_hybrid_params_by_default(self):
+    def test_ls_milvus_includes_hybrid_params_by_default(self):
         params = get_default_ai4rag_search_space_parameters(vector_store_type="ls_milvus")
         param_names = {p.name for p in params}
 
         assert "search_mode" in param_names
-        assert "ranker_strategy" not in param_names
-        assert "ranker_k" not in param_names
-        assert "ranker_alpha" not in param_names
+        assert "ranker_strategy" in param_names
+        assert "ranker_k" in param_names
+        assert "ranker_alpha" in param_names
 
         search_mode_param = next(p for p in params if p.name == "search_mode")
-        assert search_mode_param.values == ("vector",)
+        assert "vector" in search_mode_param.values
+        assert "hybrid" in search_mode_param.values
 
     def test_chroma_excludes_hybrid_params(self):
         params = get_default_ai4rag_search_space_parameters(vector_store_type="chroma")
@@ -320,13 +321,10 @@ class TestGetDefaultSearchSpaceParameters:
 
 
 class TestAI4RAGSearchSpaceVectorStoreType:
-    def test_ls_milvus_excludes_hybrid_params_by_default(self):
+    def test_ls_milvus_includes_hybrid_params_by_default(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
         param_names = {p.name for p in ss.params}
-        assert "search_mode" in param_names
-        assert not _HYBRID_PARAM_NAMES.intersection({"ranker_strategy", "ranker_k", "ranker_alpha"}).intersection(
-            param_names
-        )
+        assert _HYBRID_PARAM_NAMES.issubset(param_names)
 
     def test_chroma_excludes_hybrid_params(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="chroma")
@@ -344,10 +342,7 @@ class TestAI4RAGSearchSpaceVectorStoreType:
     def test_default_vector_store_type_is_ls_milvus(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS))
         param_names = {p.name for p in ss.params}
-        assert "search_mode" in param_names
-        assert not _HYBRID_PARAM_NAMES.intersection({"ranker_strategy", "ranker_k", "ranker_alpha"}).intersection(
-            param_names
-        )
+        assert _HYBRID_PARAM_NAMES.issubset(param_names)
 
     def test_chroma_does_not_apply_hybrid_rules(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="chroma")
@@ -356,13 +351,27 @@ class TestAI4RAGSearchSpaceVectorStoreType:
             assert "ranker_k" not in combination
             assert "ranker_alpha" not in combination
 
-    def test_ls_milvus_default_only_vector_mode(self):
+    def test_ls_milvus_default_includes_hybrid_mode(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
+        search_modes = {c["search_mode"] for c in ss.combinations}
+        assert "vector" in search_modes
+        assert "hybrid" in search_modes
         for combination in ss.combinations:
-            assert combination.get("search_mode") == "vector"
-            assert "ranker_strategy" not in combination
-            assert "ranker_k" not in combination
-            assert "ranker_alpha" not in combination
+            search_mode = combination.get("search_mode")
+            if search_mode == "vector":
+                assert combination["ranker_strategy"] == ""
+                assert combination["ranker_k"] == 0
+                assert combination["ranker_alpha"] == 1
+            elif search_mode == "hybrid":
+                assert combination["ranker_strategy"] in ("rrf", "weighted")
+                if combination["ranker_strategy"] == "rrf":
+                    assert combination["ranker_k"] > 0
+                else:
+                    assert combination["ranker_k"] == 0
+                if combination["ranker_strategy"] == "weighted":
+                    assert combination["ranker_alpha"] != 1
+                else:
+                    assert combination["ranker_alpha"] == 1
 
     def test_ls_milvus_user_provided_hybrid_params_apply_rules(self):
         hybrid_params = list(_REQUIRED_PARAMS) + [

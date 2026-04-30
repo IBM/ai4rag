@@ -59,7 +59,8 @@ ruff_cache/
 
 # --- Local data ---
 data/
-local
+local/
+tmp/
 *.sqlite3
 
 # --- Misc ---

@@ -7,6 +7,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.5](https://github.com/IBM/ai4rag/releases/tag/v0.5.5)
+
+### Changed
+- Improved error messages when models registered in Llama Stack do not respond — errors now distinguish between "not registered" and "registered but not responding" models, with actionable guidance
+- Improved pre-selector logging to show total model counts before selection and selected counts after
+- Added logging of selected foundation and embedding models during search space preparation
+- Removed `pydantic`-based payload validation overhead in `prepare_search_space_with_llama_stack` — replaced with direct dataclass instantiation
+- Removed `validation_error_decoder` module and `pydantic` dependency from search space preparation
+
+---
+
+## [0.5.4](https://github.com/IBM/ai4rag/releases/tag/v0.5.4)
+
+### Fixed
+- Fixed chunk ID collisions in `LSVectorStore` — chunks from the same document no longer share the same `chunk_id`; IDs are now derived from chunk content via hashing
+- Fixed `chunk_metadata` in `LSVectorStore` to only contain `document_id`, with full document metadata preserved in a separate `metadata` field
+
+---
+
+## [0.5.3](https://github.com/IBM/ai4rag/releases/tag/v0.5.3)
+
+### Changed
+- Bumped `llama-stack-client` dependency from `~=0.6.0` to `~=0.7.1`
+- Updated documentation and installation instructions to require Llama Stack >= 0.7.0
+
+---
+
+## [0.5.2](https://github.com/IBM/ai4rag/releases/tag/v0.5.2)
+
+### Changed
+- Vector store type now supports any Llama Stack provider via the `ls_<provider_id>` pattern (e.g., `ls_milvus`, `ls_qdrant`), instead of only the hardcoded `ls_milvus`
+- `vector_store_type` parameter on `AI4RAGExperiment` changed from `Literal["chroma", "ls_milvus"]` to `str` for flexibility
+
+### Fixed
+- Fixed `provider_id` extraction in `get_vector_store` — previously hardcoded to `"milvus"`, now correctly derived from the `ls_<provider_id>` vector store type
+
+---
+
+## [0.5.1](https://github.com/IBM/ai4rag/releases/tag/v0.5.1)
+
+### Added
+- Batch processing for Llama Stack embeddings (2048 chunk limit) and vector store document insertion, preventing failures with large document sets
+
+### Changed
+- Hybrid search re-enabled by default in the `ls_milvus` default search space (was disabled in 0.5.0 due to upstream instability)
+- Default chunk sizes narrowed from `(512, 1024, 2048, 4096)` to `(1024, 2048)` and overlaps from `(128, 256, 512)` to `(128, 256)` for faster optimization
+- Chroma vector store batch size simplified to a fixed default of 2048 instead of querying client internals
+
+---
+
 ## [0.5.0](https://github.com/IBM/ai4rag/releases/tag/v0.5.0)
 
 ### Added

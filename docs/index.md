@@ -106,7 +106,7 @@ graph TB
     D --> P
 ```
 
-1. **Documents and `benchmakr_data.json`** are prepared following desired schema
+1. **Documents and `benchmark_data.json`** are prepared following desired schema
 2. **Search Space** defines possible parameter combinations (models, chunk sizes, retrieval methods, etc.)
 3. **Optimizer** (optimization engine) explores configurations using an objective function with given RAG Template
 4. **Evaluation** of each configuration using selected metrics based on the `Evaluator` (default `unitxt`)

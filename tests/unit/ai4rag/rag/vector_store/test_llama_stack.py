@@ -435,7 +435,9 @@ class TestLSVectorStoreAddDocuments:
         assert "content" in chunks[0]
         assert "embedding" in chunks[0]
         assert "chunk_id" in chunks[0]
-        assert chunks[0]["chunk_id"] == "doc1"
+        assert chunks[0]["chunk_id"] == str(hash("Test"))
+        assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
+        assert chunks[0]["metadata"] == {"document_id": "doc1"}
 
     def test_add_documents_multiple(self, mock_embedding_model, mock_llama_stack_client):
         """Test adding multiple documents."""
@@ -474,7 +476,9 @@ class TestLSVectorStoreAddDocuments:
         call_kwargs = mock_llama_stack_client.vector_io.insert.call_args.kwargs
         chunks = call_kwargs["chunks"]
 
-        assert chunks[0]["chunk_metadata"]["custom_field"] == "value"
+        assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
+        assert chunks[0]["metadata"]["custom_field"] == "value"
+        assert chunks[0]["metadata"]["document_id"] == "doc1"
 
     def test_add_documents_uses_embedding_model(self, mock_llama_stack_client):
         """Test that add_documents uses the embedding model."""
@@ -492,6 +496,20 @@ class TestLSVectorStoreAddDocuments:
         vector_store.add_documents(docs)
 
         mock_embed_model.embed_documents.assert_called_once_with(["Test"])
+
+    def test_add_documents_batches_large_input(self, mock_embedding_model, mock_llama_stack_client):
+        """Test that add_documents batches inserts exceeding batch_size."""
+        vector_store = LSVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_llama_stack_client,
+            provider_id="milvus",
+        )
+
+        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
+
+        vector_store.add_documents(docs, batch_size=2)
+
+        assert mock_llama_stack_client.vector_io.insert.call_count == 3
 
 
 class TestLSVectorStoreCleanCollection:

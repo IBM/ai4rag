@@ -17,7 +17,7 @@ Before starting, ensure you have:
 
 - [x] Installed ai4rag ([Installation Guide](installation.md))
 - [x] A running Llama Stack server with models configured or other deployed models that can be used for the experiment
-- [x] Environment variables set (e.g. `BASE_URL`, `API_KEY`) to communicate with Llama Stack server or deployed models
+- [x] Environment variables set (e.g. `BASE_URL`, `APIKEY`) to communicate with Llama Stack server or deployed models
 
 ---
 
@@ -36,7 +36,7 @@ load_dotenv(find_dotenv())
 
 client = LlamaStackClient(
     base_url=os.getenv("BASE_URL"),
-    api_key=os.getenv("API_KEY")
+    api_key=os.getenv("APIKEY")
 )
 
 ```
@@ -203,7 +203,7 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",  # or "chroma" for in-memory
+    vector_store_type="ls_milvus",  # "ls_<provider_id>" for Llama Stack, or "chroma" for in-memory
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<path_to_store_results>"),  # Tracks progress
 )
@@ -297,8 +297,7 @@ experiment = AI4RAGExperiment(
     search_space=search_space,
     vector_store_type="ls_milvus",
     optimizer_settings=optimizer_settings,
-    event_handler=LocalEventHandler(),
-    output_path="./results",
+    event_handler=LocalEventHandler(output_path="./results"),
 )
 
 best_pattern = experiment.search()

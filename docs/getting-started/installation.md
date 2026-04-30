@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) Llama Stack Server** >= 0.6.0: With at least one foundation model, one embedding model, and vector database configured
+- **(Optional) Llama Stack Server** >= 0.7.0: With at least one foundation model, one embedding model, and vector database configured
 
 
 !!! note "External models and vector database integration"
@@ -64,7 +64,7 @@ Follow these steps:
 ### 1. Install Llama Stack
 
 ```bash
-pip install "llama-stack>=0.6.0"
+pip install "llama-stack>=0.7.0"
 ```
 
 ### 2. Configure Your Stack
@@ -94,7 +94,7 @@ Store your Llama Stack credentials securely in a `.env` file:
 ```bash
 # .env
 BASE_URL="<llama_stack_server_url>"
-API_KEY="<llama_stack_server_api_key>"
+APIKEY="<llama_stack_server_api_key>"
 ```
 
 !!! warning "Security"
@@ -109,7 +109,7 @@ from dotenv import load_dotenv, find_dotenv
 load_dotenv(find_dotenv())
 
 base_url = os.getenv("BASE_URL")
-api_key = os.getenv("API_KEY")
+api_key = os.getenv("APIKEY")
 ```
 
 ---

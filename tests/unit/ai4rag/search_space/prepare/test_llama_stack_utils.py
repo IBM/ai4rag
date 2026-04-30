@@ -126,10 +126,14 @@ class TestGetDefaultLlamaStackModels:
         # Assertions
         assert "foundation_models" in result
         assert "embedding_models" in result
+        assert "not_responding_foundation_models" in result
+        assert "not_responding_embedding_models" in result
         assert len(result["foundation_models"]) == 1
         assert len(result["embedding_models"]) == 1
         assert result["foundation_models"][0].model_id == "test-llm"
         assert result["embedding_models"][0].model_id == "test-embedding"
+        assert result["not_responding_foundation_models"] == []
+        assert result["not_responding_embedding_models"] == []
 
     def test_raises_error_when_no_llm_models(self, mocker):
         """Test that function raises error when no LLM models available."""
@@ -148,7 +152,7 @@ class TestGetDefaultLlamaStackModels:
             return_value=True,
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'"):
+        with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'.*not responding"):
             _get_default_llama_stack_models(mock_client)
 
     def test_raises_error_when_no_embedding_models(self, mocker):
@@ -167,7 +171,7 @@ class TestGetDefaultLlamaStackModels:
             return_value=True,
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'"):
+        with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'.*not responding"):
             _get_default_llama_stack_models(mock_client)
 
     def test_excludes_models_that_fail_validation(self, mocker):
@@ -223,6 +227,12 @@ class TestGetDefaultLlamaStackModels:
         assert len(result["embedding_models"]) == 1
         assert result["embedding_models"][0].model_id == "test-embedding-2"
 
+        # Failed models should be in the not_responding lists
+        assert len(result["not_responding_foundation_models"]) == 1
+        assert result["not_responding_foundation_models"][0].model_id == "test-llm-1"
+        assert len(result["not_responding_embedding_models"]) == 1
+        assert result["not_responding_embedding_models"][0].model_id == "test-embedding-1"
+
     def test_raises_error_when_all_foundation_models_fail_validation(self, mocker):
         """Test that error is raised when all foundation models fail validation."""
         mock_client = MagicMock()
@@ -248,7 +258,7 @@ class TestGetDefaultLlamaStackModels:
             return_value=True,
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'"):
+        with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'.*not responding"):
             _get_default_llama_stack_models(mock_client)
 
     def test_raises_error_when_all_embedding_models_fail_validation(self, mocker):
@@ -276,15 +286,15 @@ class TestGetDefaultLlamaStackModels:
             return_value=False,
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'"):
+        with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'.*not responding"):
             _get_default_llama_stack_models(mock_client)
 
 
 class TestAreProvidedModelsAvailable:
     """Test _are_provided_models_available function."""
 
-    def test_returns_true_when_all_models_available(self):
-        """Test that function returns True when all provided models are available."""
+    def test_no_error_when_all_models_available(self):
+        """Test that function does not raise when all provided models are available."""
         from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
         from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
 
@@ -299,12 +309,10 @@ class TestAreProvidedModelsAvailable:
             AI4RAGFoundationModel(model_id="model-2"),
         ]
 
-        # Should return True without raising
-        result = _are_provided_models_available(provided_models, available_models)
-        assert result is True
+        _are_provided_models_available(provided_models, available_models, not_responding_models=[])
 
-    def test_raises_error_when_model_not_available(self):
-        """Test that function raises error when provided model is not available."""
+    def test_raises_error_when_model_not_registered(self):
+        """Test that function raises error when provided model is not registered."""
         from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
         from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
 
@@ -314,8 +322,55 @@ class TestAreProvidedModelsAvailable:
         ]
 
         provided_models = [
-            AI4RAGFoundationModel(model_id="model-2"),  # Not available
+            AI4RAGFoundationModel(model_id="model-2"),
         ]
 
-        with pytest.raises(SearchSpaceValueError, match="model-2.*not available"):
-            _are_provided_models_available(provided_models, available_models)
+        with pytest.raises(SearchSpaceValueError, match="model-2.*not registered within llama-stack"):
+            _are_provided_models_available(provided_models, available_models, not_responding_models=[])
+
+    def test_raises_error_when_model_not_responding(self):
+        """Test that function raises error when provided model is registered but not responding."""
+        from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+        from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
+
+        mock_client = MagicMock()
+        available_models = [
+            LSFoundationModel(model_id="model-1", client=mock_client),
+        ]
+        not_responding_models = [
+            LSFoundationModel(model_id="model-2", client=mock_client),
+        ]
+
+        provided_models = [
+            AI4RAGFoundationModel(model_id="model-2"),
+        ]
+
+        with pytest.raises(SearchSpaceValueError, match="model-2.*registered but do not respond"):
+            _are_provided_models_available(provided_models, available_models, not_responding_models)
+
+    def test_raises_error_with_both_not_responding_and_unregistered(self):
+        """Test that error includes both not-responding and unregistered models."""
+        from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+        from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
+
+        mock_client = MagicMock()
+        available_models = [
+            LSFoundationModel(model_id="model-1", client=mock_client),
+        ]
+        not_responding_models = [
+            LSFoundationModel(model_id="model-2", client=mock_client),
+        ]
+
+        provided_models = [
+            AI4RAGFoundationModel(model_id="model-2"),
+            AI4RAGFoundationModel(model_id="model-3"),
+        ]
+
+        with pytest.raises(SearchSpaceValueError) as exc_info:
+            _are_provided_models_available(provided_models, available_models, not_responding_models)
+
+        error_msg = str(exc_info.value)
+        assert "model-2" in error_msg
+        assert "registered but do not respond" in error_msg
+        assert "model-3" in error_msg
+        assert "not registered within llama-stack" in error_msg
