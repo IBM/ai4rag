@@ -25,12 +25,6 @@ classDiagram
         +chat(messages) list
     }
 
-    class OpenAIFoundationModel {
-        +client: OpenAI
-        +params: OpenAIModelParameters
-        +chat(messages) list
-    }
-
     class BaseEmbeddingModel {
         <<abstract>>
         +client: ClientT
@@ -43,13 +37,6 @@ classDiagram
     class OGXEmbeddingModel {
         +client: OgxClient
         +params: OGXEmbeddingParams
-        +embed_documents(texts) list
-        +embed_query(query) list
-    }
-
-    class OpenAIEmbeddingModel {
-        +client: OpenAI
-        +params: OpenAIEmbeddingParams
         +embed_documents(texts) list
         +embed_query(query) list
     }
@@ -119,9 +106,7 @@ classDiagram
     }
 
     BaseFoundationModel <|-- OGXFoundationModel
-    BaseFoundationModel <|-- OpenAIFoundationModel
     BaseEmbeddingModel <|-- OGXEmbeddingModel
-    BaseEmbeddingModel <|-- OpenAIEmbeddingModel
     BaseVectorStore <|-- OGXVectorStore
     BaseVectorStore <|-- ChromaVectorStore
     BaseChunker <|-- LangChainChunker
@@ -281,20 +266,6 @@ response = foundation_model.chat(messages)
 answer = response[0].message.content
 ```
 
-### OpenAIFoundationModel
-
-OpenAI integration for foundation models:
-
-```python
-class OpenAIFoundationModel(BaseFoundationModel[OpenAI, OpenAIModelParameters]):
-    # Similar interface to OGXFoundationModel but uses OpenAI client
-```
-
-**Supported Models:**
-- GPT-4, GPT-4 Turbo
-- GPT-3.5 Turbo
-- Any model accessible via OpenAI API
-
 ---
 
 ## Embedding Models
@@ -429,20 +400,6 @@ embeddings = embedding_model.embed_documents(["text 1", "text 2", ...])
 query_embedding = embedding_model.embed_query("What is X?")
 # Returns: [0.05, -0.12, ...]
 ```
-
-### OpenAIEmbeddingModel
-
-OpenAI integration for embeddings:
-
-```python
-class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
-    # Similar interface but uses OpenAI client
-```
-
-**Supported Models:**
-- text-embedding-3-small
-- text-embedding-3-large
-- text-embedding-ada-002
 
 ---
 

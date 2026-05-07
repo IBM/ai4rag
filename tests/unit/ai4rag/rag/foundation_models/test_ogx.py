@@ -15,16 +15,16 @@ from ai4rag.utils.validators import ConstraintsValidationError
 
 
 class TestModelParameters:
-    """Test suite for OpenAIModelParameters class."""
+    """Test suite for OGXModelParameters class."""
 
     def test_default_values(self):
-        """Test OpenAIModelParameters with default values."""
+        """Test OGXModelParameters with default values."""
         params = OGXModelParameters()
         assert params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
         assert params.temperature == ChatGenerationConstants.TEMPERATURE
 
     def test_custom_values(self):
-        """Test OpenAIModelParameters with custom valid values."""
+        """Test OGXModelParameters with custom valid values."""
         params = OGXModelParameters(max_completion_tokens=1024, temperature=0.5)
         assert params.max_completion_tokens == 1024
         assert params.temperature == 0.5
@@ -143,7 +143,7 @@ class TestOGXFoundationModel:
     def model_with_model_params(
         self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
-        """Create a OGXFoundationModel with OpenAIModelParameters."""
+        """Create a OGXFoundationModel with OGXModelParameters."""
         params = OGXModelParameters(max_completion_tokens=512, temperature=0.7)
         return OGXFoundationModel(
             model_id="test-model-id",
@@ -179,7 +179,7 @@ class TestOGXFoundationModel:
         assert "document" in model_with_dict_params.context_template_text
 
     def test_init_with_model_parameters(self, model_with_model_params, mock_ogx_client):
-        """Test initialization with OpenAIModelParameters object."""
+        """Test initialization with OGXModelParameters object."""
         assert model_with_model_params.model_id == "test-model-id"
         assert isinstance(model_with_model_params.params, OGXModelParameters)
         assert model_with_model_params.params.max_completion_tokens == 512
