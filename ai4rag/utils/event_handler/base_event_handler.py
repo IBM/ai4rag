@@ -190,7 +190,7 @@ class BaseEventHandler(ABC):
                 'schema_version': '1.0',
                 'producer': 'ai4rag',
                 'settings': {
-                    'vector_store': {'datasource_type': 'chroma', 'collection_name': 'ai4rag_20260317092550'},
+                    'vector_store': {'datasource_type': 'local_chroma', 'collection_name': 'ai4rag_20260317092550'},
                     'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},
                     'embedding': {
                         'model_id': 'mock-em-1',

@@ -6,18 +6,18 @@ from dataclasses import dataclass
 from typing import Optional
 
 from httpx import Timeout
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 from .base_model import BaseEmbeddingModel
 
 # pylint: disable=duplicate-code
 
-__all__ = ["LSEmbeddingModel", "LSEmbeddingParams"]
+__all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 
 @dataclass
-class LSEmbeddingParams:
-    """LLamaStack parameters to be used to create embeddings."""
+class OGXEmbeddingParams:
+    """OGX parameters to be used to create embeddings."""
 
     embedding_dimension: Optional[int] = None
     context_length: Optional[int] = None
@@ -27,26 +27,26 @@ class LSEmbeddingParams:
     provider_resource_id: Optional[str] = None
 
 
-class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
-    """Creates embeddings for LLamaStack client."""
+class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
+    """Creates embeddings for OGX client."""
 
-    def __init__(self, client: LlamaStackClient, model_id: str, params: dict | LSEmbeddingParams | None = None):
+    def __init__(self, client: OgxClient, model_id: str, params: dict | OGXEmbeddingParams | None = None):
         super().__init__(client=client, model_id=model_id, params=params)
 
     @property
-    def params(self) -> LSEmbeddingParams:
+    def params(self) -> OGXEmbeddingParams:
         """Get model params."""
         return self._params
 
     @params.setter
-    def params(self, params: dict | LSEmbeddingParams | None) -> None:
+    def params(self, params: dict | OGXEmbeddingParams | None) -> None:
         """Set model params."""
         if params is None:
-            self._params = LSEmbeddingParams()
-        elif isinstance(params, LSEmbeddingParams):
+            self._params = OGXEmbeddingParams()
+        elif isinstance(params, OGXEmbeddingParams):
             self._params = params
         elif isinstance(params, dict):
-            self._params = LSEmbeddingParams(**params)
+            self._params = OGXEmbeddingParams(**params)
         else:
             raise TypeError(f"Incorrect type of 'params' parameter: {type(params)}.")
         if self._params.embedding_dimension is None:
@@ -58,7 +58,7 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
         """Detect embedding dimension by making a minimal embedding call.
 
         Note: This method is called during initialization when ``embedding_dimension``
-        is not explicitly provided.  It issues a real API request to the Llama Stack
+        is not explicitly provided.  It issues a real API request to the OGX
         server, so the server must be reachable at construction time.
 
         Raises
@@ -129,7 +129,7 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embeds given list of strings.
-        For llama-stack the maximum batch size supported is 2048 chunks,
+        The maximum batch size supported is 2048 chunks,
         hence we need to do it iteratively.
 
         Parameters

@@ -2,42 +2,42 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Functional tests for prepare_search_space_with_llama_stack against a live Llama Stack server."""
+"""Functional tests for prepare_search_space_with_ogx against a live OGX server."""
 
 import os
 
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
-from ai4rag.search_space.prepare import prepare_search_space_with_llama_stack
+from ai4rag.search_space.prepare import prepare_search_space_with_ogx
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 load_dotenv(find_dotenv())
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("LLAMA_STACK_CLIENT_BASE_URL") is None,
-    reason="LLAMA_STACK_CLIENT_BASE_URL environment variable not set",
+    os.environ.get("OGX_CLIENT_BASE_URL") is None,
+    reason="OGX_CLIENT_BASE_URL environment variable not set",
 )
 
 
 @pytest.fixture(scope="module")
 def client():
-    return LlamaStackClient(
-        base_url=os.environ["LLAMA_STACK_CLIENT_BASE_URL"],
-        api_key=os.environ.get("LLAMA_STACK_CLIENT_API_KEY", ""),
+    return OgxClient(
+        base_url=os.environ["OGX_CLIENT_BASE_URL"],
+        api_key=os.environ.get("OGX_CLIENT_API_KEY", ""),
     )
 
 
 @pytest.fixture(scope="module")
 def discovered_search_space(client):
     """Discover models once and reuse across tests that need valid model IDs."""
-    return prepare_search_space_with_llama_stack({}, client)
+    return prepare_search_space_with_ogx({}, client)
 
 
-class TestPrepareSearchSpaceWithLlamaStack:
-    """Prepare search space against a live Llama Stack server."""
+class TestPrepareSearchSpaceWithOgx:
+    """Prepare search space against a live OGX server."""
 
     def test_empty_payload_builds_search_space_with_discovered_models(self, discovered_search_space):
         """Empty payload discovers and validates all server models, builds a complete search space."""
@@ -62,7 +62,7 @@ class TestPrepareSearchSpaceWithLlamaStack:
             "embedding_models": [{"model_id": em_id}],
         }
 
-        result = prepare_search_space_with_llama_stack(payload, client)
+        result = prepare_search_space_with_ogx(payload, client)
 
         fm_ids = [m.model_id for m in result["foundation_model"].values]
         em_ids = [m.model_id for m in result["embedding_model"].values]
@@ -74,4 +74,4 @@ class TestPrepareSearchSpaceWithLlamaStack:
         payload = {"foundation_models": [{"model_id": "nonexistent-model-xyz"}]}
 
         with pytest.raises(SearchSpaceValueError, match="nonexistent-model-xyz"):
-            prepare_search_space_with_llama_stack(payload, client)
+            prepare_search_space_with_ogx(payload, client)

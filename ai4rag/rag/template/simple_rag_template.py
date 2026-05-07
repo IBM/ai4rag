@@ -9,7 +9,7 @@ from langchain_core.documents import Document
 
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.vector_store.llama_stack import LSVectorStore
+from ai4rag.rag.vector_store.ogx import OGXVectorStore
 
 from ..embedding.base_model import BaseEmbeddingModel
 from ..foundation_models.base_model import BaseFoundationModel
@@ -18,16 +18,16 @@ from .base_template import BaseRAGTemplate, RAGTemplateError
 
 class SimpleRAG(BaseRAGTemplate):
     """
-    RAG template using Llama Stack components for embedding, vector store,
+    RAG template using OGX components for embedding, vector store,
     retrieval, and foundation model, with LangChain for document chunking.
 
-    This template implements the BaseRAGTemplate using Llama Stack services
+    This template implements the BaseRAGTemplate using OGX services
     for all major RAG components while utilizing LangChain's chunking capabilities.
 
     Parameters
     ----------
     foundation_model : BaseFoundationModel
-        Initialized Llama Stack foundation model for text generation.
+        Initialized OGX foundation model for text generation.
 
     retriever : Retriever
         Initialized retriever for document retrieval.
@@ -35,11 +35,11 @@ class SimpleRAG(BaseRAGTemplate):
     chunker : LangChainChunker | None, default=None
         Initialized LangChain chunker for document splitting.
 
-    embedding_model : LSEmbeddingModel | None, default=None
-        Initialized Llama Stack embedding model.
+    embedding_model : OGXEmbeddingModel | None, default=None
+        Initialized OGX embedding model.
 
-    vector_store : LSVectorStore | None, default=None
-        Initialized Llama Stack vector store.
+    vector_store : OGXVectorStore | None, default=None
+        Initialized OGX vector store.
     """
 
     def __init__(
@@ -48,7 +48,7 @@ class SimpleRAG(BaseRAGTemplate):
         retriever: Retriever,
         chunker: LangChainChunker | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: LSVectorStore | None = None,
+        vector_store: OGXVectorStore | None = None,
     ):
         super().__init__(
             foundation_model=foundation_model,
@@ -129,7 +129,7 @@ class SimpleRAG(BaseRAGTemplate):
         Generate a streaming answer for a question using RAG pipeline.
 
         Note: This is a placeholder implementation. Full streaming support
-        would require streaming capabilities in the LSFoundationModel.
+        would require streaming capabilities in the OGXFoundationModel.
 
         Parameters
         ----------

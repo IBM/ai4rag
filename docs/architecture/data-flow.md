@@ -23,9 +23,9 @@ The indexing phase transforms raw documents into searchable vector embeddings st
 sequenceDiagram
     participant Exp as AI4RAGExperiment
     participant LC as LangChainChunker
-    participant EM as LSEmbeddingModel
-    participant VS as LSVectorStore
-    participant LSClient as Llama Stack Client
+    participant EM as OGXEmbeddingModel
+    participant VS as OGXVectorStore
+    participant OGXClient as OGX Client
 
     Exp->>Exp: check if collection exists
     alt Collection exists
@@ -44,15 +44,15 @@ sequenceDiagram
         VS->>EM: embed_documents([chunk.page_content])
         activate EM
         loop Batches of 2048 chunks
-            EM->>LSClient: embeddings.create(batch)
-            LSClient-->>EM: embeddings
+            EM->>OGXClient: embeddings.create(batch)
+            OGXClient-->>EM: embeddings
         end
         EM-->>VS: all embeddings
         deactivate EM
 
         loop Batches of 2048 chunks
-            VS->>LSClient: vector_io.insert(chunks + embeddings)
-            LSClient-->>VS: success
+            VS->>OGXClient: vector_io.insert(chunks + embeddings)
+            OGXClient-->>VS: success
         end
         VS-->>Exp: indexing complete
         deactivate VS
@@ -136,14 +136,14 @@ chunk.metadata = {
 
 ### Embedding
 
-**LSEmbeddingModel** converts chunk text to vector embeddings:
+**OGXEmbeddingModel** converts chunk text to vector embeddings:
 
 **Auto-detection (on first use):**
 
 ```python
-embedding_model = LSEmbeddingModel(
+embedding_model = OGXEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=llama_stack_client,
+    client=ogx_client,
     params={"embedding_dimension": 768, "context_length": 8192}  # Optional
 )
 ```
@@ -181,14 +181,14 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
 
 ### Vector Store Insertion
 
-**LSVectorStore** stores chunks and embeddings in Llama Stack vector database:
+**OGXVectorStore** stores chunks and embeddings in OGX vector database:
 
 **Collection Creation:**
 
 ```python
 vs = client.vector_stores.create(
     extra_body={
-        "provider_id": "milvus",  # Extracted from vector_store_type="ls_milvus"
+        "provider_id": "milvus",  # From ogx_vector_io_provider_id="milvus"
         "embedding_model": "ollama/nomic-embed-text:latest",
         "embedding_dimension": 768,
     }
@@ -263,10 +263,10 @@ sequenceDiagram
     participant QR as query_rag()
     participant RAG as SimpleRAG
     participant Ret as Retriever
-    participant VS as LSVectorStore
-    participant EM as LSEmbeddingModel
-    participant FM as LSFoundationModel
-    participant LSClient as Llama Stack Client
+    participant VS as OGXVectorStore
+    participant EM as OGXEmbeddingModel
+    participant FM as OGXFoundationModel
+    participant OGXClient as OGX Client
 
     Note over QR: Parallel execution (ThreadPoolExecutor)
     par Question 1
@@ -281,18 +281,18 @@ sequenceDiagram
     RAG->>Ret: retrieve(question)
     activate Ret
     Ret->>EM: embed_query(question)
-    EM->>LSClient: embeddings.create(question)
-    LSClient-->>EM: query_embedding
+    EM->>OGXClient: embeddings.create(question)
+    OGXClient-->>EM: query_embedding
     EM-->>Ret: query_embedding
 
     alt search_mode == "vector"
         Ret->>VS: search(query_embedding, k, mode="vector")
-        VS->>LSClient: vector_io.query(vector_store_id, params)
-        LSClient-->>VS: ranked chunks
+        VS->>OGXClient: vector_io.query(vector_store_id, params)
+        OGXClient-->>VS: ranked chunks
     else search_mode == "hybrid"
         Ret->>VS: search(query_embedding, k, mode="hybrid", ranker_*)
-        VS->>LSClient: vector_io.query(vector_store_id, params + reranker_params)
-        LSClient-->>VS: re-ranked chunks (dense + sparse)
+        VS->>OGXClient: vector_io.query(vector_store_id, params + reranker_params)
+        OGXClient-->>VS: re-ranked chunks (dense + sparse)
     end
 
     VS-->>Ret: retrieved documents
@@ -303,8 +303,8 @@ sequenceDiagram
     RAG->>RAG: format user message using user_message_text
     RAG->>FM: chat(messages)
     activate FM
-    FM->>LSClient: chat.completions.create(model, messages, params)
-    LSClient-->>FM: response
+    FM->>OGXClient: chat.completions.create(model, messages, params)
+    OGXClient-->>FM: response
     FM-->>RAG: answer
     deactivate FM
 
@@ -419,7 +419,7 @@ According to the document: "Second retrieved chunk text..."
 **Customization:**
 
 ```python
-foundation_model = LSFoundationModel(
+foundation_model = OGXFoundationModel(
     model_id="ollama/llama3.2:3b",
     client=client,
     context_template_text="Source {document}\n---\n"  # Custom format
@@ -453,7 +453,7 @@ Answer:
 
 ### Generation
 
-**LSFoundationModel** generates answer via chat completion:
+**OGXFoundationModel** generates answer via chat completion:
 
 ```python
 messages = [
@@ -869,7 +869,7 @@ for idx in range(0, len(texts), 2048):
 ```
 
 **Constraints:**
-- Llama Stack max batch size: 2048 chunks
+- OGX max batch size: 2048 chunks
 - Smaller batches = more API calls = slower
 
 ### 3. Collection Reuse
@@ -928,7 +928,7 @@ Document(page_content="Long text...", metadata={"document_id": "doc1"})
 
 ```python
 ["Chunk 1 text", "Chunk 2 text", ...]
-↓ (LSEmbeddingModel)
+↓ (OGXEmbeddingModel)
 [[0.1, -0.2, ...], [0.3, 0.1, ...], ...]  # 768-dim vectors
 ```
 
@@ -936,15 +936,15 @@ Document(page_content="Long text...", metadata={"document_id": "doc1"})
 
 ```python
 [{"content": "Chunk 1", "embedding": [0.1, ...], "metadata": {...}}, ...]
-↓ (LSVectorStore.add_documents)
-Collection "xyz" in Llama Stack vector DB
+↓ (OGXVectorStore.add_documents)
+Collection "xyz" in OGX vector DB
 ```
 
 **Question → Query Embedding:**
 
 ```python
 "What is the capital of France?"
-↓ (LSEmbeddingModel.embed_query)
+↓ (OGXEmbeddingModel.embed_query)
 [0.05, -0.12, 0.34, ...]  # 768-dim vector
 ```
 
@@ -952,7 +952,7 @@ Collection "xyz" in Llama Stack vector DB
 
 ```python
 [0.05, -0.12, ...]
-↓ (LSVectorStore.search via vector_io.query)
+↓ (OGXVectorStore.search via vector_io.query)
 [
     Document(page_content="Paris is the capital...", metadata={...}),
     Document(page_content="France's capital city...", metadata={...}),
@@ -965,7 +965,7 @@ Collection "xyz" in Llama Stack vector DB
 ```python
 contexts = ["Paris is the capital...", "France's capital city..."]
 question = "What is the capital of France?"
-↓ (SimpleRAG.generate via LSFoundationModel.chat)
+↓ (SimpleRAG.generate via OGXFoundationModel.chat)
 "Based on the provided documents, Paris is the capital of France."
 ```
 

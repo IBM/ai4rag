@@ -9,7 +9,7 @@ Comprehensive testing practices for `ai4rag` development.
 ai4rag uses a comprehensive testing strategy combining:
 
 - **Unit Tests**: Fast, isolated tests with mocked dependencies
-- **Functional Tests**: Integration tests against live Llama Stack services
+- **Functional Tests**: Integration tests against live OGX services
 
 All tests use **pytest** as the testing framework with additional plugins for mocking and coverage reporting.
 
@@ -48,7 +48,7 @@ tests/
 │       │   └── test_unitxt_evaluator.py
 │       └── search_space/
 │           ├── prepare/
-│           │   ├── test_llama_stack_utils.py
+│           │   ├── test_ogx_utils.py
 │           │   └── test_prepare_search_space.py
 │           └── src/
 │               ├── test_parameter.py
@@ -84,7 +84,7 @@ pytest tests/unit/
 ### Functional Tests Only
 
 ```bash
-# Run integration tests (requires Llama Stack setup)
+# Run integration tests (requires OGX setup)
 pytest tests/functional/
 ```
 
@@ -128,7 +128,7 @@ pytest -vv -s
 
 ## Unit Testing Patterns
 
-Unit tests validate individual components in isolation. External dependencies (Llama Stack client, vector stores, etc.) are mocked using `unittest.mock` and `pytest-mock`.
+Unit tests validate individual components in isolation. External dependencies (OGX client, vector stores, etc.) are mocked using `unittest.mock` and `pytest-mock`.
 
 ### Fixtures
 
@@ -283,7 +283,7 @@ class TestGAMOptSettings:
 
 ## Functional Tests
 
-Functional tests validate end-to-end workflows with live Llama Stack services. These tests require proper environment setup.
+Functional tests validate end-to-end workflows with live OGX services. These tests require proper environment setup.
 
 ### Environment Requirements
 
@@ -291,8 +291,8 @@ Functional tests require these environment variables:
 
 ```bash
 # Required for all functional tests
-export LLAMA_STACK_CLIENT_BASE_URL="http://localhost:5001"
-export LLAMA_STACK_CLIENT_API_KEY="your-api-key"
+export OGX_CLIENT_BASE_URL="http://localhost:5001"
+export OGX_CLIENT_API_KEY="your-api-key"
 
 # Required for test data
 export AI4RAG_TEST_DATA_PATH="/path/to/test/data"
@@ -335,10 +335,10 @@ Functional tests use module-scoped fixtures for expensive setup:
 ```python
 @pytest.fixture(scope="module")
 def client():
-    """Create Llama Stack client (shared across all tests in module)."""
-    return LlamaStackClient(
-        base_url=os.environ["LLAMA_STACK_CLIENT_BASE_URL"],
-        api_key=os.environ["LLAMA_STACK_CLIENT_API_KEY"],
+    """Create OGX client (shared across all tests in module)."""
+    return OgxClient(
+        base_url=os.environ["OGX_CLIENT_BASE_URL"],
+        api_key=os.environ["OGX_CLIENT_API_KEY"],
     )
 
 @pytest.fixture(scope="module")
@@ -359,9 +359,9 @@ def benchmark_data():
 
 ```python
 class TestExperimentChroma:
-    """Run experiment with chroma vector store and Llama Stack models."""
+    """Run experiment with chroma vector store and OGX models."""
 
-    def test_experiment_chroma_ls_models(
+    def test_experiment_chroma_ogx_models(
         self, client, documents, benchmark_data, foundation_model, embedding_model
     ):
         search_space = AI4RAGSearchSpace(

@@ -221,7 +221,7 @@ from typing import Any, Callable, Literal, Sequence
 import numpy as np
 import pandas as pd
 from langchain_core.documents import Document
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 from pydantic import BaseModel
 
 # 3. Local/project imports

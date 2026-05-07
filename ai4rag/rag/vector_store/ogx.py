@@ -3,69 +3,69 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from langchain_core.documents import Document
-from llama_stack_client import LlamaStackClient
-from llama_stack_client.types.vector_store import VectorStore
+from ogx_client import OgxClient
+from ogx_client.types.vector_store import VectorStore
 
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 
-class LSVectorStore(BaseVectorStore):
-    """LLamaStack client wrapper used for communication with vector store (single index/collection)."""
+class OGXVectorStore(BaseVectorStore):
+    """OGX client wrapper used for communication with vector store (single index/collection)."""
 
     _VALID_SEARCH_MODES = ("vector", "hybrid")
     _VALID_RANKER_STRATEGIES = ("rrf", "weighted", "normalized")
 
     def __init__(
         self,
-        embedding_model: LSEmbeddingModel,
-        client: LlamaStackClient,
+        embedding_model: OGXEmbeddingModel,
+        client: OgxClient,
         provider_id: str,
         reuse_collection_name: str | None = None,
         distance_metric: str | None = None,
     ):
         super().__init__(embedding_model, distance_metric, reuse_collection_name)
         self.client = client
-        self._ls_vs = self._initialize_ls_vector_store(
+        self._ogx_vs = self._initialize_ogx_vector_store(
             client=client,
             embedding_model=embedding_model,
             provider_id=provider_id,
             reuse_collection_name=reuse_collection_name,
         )
-        self._collection_name = self._ls_vs.id
+        self._collection_name = self._ogx_vs.id
 
     @staticmethod
-    def _initialize_ls_vector_store(
-        client: LlamaStackClient, embedding_model: LSEmbeddingModel, provider_id: str, reuse_collection_name: str | None
+    def _initialize_ogx_vector_store(
+        client: OgxClient, embedding_model: OGXEmbeddingModel, provider_id: str, reuse_collection_name: str | None
     ) -> VectorStore:
         """
-        Create or retrieve vector store instance via llama-stack.
+        Create or retrieve vector store instance via OGX.
 
         Parameters
         ----------
-        client : LlamaStackClient
-            Llama-stack client instance for communication with llama-stack.
+        client : OgxClient
+            OGX client instance for communication with OGX server.
 
-        embedding_model : LSEmbeddingModel
-            Wrapped llama-stack based embedding model with proper parameters.
+        embedding_model : OGXEmbeddingModel
+            Wrapped OGX based embedding model with proper parameters.
 
         provider_id : str
-            Provider id within the llama stack server.
+            Provider id within the OGX server.
 
         reuse_collection_name : str | None
-            vector_store_id within llama-stack-server (usually collection name) to reuse (if already existing)
+            vector_store_id within OGX server (usually collection name) to reuse (if already existing)
 
         Returns
         -------
-        llama_stack_client.types.vector_store.VectorStore
-            Instance for communication with llama-stack vector store.
+        ogx_client.types.vector_store.VectorStore
+            Instance for communication with OGX vector store.
         """
 
         if reuse_collection_name:
             _vs = client.vector_stores.retrieve(reuse_collection_name)
             return _vs
 
-        # Handle both dict and LSEmbeddingParams for backward compatibility
+        # Handle both dict and OGXEmbeddingParams for backward compatibility
         if isinstance(embedding_model.params, dict):
             embedding_dimension = embedding_model.params["embedding_dimension"]
         else:
@@ -93,9 +93,9 @@ class LSVectorStore(BaseVectorStore):
         ranker_alpha: float | None,
     ) -> None:
         """Validate hybrid search parameter consistency."""
-        if search_mode not in LSVectorStore._VALID_SEARCH_MODES:
+        if search_mode not in OGXVectorStore._VALID_SEARCH_MODES:
             raise ValueError(
-                f"Invalid search_mode '{search_mode}'. Must be one of {LSVectorStore._VALID_SEARCH_MODES}."
+                f"Invalid search_mode '{search_mode}'. Must be one of {OGXVectorStore._VALID_SEARCH_MODES}."
             )
 
         has_strategy = ranker_strategy is not None and ranker_strategy != ""
@@ -120,10 +120,10 @@ class LSVectorStore(BaseVectorStore):
         else:
             if not has_strategy:
                 raise ValueError("ranker_strategy must be set when search_mode='hybrid'.")
-            if ranker_strategy not in LSVectorStore._VALID_RANKER_STRATEGIES:
+            if ranker_strategy not in OGXVectorStore._VALID_RANKER_STRATEGIES:
                 raise ValueError(
                     f"Invalid ranker_strategy='{ranker_strategy}'. "
-                    f"Must be one of {LSVectorStore._VALID_RANKER_STRATEGIES}."
+                    f"Must be one of {OGXVectorStore._VALID_RANKER_STRATEGIES}."
                 )
             if has_k and ranker_strategy != "rrf":
                 raise ValueError(
@@ -194,7 +194,7 @@ class LSVectorStore(BaseVectorStore):
                 reranker_params["alpha"] = ranker_alpha
             params["reranker_params"] = reranker_params
 
-        resp = self.client.vector_io.query(query=query, vector_store_id=self._ls_vs.id, params=params)
+        resp = self.client.vector_io.query(query=query, vector_store_id=self._ogx_vs.id, params=params)
 
         if include_scores:
             return [
@@ -215,7 +215,7 @@ class LSVectorStore(BaseVectorStore):
         """
         batch_size = kwargs.get("batch_size", 2048)
 
-        # Handle both dict and LSEmbeddingParams for backward compatibility
+        # Handle both dict and OGXEmbeddingParams for backward compatibility
         if isinstance(self.embedding_model.params, dict):
             embedding_dimension = self.embedding_model.params["embedding_dimension"]
         else:
@@ -239,10 +239,10 @@ class LSVectorStore(BaseVectorStore):
 
         for idx in range(0, len(full_chunks), batch_size):
             self.client.vector_io.insert(
-                vector_store_id=self._ls_vs.id,
+                vector_store_id=self._ogx_vs.id,
                 chunks=full_chunks[idx : idx + batch_size],
             )
 
     def clean_collection(self):
         """Remove content of the collection and remove vector store instance."""
-        self.client.vector_stores.delete(self._ls_vs.id)
+        self.client.vector_stores.delete(self._ogx_vs.id)

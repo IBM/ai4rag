@@ -19,7 +19,7 @@ body:
         - Usage/How-to
         - Search Space Definition
         - Hyperparameter Optimization
-        - Llama Stack Integration
+        - OGX Integration
         - Other Provider Integration
         - Vector Store Setup / Integration
         - Evaluation
