@@ -205,23 +205,6 @@ Parameter(
 )
 ```
 
-**Example (OpenAI-compatible)**:
-
-```python
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from openai import OpenAI
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-Parameter(
-    name="foundation_model",
-    param_type="C",
-    values=[
-        OpenAIFoundationModel(model_id="gpt-4o-mini", client=client, params={})
-    ]
-)
-```
-
 ---
 
 ### 2. `embedding_model`
@@ -241,27 +224,6 @@ Parameter(
             model_id="ollama/nomic-embed-text:latest",
             client=client,
             params={"embedding_dimension": 768, "context_length": 8192}
-        )
-    ]
-)
-```
-
-**Example (OpenAI-compatible)**:
-
-```python
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-from openai import OpenAI
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-Parameter(
-    name="embedding_model",
-    param_type="C",
-    values=[
-        OpenAIEmbeddingModel(
-            model_id="text-embedding-3-small",
-            client=client,
-            params={"embedding_dimension": 1536, "context_length": 8191}
         )
     ]
 )

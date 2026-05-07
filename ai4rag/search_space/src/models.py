@@ -109,7 +109,6 @@ class FoundationModels(Models):
     META_LLAMA_3_1_8B_INSTRUCT = "meta-llama/llama-3-1-8b-instruct"
     META_LLAMA_3_3_70B_INSTRUCT = "meta-llama/llama-3-3-70b-instruct"
     META_LLAMA_4_MAVERICK_17B_128E_INSTRUCT_FP8 = "meta-llama/llama-4-maverick-17b-128e-instruct-fp8"
-    OPENAI_GPT_OSS_120B = "openai/gpt-oss-120b"
 
     @classmethod
     def get_default_max_sequence_length(cls, model_id: str, default: int = DEFAULT_MAX_SEQUENCE_LENGTH) -> int:
@@ -142,7 +141,6 @@ class FoundationModels(Models):
             cls.META_LLAMA_4_MAVERICK_17B_128E_INSTRUCT_FP8: 131_072,
             cls.GRANITE_3_8B_INSTRUCT: 131_072,
             cls.GRANITE_3_3_8B_INSTRUCT: 131_072,
-            cls.OPENAI_GPT_OSS_120B: 131_072,
             cls.GRANITE_4H_SMALL: 131_072,
         }
 
