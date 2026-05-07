@@ -7,12 +7,12 @@ from unittest.mock import MagicMock, Mock
 import pytest
 from langchain_core.documents import Document
 
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
-from ai4rag.rag.vector_store.llama_stack import LSVectorStore
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store.ogx import OGXVectorStore
 
 
-class MockLSEmbeddingModel(LSEmbeddingModel):
-    """Mock LSEmbeddingModel for testing."""
+class MockOGXEmbeddingModel(OGXEmbeddingModel):
+    """Mock OGXEmbeddingModel for testing."""
 
     def __init__(self):
         self.client = MagicMock()
@@ -28,17 +28,17 @@ class MockLSEmbeddingModel(LSEmbeddingModel):
         return [0.1, 0.2, 0.3] * 43
 
 
-class TestLSVectorStoreInitialization:
-    """Test suite for LSVectorStore initialization."""
+class TestOGXVectorStoreInitialization:
+    """Test suite for OGXVectorStore initialization."""
 
     @pytest.fixture
     def mock_embedding_model(self):
         """Create a mock embedding model."""
-        return MockLSEmbeddingModel()
+        return MockOGXEmbeddingModel()
 
     @pytest.fixture
-    def mock_llama_stack_client(self):
-        """Create a mock LlamaStackClient."""
+    def mock_ogx_client(self):
+        """Create a mock OgxClient."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-vector-store-id"
@@ -46,108 +46,108 @@ class TestLSVectorStoreInitialization:
         mock_client.vector_stores.retrieve.return_value = mock_vs
         return mock_client
 
-    def test_init_creates_new_vector_store(self, mock_embedding_model, mock_llama_stack_client):
+    def test_init_creates_new_vector_store(self, mock_embedding_model, mock_ogx_client):
         """Test initialization creates a new vector store."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         assert vector_store.embedding_model == mock_embedding_model
-        assert vector_store.client == mock_llama_stack_client
-        assert vector_store._ls_vs is not None
-        mock_llama_stack_client.vector_stores.create.assert_called_once()
+        assert vector_store.client == mock_ogx_client
+        assert vector_store._ogx_vs is not None
+        mock_ogx_client.vector_stores.create.assert_called_once()
 
-    def test_init_with_reuse_collection_name(self, mock_embedding_model, mock_llama_stack_client):
+    def test_init_with_reuse_collection_name(self, mock_embedding_model, mock_ogx_client):
         """Test initialization with reuse_collection_name retrieves existing store."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
             reuse_collection_name="existing-collection",
         )
 
-        mock_llama_stack_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
-        mock_llama_stack_client.vector_stores.create.assert_not_called()
+        mock_ogx_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
+        mock_ogx_client.vector_stores.create.assert_not_called()
 
-    def test_init_with_distance_metric(self, mock_embedding_model, mock_llama_stack_client):
+    def test_init_with_distance_metric(self, mock_embedding_model, mock_ogx_client):
         """Test initialization with custom distance metric."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
             distance_metric="cosine",
         )
 
         assert vector_store.distance_metric == "cosine"
 
-    def test_init_passes_provider_id(self, mock_embedding_model, mock_llama_stack_client):
+    def test_init_passes_provider_id(self, mock_embedding_model, mock_ogx_client):
         """Test that provider_id is passed correctly during initialization."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="test-provider",
         )
 
-        call_kwargs = mock_llama_stack_client.vector_stores.create.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_stores.create.call_args.kwargs
         assert "extra_body" in call_kwargs
         assert call_kwargs["extra_body"]["provider_id"] == "test-provider"
 
-    def test_init_passes_embedding_model_params(self, mock_embedding_model, mock_llama_stack_client):
+    def test_init_passes_embedding_model_params(self, mock_embedding_model, mock_ogx_client):
         """Test that embedding model parameters are passed correctly."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
-        call_kwargs = mock_llama_stack_client.vector_stores.create.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_stores.create.call_args.kwargs
         extra_body = call_kwargs["extra_body"]
         assert extra_body["embedding_model"] == "test-embedding-model"
         assert extra_body["embedding_dimension"] == 128
 
 
-class TestLSVectorStoreCollectionName:
-    """Test suite for LSVectorStore collection_name property."""
+class TestOGXVectorStoreCollectionName:
+    """Test suite for OGXVectorStore collection_name property."""
 
     @pytest.fixture
     def mock_embedding_model(self):
         """Create a mock embedding model."""
-        return MockLSEmbeddingModel()
+        return MockOGXEmbeddingModel()
 
     @pytest.fixture
-    def mock_llama_stack_client(self):
-        """Create a mock LlamaStackClient."""
+    def mock_ogx_client(self):
+        """Create a mock OgxClient."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-collection-id"
         mock_client.vector_stores.create.return_value = mock_vs
         return mock_client
 
-    def test_collection_name_getter(self, mock_embedding_model, mock_llama_stack_client):
+    def test_collection_name_getter(self, mock_embedding_model, mock_ogx_client):
         """Test collection_name property getter."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         # Initially None
-        assert vector_store.collection_name == vector_store._ls_vs.id
+        assert vector_store.collection_name == vector_store._ogx_vs.id
 
 
-class TestLSVectorStoreSearch:
-    """Test suite for LSVectorStore.search method."""
+class TestOGXVectorStoreSearch:
+    """Test suite for OGXVectorStore.search method."""
 
     @pytest.fixture
     def mock_embedding_model(self):
         """Create a mock embedding model."""
-        return MockLSEmbeddingModel()
+        return MockOGXEmbeddingModel()
 
     @pytest.fixture
-    def mock_llama_stack_client(self):
-        """Create a mock LlamaStackClient with search results."""
+    def mock_ogx_client(self):
+        """Create a mock OgxClient with search results."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-vs-id"
@@ -165,11 +165,11 @@ class TestLSVectorStoreSearch:
         mock_client.vector_io.query.return_value = mock_response
         return mock_client
 
-    def test_search_without_scores(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_without_scores(self, mock_embedding_model, mock_ogx_client):
         """Test search without scores."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -181,11 +181,11 @@ class TestLSVectorStoreSearch:
         assert result[0].page_content == "Test content"
         assert result[0].metadata == {"doc_id": "doc1", "seq": 1}
 
-    def test_search_with_scores(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_with_scores(self, mock_embedding_model, mock_ogx_client):
         """Test search with scores."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -199,17 +199,17 @@ class TestLSVectorStoreSearch:
         assert isinstance(result[0][1], float)
         assert result[0][1] == 0.95
 
-    def test_search_calls_client_with_correct_params(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_calls_client_with_correct_params(self, mock_embedding_model, mock_ogx_client):
         """Test that search calls client with correct parameters."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         vector_store.search("test query", k=10)
 
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         assert call_kwargs["query"] == "test query"
         assert call_kwargs["vector_store_id"] == "test-vs-id"
         assert call_kwargs["params"]["max_chunks"] == 10
@@ -237,7 +237,7 @@ class TestLSVectorStoreSearch:
         mock_response.scores = scores
         mock_client.vector_io.query.return_value = mock_response
 
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
             client=mock_client,
             provider_id="milvus",
@@ -251,17 +251,17 @@ class TestLSVectorStoreSearch:
             assert score == 0.9 - i * 0.1
 
 
-class TestLSVectorStoreHybridSearch:
-    """Test suite for LSVectorStore hybrid search functionality."""
+class TestOGXVectorStoreHybridSearch:
+    """Test suite for OGXVectorStore hybrid search functionality."""
 
     @pytest.fixture
     def mock_embedding_model(self):
         """Create a mock embedding model."""
-        return MockLSEmbeddingModel()
+        return MockOGXEmbeddingModel()
 
     @pytest.fixture
-    def mock_llama_stack_client(self):
-        """Create a mock LlamaStackClient with search results."""
+    def mock_ogx_client(self):
+        """Create a mock OgxClient with search results."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-vs-id"
@@ -278,84 +278,84 @@ class TestLSVectorStoreHybridSearch:
         mock_client.vector_io.query.return_value = mock_response
         return mock_client
 
-    def test_search_default_vector_mode(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_default_vector_mode(self, mock_embedding_model, mock_ogx_client):
         """Test that search defaults to vector mode."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         vector_store.search("test query", k=5)
 
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         assert call_kwargs["params"]["mode"] == "vector"
         assert "reranker_type" not in call_kwargs["params"]
 
-    def test_search_with_hybrid_mode_rrf(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_with_hybrid_mode_rrf(self, mock_embedding_model, mock_ogx_client):
         """Test search with hybrid mode and RRF ranker."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60)
 
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
         assert params["mode"] == "hybrid"
         assert params["reranker_type"] == "rrf"
         assert params["reranker_params"]["impact_factor"] == 60
 
-    def test_search_with_hybrid_mode_weighted(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_with_hybrid_mode_weighted(self, mock_embedding_model, mock_ogx_client):
         """Test search with hybrid mode and weighted ranker including alpha."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_alpha=0.7)
 
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
         assert params["mode"] == "hybrid"
         assert params["reranker_type"] == "weighted"
         assert params["reranker_params"]["alpha"] == 0.7
 
-    def test_search_with_hybrid_mode_normalized(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_with_hybrid_mode_normalized(self, mock_embedding_model, mock_ogx_client):
         """Test search with hybrid mode and normalized ranker."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="normalized")
 
-        call_kwargs = mock_llama_stack_client.vector_io.query.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
         assert params["mode"] == "hybrid"
         assert params["reranker_type"] == "normalized"
         assert params["reranker_params"] == {}
 
-    def test_search_hybrid_empty_strategy_raises(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_hybrid_empty_strategy_raises(self, mock_embedding_model, mock_ogx_client):
         """Test that empty ranker_strategy with hybrid mode raises ValueError."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
             vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="")
 
-    def test_search_hybrid_alpha_with_rrf_raises(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_hybrid_alpha_with_rrf_raises(self, mock_embedding_model, mock_ogx_client):
         """Test that non-zero ranker_alpha with a non-weighted strategy raises ValueError."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -364,11 +364,11 @@ class TestLSVectorStoreHybridSearch:
                 "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=0.5
             )
 
-    def test_search_hybrid_with_scores(self, mock_embedding_model, mock_llama_stack_client):
+    def test_search_hybrid_with_scores(self, mock_embedding_model, mock_ogx_client):
         """Test hybrid search with include_scores=True."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -382,28 +382,28 @@ class TestLSVectorStoreHybridSearch:
         assert result[0][1] == 0.95
 
 
-class TestLSVectorStoreAddDocuments:
-    """Test suite for LSVectorStore.add_documents method."""
+class TestOGXVectorStoreAddDocuments:
+    """Test suite for OGXVectorStore.add_documents method."""
 
     @pytest.fixture
     def mock_embedding_model(self):
         """Create a mock embedding model."""
-        return MockLSEmbeddingModel()
+        return MockOGXEmbeddingModel()
 
     @pytest.fixture
-    def mock_llama_stack_client(self):
-        """Create a mock LlamaStackClient."""
+    def mock_ogx_client(self):
+        """Create a mock OgxClient."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
         return mock_client
 
-    def test_add_documents_basic(self, mock_embedding_model, mock_llama_stack_client):
+    def test_add_documents_basic(self, mock_embedding_model, mock_ogx_client):
         """Test adding documents to vector store."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -414,13 +414,13 @@ class TestLSVectorStoreAddDocuments:
 
         vector_store.add_documents(docs)
 
-        mock_llama_stack_client.vector_io.insert.assert_called_once()
+        mock_ogx_client.vector_io.insert.assert_called_once()
 
-    def test_add_documents_creates_chunks_with_embeddings(self, mock_embedding_model, mock_llama_stack_client):
+    def test_add_documents_creates_chunks_with_embeddings(self, mock_embedding_model, mock_ogx_client):
         """Test that add_documents creates chunks with embeddings."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -428,7 +428,7 @@ class TestLSVectorStoreAddDocuments:
 
         vector_store.add_documents(docs)
 
-        call_kwargs = mock_llama_stack_client.vector_io.insert.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
         chunks = call_kwargs["chunks"]
 
         assert len(chunks) == 1
@@ -439,11 +439,11 @@ class TestLSVectorStoreAddDocuments:
         assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
         assert chunks[0]["metadata"] == {"document_id": "doc1"}
 
-    def test_add_documents_multiple(self, mock_embedding_model, mock_llama_stack_client):
+    def test_add_documents_multiple(self, mock_embedding_model, mock_ogx_client):
         """Test adding multiple documents."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -451,16 +451,16 @@ class TestLSVectorStoreAddDocuments:
 
         vector_store.add_documents(docs)
 
-        call_kwargs = mock_llama_stack_client.vector_io.insert.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
         chunks = call_kwargs["chunks"]
 
         assert len(chunks) == 5
 
-    def test_add_documents_preserves_metadata(self, mock_embedding_model, mock_llama_stack_client):
+    def test_add_documents_preserves_metadata(self, mock_embedding_model, mock_ogx_client):
         """Test that add_documents preserves metadata."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -473,21 +473,21 @@ class TestLSVectorStoreAddDocuments:
 
         vector_store.add_documents(docs)
 
-        call_kwargs = mock_llama_stack_client.vector_io.insert.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
         chunks = call_kwargs["chunks"]
 
         assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
         assert chunks[0]["metadata"]["custom_field"] == "value"
         assert chunks[0]["metadata"]["document_id"] == "doc1"
 
-    def test_add_documents_uses_embedding_model(self, mock_llama_stack_client):
+    def test_add_documents_uses_embedding_model(self, mock_ogx_client):
         """Test that add_documents uses the embedding model."""
-        mock_embed_model = MockLSEmbeddingModel()
+        mock_embed_model = MockOGXEmbeddingModel()
         mock_embed_model.embed_documents = MagicMock(return_value=[[0.1, 0.2]])
 
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embed_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -497,11 +497,11 @@ class TestLSVectorStoreAddDocuments:
 
         mock_embed_model.embed_documents.assert_called_once_with(["Test"])
 
-    def test_add_documents_batches_large_input(self, mock_embedding_model, mock_llama_stack_client):
+    def test_add_documents_batches_large_input(self, mock_embedding_model, mock_ogx_client):
         """Test that add_documents batches inserts exceeding batch_size."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
@@ -509,52 +509,52 @@ class TestLSVectorStoreAddDocuments:
 
         vector_store.add_documents(docs, batch_size=2)
 
-        assert mock_llama_stack_client.vector_io.insert.call_count == 3
+        assert mock_ogx_client.vector_io.insert.call_count == 3
 
 
-class TestLSVectorStoreCleanCollection:
-    """Test suite for LSVectorStore.clean_collection method."""
+class TestOGXVectorStoreCleanCollection:
+    """Test suite for OGXVectorStore.clean_collection method."""
 
     @pytest.fixture
     def mock_embedding_model(self):
         """Create a mock embedding model."""
-        return MockLSEmbeddingModel()
+        return MockOGXEmbeddingModel()
 
     @pytest.fixture
-    def mock_llama_stack_client(self):
-        """Create a mock LlamaStackClient."""
+    def mock_ogx_client(self):
+        """Create a mock OgxClient."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "test-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
         return mock_client
 
-    def test_clean_collection(self, mock_embedding_model, mock_llama_stack_client):
+    def test_clean_collection(self, mock_embedding_model, mock_ogx_client):
         """Test cleaning collection."""
-        vector_store = LSVectorStore(
+        vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
-            client=mock_llama_stack_client,
+            client=mock_ogx_client,
             provider_id="milvus",
         )
 
         vector_store.clean_collection()
 
-        mock_llama_stack_client.vector_stores.delete.assert_called_once_with("test-vs-id")
+        mock_ogx_client.vector_stores.delete.assert_called_once_with("test-vs-id")
 
 
-class TestLSVectorStoreInitializeVectorStore:
-    """Test suite for LSVectorStore._initialize_ls_vector_store static method."""
+class TestOGXVectorStoreInitializeVectorStore:
+    """Test suite for OGXVectorStore._initialize_ogx_vector_store static method."""
 
     def test_initialize_creates_new_store(self):
-        """Test _initialize_ls_vector_store creates new store."""
+        """Test _initialize_ogx_vector_store creates new store."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "new-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
 
-        mock_embedding_model = MockLSEmbeddingModel()
+        mock_embedding_model = MockOGXEmbeddingModel()
 
-        result = LSVectorStore._initialize_ls_vector_store(
+        result = OGXVectorStore._initialize_ogx_vector_store(
             client=mock_client,
             embedding_model=mock_embedding_model,
             provider_id="test-provider",
@@ -565,15 +565,15 @@ class TestLSVectorStoreInitializeVectorStore:
         mock_client.vector_stores.create.assert_called_once()
 
     def test_initialize_reuses_existing_store(self):
-        """Test _initialize_ls_vector_store reuses existing store."""
+        """Test _initialize_ogx_vector_store reuses existing store."""
         mock_client = MagicMock()
         mock_vs = MagicMock()
         mock_vs.id = "existing-vs-id"
         mock_client.vector_stores.retrieve.return_value = mock_vs
 
-        mock_embedding_model = MockLSEmbeddingModel()
+        mock_embedding_model = MockOGXEmbeddingModel()
 
-        result = LSVectorStore._initialize_ls_vector_store(
+        result = OGXVectorStore._initialize_ogx_vector_store(
             client=mock_client,
             embedding_model=mock_embedding_model,
             provider_id="test-provider",
@@ -585,120 +585,120 @@ class TestLSVectorStoreInitializeVectorStore:
         mock_client.vector_stores.create.assert_not_called()
 
 
-class TestLSVectorStoreSearchValidation:
-    """Test suite for LSVectorStore._validate_search_params."""
+class TestOGXVectorStoreSearchValidation:
+    """Test suite for OGXVectorStore._validate_search_params."""
 
     # --- invalid search_mode ---
 
     def test_invalid_search_mode_raises(self):
         """Test that an unrecognised search_mode raises ValueError."""
         with pytest.raises(ValueError, match="Invalid search_mode 'keyword'"):
-            LSVectorStore._validate_search_params("keyword", None, None, None)
+            OGXVectorStore._validate_search_params("keyword", None, None, None)
 
     def test_unknown_search_mode_raises(self):
         """Test that a completely unknown search_mode raises ValueError."""
         with pytest.raises(ValueError, match="Invalid search_mode 'foobar'"):
-            LSVectorStore._validate_search_params("foobar", None, None, None)
+            OGXVectorStore._validate_search_params("foobar", None, None, None)
 
     # --- ranker params leaked into non-hybrid mode ---
 
     def test_ranker_strategy_on_vector_mode_raises(self):
         """Test that a non-empty ranker_strategy with vector mode raises ValueError."""
         with pytest.raises(ValueError, match="ranker_strategy='rrf' is only valid when search_mode='hybrid'"):
-            LSVectorStore._validate_search_params("vector", "rrf", None, None)
+            OGXVectorStore._validate_search_params("vector", "rrf", None, None)
 
     def test_ranker_k_on_vector_mode_raises(self):
         """Test that a positive ranker_k with vector mode raises ValueError."""
         with pytest.raises(ValueError, match="ranker_k=60 is only valid when search_mode='hybrid'"):
-            LSVectorStore._validate_search_params("vector", None, 60, None)
+            OGXVectorStore._validate_search_params("vector", None, 60, None)
 
     def test_ranker_alpha_on_vector_mode_raises(self):
         """Test that a positive ranker_alpha with vector mode raises ValueError."""
         with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when search_mode='hybrid'"):
-            LSVectorStore._validate_search_params("vector", None, None, 0.5)
+            OGXVectorStore._validate_search_params("vector", None, None, 0.5)
 
     # --- hybrid mode missing ranker_strategy ---
 
     def test_hybrid_mode_none_strategy_raises(self):
         """Test that hybrid mode with ranker_strategy=None raises ValueError."""
         with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
-            LSVectorStore._validate_search_params("hybrid", None, None, None)
+            OGXVectorStore._validate_search_params("hybrid", None, None, None)
 
     def test_hybrid_mode_empty_strategy_raises(self):
         """Test that hybrid mode with ranker_strategy='' raises ValueError."""
         with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
-            LSVectorStore._validate_search_params("hybrid", "", None, None)
+            OGXVectorStore._validate_search_params("hybrid", "", None, None)
 
     # --- invalid ranker_strategy value ---
 
     def test_invalid_ranker_strategy_raises(self):
         """Test that an unrecognised ranker_strategy raises ValueError."""
         with pytest.raises(ValueError, match="Invalid ranker_strategy='bogus'"):
-            LSVectorStore._validate_search_params("hybrid", "bogus", None, None)
+            OGXVectorStore._validate_search_params("hybrid", "bogus", None, None)
 
     # --- ranker_k used with non-rrf strategy ---
 
     def test_ranker_k_with_weighted_strategy_raises(self):
         """Test that ranker_k > 0 with weighted strategy raises ValueError."""
         with pytest.raises(ValueError, match="ranker_k=60 is only valid when ranker_strategy='rrf'"):
-            LSVectorStore._validate_search_params("hybrid", "weighted", 60, 0.7)
+            OGXVectorStore._validate_search_params("hybrid", "weighted", 60, 0.7)
 
     def test_ranker_k_with_normalized_strategy_raises(self):
         """Test that ranker_k > 0 with normalized strategy raises ValueError."""
         with pytest.raises(ValueError, match="ranker_k=20 is only valid when ranker_strategy='rrf'"):
-            LSVectorStore._validate_search_params("hybrid", "normalized", 20, None)
+            OGXVectorStore._validate_search_params("hybrid", "normalized", 20, None)
 
     # --- ranker_alpha used with non-weighted strategy ---
 
     def test_alpha_with_rrf_strategy_raises(self):
         """Test that ranker_alpha > 0 with rrf strategy raises ValueError."""
         with pytest.raises(ValueError, match="ranker_alpha=0.7 is only valid when ranker_strategy='weighted'"):
-            LSVectorStore._validate_search_params("hybrid", "rrf", 60, 0.7)
+            OGXVectorStore._validate_search_params("hybrid", "rrf", 60, 0.7)
 
     def test_alpha_with_normalized_strategy_raises(self):
         """Test that ranker_alpha > 0 with normalized strategy raises ValueError."""
         with pytest.raises(ValueError, match="ranker_alpha=0.3 is only valid when ranker_strategy='weighted'"):
-            LSVectorStore._validate_search_params("hybrid", "normalized", None, 0.3)
+            OGXVectorStore._validate_search_params("hybrid", "normalized", None, 0.3)
 
     # --- sentinel values must not trigger errors ---
 
     def test_zero_ranker_k_on_vector_mode_is_valid(self):
         """Test that ranker_k=0 sentinel on vector mode does not raise."""
-        LSVectorStore._validate_search_params("vector", None, 0, None)
+        OGXVectorStore._validate_search_params("vector", None, 0, None)
 
     def test_sentinel_ranker_alpha_on_vector_mode_is_valid(self):
         """Test that ranker_alpha=1 sentinel on vector mode does not raise."""
-        LSVectorStore._validate_search_params("vector", None, None, 1)
+        OGXVectorStore._validate_search_params("vector", None, None, 1)
 
     def test_sentinel_alpha_with_rrf_is_valid(self):
         """Test that ranker_alpha=1 sentinel with rrf strategy does not raise."""
-        LSVectorStore._validate_search_params("hybrid", "rrf", 60, 1)
+        OGXVectorStore._validate_search_params("hybrid", "rrf", 60, 1)
 
     # --- valid configurations ---
 
     def test_valid_vector_mode_no_ranker(self):
         """Test that vector mode with no ranker params is valid."""
-        LSVectorStore._validate_search_params("vector", None, None, None)
+        OGXVectorStore._validate_search_params("vector", None, None, None)
 
     def test_valid_hybrid_rrf(self):
         """Test that hybrid mode with rrf strategy and ranker_k is valid."""
-        LSVectorStore._validate_search_params("hybrid", "rrf", 60, None)
+        OGXVectorStore._validate_search_params("hybrid", "rrf", 60, None)
 
     def test_valid_hybrid_weighted_with_alpha(self):
         """Test that hybrid mode with weighted strategy and alpha is valid."""
-        LSVectorStore._validate_search_params("hybrid", "weighted", None, 0.7)
+        OGXVectorStore._validate_search_params("hybrid", "weighted", None, 0.7)
 
     def test_valid_hybrid_normalized(self):
         """Test that hybrid mode with normalized strategy is valid."""
-        LSVectorStore._validate_search_params("hybrid", "normalized", None, None)
+        OGXVectorStore._validate_search_params("hybrid", "normalized", None, None)
 
     def test_valid_hybrid_weighted_zero_alpha(self):
         """Test that hybrid mode with weighted strategy and alpha=0 (100% sparse) is valid."""
-        LSVectorStore._validate_search_params("hybrid", "weighted", None, 0)
+        OGXVectorStore._validate_search_params("hybrid", "weighted", None, 0)
 
 
-class TestLSVectorStoreInitializeVectorStore:
-    """Test suite for LSVectorStore._initialize_ls_vector_store static method."""
+class TestOGXVectorStoreInitializeVectorStore:
+    """Test suite for OGXVectorStore._initialize_ogx_vector_store static method."""
 
     def test_initialize_includes_embedding_params(self):
         """Test that initialization includes embedding parameters."""
@@ -706,11 +706,11 @@ class TestLSVectorStoreInitializeVectorStore:
         mock_vs = MagicMock()
         mock_client.vector_stores.create.return_value = mock_vs
 
-        mock_embedding_model = MockLSEmbeddingModel()
+        mock_embedding_model = MockOGXEmbeddingModel()
         mock_embedding_model.model_id = "custom-model-id"
         mock_embedding_model.params = {"embedding_dimension": 256}
 
-        LSVectorStore._initialize_ls_vector_store(
+        OGXVectorStore._initialize_ogx_vector_store(
             client=mock_client,
             embedding_model=mock_embedding_model,
             provider_id="provider1",

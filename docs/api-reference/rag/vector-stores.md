@@ -1,8 +1,8 @@
 # Vector Stores API
 
-## Milvus (Llama Stack)
+## Milvus (OGX)
 
-::: ai4rag.rag.vector_store.llama_stack
+::: ai4rag.rag.vector_store.ogx
     options:
       show_root_heading: true
       show_source: true

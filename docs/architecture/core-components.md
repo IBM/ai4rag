@@ -53,10 +53,11 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",
+    vector_store_type="ogx",
+    ogx_vector_io_provider_id="milvus",
     optimizer_settings=GAMOptSettings(max_evals=20),
     event_handler=my_handler,
-    client=llama_stack_client,
+    client=ogx_client,
 )
 
 experiment.search()  # Execute optimization
@@ -375,7 +376,7 @@ Parameter(
 Parameter(
     name=AI4RAGParamNames.FOUNDATION_MODEL,
     param_type="C",
-    values=[LSFoundationModel(...), LSFoundationModel(...)]
+    values=[OGXFoundationModel(...), OGXFoundationModel(...)]
 )
 ```
 
@@ -426,7 +427,8 @@ class AI4RAGSearchSpace(SearchSpace):
         self,
         params: list[Parameter] | None = None,
         rules: list[RuleFunction] | None = None,
-        vector_store_type: str = "ls_milvus",
+        vector_store_type: str = "ogx",
+        ogx_vector_io_provider_id: str = "milvus",
     ):
 ```
 
@@ -618,7 +620,7 @@ The `ExperimentExceptionHandler` can be extended to customize error handling beh
 - Configurable via `max_threads` in `query_rag()`
 
 **Batch Embedding:**
-- LSEmbeddingModel processes documents in batches of 2048 chunks
+- OGXEmbeddingModel processes documents in batches of 2048 chunks
 - Prevents API request size limits
 - Applied in both indexing and query phases
 

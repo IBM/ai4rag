@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) Llama Stack Server** >= 0.7.0: With at least one foundation model, one embedding model, and vector database configured
+- **(Optional) OGX Server** >= 0.7.0: With at least one foundation model, one embedding model, and vector database configured
 
 
 !!! note "External models and vector database integration"
@@ -56,31 +56,31 @@ To see what specific requirement groups are available, please look at the `pypro
 
 ---
 
-## Llama Stack Setup
+## OGX Setup
 
-`ai4rag` can be used with Llama Stack server as the foundation models, embedding models and vector database provider.
+`ai4rag` can be used with OGX server as the foundation models, embedding models and vector database provider.
 Follow these steps:
 
-### 1. Install Llama Stack
+### 1. Install OGX
 
 ```bash
-pip install "llama-stack>=0.7.0"
+pip install "ogx>=0.7.0"
 ```
 
 ### 2. Configure Your Stack
 
-Create a Llama Stack configuration with:
+Create an OGX configuration with:
 
 - At least one **foundation model** (e.g., `ollama/llama3.2:3b`)
 - At least one **embedding model** (e.g., `ollama/nomic-embed-text:latest`)
 - A **vector database** (e.g., Milvus lite or ChromaDB)
 
-Refer to the [Llama Stack documentation](https://llamastack.github.io/docs/) for detailed setup instructions.
+Refer to the [OGX documentation](https://llamastack.github.io/docs/) for detailed setup instructions.
 
 ### 3. Start the Server
 
 ```bash
-llama-stack run <your-CONFIG.yaml>
+ogx run <your-CONFIG.yaml>
 ```
 
 Note the server URL and API key for use in `ai4rag`.
@@ -89,12 +89,12 @@ Note the server URL and API key for use in `ai4rag`.
 
 ## Environment Configuration
 
-Store your Llama Stack credentials securely in a `.env` file:
+Store your OGX credentials securely in a `.env` file:
 
 ```bash
 # .env
-BASE_URL="<llama_stack_server_url>"
-APIKEY="<llama_stack_server_api_key>"
+BASE_URL="<ogx_server_url>"
+APIKEY="<ogx_server_api_key>"
 ```
 
 !!! warning "Security"
@@ -123,13 +123,13 @@ import ai4rag
 print(ai4rag.__version__)
 ```
 
-Test Llama Stack connectivity:
+Test OGX connectivity:
 
 ```python
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 import os
 
-client = LlamaStackClient(
+client = OgxClient(
     base_url=os.getenv("BASE_URL"),
     api_key=os.getenv("APIKEY")
 )

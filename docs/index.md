@@ -127,7 +127,7 @@ graph TB
 
 - **Foundation Model**: LLM integration via `BaseFoundationModel` interface
 - **Embedding Model**: embedding model integration via `BaseEmbeddingModel`
-- **Vector Store**: selected from supported ones (Milvus via Llama Stack and Chroma) or introduced by the user with `BaseVectorStore` interface
+- **Vector Store**: selected from supported ones (Milvus via OGX and Chroma) or introduced by the user with `BaseVectorStore` interface
 - **Chunking**: document splitting into smaller chunks
 - **Retrieval**: simple and window-based retrieval strategies
 - **Templates**: complete RAG implementations defined as a `RAGTemplate`
@@ -136,9 +136,9 @@ graph TB
 
 ## Requirements
 
-!!! warning "Llama Stack Integration"
-    `ai4rag` works with a [Llama Stack](https://github.com/llamastack/llama-stack) server.
-    Tyo run experiment based on Llama Stack you will need:
+!!! warning "OGX Integration"
+    `ai4rag` works with an [OGX](https://github.com/llamastack/llama-stack) server.
+    To run experiment based on OGX you will need:
 
     - At least one foundation model (for text generation)
     - At least one embedding model (for document embeddings)

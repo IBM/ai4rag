@@ -55,7 +55,7 @@ body:
       value: |
         - ai4rag version:
         - Python version:
-        - Llama Stack version:
+        - OGX version:
         - Vector Store (Milvus/ChromaDB):
         - Operating System:
       render: markdown

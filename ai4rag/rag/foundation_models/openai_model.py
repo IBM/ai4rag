@@ -15,7 +15,7 @@ from ai4rag.utils.constants import ChatGenerationConstants
 
 
 class OpenAIModelParameters(BaseModel):
-    """Parameters to use for LSFoundationModel."""
+    """Parameters to use for OpenAI foundation model."""
 
     max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE

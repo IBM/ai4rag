@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, Mock
 
 import pytest
 
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel, LSEmbeddingParams
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.search_space.prepare.llama_stack_utils import (
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel, OGXEmbeddingParams
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.search_space.prepare.ogx_utils import (
     SearchSpaceValueError,
     _are_provided_models_available,
-    _get_default_llama_stack_models,
+    _get_default_ogx_models,
     _validate_embedding_model,
     _validate_foundation_model,
 )
@@ -25,7 +25,7 @@ class TestValidateFoundationModel:
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = Mock(choices=[])
 
-        model = LSFoundationModel(model_id="test-model", client=mock_client)
+        model = OGXFoundationModel(model_id="test-model", client=mock_client)
 
         result = _validate_foundation_model(model)
 
@@ -37,7 +37,7 @@ class TestValidateFoundationModel:
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = Exception("Model error")
 
-        model = LSFoundationModel(model_id="test-model", client=mock_client)
+        model = OGXFoundationModel(model_id="test-model", client=mock_client)
 
         result = _validate_foundation_model(model)
 
@@ -56,10 +56,10 @@ class TestValidateEmbeddingModel:
         mock_response.data = [mock_data]
         mock_client.embeddings.create.return_value = mock_response
 
-        model = LSEmbeddingModel(
+        model = OGXEmbeddingModel(
             model_id="test-model",
             client=mock_client,
-            params=LSEmbeddingParams(embedding_dimension=768, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=768, context_length=512),
         )
 
         result = _validate_embedding_model(model)
@@ -76,10 +76,10 @@ class TestValidateEmbeddingModel:
 
         # First call succeeds (for embed_query in validation), but we need to
         # create the model first with context_length set to avoid detection.
-        model = LSEmbeddingModel(
+        model = OGXEmbeddingModel(
             model_id="test-model",
             client=mock_client,
-            params=LSEmbeddingParams(embedding_dimension=768, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=768, context_length=512),
         )
 
         # Now set embed to fail for validation
@@ -90,8 +90,8 @@ class TestValidateEmbeddingModel:
         assert result is False
 
 
-class TestGetDefaultLlamaStackModels:
-    """Test _get_default_llama_stack_models function."""
+class TestGetDefaultOGXModels:
+    """Test _get_default_ogx_models function."""
 
     def test_returns_foundation_and_embedding_models(self, mocker):
         """Test that function returns both foundation and embedding models."""
@@ -112,16 +112,16 @@ class TestGetDefaultLlamaStackModels:
 
         # Mock validation functions to always return True
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
             return_value=True,
         )
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
             return_value=True,
         )
 
         # Call function
-        result = _get_default_llama_stack_models(mock_client)
+        result = _get_default_ogx_models(mock_client)
 
         # Assertions
         assert "foundation_models" in result
@@ -148,12 +148,12 @@ class TestGetDefaultLlamaStackModels:
 
         # Mock validation to return True for embedding models
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
             return_value=True,
         )
 
         with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'.*not responding"):
-            _get_default_llama_stack_models(mock_client)
+            _get_default_ogx_models(mock_client)
 
     def test_raises_error_when_no_embedding_models(self, mocker):
         """Test that function raises error when no embedding models available."""
@@ -167,12 +167,12 @@ class TestGetDefaultLlamaStackModels:
 
         # Mock validation to return True for foundation models
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
             return_value=True,
         )
 
         with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'.*not responding"):
-            _get_default_llama_stack_models(mock_client)
+            _get_default_ogx_models(mock_client)
 
     def test_excludes_models_that_fail_validation(self, mocker):
         """Test that models failing validation are excluded from results."""
@@ -211,15 +211,15 @@ class TestGetDefaultLlamaStackModels:
             return model.model_id != "test-embedding-1"
 
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
             side_effect=mock_validate_foundation,
         )
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
             side_effect=mock_validate_embedding,
         )
 
-        result = _get_default_llama_stack_models(mock_client)
+        result = _get_default_ogx_models(mock_client)
 
         # Only validated models should be included
         assert len(result["foundation_models"]) == 1
@@ -250,16 +250,16 @@ class TestGetDefaultLlamaStackModels:
 
         # Mock validation to fail for foundation model
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
             return_value=False,
         )
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
             return_value=True,
         )
 
         with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'.*not responding"):
-            _get_default_llama_stack_models(mock_client)
+            _get_default_ogx_models(mock_client)
 
     def test_raises_error_when_all_embedding_models_fail_validation(self, mocker):
         """Test that error is raised when all embedding models fail validation."""
@@ -278,16 +278,16 @@ class TestGetDefaultLlamaStackModels:
 
         # Mock validation to fail for embedding model
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_foundation_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
             return_value=True,
         )
         mocker.patch(
-            "ai4rag.search_space.prepare.llama_stack_utils._validate_embedding_model",
+            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
             return_value=False,
         )
 
         with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'.*not responding"):
-            _get_default_llama_stack_models(mock_client)
+            _get_default_ogx_models(mock_client)
 
 
 class TestAreProvidedModelsAvailable:
@@ -295,13 +295,13 @@ class TestAreProvidedModelsAvailable:
 
     def test_no_error_when_all_models_available(self):
         """Test that function does not raise when all provided models are available."""
-        from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
         from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
 
         mock_client = MagicMock()
         available_models = [
-            LSFoundationModel(model_id="model-1", client=mock_client),
-            LSFoundationModel(model_id="model-2", client=mock_client),
+            OGXFoundationModel(model_id="model-1", client=mock_client),
+            OGXFoundationModel(model_id="model-2", client=mock_client),
         ]
 
         provided_models = [
@@ -313,32 +313,32 @@ class TestAreProvidedModelsAvailable:
 
     def test_raises_error_when_model_not_registered(self):
         """Test that function raises error when provided model is not registered."""
-        from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
         from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
 
         mock_client = MagicMock()
         available_models = [
-            LSFoundationModel(model_id="model-1", client=mock_client),
+            OGXFoundationModel(model_id="model-1", client=mock_client),
         ]
 
         provided_models = [
             AI4RAGFoundationModel(model_id="model-2"),
         ]
 
-        with pytest.raises(SearchSpaceValueError, match="model-2.*not registered within llama-stack"):
+        with pytest.raises(SearchSpaceValueError, match="model-2.*not registered within OGX"):
             _are_provided_models_available(provided_models, available_models, not_responding_models=[])
 
     def test_raises_error_when_model_not_responding(self):
         """Test that function raises error when provided model is registered but not responding."""
-        from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
         from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
 
         mock_client = MagicMock()
         available_models = [
-            LSFoundationModel(model_id="model-1", client=mock_client),
+            OGXFoundationModel(model_id="model-1", client=mock_client),
         ]
         not_responding_models = [
-            LSFoundationModel(model_id="model-2", client=mock_client),
+            OGXFoundationModel(model_id="model-2", client=mock_client),
         ]
 
         provided_models = [
@@ -350,15 +350,15 @@ class TestAreProvidedModelsAvailable:
 
     def test_raises_error_with_both_not_responding_and_unregistered(self):
         """Test that error includes both not-responding and unregistered models."""
-        from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
         from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
 
         mock_client = MagicMock()
         available_models = [
-            LSFoundationModel(model_id="model-1", client=mock_client),
+            OGXFoundationModel(model_id="model-1", client=mock_client),
         ]
         not_responding_models = [
-            LSFoundationModel(model_id="model-2", client=mock_client),
+            OGXFoundationModel(model_id="model-2", client=mock_client),
         ]
 
         provided_models = [
@@ -373,4 +373,4 @@ class TestAreProvidedModelsAvailable:
         assert "model-2" in error_msg
         assert "registered but do not respond" in error_msg
         assert "model-3" in error_msg
-        assert "not registered within llama-stack" in error_msg
+        assert "not registered within OGX" in error_msg

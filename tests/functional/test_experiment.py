@@ -2,19 +2,19 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Functional tests for AI4RAG experiment runs against a live Llama Stack server."""
+"""Functional tests for AI4RAG experiment runs against a live OGX server."""
 
 import os
 from pathlib import Path
 
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
@@ -36,9 +36,9 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def client():
-    return LlamaStackClient(
-        base_url=os.environ["LLAMA_STACK_CLIENT_BASE_URL"],
-        api_key=os.environ["LLAMA_STACK_CLIENT_API_KEY"],
+    return OgxClient(
+        base_url=os.environ["OGX_CLIENT_BASE_URL"],
+        api_key=os.environ["OGX_CLIENT_API_KEY"],
     )
 
 
@@ -58,7 +58,7 @@ def benchmark_data():
 @pytest.fixture(scope="module")
 def foundation_model(client):
     model_id = os.environ.get("AI4RAG_TEST_FOUNDATION_MODEL", "vllm-inference-llama-3-1/redhataillama-31-8b-instruct")
-    return LSFoundationModel(model_id=model_id, client=client)
+    return OGXFoundationModel(model_id=model_id, client=client)
 
 
 @pytest.fixture(scope="module")
@@ -66,7 +66,7 @@ def embedding_model(client):
     model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "vllm-embedding/granite-278m-multilingual-1")
     dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "768"))
     context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "512"))
-    return LSEmbeddingModel(
+    return OGXEmbeddingModel(
         model_id=model_id,
         client=client,
         params={"embedding_dimension": dimension, "context_length": context_length},
@@ -80,9 +80,9 @@ def _make_event_handler(test_name):
 
 
 class TestExperimentChroma:
-    """Run experiment with chroma vector store and Llama Stack models."""
+    """Run experiment with chroma vector store and OGX models."""
 
-    def test_experiment_chroma_ls_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_chroma_ogx_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
             vector_store_type="chroma",
             params=[
@@ -99,7 +99,7 @@ class TestExperimentChroma:
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("chroma_ls_models"),
+            event_handler=_make_event_handler("chroma_ogx_models"),
             vector_store_type="chroma",
         )
 
@@ -119,12 +119,12 @@ class TestExperimentChroma:
         assert len(answer) > 0
 
 
-class TestExperimentLsMilvus:
-    """Run experiment with ls_milvus vector store and Llama Stack models."""
+class TestExperimentOgxMilvus:
+    """Run experiment with ogx vector store (milvus-lite provider) and OGX models."""
 
-    def test_experiment_ls_milvus_ls_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_ogx_milvus_ogx_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
-            vector_store_type="ls_milvus-lite",
+            vector_store_type="ogx",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -139,8 +139,9 @@ class TestExperimentLsMilvus:
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("ls_milvus_ls_models"),
-            vector_store_type="ls_milvus-lite",
+            event_handler=_make_event_handler("ogx_milvus_ogx_models"),
+            vector_store_type="ogx",
+            ogx_vector_io_provider_id="milvus-lite",
         )
 
         experiment.search(skip_mps=True)
@@ -160,7 +161,7 @@ class TestExperimentLsMilvus:
 
 
 class TestExperimentChromaWithKnownObservations:
-    """Run experiment with chroma, LS models, and known observations."""
+    """Run experiment with chroma, OGX models, and known observations."""
 
     def test_experiment_chroma_known_observations(
         self, client, documents, benchmark_data, foundation_model, embedding_model
