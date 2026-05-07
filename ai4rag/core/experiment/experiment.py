@@ -594,7 +594,7 @@ class AI4RAGExperiment:
             )
 
         vector_store_payload = {
-            "ogx_vector_io_provider_id": self.ogx_vector_io_provider_id or "local_chroma",
+            "datasource_type": self.ogx_vector_io_provider_id or "local_chroma",
             "collection_name": evaluation_result.collection,
         }
 

@@ -21,7 +21,7 @@ Concrete implementations for different providers (OGX, OpenAI, ChromaDB) all adh
 
 ### OGX Integration
 
-**What it is**: [OGX](https://github.com/meta-llama/llama-stack) is a unified interface for working with various models and associated infrastructure.
+**What it is**: [OGX](https://github.com/ogx-ai/ogx) is a unified interface for working with various models and associated infrastructure.
 
 **What `ai4rag` supports**:
 

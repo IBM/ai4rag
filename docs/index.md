@@ -137,7 +137,7 @@ graph TB
 ## Requirements
 
 !!! warning "OGX Integration"
-    `ai4rag` works with an [OGX](https://github.com/llamastack/llama-stack) server.
+    `ai4rag` works with an [OGX](https://github.com/ogx-ai/ogx) server.
     To run experiment based on OGX you will need:
 
     - At least one foundation model (for text generation)

@@ -75,7 +75,7 @@ Create an OGX configuration with:
 - At least one **embedding model** (e.g., `ollama/nomic-embed-text:latest`)
 - A **vector database** (e.g., Milvus lite or ChromaDB)
 
-Refer to the [OGX documentation](https://llamastack.github.io/docs/) for detailed setup instructions.
+Refer to the [OGX documentation](https://ogx-ai.github.io/docs/) for detailed setup instructions.
 
 ### 3. Start the Server
 

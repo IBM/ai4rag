@@ -31,7 +31,7 @@ PAYLOAD = {
     "schema_version": "1.0",
     "producer": "ai4rag",
     "settings": {
-        "vector_store": {"ogx_vector_io_provider_id": "local_chroma", "collection_name": "col_1"},
+        "vector_store": {"datasource_type": "local_chroma", "collection_name": "col_1"},
         "chunking": {"method": "recursive", "chunk_size": 512, "chunk_overlap": 64},
         "embedding": {"model_id": "em-1", "distance_metric": "cosine", "embedding_params": {}},
         "retrieval": {"method": "simple", "number_of_chunks": 3, "search_mode": "vector"},

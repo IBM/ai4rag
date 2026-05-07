@@ -34,19 +34,19 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 ## OGX
 
-ai4RAG can run experiments using an [OGX](https://github.com/llamastack/llama-stack) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
+ai4RAG can run experiments using an [OGX](https://github.com/ogx-ai/ogx) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
 
 - **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 0.7.0 (Python package used by ai4RAG; installs with this project).
-- **Server:** [OGX](https://github.com/llamastack/llama-stack) >= 0.7.0.
-- **API reference:** [OGX API docs](https://llamastack.github.io/docs/) — HTTP API used by the client.
+- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 0.7.0.
+- **API reference:** [OGX API docs](https://ogx-ai.github.io/docs/) — HTTP API used by the client.
 
 **Features used by ai4rag**
 
 When using the OGX backend, ai4rag relies on:
 
-- **Embeddings** — Text embeddings via the client (e.g. for indexing and query encoding). See [Embeddings API](https://llamastack.github.io/docs/api/embeddings) in the docs.
-- **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://llamastack.github.io/docs/api/creates-a-vector-store) in the API docs.
-- **Vector IO** — Insert document chunks (with embeddings) into a store and run similarity search (query) for retrieval. See [Vector IO](https://llamastack.github.io/docs/api/search-for-chunks-in-a-vector-store) and insert/query endpoints.
+- **Embeddings** — Text embeddings via the client (e.g. for indexing and query encoding). See [Embeddings API](https://ogx-ai.github.io/docs/api/embeddings) in the docs.
+- **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://ogx-ai.github.io/docs/api/creates-a-vector-store) in the API docs.
+- **Vector IO** — Insert document chunks (with embeddings) into a store and run similarity search (query) for retrieval. See [Vector IO](https://ogx-ai.github.io/docs/api/search-for-chunks-in-a-vector-store) and insert/query endpoints.
 - **Chat / responses** — Foundation model integration for answer generation (e.g. chat completions or responses API) when evaluating RAG patterns.
 
 
