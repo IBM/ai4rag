@@ -41,7 +41,7 @@ mkdocs serve                                     # Local docs at http://127.0.0.
 - `ai4rag/utils/` — Event handlers, validators, constants
 - `tests/unit/` — Mirrors source structure, uses mocks. `tests/functional/` — End-to-end with live services
 
-Provider-agnostic design: components use abstract bases (`BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`). OGX and OpenAI are the current providers.
+Provider-agnostic design: components use abstract bases (`BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`). OGX is the current provider.
 
 ## CI Checks (PR)
 

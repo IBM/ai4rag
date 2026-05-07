@@ -13,7 +13,7 @@ Rather than locking you into a specific vendor or technology stack, `ai4rag` def
 2. **Embedding Models** (for document and query embeddings)
 3. **Vector Stores** (for storing and retrieving document chunks)
 
-Concrete implementations for different providers (OGX, OpenAI, ChromaDB) all adhere to these interfaces, making them **interchangeable** within the optimization framework.
+Concrete implementations for different providers (OGX, ChromaDB) all adhere to these interfaces, making them **interchangeable** within the optimization framework.
 
 ---
 
@@ -54,43 +54,6 @@ ogx_vector_io_provider_id = "milvus"  # or "qdrant", "weaviate", etc.
 
 ---
 
-### OpenAI-Compatible APIs
-
-**What it is**: Any API that implements the OpenAI API specification (OpenAI, Azure OpenAI, compatible local servers).
-
-**What `ai4rag` supports**:
-
-- **Foundation Models**: GPT-4, GPT-3.5, GPT-4o, and compatible models
-- **Embedding Models**: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
-
-**Usage**:
-
-```python
-from openai import OpenAI
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-foundation_model = OpenAIFoundationModel(
-    model_id="gpt-4o-mini",
-    client=client,
-    params={}
-)
-
-embedding_model = OpenAIEmbeddingModel(
-    model_id="text-embedding-3-small",
-    client=client,
-    params={"embedding_dimension": 1536, "context_length": 8191}
-)
-
-# Use with OGX vector store or ChromaDB
-vector_store_type = "ogx"  # or "chroma"
-ogx_vector_io_provider_id = "milvus"  # only needed when vector_store_type="ogx"
-```
-
----
-
 ### ChromaDB (In-Memory)
 
 **What it is**: An in-memory vector database perfect for development, testing, and small-scale deployments.
@@ -110,9 +73,9 @@ ogx_vector_io_provider_id = "milvus"  # only needed when vector_store_type="ogx"
 **Usage**:
 
 ```python
-# Can use with any foundation/embedding models (OGX, OpenAI, etc.)
+# Can use with any foundation/embedding models
 experiment = AI4RAGExperiment(
-    client=client,  # OGX or OpenAI client
+    client=client,  # OGX client
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
@@ -153,7 +116,6 @@ class BaseFoundationModel:
 **Current implementations**:
 
 - `OGXFoundationModel`: OGX integration
-- `OpenAIFoundationModel`: OpenAI API integration
 
 ---
 
@@ -187,7 +149,6 @@ class BaseEmbeddingModel:
 **Current implementations**:
 
 - `OGXEmbeddingModel`: OGX integration
-- `OpenAIEmbeddingModel`: OpenAI API integration
 
 ---
 
@@ -280,60 +241,7 @@ experiment = AI4RAGExperiment(
 
 ---
 
-### Example 2: OpenAI Models with OGX Vector Store
-
-Use OpenAI for generation and embeddings, but OGX for vector storage:
-
-```python
-from openai import OpenAI
-from ogx_client import OgxClient
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-from ai4rag.core.experiment.experiment import AI4RAGExperiment
-
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-ogx_client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
-
-experiment = AI4RAGExperiment(
-    client=ogx_client,  # For vector store access
-    documents=documents,
-    benchmark_data=benchmark_data,
-    search_space=AI4RAGSearchSpace(
-        params=[
-            Parameter(
-                name="foundation_model",
-                param_type="C",
-                values=[
-                    OpenAIFoundationModel(
-                        model_id="gpt-4o-mini",
-                        client=openai_client,
-                        params={}
-                    )
-                ]
-            ),
-            Parameter(
-                name="embedding_model",
-                param_type="C",
-                values=[
-                    OpenAIEmbeddingModel(
-                        model_id="text-embedding-3-small",
-                        client=openai_client,
-                        params={"embedding_dimension": 1536, "context_length": 8191}
-                    )
-                ]
-            ),
-            # ... other params
-        ]
-    ),
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="qdrant",  # OGX Qdrant
-    optimizer_settings=optimizer_settings,
-)
-```
-
----
-
-### Example 3: OGX Models with ChromaDB
+### Example 2: OGX Models with ChromaDB
 
 Use OGX for models, but ChromaDB for quick local development:
 
@@ -377,61 +285,6 @@ experiment = AI4RAGExperiment(
 
 !!! warning "No Hybrid Search with ChromaDB"
     Remember that ChromaDB doesn't support hybrid search. If your search space includes `search_mode="hybrid"`, use an OGX vector store instead (e.g., `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"`).
-
----
-
-### Example 4: Comparing Models Across Providers
-
-Optimize across different foundation models from different providers:
-
-```python
-from ogx_client import OgxClient
-from openai import OpenAI
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
-
-ogx_client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-search_space = AI4RAGSearchSpace(
-    params=[
-        # Compare Llama models against OpenAI models
-        Parameter(
-            name="foundation_model",
-            param_type="C",
-            values=[
-                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=ogx_client),
-                OGXFoundationModel(model_id="ollama/mistral:7b", client=ogx_client),
-                OpenAIFoundationModel(model_id="gpt-4o-mini", client=openai_client, params={}),
-            ]
-        ),
-        # Fixed embedding (use OGX)
-        Parameter(
-            name="embedding_model",
-            param_type="C",
-            values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=ogx_client,
-                    params={"embedding_dimension": 768, "context_length": 8192}
-                )
-            ]
-        ),
-        # ... other params
-    ]
-)
-
-experiment = AI4RAGExperiment(
-    client=ogx_client,  # Primary client for vector store
-    documents=documents,
-    benchmark_data=benchmark_data,
-    search_space=search_space,
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",
-    optimizer_settings=optimizer_settings,
-)
-```
 
 ---
 
@@ -638,15 +491,15 @@ Then use `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"` in 
 
 ## Provider Comparison
 
-| Feature | OGX | OpenAI | ChromaDB |
-|---------|------------|--------|----------|
-| **Foundation Models** | Yes (Llama, Mistral, etc.) | Yes (GPT-4, GPT-3.5) | N/A |
-| **Embedding Models** | Yes (any compatible model) | Yes (text-embedding-*) | N/A |
-| **Vector Stores** | Yes (Milvus, Qdrant, etc.) | N/A | Yes (in-memory) |
-| **Hybrid Search** | Yes (via vector store) | N/A | No |
-| **Setup Complexity** | Medium (server required) | Low (API key only) | None |
-| **Cost** | Self-hosted (infra cost) | Pay-per-use (API cost) | Free |
-| **Best For** | On-prem, self-hosted, Llama models | Quick setup, GPT models | Local dev, testing |
+| Feature | OGX | ChromaDB |
+|---------|------------|----------|
+| **Foundation Models** | Yes (Llama, Mistral, etc.) | N/A |
+| **Embedding Models** | Yes (any compatible model) | N/A |
+| **Vector Stores** | Yes (Milvus, Qdrant, etc.) | Yes (in-memory) |
+| **Hybrid Search** | Yes (via vector store) | No |
+| **Setup Complexity** | Medium (server required) | None |
+| **Cost** | Self-hosted (infra cost) | Free |
+| **Best For** | On-prem, self-hosted, Llama models | Local dev, testing |
 
 ---
 
@@ -655,10 +508,8 @@ Then use `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"` in 
 `ai4rag`'s provider-agnostic design:
 
 - **Abstract base classes**: `BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`
-- **Mix and match**: Use OpenAI for generation, OGX for embeddings, ChromaDB for storage
 - **Extensible**: Add support for new providers by implementing base classes
 - **OGX**: Unified access to multiple models and vector stores
-- **OpenAI**: Standard API integration for GPT models
 - **ChromaDB**: Zero-config in-memory vector store for development
 
-The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of whether you're using Llama 3.2, GPT-4, or a custom model. Focus on finding the best RAG configuration for your use case, not your infrastructure.
+The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of whether you're using Llama 3.2, Mistral, or a custom model. Focus on finding the best RAG configuration for your use case, not your infrastructure.
