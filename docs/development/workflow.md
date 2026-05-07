@@ -71,11 +71,11 @@ Develop your feature following our [code style guidelines](code-style.md):
 # ...
 
 # Run tests
-pytest
+uv run pytest
 
 # Check code quality
-black ai4rag/
-pylint ai4rag/
+uv run black ai4rag/
+uv run pylint ai4rag/
 
 # Commit with DCO sign-off
 git commit -s -m "Add hybrid retrieval method
@@ -156,7 +156,7 @@ git checkout main
 git pull origin main
 
 # 2. Run full test suite
-pytest
+uv run pytest
 
 # 3. Update version in ai4rag/version.py
 # Edit file: __version__ = "0.3.0"
@@ -267,17 +267,21 @@ On merge to `main`: Coming soon...
 
 ### Initial Setup
 
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management. Install it first if you haven't already:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then clone and set up the project:
+
 ```bash
 # Clone repository
 git clone https://github.com/IBM/ai4rag.git
 cd ai4rag
 
-# Create virtual environment
-python3.13 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install development dependencies
-pip install -e ".[dev]"
+# Install all development dependencies (creates .venv automatically)
+uv sync --extra dev
 
 # Set up pre-commit hooks (optional but recommended)
 # pre-commit install
@@ -295,20 +299,20 @@ git checkout -b feature/my-feature
 # ... edit files ...
 
 # 3. Format code
-black ai4rag/
-isort ai4rag/
+uv run black ai4rag/
+uv run isort ai4rag/
 
 # 4. Run linter
-pylint ai4rag/
+uv run pylint ai4rag/
 
 # 5. Run tests
-pytest
+uv run pytest
 
 # 6. Run tests with coverage
-pytest --cov=ai4rag --cov-report=html
+uv run pytest --cov=ai4rag --cov-report=html
 
 # 7. Build docs locally
-mkdocs serve  # Visit http://127.0.0.1:8000
+uv run mkdocs serve  # Visit http://127.0.0.1:8000
 
 # 8. Commit with sign-off
 git add .
@@ -330,13 +334,13 @@ All PRs must include tests:
 
 ```bash
 # Run specific test file
-pytest tests/ai4rag/core/test_experiment.py
+uv run pytest tests/ai4rag/core/test_experiment.py
 
 # Run with verbose output
-pytest -v
+uv run pytest -v
 
 # Run with coverage report
-pytest --cov=ai4rag --cov-report=term-missing
+uv run pytest --cov=ai4rag --cov-report=term-missing
 ```
 
 See [Testing Guide](testing.md) for detailed testing practices.
@@ -354,10 +358,10 @@ PRs with new features must include documentation:
 
 ```bash
 # Build docs locally
-mkdocs serve
+uv run mkdocs serve
 
 # Check for broken links
-mkdocs build --strict
+uv run mkdocs build --strict
 ```
 
 ---

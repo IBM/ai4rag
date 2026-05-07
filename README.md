@@ -209,11 +209,36 @@ print(best_eval.rag_pattern.generate("What ai4rag can be used for?"))
 
 
 ## Contribution
-Pull requests are very welcome! Make sure your patches are well tested. Ideally create a topic branch for every separate change you make. For example:
+Pull requests are very welcome! Make sure your patches are well tested. Ideally create a topic branch for every separate change you make.
+
+### Development setup
+
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
+
+```bash
+# Clone the repository
+git clone https://github.com/IBM/ai4rag.git
+cd ai4rag
+
+# Install all development dependencies
+uv sync --extra dev
+
+# Run tests
+uv run pytest tests/unit/
+
+# Check code style
+uv run black --check ai4rag/
+uv run pylint ai4rag/
+
+# Build and serve documentation locally
+uv run mkdocs serve
+```
+
+### Pull request workflow
 
 1. Fork the repo
 2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am 'Added some feature'`)
+3. Commit your changes (`git commit -s -am 'Added some feature'`)
 4. Push to the branch (`git push origin my-new-feature`)
 5. Create new Pull Request
 
