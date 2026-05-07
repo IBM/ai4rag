@@ -122,7 +122,9 @@ class TestExperimentChroma:
 class TestExperimentOgxMilvus:
     """Run experiment with ogx vector store (milvus-lite provider) and OGX models."""
 
-    def test_experiment_ogx_milvus_ogx_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_ogx_milvus_ogx_models(
+        self, client, documents, benchmark_data, foundation_model, embedding_model
+    ):
         search_space = AI4RAGSearchSpace(
             vector_store_type="ogx",
             params=[

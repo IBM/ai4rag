@@ -141,9 +141,7 @@ class TestGetVectorStoreOGX:
         "provider_id",
         ["qdrant", "faiss", "chromadb", "milvus", "milvus-lite"],
     )
-    def test_get_vector_store_ogx_various_provider_ids(
-        self, mock_embedding_model, mock_ogx_client, provider_id
-    ):
+    def test_get_vector_store_ogx_various_provider_ids(self, mock_embedding_model, mock_ogx_client, provider_id):
         """Test that various provider IDs are passed through correctly."""
         vector_store = get_vector_store(
             vs_type="ogx",
