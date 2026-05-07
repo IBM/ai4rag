@@ -56,6 +56,7 @@ Ready to contribute code? Great!
 ### Prerequisites
 
 - Python `>=3.12,<=3.13`
+- [uv](https://docs.astral.sh/uv/) — used for dependency management and running commands
 - Git
 - GitHub account
 
@@ -70,15 +71,11 @@ cd ai4rag
 # Add upstream remote
 git remote add upstream https://github.com/IBM/ai4rag.git
 
-# Create virtual environment
-python3.13 -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-
-# Install development dependencies
-pip install -e ".[dev]"
+# Install all development dependencies (uv creates .venv automatically)
+uv sync --extra dev
 
 # Verify installation
-pytest
+uv run pytest tests/unit/
 ```
 
 ---
@@ -116,17 +113,17 @@ Follow these practices:
 
 ```bash
 # Run all tests
-pytest
+uv run pytest
 
 # Run with coverage
-pytest --cov=ai4rag --cov-report=term-missing
+uv run pytest --cov=ai4rag --cov-report=term-missing
 
 # Check code style
-black ai4rag/
-pylint ai4rag/
+uv run black ai4rag/
+uv run pylint ai4rag/
 
 # Build docs
-mkdocs build --strict
+uv run mkdocs build --strict
 ```
 
 ### 5. Commit with Sign-Off

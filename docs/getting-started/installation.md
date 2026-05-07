@@ -31,17 +31,21 @@ If you want to use specific version, please use e.g. `"@v0.1.1"`
 
 ## Development Installation
 
-For development work, including testing and code quality tools:
+This project uses [uv](https://docs.astral.sh/uv/) for dependency and environment management. Install it first if you haven't already:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+Then clone and set up the project:
 
 ```bash
 # Clone the repository
 git clone https://github.com/IBM/ai4rag.git
 cd ai4rag
 
-# Install in editable mode with dev dependencies
-python -m venv venv
-source venv/bin/activate
-pip install -e ".[dev]"
+# Install all development dependencies (creates .venv automatically)
+uv sync --extra dev
 ```
 
 The `dev` optional dependencies include:
@@ -51,8 +55,13 @@ The `dev` optional dependencies include:
 - Documentation tools (`mkdocs`, `mkdocs-material`)
 - Development utilities (`beautifulsoup4`, `pypdf`, `dotenv`)
 
+To install only a specific subset of dependencies, use the corresponding extra name (see `pyproject.toml`):
 
-To see what specific requirement groups are available, please look at the `pyproject.toml` file in the project's root folder.
+```bash
+uv sync --extra test        # testing tools only
+uv sync --extra code_check  # linting/formatting tools only
+uv sync --extra docs        # documentation tools only
+```
 
 ---
 
