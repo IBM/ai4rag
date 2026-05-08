@@ -10,8 +10,8 @@ from ai4rag.rag.embedding.ogx import OGXEmbeddingModel, OGXEmbeddingParams
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.search_space.prepare.ogx_utils import (
     SearchSpaceValueError,
-    _are_provided_models_available,
     _get_default_ogx_models,
+    _validate_availability_and_create_models,
     _validate_embedding_model,
     _validate_foundation_model,
 )
@@ -69,20 +69,13 @@ class TestValidateEmbeddingModel:
     def test_returns_false_when_model_fails(self):
         """Test that validation returns False when model raises exception."""
         mock_client = MagicMock()
-        mock_response = Mock()
-        mock_data = Mock()
-        mock_data.embedding = [0.1, 0.2, 0.3]
-        mock_response.data = [mock_data]
 
-        # First call succeeds (for embed_query in validation), but we need to
-        # create the model first with context_length set to avoid detection.
         model = OGXEmbeddingModel(
             model_id="test-model",
             client=mock_client,
             params=OGXEmbeddingParams(embedding_dimension=768, context_length=512),
         )
 
-        # Now set embed to fail for validation
         mock_client.embeddings.create.side_effect = Exception("Model error")
 
         result = _validate_embedding_model(model)
@@ -93,284 +86,238 @@ class TestValidateEmbeddingModel:
 class TestGetDefaultOGXModels:
     """Test _get_default_ogx_models function."""
 
-    def test_returns_foundation_and_embedding_models(self, mocker):
-        """Test that function returns both foundation and embedding models."""
-        # Mock client
+    def _make_llm_mock(self, model_id: str) -> Mock:
+        m = Mock()
+        m.id = model_id
+        m.custom_metadata = {"model_type": "llm"}
+        return m
+
+    def _make_embedding_mock(self, model_id: str, dim: int = 768, ctx: int = 512) -> Mock:
+        m = Mock()
+        m.id = model_id
+        m.custom_metadata = {"model_type": "embedding", "embedding_dimension": dim, "context_length": ctx}
+        return m
+
+    def _client(self, *models) -> MagicMock:
         mock_client = MagicMock()
+        mock_client.models.list.return_value.data = list(models)
+        return mock_client
 
-        # Mock model list response
-        mock_llm = Mock()
-        mock_llm.id = "test-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
+    def test_returns_registered_foundation_and_embedding_models(self):
+        """Returns model objects split by type without validating them."""
+        mock_llm = self._make_llm_mock("test-llm")
+        mock_emb = self._make_embedding_mock("test-emb")
+        client = self._client(mock_llm, mock_emb)
 
-        mock_embedding = Mock()
-        mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
-        mock_embedding.metadata = {}
+        result = _get_default_ogx_models(client)
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        assert result["foundation_models"] == [mock_llm]
+        assert result["embedding_models"] == [mock_emb]
 
-        # Mock validation functions to always return True
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
-        )
+    def test_does_not_validate_models(self, mocker):
+        """_get_default_ogx_models must not call validation functions."""
+        mock_llm = self._make_llm_mock("test-llm")
+        mock_emb = self._make_embedding_mock("test-emb")
+        client = self._client(mock_llm, mock_emb)
 
-        # Call function
-        result = _get_default_ogx_models(mock_client)
+        validate_fm = mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model")
+        validate_em = mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model")
 
-        # Assertions
-        assert "foundation_models" in result
-        assert "embedding_models" in result
-        assert "not_responding_foundation_models" in result
-        assert "not_responding_embedding_models" in result
+        _get_default_ogx_models(client)
+
+        validate_fm.assert_not_called()
+        validate_em.assert_not_called()
+
+    def test_raises_when_no_llm_registered(self):
+        """Error when OGX has no models of type 'llm'."""
+        mock_emb = self._make_embedding_mock("test-emb")
+        client = self._client(mock_emb)
+
+        with pytest.raises(SearchSpaceValueError, match="no registered models of type 'llm'"):
+            _get_default_ogx_models(client)
+
+    def test_raises_when_no_embedding_registered(self):
+        """Error when OGX has no models of type 'embedding'."""
+        mock_llm = self._make_llm_mock("test-llm")
+        client = self._client(mock_llm)
+
+        with pytest.raises(SearchSpaceValueError, match="no registered models of type 'embedding'"):
+            _get_default_ogx_models(client)
+
+    def test_filters_by_model_type(self):
+        """Models with an unrecognised model_type are excluded from both lists."""
+        mock_llm = self._make_llm_mock("test-llm")
+        mock_emb = self._make_embedding_mock("test-emb")
+        untyped = Mock()
+        untyped.id = "unknown"
+        untyped.custom_metadata = {"model_type": "unknown_type"}
+        client = self._client(mock_llm, mock_emb, untyped)
+
+        result = _get_default_ogx_models(client)
+
         assert len(result["foundation_models"]) == 1
         assert len(result["embedding_models"]) == 1
-        assert result["foundation_models"][0].model_id == "test-llm"
-        assert result["embedding_models"][0].model_id == "test-embedding"
-        assert result["not_responding_foundation_models"] == []
-        assert result["not_responding_embedding_models"] == []
 
-    def test_raises_error_when_no_llm_models(self, mocker):
-        """Test that function raises error when no LLM models available."""
+
+class TestValidateAvailabilityAndCreateModels:
+    """Test _validate_availability_and_create_models function."""
+
+    def _make_llm_registry_mock(self, model_id: str) -> Mock:
+        m = Mock()
+        m.id = model_id
+        m.custom_metadata = {"model_type": "llm"}
+        return m
+
+    def _make_emb_registry_mock(self, model_id: str, dim: int = 768, ctx: int = 512) -> Mock:
+        m = Mock()
+        m.id = model_id
+        m.custom_metadata = {"model_type": "embedding", "embedding_dimension": dim, "context_length": ctx}
+        return m
+
+    def test_returns_llm_instances_for_valid_models(self, mocker):
+        """Returns OGXFoundationModel instances for each valid LLM."""
         mock_client = MagicMock()
+        registered = [self._make_llm_registry_mock("llm-1"), self._make_llm_registry_mock("llm-2")]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=True)
 
-        mock_embedding = Mock()
-        mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
-        mock_embedding.metadata = {}
-
-        mock_client.models.list.return_value = [mock_embedding]
-
-        # Mock validation to return True for embedding models
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
+        result = _validate_availability_and_create_models(
+            registered_models=registered,
+            models_type="llm",
+            client=mock_client,
+            provided_models_ids=["llm-1", "llm-2"],
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'.*not responding"):
-            _get_default_ogx_models(mock_client)
+        assert len(result) == 2
+        assert all(isinstance(m, OGXFoundationModel) for m in result)
+        assert {m.model_id for m in result} == {"llm-1", "llm-2"}
 
-    def test_raises_error_when_no_embedding_models(self, mocker):
-        """Test that function raises error when no embedding models available."""
+    def test_returns_embedding_instances_for_valid_models(self, mocker):
+        """Returns OGXEmbeddingModel instances for each valid embedding model."""
         mock_client = MagicMock()
+        registered = [self._make_emb_registry_mock("emb-1", dim=768, ctx=512)]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=True)
 
-        mock_llm = Mock()
-        mock_llm.id = "test-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
-
-        mock_client.models.list.return_value = [mock_llm]
-
-        # Mock validation to return True for foundation models
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
+        result = _validate_availability_and_create_models(
+            registered_models=registered,
+            models_type="embedding",
+            client=mock_client,
+            provided_models_ids=["emb-1"],
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'.*not responding"):
-            _get_default_ogx_models(mock_client)
+        assert len(result) == 1
+        assert isinstance(result[0], OGXEmbeddingModel)
+        assert result[0].model_id == "emb-1"
 
-    def test_excludes_models_that_fail_validation(self, mocker):
-        """Test that models failing validation are excluded from results."""
+    def test_raises_when_llm_not_registered(self, mocker):
+        """Error when a requested LLM ID is not in the registered list."""
         mock_client = MagicMock()
+        registered = [self._make_llm_registry_mock("llm-ok")]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=True)
 
-        # Create multiple models of each type
-        mock_llm1 = Mock()
-        mock_llm1.id = "test-llm-1"
-        mock_llm1.custom_metadata = {"model_type": "llm"}
+        with pytest.raises(SearchSpaceValueError, match=r"not registered in OGX.*llm-unknown"):
+            _validate_availability_and_create_models(
+                registered_models=registered,
+                models_type="llm",
+                client=mock_client,
+                provided_models_ids=["llm-unknown"],
+            )
 
-        mock_llm2 = Mock()
-        mock_llm2.id = "test-llm-2"
-        mock_llm2.custom_metadata = {"model_type": "llm"}
-
-        mock_embedding1 = Mock()
-        mock_embedding1.id = "test-embedding-1"
-        mock_embedding1.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
-        mock_embedding1.metadata = {}
-
-        mock_embedding2 = Mock()
-        mock_embedding2.id = "test-embedding-2"
-        mock_embedding2.custom_metadata = {
-            "model_type": "embedding",
-            "embedding_dimension": 1024,
-            "context_length": 512,
-        }
-        mock_embedding2.metadata = {}
-
-        mock_client.models.list.return_value = [mock_llm1, mock_llm2, mock_embedding1, mock_embedding2]
-
-        # Mock validation to fail for first model of each type
-        def mock_validate_foundation(model):
-            return model.model_id != "test-llm-1"
-
-        def mock_validate_embedding(model):
-            return model.model_id != "test-embedding-1"
-
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            side_effect=mock_validate_foundation,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            side_effect=mock_validate_embedding,
-        )
-
-        result = _get_default_ogx_models(mock_client)
-
-        # Only validated models should be included
-        assert len(result["foundation_models"]) == 1
-        assert result["foundation_models"][0].model_id == "test-llm-2"
-        assert len(result["embedding_models"]) == 1
-        assert result["embedding_models"][0].model_id == "test-embedding-2"
-
-        # Failed models should be in the not_responding lists
-        assert len(result["not_responding_foundation_models"]) == 1
-        assert result["not_responding_foundation_models"][0].model_id == "test-llm-1"
-        assert len(result["not_responding_embedding_models"]) == 1
-        assert result["not_responding_embedding_models"][0].model_id == "test-embedding-1"
-
-    def test_raises_error_when_all_foundation_models_fail_validation(self, mocker):
-        """Test that error is raised when all foundation models fail validation."""
+    def test_raises_when_embedding_not_registered(self, mocker):
+        """Error when a requested embedding ID is not in the registered list."""
         mock_client = MagicMock()
+        registered = [self._make_emb_registry_mock("emb-ok")]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=True)
 
-        mock_llm = Mock()
-        mock_llm.id = "test-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
+        with pytest.raises(SearchSpaceValueError, match=r"not registered in OGX.*emb-unknown"):
+            _validate_availability_and_create_models(
+                registered_models=registered,
+                models_type="embedding",
+                client=mock_client,
+                provided_models_ids=["emb-unknown"],
+            )
 
-        mock_embedding = Mock()
-        mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
-        mock_embedding.metadata = {}
+    def test_raises_when_llm_does_not_respond(self, mocker):
+        """Error when a registered LLM fails validation."""
+        mock_client = MagicMock()
+        registered = [self._make_llm_registry_mock("llm-bad")]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=False)
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        with pytest.raises(SearchSpaceValueError, match=r"do not respond.*llm-bad"):
+            _validate_availability_and_create_models(
+                registered_models=registered,
+                models_type="llm",
+                client=mock_client,
+                provided_models_ids=["llm-bad"],
+            )
 
-        # Mock validation to fail for foundation model
+    def test_raises_when_embedding_does_not_respond(self, mocker):
+        """Error when a registered embedding model fails validation."""
+        mock_client = MagicMock()
+        registered = [self._make_emb_registry_mock("emb-bad")]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=False)
+
+        with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-bad"):
+            _validate_availability_and_create_models(
+                registered_models=registered,
+                models_type="embedding",
+                client=mock_client,
+                provided_models_ids=["emb-bad"],
+            )
+
+    def test_raises_when_embedding_instantiation_fails(self, mocker):
+        """Exception during OGXEmbeddingModel.__init__ is treated as non-responding."""
+        mock_client = MagicMock()
+        registered = [self._make_emb_registry_mock("emb-broken")]
         mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=False,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
+            "ai4rag.search_space.prepare.ogx_utils.OGXEmbeddingModel",
+            side_effect=RuntimeError("Cannot connect"),
         )
 
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'llm'.*not responding"):
-            _get_default_ogx_models(mock_client)
+        with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-broken"):
+            _validate_availability_and_create_models(
+                registered_models=registered,
+                models_type="embedding",
+                client=mock_client,
+                provided_models_ids=["emb-broken"],
+            )
 
-    def test_raises_error_when_all_embedding_models_fail_validation(self, mocker):
-        """Test that error is raised when all embedding models fail validation."""
+    def test_error_message_combines_unregistered_and_not_responding(self, mocker):
+        """A single exception lists both unregistered and non-responding model IDs."""
         mock_client = MagicMock()
-
-        mock_llm = Mock()
-        mock_llm.id = "test-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
-
-        mock_embedding = Mock()
-        mock_embedding.id = "test-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
-        mock_embedding.metadata = {}
-
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
-
-        # Mock validation to fail for embedding model
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=False,
-        )
-
-        with pytest.raises(SearchSpaceValueError, match="no available models of type 'embedding'.*not responding"):
-            _get_default_ogx_models(mock_client)
-
-
-class TestAreProvidedModelsAvailable:
-    """Test _are_provided_models_available function."""
-
-    def test_no_error_when_all_models_available(self):
-        """Test that function does not raise when all provided models are available."""
-        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-        from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
-
-        mock_client = MagicMock()
-        available_models = [
-            OGXFoundationModel(model_id="model-1", client=mock_client),
-            OGXFoundationModel(model_id="model-2", client=mock_client),
-        ]
-
-        provided_models = [
-            AI4RAGFoundationModel(model_id="model-1"),
-            AI4RAGFoundationModel(model_id="model-2"),
-        ]
-
-        _are_provided_models_available(provided_models, available_models, not_responding_models=[])
-
-    def test_raises_error_when_model_not_registered(self):
-        """Test that function raises error when provided model is not registered."""
-        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-        from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
-
-        mock_client = MagicMock()
-        available_models = [
-            OGXFoundationModel(model_id="model-1", client=mock_client),
-        ]
-
-        provided_models = [
-            AI4RAGFoundationModel(model_id="model-2"),
-        ]
-
-        with pytest.raises(SearchSpaceValueError, match="model-2.*not registered within OGX"):
-            _are_provided_models_available(provided_models, available_models, not_responding_models=[])
-
-    def test_raises_error_when_model_not_responding(self):
-        """Test that function raises error when provided model is registered but not responding."""
-        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-        from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
-
-        mock_client = MagicMock()
-        available_models = [
-            OGXFoundationModel(model_id="model-1", client=mock_client),
-        ]
-        not_responding_models = [
-            OGXFoundationModel(model_id="model-2", client=mock_client),
-        ]
-
-        provided_models = [
-            AI4RAGFoundationModel(model_id="model-2"),
-        ]
-
-        with pytest.raises(SearchSpaceValueError, match="model-2.*registered but do not respond"):
-            _are_provided_models_available(provided_models, available_models, not_responding_models)
-
-    def test_raises_error_with_both_not_responding_and_unregistered(self):
-        """Test that error includes both not-responding and unregistered models."""
-        from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-        from ai4rag.search_space.prepare.input_payload_types import AI4RAGFoundationModel
-
-        mock_client = MagicMock()
-        available_models = [
-            OGXFoundationModel(model_id="model-1", client=mock_client),
-        ]
-        not_responding_models = [
-            OGXFoundationModel(model_id="model-2", client=mock_client),
-        ]
-
-        provided_models = [
-            AI4RAGFoundationModel(model_id="model-2"),
-            AI4RAGFoundationModel(model_id="model-3"),
-        ]
+        registered = [self._make_llm_registry_mock("llm-bad")]
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=False)
 
         with pytest.raises(SearchSpaceValueError) as exc_info:
-            _are_provided_models_available(provided_models, available_models, not_responding_models)
+            _validate_availability_and_create_models(
+                registered_models=registered,
+                models_type="llm",
+                client=mock_client,
+                provided_models_ids=["llm-bad", "llm-unknown"],
+            )
 
         error_msg = str(exc_info.value)
-        assert "model-2" in error_msg
-        assert "registered but do not respond" in error_msg
-        assert "model-3" in error_msg
-        assert "not registered within OGX" in error_msg
+        assert "llm-bad" in error_msg
+        assert "llm-unknown" in error_msg
+        assert "do not respond" in error_msg
+        assert "not registered in OGX" in error_msg
+
+    def test_only_validates_provided_models(self, mocker):
+        """Models that are registered but not requested must not be validated."""
+        mock_client = MagicMock()
+        registered = [
+            self._make_llm_registry_mock("llm-ok"),
+            self._make_llm_registry_mock("llm-not-requested"),
+        ]
+        validate_mock = mocker.patch(
+            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=True
+        )
+
+        _validate_availability_and_create_models(
+            registered_models=registered,
+            models_type="llm",
+            client=mock_client,
+            provided_models_ids=["llm-ok"],
+        )
+
+        assert validate_mock.call_count == 1
+        assert validate_mock.call_args[0][0].model_id == "llm-ok"

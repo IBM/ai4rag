@@ -5,19 +5,17 @@
 from typing import TypedDict
 
 from ogx_client import OgxClient
+from ogx_client.types import Model
 
 from ai4rag import logger
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel, OGXEmbeddingParams
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.search_space.prepare.input_payload_types import AI4RAGEmbeddingModel, AI4RAGFoundationModel
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
 class _DefaultModelsResponseType(TypedDict):
-    foundation_models: list[OGXFoundationModel]
-    embedding_models: list[OGXEmbeddingModel]
-    not_responding_foundation_models: list[OGXFoundationModel]
-    not_responding_embedding_models: list[OGXEmbeddingModel]
+    foundation_models: list[Model]
+    embedding_models: list[Model]
 
 
 def _validate_foundation_model(model: OGXFoundationModel) -> bool:
@@ -41,9 +39,8 @@ def _validate_foundation_model(model: OGXFoundationModel) -> bool:
         return True
     except Exception:  # pylint: disable=broad-exception-caught
         logger.warning(
-            "Foundation model '%s' does not respond and will be excluded from search space.",
+            "Foundation model '%s' is registered in OGX, but does not respond.",
             model.model_id,
-            exc_info=True,
         )
         return False
 
@@ -68,126 +65,141 @@ def _validate_embedding_model(model: OGXEmbeddingModel) -> bool:
         return True
     except Exception:  # pylint: disable=broad-exception-caught
         logger.warning(
-            "Embedding model '%s' does not respond and will be excluded from search space.",
+            "Embedding model '%s' is registered in OGX, but does not respond.",
             model.model_id,
-            exc_info=True,
         )
         return False
 
 
 def _get_default_ogx_models(client: OgxClient) -> _DefaultModelsResponseType:
-    """Get list of default foundation models based on the available ones in OGX."""
+    """Return registered foundation and embedding model objects from OGX without validating them."""
 
-    logger.info("Selecting default foundation models...")
-    available_models = client.models.list()
-    llms = [model for model in available_models if model.custom_metadata.get("model_type") == "llm"]
-    embeddings = [model for model in available_models if model.custom_metadata.get("model_type") == "embedding"]
+    logger.info("Checking registered embedding and foundation models...")
+    available_models = client.models.list().data
 
-    # Create model instances
-    foundation_models_unvalidated = [OGXFoundationModel(model_id=m.id, client=client) for m in llms]
-    embedding_models_unvalidated = [
-        OGXEmbeddingModel(
-            model_id=m.id,
-            client=client,
-            params=OGXEmbeddingParams(
-                embedding_dimension=getattr(m, "custom_metadata", {}).get("embedding_dimension"),
-                context_length=getattr(m, "custom_metadata", {}).get("context_length"),
-            ),
-        )
-        for m in embeddings
+    registered_foundation_models = [
+        model for model in available_models if model.custom_metadata.get("model_type") == "llm"
+    ]
+    registered_embedding_models = [
+        model for model in available_models if model.custom_metadata.get("model_type") == "embedding"
     ]
 
-    # Validate each model
-    foundation_models = []
-    not_responding_foundation_models = []
-    logger.info("Validating foundation models...")
-    for fm_el in foundation_models_unvalidated:
-        if _validate_foundation_model(fm_el):
-            foundation_models.append(fm_el)
-        else:
-            not_responding_foundation_models.append(fm_el)
+    if not registered_foundation_models:
+        raise SearchSpaceValueError("There are no registered models of type 'llm' in the OGX.")
+    if not registered_embedding_models:
+        raise SearchSpaceValueError("There are no registered models of type 'embedding' in the OGX.")
 
-    embedding_models = []
-    not_responding_embedding_models = []
-    logger.info("Validating embedding models...")
-    for em_el in embedding_models_unvalidated:
-        if _validate_embedding_model(em_el):
-            embedding_models.append(em_el)
-        else:
-            not_responding_embedding_models.append(em_el)
-
-    if not foundation_models:
-        raise SearchSpaceValueError(
-            "There are no available models of type 'llm' or the ones registered are not responding: "
-            f"{[m.model_id for m in not_responding_foundation_models]}. "
-            "Please look at the full logs."
-        )
-    if not embedding_models:
-        raise SearchSpaceValueError(
-            "There are no available models of type 'embedding' or the ones registered are not responding: "
-            f"{[m.model_id for m in not_responding_embedding_models]}. "
-            "Please look at the full logs."
-        )
-
-    logger.info("Available foundation models: %s.", foundation_models)
-    logger.info("Available embedding models: %s.", embedding_models)
+    logger.info("Found registered foundation models: %s.", [model.id for model in registered_foundation_models])
+    logger.info("Found registered embedding models: %s.", [model.id for model in registered_embedding_models])
 
     return {
-        "foundation_models": foundation_models,
-        "embedding_models": embedding_models,
-        "not_responding_foundation_models": not_responding_foundation_models,
-        "not_responding_embedding_models": not_responding_embedding_models,
+        "foundation_models": registered_foundation_models,
+        "embedding_models": registered_embedding_models,
     }
 
 
-def _are_provided_models_available(
-    provided_models: list[AI4RAGFoundationModel] | list[AI4RAGEmbeddingModel],
-    available_models: list[OGXFoundationModel | OGXEmbeddingModel],
-    not_responding_models: list[OGXFoundationModel | OGXEmbeddingModel],
-) -> None:
+def _build_valid_and_invalid_models(
+    candidate_ids: list[str],
+    registered_models_as_dict: dict,
+    models_type: str,
+    client: OgxClient,
+) -> tuple[list[OGXFoundationModel | OGXEmbeddingModel], list[str]]:
+    valid_model_instances: list[OGXFoundationModel | OGXEmbeddingModel] = []
+    invalid_model_ids: list[str] = []
+    for model_id in candidate_ids:
+        if models_type == "embedding":
+            custom_metadata = registered_models_as_dict[model_id].custom_metadata
+            try:
+                # If params is not provided model is trying to estimate parameters by sending some queries.
+                # If it fails it means that model is not available
+                embedding_dimension = custom_metadata.get("embedding_dimension", None) if custom_metadata else None
+                context_length = custom_metadata.get("context_length", None) if custom_metadata else None
+                _model = OGXEmbeddingModel(
+                    model_id=model_id,
+                    client=client,
+                    params=OGXEmbeddingParams(embedding_dimension=embedding_dimension, context_length=context_length),
+                )
+                is_valid = _validate_embedding_model(_model)
+            except RuntimeError:
+                logger.warning(
+                    "Embedding model '%s' is registered in OGX, but does not respond.", model_id, exc_info=True
+                )
+                invalid_model_ids.append(model_id)
+                continue
+        else:
+            _model = OGXFoundationModel(model_id=model_id, client=client)
+            is_valid = _validate_foundation_model(_model)
+
+        if is_valid:
+            valid_model_instances.append(_model)
+        else:
+            invalid_model_ids.append(model_id)
+
+    return valid_model_instances, invalid_model_ids
+
+
+def _validate_availability_and_create_models(
+    registered_models: list[Model],
+    models_type: str,
+    client: OgxClient,
+    provided_models_ids: list[str] | None = None,
+) -> list[OGXFoundationModel | OGXEmbeddingModel]:
     """
-    Check whether models provided by the user are available for the experiment.
+    Validate that the requested models are registered and responding, then instantiate them.
 
     Parameters
     ----------
-    provided_models : list[AI4RAGFoundationModel] | list[AI4RAGEmbeddingModel]
-        Models provided by the user in the input payload.
+    registered_models : list[Model]
+        OGX model objects returned by ``client.models.list().data``, pre-filtered by type.
 
-    available_models : list[OGXFoundationModel | OGXEmbeddingModel]
-        Models registered within OGX that passed validation (respond to requests).
+    models_type : str
+        ``'llm'`` or ``'embedding'``.
 
-    not_responding_models : list[OGXFoundationModel | OGXEmbeddingModel]
-        Models that are registered within OGX but do not respond.
+    client : OgxClient
+        OGX client used to instantiate model objects.
+
+    provided_models_ids : list[str] | None, default None
+        Model IDs requested by the user.  When ``None``, all registered models
+        are validated (the registration check is skipped since the IDs come from
+        the registry itself).
+
+    Returns
+    -------
+    list[OGXFoundationModel | OGXEmbeddingModel]
+        Validated and instantiated models.
 
     Raises
     ------
     SearchSpaceValueError
-        When some of the models provided by the user are not available for the experiment
-        or some of the models do not respond.
+        When some of the requested models are not registered in OGX or do not respond.
     """
-
-    available_model_ids = [m.model_id for m in available_models]
-    not_responding_model_ids = [m.model_id for m in not_responding_models]
-
-    user_not_responding_models = [m.model_id for m in provided_models if m.model_id in not_responding_model_ids]
-    user_unavailable_models = [
-        m.model_id
-        for m in provided_models
-        if m.model_id not in available_model_ids and m.model_id not in not_responding_model_ids
-    ]
-
     error_messages = []
-    if user_not_responding_models:
-        error_messages.append(
-            f"Provided models: {user_not_responding_models} are registered but do not respond. "
-            "Remove these models from the experiment configuration and try again."
-        )
+    registered_models_as_dict = {m.id: m for m in registered_models}
 
-    if user_unavailable_models:
+    if provided_models_ids is None:
+        candidate_ids = list(registered_models_as_dict)
+    else:
+        provided_not_registered_models_ids = [
+            pm_id for pm_id in provided_models_ids if pm_id not in registered_models_as_dict
+        ]
+        if provided_not_registered_models_ids:
+            error_messages.append(
+                f"Provided models of type '{models_type}' are not registered in OGX: "
+                f"'{provided_not_registered_models_ids}'."
+            )
+        candidate_ids = [pm_id for pm_id in provided_models_ids if pm_id in registered_models_as_dict]
+
+    valid_model_instances, invalid_model_ids = _build_valid_and_invalid_models(
+        candidate_ids, registered_models_as_dict, models_type, client
+    )
+
+    if invalid_model_ids:
         error_messages.append(
-            f"Provided models: {user_unavailable_models} are not registered within OGX. "
-            "Register these models or try a different model for the experiment."
+            f"Provided models of type '{models_type}' are registered in OGX but do not respond. "
+            f"Please validate these models are correctly registered and respond: '{invalid_model_ids}'."
         )
 
     if error_messages:
         raise SearchSpaceValueError("\n".join(error_messages))
+
+    return valid_model_instances

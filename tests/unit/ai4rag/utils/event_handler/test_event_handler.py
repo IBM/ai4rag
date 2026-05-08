@@ -88,13 +88,13 @@ class TestLocalEventHandlerOnStatusChange:
     """Tests for LocalEventHandler.on_status_change."""
 
     def test_on_status_change_logs_message(self, mocker):
-        """Calls logger.info with level, step and message."""
+        """Calls logger.debug with level, step and message."""
         mock_logger = mocker.patch("ai4rag.utils.event_handler.event_handler.logger")
         handler = LocalEventHandler()
 
         handler.on_status_change(level=LogLevel.INFO, message="test message", step="chunking")
 
-        mock_logger.info.assert_called_once()
+        mock_logger.debug.assert_called_once()
 
     def test_on_status_change_with_step(self, mocker):
         """Step value is forwarded to the log call."""
@@ -103,7 +103,7 @@ class TestLocalEventHandlerOnStatusChange:
 
         handler.on_status_change(level=LogLevel.INFO, message="msg", step="embedding")
 
-        call_args = mock_logger.info.call_args[0]
+        call_args = mock_logger.debug.call_args[0]
         assert "embedding" in call_args
 
     def test_on_status_change_without_step(self, mocker):
@@ -113,8 +113,8 @@ class TestLocalEventHandlerOnStatusChange:
 
         handler.on_status_change(level=LogLevel.WARNING, message="msg")
 
-        mock_logger.info.assert_called_once()
-        call_args = mock_logger.info.call_args[0]
+        mock_logger.debug.assert_called_once()
+        call_args = mock_logger.debug.call_args[0]
         assert None in call_args
 
 
@@ -128,7 +128,7 @@ class TestLocalEventHandlerOnPatternCreationWithoutOutputPath:
 
         handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS)
 
-        mock_logger.info.assert_called_once()
+        mock_logger.debug.assert_called_once()
 
     def test_does_not_raise(self):
         """Calling without output_path must not raise."""
