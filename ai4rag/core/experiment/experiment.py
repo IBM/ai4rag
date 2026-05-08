@@ -160,8 +160,10 @@ class AI4RAGExperiment:
             "evaluator",
             UnitxtEvaluator(),
         )
-        self.n_mps_foundation_models = kwargs.pop("n_mps_fm", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS)
-        self.n_mps_embedding_models = kwargs.pop("n_mps_em", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
+        self.n_mps_foundation_models = kwargs.pop(
+            "n_mps_foundation_models", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS
+        )
+        self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
 
         self.results: ExperimentResults = ExperimentResults()

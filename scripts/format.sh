@@ -12,11 +12,11 @@ echo "Running formatters on: ${TARGETS[*]}"
 
 echo ""
 echo "==> isort"
-isort "${TARGETS[@]}"
+uv run isort "${TARGETS[@]}"
 
 echo ""
 echo "==> black"
-black "${TARGETS[@]}"
+uv run black "${TARGETS[@]}"
 
 echo ""
 echo "==> copyright_check"

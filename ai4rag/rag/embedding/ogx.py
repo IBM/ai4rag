@@ -10,8 +10,6 @@ from ogx_client import OgxClient
 
 from .base_model import BaseEmbeddingModel
 
-# pylint: disable=duplicate-code
-
 __all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 

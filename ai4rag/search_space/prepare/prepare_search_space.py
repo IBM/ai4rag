@@ -7,12 +7,10 @@ from typing import Any
 from ogx_client import OgxClient
 
 from ai4rag import logger
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
 from ai4rag.search_space.prepare.ogx_utils import (
-    _are_provided_models_available,
     _get_default_ogx_models,
+    _validate_availability_and_create_models,
 )
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
@@ -58,60 +56,43 @@ def prepare_search_space_with_ogx(
 
     if isinstance(client, OgxClient):
         models = _get_default_ogx_models(client)
-        default_foundation_models = models["foundation_models"]
-        default_embedding_models = models["embedding_models"]
+        registered_foundation_models = models["foundation_models"]
+        registered_embedding_models = models["embedding_models"]
     else:
         raise SearchSpaceValueError(f"Unrecognized client type: '{client.__class__.__name__}'")
 
     if validated_payload.foundation_models:
-        _are_provided_models_available(
-            provided_models=validated_payload.foundation_models,
-            available_models=default_foundation_models,
-            not_responding_models=models["not_responding_foundation_models"],
+        foundation_models = _validate_availability_and_create_models(
+            provided_models_ids=[m.model_id for m in validated_payload.foundation_models],
+            registered_models=registered_foundation_models,
+            models_type="llm",
+            client=client,
         )
+    else:
+        foundation_models = _validate_availability_and_create_models(
+            provided_models_ids=[m.id for m in registered_foundation_models],
+            registered_models=registered_foundation_models,
+            models_type="llm",
+            client=client,
+        )
+
     if validated_payload.embedding_models:
-        _are_provided_models_available(
-            provided_models=validated_payload.embedding_models,
-            available_models=default_embedding_models,
-            not_responding_models=models["not_responding_embedding_models"],
-        )
-
-    # Transform user models into OGX based models
-    if validated_payload.foundation_models is not None:
-        fms_param = Parameter(
-            name="foundation_model",
-            values=[
-                OGXFoundationModel(
-                    model_id=fm.model_id,
-                    client=client,
-                )
-                for fm in validated_payload.foundation_models
-            ],
+        embedding_models = _validate_availability_and_create_models(
+            provided_models_ids=[m.model_id for m in validated_payload.embedding_models],
+            registered_models=registered_embedding_models,
+            models_type="embedding",
+            client=client,
         )
     else:
-        fms_param = Parameter(
-            name="foundation_model",
-            values=default_foundation_models,
+        embedding_models = _validate_availability_and_create_models(
+            provided_models_ids=[m.id for m in registered_embedding_models],
+            registered_models=registered_embedding_models,
+            models_type="embedding",
+            client=client,
         )
 
-    if validated_payload.embedding_models is not None:
-        embedding_models_values = []
-        for em in validated_payload.embedding_models:
-            matched_model = next(filter(lambda x, _id=em.model_id: x.model_id == _id, default_embedding_models), None)
-            if matched_model is None:
-                raise SearchSpaceValueError(f"Embedding model '{em.model_id}' not found among available models.")
-            embedding_models_values.append(
-                OGXEmbeddingModel(model_id=em.model_id, client=client, params=matched_model.params)
-            )
-        ems_param = Parameter(
-            name="embedding_model",
-            values=embedding_models_values,
-        )
-    else:
-        ems_param = Parameter(
-            name="embedding_model",
-            values=default_embedding_models,
-        )
+    fms_param = Parameter(name="foundation_model", values=foundation_models)
+    ems_param = Parameter(name="embedding_model", values=embedding_models)
 
     logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])
     logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])

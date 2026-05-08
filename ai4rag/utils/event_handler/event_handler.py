@@ -24,12 +24,12 @@ class LocalEventHandler(BaseEventHandler):
         self.output_path = Path(output_path) if output_path else None
 
     def on_status_change(self, level: LogLevel, message: str, step: str | None = None) -> None:
-        logger.info("LocalEventHandler ::: %s ::: %s ::: %s", level, step, message)
+        logger.debug("LocalEventHandler ::: %s ::: %s ::: %s", level, step, message)
 
     def on_pattern_creation(
         self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
     ) -> None:
-        logger.info("LocalEventHandler ::: Pattern creation ::: %s", payload)
+        logger.debug("LocalEventHandler ::: Pattern creation ::: %s", payload)
         pattern_name = payload.get("pattern_name", "default_pattern_name")
 
         if self.output_path:

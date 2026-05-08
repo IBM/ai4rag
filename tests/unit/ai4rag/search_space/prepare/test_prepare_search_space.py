@@ -30,7 +30,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         # Mock validation functions to always return True
         mocker.patch(
@@ -68,7 +68,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         # Mock validation functions to always return True
         mocker.patch(
@@ -108,7 +108,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "custom-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 1024}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         # Mock validation functions to always return True
         mocker.patch(
@@ -148,7 +148,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         # Mock validation functions to always return True
         mocker.patch(
@@ -187,7 +187,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
@@ -221,7 +221,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
@@ -256,7 +256,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
@@ -291,7 +291,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm_ok, mock_llm_bad, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm_ok, mock_llm_bad, mock_embedding]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
@@ -304,7 +304,7 @@ class TestPrepareSearchSpaceWithOgx:
 
         payload = {"foundation_models": [{"model_id": "llm-bad"}]}
 
-        with pytest.raises(SearchSpaceValueError, match="llm-bad.*registered but do not respond"):
+        with pytest.raises(SearchSpaceValueError, match=r"do not respond.*llm-bad"):
             prepare_search_space_with_ogx(payload, mock_client)
 
     def test_user_specifies_not_responding_embedding_model(self, mocker):
@@ -325,7 +325,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_emb_bad.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
         mock_emb_bad.metadata = {}
 
-        mock_client.models.list.return_value = [mock_llm, mock_emb_ok, mock_emb_bad]
+        mock_client.models.list.return_value.data = [mock_llm, mock_emb_ok, mock_emb_bad]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
@@ -338,7 +338,7 @@ class TestPrepareSearchSpaceWithOgx:
 
         payload = {"embedding_models": [{"model_id": "emb-bad"}]}
 
-        with pytest.raises(SearchSpaceValueError, match="emb-bad.*registered but do not respond"):
+        with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-bad"):
             prepare_search_space_with_ogx(payload, mock_client)
 
     def test_user_specifies_unregistered_foundation_model(self, mocker):
@@ -353,7 +353,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
@@ -366,7 +366,7 @@ class TestPrepareSearchSpaceWithOgx:
 
         payload = {"foundation_models": [{"model_id": "llm-unknown"}]}
 
-        with pytest.raises(SearchSpaceValueError, match="llm-unknown.*not registered within OGX"):
+        with pytest.raises(SearchSpaceValueError, match=r"not registered in OGX.*llm-unknown"):
             prepare_search_space_with_ogx(payload, mock_client)
 
     def test_user_picks_available_model_while_others_fail(self, mocker):
@@ -385,7 +385,7 @@ class TestPrepareSearchSpaceWithOgx:
         mock_embedding.id = "default-embedding"
         mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
 
-        mock_client.models.list.return_value = [mock_llm_ok, mock_llm_bad, mock_embedding]
+        mock_client.models.list.return_value.data = [mock_llm_ok, mock_llm_bad, mock_embedding]
 
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
