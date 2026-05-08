@@ -181,10 +181,10 @@ class TestValidateAvailabilityAndCreateModels:
         mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=True)
 
         result = _validate_availability_and_create_models(
-            provided_models_ids=["llm-1", "llm-2"],
             registered_models=registered,
             models_type="llm",
             client=mock_client,
+            provided_models_ids=["llm-1", "llm-2"],
         )
 
         assert len(result) == 2
@@ -198,10 +198,10 @@ class TestValidateAvailabilityAndCreateModels:
         mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=True)
 
         result = _validate_availability_and_create_models(
-            provided_models_ids=["emb-1"],
             registered_models=registered,
             models_type="embedding",
             client=mock_client,
+            provided_models_ids=["emb-1"],
         )
 
         assert len(result) == 1
@@ -216,10 +216,10 @@ class TestValidateAvailabilityAndCreateModels:
 
         with pytest.raises(SearchSpaceValueError, match=r"not registered in OGX.*llm-unknown"):
             _validate_availability_and_create_models(
-                provided_models_ids=["llm-unknown"],
                 registered_models=registered,
                 models_type="llm",
                 client=mock_client,
+                provided_models_ids=["llm-unknown"],
             )
 
     def test_raises_when_embedding_not_registered(self, mocker):
@@ -230,10 +230,10 @@ class TestValidateAvailabilityAndCreateModels:
 
         with pytest.raises(SearchSpaceValueError, match=r"not registered in OGX.*emb-unknown"):
             _validate_availability_and_create_models(
-                provided_models_ids=["emb-unknown"],
                 registered_models=registered,
                 models_type="embedding",
                 client=mock_client,
+                provided_models_ids=["emb-unknown"],
             )
 
     def test_raises_when_llm_does_not_respond(self, mocker):
@@ -244,10 +244,10 @@ class TestValidateAvailabilityAndCreateModels:
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*llm-bad"):
             _validate_availability_and_create_models(
-                provided_models_ids=["llm-bad"],
                 registered_models=registered,
                 models_type="llm",
                 client=mock_client,
+                provided_models_ids=["llm-bad"],
             )
 
     def test_raises_when_embedding_does_not_respond(self, mocker):
@@ -258,10 +258,10 @@ class TestValidateAvailabilityAndCreateModels:
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-bad"):
             _validate_availability_and_create_models(
-                provided_models_ids=["emb-bad"],
                 registered_models=registered,
                 models_type="embedding",
                 client=mock_client,
+                provided_models_ids=["emb-bad"],
             )
 
     def test_raises_when_embedding_instantiation_fails(self, mocker):
@@ -275,10 +275,10 @@ class TestValidateAvailabilityAndCreateModels:
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-broken"):
             _validate_availability_and_create_models(
-                provided_models_ids=["emb-broken"],
                 registered_models=registered,
                 models_type="embedding",
                 client=mock_client,
+                provided_models_ids=["emb-broken"],
             )
 
     def test_error_message_combines_unregistered_and_not_responding(self, mocker):
@@ -289,10 +289,10 @@ class TestValidateAvailabilityAndCreateModels:
 
         with pytest.raises(SearchSpaceValueError) as exc_info:
             _validate_availability_and_create_models(
-                provided_models_ids=["llm-bad", "llm-unknown"],
                 registered_models=registered,
                 models_type="llm",
                 client=mock_client,
+                provided_models_ids=["llm-bad", "llm-unknown"],
             )
 
         error_msg = str(exc_info.value)
@@ -313,10 +313,10 @@ class TestValidateAvailabilityAndCreateModels:
         )
 
         _validate_availability_and_create_models(
-            provided_models_ids=["llm-ok"],
             registered_models=registered,
             models_type="llm",
             client=mock_client,
+            provided_models_ids=["llm-ok"],
         )
 
         assert validate_mock.call_count == 1

@@ -120,7 +120,7 @@ def _build_valid_and_invalid_models(
                     params=OGXEmbeddingParams(embedding_dimension=embedding_dimension, context_length=context_length),
                 )
                 is_valid = _validate_embedding_model(_model)
-            except RuntimeError as exc:
+            except RuntimeError:
                 logger.warning(
                     "Embedding model '%s' is registered in OGX, but does not respond.", model_id, exc_info=True
                 )
@@ -139,19 +139,16 @@ def _build_valid_and_invalid_models(
 
 
 def _validate_availability_and_create_models(
-    provided_models_ids: list[str],
     registered_models: list[Model],
     models_type: str,
     client: OgxClient,
+    provided_models_ids: list[str] | None = None,
 ) -> list[OGXFoundationModel | OGXEmbeddingModel]:
     """
     Validate that the requested models are registered and responding, then instantiate them.
 
     Parameters
     ----------
-    provided_models_ids : list[str]
-        Model IDs requested by the user (or all registered IDs when no user selection).
-
     registered_models : list[Model]
         OGX model objects returned by ``client.models.list().data``, pre-filtered by type.
 
@@ -160,6 +157,11 @@ def _validate_availability_and_create_models(
 
     client : OgxClient
         OGX client used to instantiate model objects.
+
+    provided_models_ids : list[str] | None, default None
+        Model IDs requested by the user.  When ``None``, all registered models
+        are validated (the registration check is skipped since the IDs come from
+        the registry itself).
 
     Returns
     -------
@@ -172,17 +174,21 @@ def _validate_availability_and_create_models(
         When some of the requested models are not registered in OGX or do not respond.
     """
     error_messages = []
-    registered_models_ids = [model.id for model in registered_models]
     registered_models_as_dict = {m.id: m for m in registered_models}
 
-    provided_not_registered_models_ids = [pm_id for pm_id in provided_models_ids if pm_id not in registered_models_ids]
-    if provided_not_registered_models_ids:
-        error_messages.append(
-            f"Provided models of type '{models_type}' are not registered in OGX: "
-            f"'{provided_not_registered_models_ids}'."
-        )
+    if provided_models_ids is None:
+        candidate_ids = list(registered_models_as_dict)
+    else:
+        provided_not_registered_models_ids = [
+            pm_id for pm_id in provided_models_ids if pm_id not in registered_models_as_dict
+        ]
+        if provided_not_registered_models_ids:
+            error_messages.append(
+                f"Provided models of type '{models_type}' are not registered in OGX: "
+                f"'{provided_not_registered_models_ids}'."
+            )
+        candidate_ids = [pm_id for pm_id in provided_models_ids if pm_id in registered_models_as_dict]
 
-    candidate_ids = [pm_id for pm_id in provided_models_ids if pm_id in registered_models_ids]
     valid_model_instances, invalid_model_ids = _build_valid_and_invalid_models(
         candidate_ids, registered_models_as_dict, models_type, client
     )

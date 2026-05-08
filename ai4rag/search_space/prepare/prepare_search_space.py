@@ -63,14 +63,13 @@ def prepare_search_space_with_ogx(
 
     if validated_payload.foundation_models:
         foundation_models = _validate_availability_and_create_models(
-            provided_models_ids=[m.model_id for m in validated_payload.foundation_models],
             registered_models=registered_foundation_models,
             models_type="llm",
             client=client,
+            provided_models_ids=[m.model_id for m in validated_payload.foundation_models],
         )
     else:
         foundation_models = _validate_availability_and_create_models(
-            provided_models_ids=[m.id for m in registered_foundation_models],
             registered_models=registered_foundation_models,
             models_type="llm",
             client=client,
@@ -78,14 +77,13 @@ def prepare_search_space_with_ogx(
 
     if validated_payload.embedding_models:
         embedding_models = _validate_availability_and_create_models(
-            provided_models_ids=[m.model_id for m in validated_payload.embedding_models],
             registered_models=registered_embedding_models,
             models_type="embedding",
             client=client,
+            provided_models_ids=[m.model_id for m in validated_payload.embedding_models],
         )
     else:
         embedding_models = _validate_availability_and_create_models(
-            provided_models_ids=[m.id for m in registered_embedding_models],
             registered_models=registered_embedding_models,
             models_type="embedding",
             client=client,
