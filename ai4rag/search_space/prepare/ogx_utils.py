@@ -120,9 +120,9 @@ def _build_valid_and_invalid_models(
                     params=OGXEmbeddingParams(embedding_dimension=embedding_dimension, context_length=context_length),
                 )
                 is_valid = _validate_embedding_model(_model)
-            except Exception as exc:  # pylint: disable=broad-exception-caught
+            except RuntimeError as exc:
                 logger.warning(
-                    "Embedding model '%s' is registered in OGX, but does not respond.", model_id, exc_info=exc
+                    "Embedding model '%s' is registered in OGX, but does not respond.", model_id, exc_info=True
                 )
                 invalid_model_ids.append(model_id)
                 continue

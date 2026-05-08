@@ -270,7 +270,7 @@ class TestValidateAvailabilityAndCreateModels:
         registered = [self._make_emb_registry_mock("emb-broken")]
         mocker.patch(
             "ai4rag.search_space.prepare.ogx_utils.OGXEmbeddingModel",
-            side_effect=Exception("Cannot connect"),
+            side_effect=RuntimeError("Cannot connect"),
         )
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-broken"):
