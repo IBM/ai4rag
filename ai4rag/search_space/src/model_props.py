@@ -116,6 +116,25 @@ _DEFAULT_MISTRAL_USER_MESSAGE_TEXT = (
 )
 
 
+_DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT = (
+    "You are a AI language model designed to function as a specialized Retrieval Augmented Generation (RAG) assistant. "
+    "When generating responses, prioritize correctness, i.e., ensure that your response is correct given the context "
+    "and user query, and that it is grounded in the context. "
+    "Furthermore, make sure that the response is supported by the given document or context. "
+    "When the question cannot be answered using the context or document, output the following response: "
+    "'I am sorry, I do not have the information you are looking for in my knowledge base.'. "
+    "Always make sure that your response is relevant to the question. If an explanation is needed, "
+    "first provide the explanation or reasoning, and then give the final answer.\nAnswer Length: concise.\n\n"
+)
+
+
+_DEFAULT_OPENAI_USER_MESSAGE_TEXT = (
+    f"[Document]\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n[End]\n"
+    f"{{{QUESTION_PLACEHOLDER}}}. \n"
+    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
+)
+
+
 _model_name_to_system_message_text = {
     FoundationModels.META_LLAMA_3_1_70B_INSTRUCT: _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
     FoundationModels.META_LLAMA_3_1_8B_INSTRUCT: _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
@@ -126,6 +145,7 @@ _model_name_to_system_message_text = {
     FoundationModels.MISTRAL_SMALL_3_1_24B_INSTRUCT: _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
     FoundationModels.MISTRAL_MEDIUM_2505: _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
     FoundationModels.MISTRAL_MISTRAL_LARGE: _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
+    FoundationModels.OPENAI_GPT_OSS_120B: _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT,
 }
 
 
@@ -139,6 +159,7 @@ _model_name_to_user_message_text = {
     FoundationModels.MISTRAL_SMALL_3_1_24B_INSTRUCT: _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
     FoundationModels.MISTRAL_MEDIUM_2505: _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
     FoundationModels.MISTRAL_MISTRAL_LARGE: _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
+    FoundationModels.OPENAI_GPT_OSS_120B: _DEFAULT_OPENAI_USER_MESSAGE_TEXT,
 }
 
 
@@ -156,6 +177,7 @@ _model_name_to_context_template_text = {
     FoundationModels.META_LLAMA_4_MAVERICK_17B_128E_INSTRUCT_FP8: _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
     FoundationModels.GRANITE_3_8B_INSTRUCT: _DEFAULT_GRANITE_CONTEXT_TEMPLATE,
     FoundationModels.GRANITE_3_3_8B_INSTRUCT: _DEFAULT_GRANITE_CONTEXT_TEMPLATE,
+    FoundationModels.OPENAI_GPT_OSS_120B: _DEFAULT_CONTEXT_TEMPLATE,
 }
 
 
