@@ -139,16 +139,13 @@ class TestOGXVectorStoreCollectionName:
 
 def _make_mock_search_data_item(text: str, metadata: dict, score: float) -> MagicMock:
     """Build a mock VectorStoreSearchResponse.Data item."""
-    mock_chunk_metadata = MagicMock()
-    mock_chunk_metadata.model_dump.return_value = metadata
-
     mock_content_item = MagicMock()
     mock_content_item.text = text
-    mock_content_item.chunk_metadata = mock_chunk_metadata
 
     mock_data_item = MagicMock()
     mock_data_item.content = [mock_content_item]
     mock_data_item.score = score
+    mock_data_item.attributes = metadata
     return mock_data_item
 
 
@@ -231,10 +228,7 @@ class TestOGXVectorStoreSearch:
         mock_vs.id = "test-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
 
-        data_items = [
-            _make_mock_search_data_item(f"Content {i}", {"id": i}, 0.9 - i * 0.1)
-            for i in range(3)
-        ]
+        data_items = [_make_mock_search_data_item(f"Content {i}", {"id": i}, 0.9 - i * 0.1) for i in range(3)]
 
         mock_response = MagicMock()
         mock_response.data = data_items

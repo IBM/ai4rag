@@ -198,19 +198,15 @@ class OGXVectorStore(BaseVectorStore):
         )
 
         if include_scores:
-            return [
-                (self._data_item_to_document(item), item.score)
-                for item in resp.data
-            ]
+            return [(self._data_item_to_document(item), item.score) for item in resp.data]
 
         return [self._data_item_to_document(item) for item in resp.data]
 
     @staticmethod
     def _data_item_to_document(item) -> Document:
         """Convert a VectorStoreSearchResponse.Data item to a LangChain Document."""
-        content_item = item.content[0]
-        metadata = content_item.chunk_metadata.model_dump(exclude_none=True) if content_item.chunk_metadata else {}
-        return Document(page_content=content_item.text, metadata=metadata)
+        metadata = dict(item.attributes) if item.attributes else {}
+        return Document(page_content=item.content[0].text, metadata=metadata)
 
     def add_documents(self, documents: list[Document], **kwargs) -> None:
         """
