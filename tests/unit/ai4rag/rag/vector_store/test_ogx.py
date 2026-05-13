@@ -137,6 +137,18 @@ class TestOGXVectorStoreCollectionName:
         assert vector_store.collection_name == vector_store._ogx_vs.id
 
 
+def _make_mock_search_data_item(text: str, metadata: dict, score: float) -> MagicMock:
+    """Build a mock VectorStoreSearchResponse.Data item."""
+    mock_content_item = MagicMock()
+    mock_content_item.text = text
+
+    mock_data_item = MagicMock()
+    mock_data_item.content = [mock_content_item]
+    mock_data_item.score = score
+    mock_data_item.attributes = metadata
+    return mock_data_item
+
+
 class TestOGXVectorStoreSearch:
     """Test suite for OGXVectorStore.search method."""
 
@@ -153,16 +165,9 @@ class TestOGXVectorStoreSearch:
         mock_vs.id = "test-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
 
-        # Mock search response
-        mock_chunk = MagicMock()
-        mock_chunk.content = "Test content"
-        mock_chunk.chunk_metadata.to_dict.return_value = {"doc_id": "doc1", "seq": 1}
-
         mock_response = MagicMock()
-        mock_response.chunks = [mock_chunk]
-        mock_response.scores = [0.95]
-
-        mock_client.vector_io.query.return_value = mock_response
+        mock_response.data = [_make_mock_search_data_item("Test content", {"doc_id": "doc1", "seq": 1}, 0.95)]
+        mock_client.vector_stores.search.return_value = mock_response
         return mock_client
 
     def test_search_without_scores(self, mock_embedding_model, mock_ogx_client):
@@ -209,11 +214,12 @@ class TestOGXVectorStoreSearch:
 
         vector_store.search("test query", k=10)
 
-        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
+        call_kwargs = mock_ogx_client.vector_stores.search.call_args.kwargs
         assert call_kwargs["query"] == "test query"
         assert call_kwargs["vector_store_id"] == "test-vs-id"
-        assert call_kwargs["params"]["max_chunks"] == 10
-        assert call_kwargs["params"]["mode"] == "vector"
+        assert call_kwargs["max_num_results"] == 10
+        assert call_kwargs["search_mode"] == "vector"
+        assert call_kwargs["ranking_options"] is None
 
     def test_search_with_multiple_results(self, mock_embedding_model):
         """Test search with multiple results."""
@@ -222,20 +228,11 @@ class TestOGXVectorStoreSearch:
         mock_vs.id = "test-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
 
-        # Create multiple chunks
-        chunks = []
-        scores = []
-        for i in range(3):
-            mock_chunk = MagicMock()
-            mock_chunk.content = f"Content {i}"
-            mock_chunk.chunk_metadata.to_dict.return_value = {"id": i}
-            chunks.append(mock_chunk)
-            scores.append(0.9 - i * 0.1)
+        data_items = [_make_mock_search_data_item(f"Content {i}", {"id": i}, 0.9 - i * 0.1) for i in range(3)]
 
         mock_response = MagicMock()
-        mock_response.chunks = chunks
-        mock_response.scores = scores
-        mock_client.vector_io.query.return_value = mock_response
+        mock_response.data = data_items
+        mock_client.vector_stores.search.return_value = mock_response
 
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -267,15 +264,9 @@ class TestOGXVectorStoreHybridSearch:
         mock_vs.id = "test-vs-id"
         mock_client.vector_stores.create.return_value = mock_vs
 
-        mock_chunk = MagicMock()
-        mock_chunk.content = "Test content"
-        mock_chunk.chunk_metadata.to_dict.return_value = {"doc_id": "doc1"}
-
         mock_response = MagicMock()
-        mock_response.chunks = [mock_chunk]
-        mock_response.scores = [0.95]
-
-        mock_client.vector_io.query.return_value = mock_response
+        mock_response.data = [_make_mock_search_data_item("Test content", {"doc_id": "doc1"}, 0.95)]
+        mock_client.vector_stores.search.return_value = mock_response
         return mock_client
 
     def test_search_default_vector_mode(self, mock_embedding_model, mock_ogx_client):
@@ -288,9 +279,9 @@ class TestOGXVectorStoreHybridSearch:
 
         vector_store.search("test query", k=5)
 
-        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
-        assert call_kwargs["params"]["mode"] == "vector"
-        assert "reranker_type" not in call_kwargs["params"]
+        call_kwargs = mock_ogx_client.vector_stores.search.call_args.kwargs
+        assert call_kwargs["search_mode"] == "vector"
+        assert call_kwargs["ranking_options"] is None
 
     def test_search_with_hybrid_mode_rrf(self, mock_embedding_model, mock_ogx_client):
         """Test search with hybrid mode and RRF ranker."""
@@ -302,11 +293,10 @@ class TestOGXVectorStoreHybridSearch:
 
         vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60)
 
-        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
-        params = call_kwargs["params"]
-        assert params["mode"] == "hybrid"
-        assert params["reranker_type"] == "rrf"
-        assert params["reranker_params"]["impact_factor"] == 60
+        call_kwargs = mock_ogx_client.vector_stores.search.call_args.kwargs
+        assert call_kwargs["search_mode"] == "hybrid"
+        assert call_kwargs["ranking_options"]["ranker"] == "rrf"
+        assert call_kwargs["ranking_options"]["impact_factor"] == 60
 
     def test_search_with_hybrid_mode_weighted(self, mock_embedding_model, mock_ogx_client):
         """Test search with hybrid mode and weighted ranker including alpha."""
@@ -318,11 +308,10 @@ class TestOGXVectorStoreHybridSearch:
 
         vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_alpha=0.7)
 
-        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
-        params = call_kwargs["params"]
-        assert params["mode"] == "hybrid"
-        assert params["reranker_type"] == "weighted"
-        assert params["reranker_params"]["alpha"] == 0.7
+        call_kwargs = mock_ogx_client.vector_stores.search.call_args.kwargs
+        assert call_kwargs["search_mode"] == "hybrid"
+        assert call_kwargs["ranking_options"]["ranker"] == "weighted"
+        assert call_kwargs["ranking_options"]["alpha"] == 0.7
 
     def test_search_with_hybrid_mode_normalized(self, mock_embedding_model, mock_ogx_client):
         """Test search with hybrid mode and normalized ranker."""
@@ -334,11 +323,9 @@ class TestOGXVectorStoreHybridSearch:
 
         vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="normalized")
 
-        call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
-        params = call_kwargs["params"]
-        assert params["mode"] == "hybrid"
-        assert params["reranker_type"] == "normalized"
-        assert params["reranker_params"] == {}
+        call_kwargs = mock_ogx_client.vector_stores.search.call_args.kwargs
+        assert call_kwargs["search_mode"] == "hybrid"
+        assert call_kwargs["ranking_options"]["ranker"] == "normalized"
 
     def test_search_hybrid_empty_strategy_raises(self, mock_embedding_model, mock_ogx_client):
         """Test that empty ranker_strategy with hybrid mode raises ValueError."""

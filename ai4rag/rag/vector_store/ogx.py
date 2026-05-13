@@ -180,29 +180,33 @@ class OGXVectorStore(BaseVectorStore):
             List of chunks as Document instances with or without scores, depending on the input.
         """
         self._validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
-        params = {
-            "max_chunks": k,
-            "mode": search_mode,
-        }
 
+        ranking_options = None
         if search_mode == "hybrid" and ranker_strategy:
-            params["reranker_type"] = ranker_strategy
-            reranker_params = {}
+            ranking_options = {"ranker": ranker_strategy}
             if ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
-                reranker_params["impact_factor"] = ranker_k
+                ranking_options["impact_factor"] = ranker_k
             if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
-                reranker_params["alpha"] = ranker_alpha
-            params["reranker_params"] = reranker_params
+                ranking_options["alpha"] = ranker_alpha
 
-        resp = self.client.vector_io.query(query=query, vector_store_id=self._ogx_vs.id, params=params)
+        resp = self.client.vector_stores.search(
+            vector_store_id=self._ogx_vs.id,
+            query=query,
+            max_num_results=k,
+            search_mode=search_mode,
+            ranking_options=ranking_options,
+        )
 
         if include_scores:
-            return [
-                (Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()), score)
-                for chunk, score in zip(resp.chunks, resp.scores)
-            ]
+            return [(self._data_item_to_document(item), item.score) for item in resp.data]
 
-        return [Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()) for chunk in resp.chunks]
+        return [self._data_item_to_document(item) for item in resp.data]
+
+    @staticmethod
+    def _data_item_to_document(item) -> Document:
+        """Convert a VectorStoreSearchResponse.Data item to a LangChain Document."""
+        metadata = dict(item.attributes) if item.attributes else {}
+        return Document(page_content=item.content[0].text, metadata=metadata)
 
     def add_documents(self, documents: list[Document], **kwargs) -> None:
         """
