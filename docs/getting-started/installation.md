@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) OGX Server** >= 0.7.0: With at least one foundation model, one embedding model, and vector database configured
+- **(Optional) OGX Server** >= 1.0.0: With at least one foundation model, one embedding model, and vector database configured
 
 
 !!! note "External models and vector database integration"
@@ -73,7 +73,7 @@ Follow these steps:
 ### 1. Install OGX
 
 ```bash
-pip install "ogx>=0.7.0"
+pip install "ogx>=1.0.0"
 ```
 
 ### 2. Configure Your Stack

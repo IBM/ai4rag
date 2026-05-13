@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1](https://github.com/IBM/ai4rag/releases/tag/v0.6.1)
+
+### Changed
+- Upgraded `ogx-client` dependency from `~=0.8.0` to `~=1.0.0`
+- Updated documentation to require OGX Server >= 1.0.0
+
+---
+
 ## [0.6.0](https://github.com/IBM/ai4rag/releases/tag/v0.6.0)
 
 ### Added
