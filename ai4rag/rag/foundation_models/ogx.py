@@ -8,20 +8,23 @@ from annotated_types import Ge, Gt, Le
 from ogx_client import OgxClient
 from pydantic import BaseModel
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.utils.constants import ChatGenerationConstants
-
 # pylint: disable=duplicate-code
 
 
 class OGXModelParameters(BaseModel):
     """Parameters to use for OGXFoundationModel."""
 
-    max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
+    max_completion_tokens: Annotated[int, Gt(0)] = (
+        ChatGenerationConstants.MAX_COMPLETION_TOKENS
+    )
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXModelParameters | None]):
+class OGXFoundationModel(
+    BaseFoundationModel[OgxClient, dict[str, Any] | OGXModelParameters | None]
+):
     """Integration point to use any model via OGX API / client"""
 
     def __init__(
@@ -58,26 +61,44 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         else:
             self._params = OGXModelParameters()
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def create_response(
+        self, user_message: str, vector_store_id: str | None = None
+    ) -> str:
         """
-        Chat completion for communication with selected foundation model.
+        Utilise Responses API (agent loop) to interact with the model.
 
         Parameters
         ----------
-        messages : list[MessageTyped]
-            Messages to be included in the chat completion.
+        user_message : str
+            User message for the model to answer.
+
+        vector_store_id : str | None
+            If provided then references the vector store to search against using
+            the built-int `file_search` tool.
 
         Returns
         -------
         str
-            Chat response from the model.
+            Response text from the model.
+
+        Notes
+        -----
+        For the time being the only supported input type is a string representing the user's message.
+        For more input types please refer to:
+        https://developers.openai.com/api/reference/resources/responses/methods/create
         """
-        response_chat = self.client.chat.completions.create(
+
+        tools = None
+        if vector_store_id:
+            tools = [{"type": "file_search", "vector_store_ids": vector_store_id}]
+
+        response = self.client.responses.create(
             model=self.model_id,
-            messages=messages,
+            instructions=self.system_message_text,
+            input=user_message,
             max_completion_tokens=self.params.max_completion_tokens,
             temperature=self.params.temperature,
+            tools=tools,
         )
-        response_choices = response_chat.choices
 
-        return response_choices
+        return response.output_text

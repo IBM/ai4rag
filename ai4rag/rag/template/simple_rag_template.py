@@ -71,7 +71,11 @@ class SimpleRAG(BaseRAGTemplate):
         documents : list[Document]
             List of LangChain Document objects to index.
         """
-        if self.chunker is None and self.embedding_model is None and self.vector_store is None:
+        if (
+            self.chunker is None
+            and self.embedding_model is None
+            and self.vector_store is None
+        ):
             raise RAGTemplateError()
         chunks = self.chunker.split_documents(documents)
 
@@ -101,7 +105,9 @@ class SimpleRAG(BaseRAGTemplate):
 
         context = "\n".join(
             [
-                self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
+                self.foundation_model.context_template_text.format(
+                    document=getattr(doc, "page_content", "")
+                )
                 for doc in reference_documents
             ]
         )
@@ -111,15 +117,13 @@ class SimpleRAG(BaseRAGTemplate):
             question=question,
         )
 
-        messages = [
-            {"role": "system", "content": self.foundation_model.system_message_text},
-            {"role": "user", "content": user_message},
-        ]
-
-        chat_response = self.foundation_model.chat(messages=messages)
+        answer = self.foundation_model.create_response(
+            user_message=user_message,
+            vector_store_id=self.vector_store.provider_id,
+        )
 
         return {
-            "answer": chat_response[0].message.content,
+            "answer": answer,
             "reference_documents": reference_documents,
             "question": question,
         }
