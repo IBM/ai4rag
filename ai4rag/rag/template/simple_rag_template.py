@@ -119,7 +119,7 @@ class SimpleRAG(BaseRAGTemplate):
 
         answer = self.foundation_model.create_response(
             user_message=user_message,
-            vector_store_id=self.vector_store.provider_id,
+            vector_store_id=self.retriever.collection_name,
         )
 
         return {

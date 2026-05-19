@@ -52,6 +52,11 @@ class Retriever:
         self.ranker_k = ranker_k
         self.ranker_alpha = ranker_alpha
 
+    @property
+    def collection_name(self):
+        """Exposes the collection_name this retriever seraches through."""
+        return self._vector_store.collection_name
+
     def retrieve(self, query: str, **kwargs) -> list[dict]:
         """Retrieve relevant documents from vector store.
 
