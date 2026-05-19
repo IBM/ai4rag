@@ -7,27 +7,18 @@ from typing import Any
 
 import pytest
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
 
 class ConcreteFoundationModel(BaseFoundationModel[Any, dict]):
     """Concrete implementation of BaseFoundationModel for testing purposes."""
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
-        """Simple chat implementation for testing."""
-
-        # Create a mock response that mimics the structure of real model responses
-        class MockMessage:
-            def __init__(self, content: str):
-                self.content = content
-
-        class MockChoice:
-            def __init__(self, content: str):
-                self.message = MockMessage(content)
-
-        # Simulate processing the messages
-        response_content = f"Response to {len(messages)} messages"
-        return [MockChoice(response_content)]
+    def create_response(self, user_message: str, vector_store_id: str | None = None) -> str:
+        """Simple create_response implementation for testing."""
+        # Simulate processing the message
+        if vector_store_id:
+            return f"Response to '{user_message}' using vector store '{vector_store_id}'"
+        return f"Response to '{user_message}'"
 
 
 class TestFoundationModel:
@@ -125,18 +116,21 @@ class TestFoundationModel:
         assert len(model_dict) == 1  # model2 overwrites model1
         assert model_dict[model1] == "value2"
 
-    def test_chat_implementation(self, foundation_model):
-        """Test that concrete implementation's chat method works."""
-        messages = [
-            {"role": "system", "content": "system prompt"},
-            {"role": "user", "content": "user query"},
-        ]
-        result = foundation_model.chat(messages)
-        assert len(result) == 1
-        assert result[0].message.content == "Response to 2 messages"
+    def test_create_response_implementation(self, foundation_model):
+        """Test that concrete implementation's create_response method works."""
+        user_message = "What is AI?"
+        result = foundation_model.create_response(user_message)
+        assert result == "Response to 'What is AI?'"
 
-    def test_chat_is_abstract(self):
-        """Test that BaseFoundationModel.chat is abstract and cannot be instantiated without implementation."""
+    def test_create_response_with_vector_store(self, foundation_model):
+        """Test create_response with vector_store_id parameter."""
+        user_message = "What is AI?"
+        vector_store_id = "test-vector-store"
+        result = foundation_model.create_response(user_message, vector_store_id)
+        assert result == "Response to 'What is AI?' using vector store 'test-vector-store'"
+
+    def test_create_response_is_abstract(self):
+        """Test that BaseFoundationModel.create_response is abstract and cannot be instantiated without implementation."""
         with pytest.raises(TypeError) as exc_info:
             BaseFoundationModel(client=None, model_id="test", params={})
         assert "Can't instantiate abstract class" in str(exc_info.value)
