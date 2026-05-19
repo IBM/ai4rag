@@ -339,18 +339,15 @@ class TestOGXRAGGenerate:
         mock.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         mock.context_template_text = "Document: {document}"
 
-        # Mock the chat response to match new API (returns list of choices)
-        mock_message = mocker.MagicMock()
-        mock_message.content = "This is the generated answer."
-        mock_choice = mocker.MagicMock()
-        mock_choice.message = mock_message
-        mock.chat.return_value = [mock_choice]
+        # Mock the create_response method to return a string
+        mock.create_response.return_value = "This is the generated answer."
         return mock
 
     @pytest.fixture
     def mock_retriever(self, mocker):
         """Create a mock retriever."""
         mock = mocker.MagicMock()
+        mock.collection_name = "test-collection"
         mock.retrieve.return_value = [
             Document(page_content="Relevant document 1", metadata={"document_id": "doc1"}),
             Document(page_content="Relevant document 2", metadata={"document_id": "doc2"}),
@@ -422,28 +419,22 @@ class TestOGXRAGGenerate:
 
         rag.generate("What is AI?")
 
-        # Verify chat was called
-        mock_foundation_model.chat.assert_called_once()
-        call_args = mock_foundation_model.chat.call_args
+        # Verify create_response was called
+        mock_foundation_model.create_response.assert_called_once()
+        call_args = mock_foundation_model.create_response.call_args
 
-        # Verify messages list was passed correctly
-        messages = call_args.kwargs["messages"]
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[0]["content"] == "You are a helpful assistant."
-        assert messages[1]["role"] == "user"
-        # Verify user message contains formatted context
-        user_message = messages[1]["content"]
+        # Verify user_message was passed correctly with context
+        user_message = call_args.kwargs["user_message"]
+        assert "Question: What is AI?" in user_message
         assert "Document: Relevant document 1" in user_message
         assert "Document: Relevant document 2" in user_message
-        assert "What is AI?" in user_message
 
-    def test_generate_calls_foundation_model_chat(
+    def test_generate_calls_foundation_model_create_response(
         self,
         mock_foundation_model,
         mock_retriever,
     ):
-        """Test that generate calls foundation model's chat method."""
+        """Test that generate calls foundation model's create_response method."""
         rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
@@ -451,16 +442,14 @@ class TestOGXRAGGenerate:
 
         rag.generate("What is AI?")
 
-        mock_foundation_model.chat.assert_called_once()
-        call_args = mock_foundation_model.chat.call_args
+        mock_foundation_model.create_response.assert_called_once()
+        call_args = mock_foundation_model.create_response.call_args
 
-        # Verify messages list was passed correctly
-        messages = call_args.kwargs["messages"]
-        assert len(messages) == 2
-        assert messages[0]["role"] == "system"
-        assert messages[0]["content"] == "You are a helpful assistant."
-        assert messages[1]["role"] == "user"
-        assert "What is AI?" in messages[1]["content"]
+        # Verify user_message and vector_store_id were passed correctly
+        user_message = call_args.kwargs["user_message"]
+        assert "What is AI?" in user_message
+        assert "Question:" in user_message
+        assert call_args.kwargs["vector_store_id"] == "test-collection"  # From retriever.collection_name
 
     def test_generate_returns_correct_answer(
         self,
@@ -528,11 +517,9 @@ class TestOGXRAGGenerate:
         assert result["answer"] == "This is the generated answer."
         assert result["question"] == "What is AI?"
 
-        # Verify chat was called with empty context
-        call_args = mock_foundation_model.chat.call_args
-        messages = call_args.kwargs["messages"]
-        assert len(messages) == 2
-        user_message = messages[1]["content"]
+        # Verify create_response was called with empty context
+        call_args = mock_foundation_model.create_response.call_args
+        user_message = call_args.kwargs["user_message"]
         assert "What is AI?" in user_message
 
     def test_generate_with_single_retrieved_document(
@@ -575,9 +562,8 @@ class TestOGXRAGGenerate:
         result = rag.generate("What is AI?")
 
         # Should use empty string when page_content is missing
-        call_args = mock_foundation_model.chat.call_args
-        messages = call_args.kwargs["messages"]
-        user_message = messages[1]["content"]
+        call_args = mock_foundation_model.create_response.call_args
+        user_message = call_args.kwargs["user_message"]
         assert "Document: " in user_message
         assert result["answer"] == "This is the generated answer."
 
@@ -641,12 +627,8 @@ class TestOGXRAGGenerateStream:
         mock.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         mock.context_template_text = "Document: {document}"
 
-        # Mock the chat response to match new API (returns list of choices)
-        mock_message = mocker.MagicMock()
-        mock_message.content = "This is the generated answer."
-        mock_choice = mocker.MagicMock()
-        mock_choice.message = mock_message
-        mock.chat.return_value = [mock_choice]
+        # Mock the create_response method to return a string
+        mock.create_response.return_value = "This is the generated answer."
         return mock
 
     @pytest.fixture
@@ -736,8 +718,7 @@ class TestOGXRAGGenerateStream:
     ):
         """Test that generate_stream yields the complete answer in single chunk."""
         # Update the mock to return a longer answer
-        mock_message = mock_foundation_model.chat.return_value[0].message
-        mock_message.content = "This is a longer answer with multiple sentences."
+        mock_foundation_model.create_response.return_value = "This is a longer answer with multiple sentences."
 
         rag = SimpleRAG(
             foundation_model=mock_foundation_model,
@@ -780,12 +761,8 @@ class TestOGXRAGIntegration:
         foundation_model.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         foundation_model.context_template_text = "Document: {document}"
 
-        # Mock the chat response to match new API (returns list of choices)
-        mock_message = mocker.MagicMock()
-        mock_message.content = "The answer is 42."
-        mock_choice = mocker.MagicMock()
-        mock_choice.message = mock_message
-        foundation_model.chat.return_value = [mock_choice]
+        # Mock the create_response method to return a string
+        foundation_model.create_response.return_value = "The answer is 42."
 
         # Retriever
         retriever = mocker.MagicMock()
@@ -845,7 +822,7 @@ class TestOGXRAGIntegration:
 
         # Verify generate worked
         complete_rag_system["retriever"].retrieve.assert_called_once_with("What is the answer?")
-        complete_rag_system["foundation_model"].chat.assert_called_once()
+        complete_rag_system["foundation_model"].create_response.assert_called_once()
 
         assert result["answer"] == "The answer is 42."
         assert result["question"] == "What is the answer?"
@@ -880,7 +857,7 @@ class TestOGXRAGIntegration:
 
         # Verify generate was called three times
         assert complete_rag_system["retriever"].retrieve.call_count == 3
-        assert complete_rag_system["foundation_model"].chat.call_count == 3
+        assert complete_rag_system["foundation_model"].create_response.call_count == 3
 
 
 class TestOGXRAGEdgeCases:
@@ -894,12 +871,8 @@ class TestOGXRAGEdgeCases:
         mock.user_message_text = "{question} {reference_documents}"
         mock.context_template_text = "{document}"
 
-        # Mock the chat response to match new API (returns list of choices)
-        mock_message = mocker.MagicMock()
-        mock_message.content = "Answer"
-        mock_choice = mocker.MagicMock()
-        mock_choice.message = mock_message
-        mock.chat.return_value = [mock_choice]
+        # Mock the create_response method to return a string
+        mock.create_response.return_value = "Answer"
         return mock
 
     @pytest.fixture

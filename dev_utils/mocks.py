@@ -6,7 +6,7 @@ from random import random, seed
 from typing import Any
 
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
 seed(42)
 
@@ -30,15 +30,24 @@ class MockedFoundationModel(BaseFoundationModel[None, dict[str, Any] | None]):
             context_template_text=context_template_text,
         )
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
-        # Create a mock response that mimics the structure of real model responses
-        class MockMessage:
-            content = "I cannot answer this question, because I am just a mocked model."
+    def create_response(self, user_message: str, vector_store_id: str | None = None) -> str:
+        """
+        Utilise Responses API (agent loop) to interact with the model.
 
-        class MockChoice:
-            message = MockMessage()
+        Parameters
+        ----------
+        user_message : str
+            User message for the model to answer.
 
-        return [MockChoice()]
+        vector_store_id : str | None
+            If provided then references the vector store to search against.
+
+        Returns
+        -------
+        str
+            Response text from the model.
+        """
+        return "I cannot answer this question, because I am just a mocked model."
 
 
 class MockedEmbeddingModel(BaseEmbeddingModel[None, dict[str, Any]]):
@@ -54,3 +63,19 @@ class MockedEmbeddingModel(BaseEmbeddingModel[None, dict[str, Any]]):
 
     def embed_query(self, query: str) -> list[float]:
         return [random() for _ in range(self.params["embedding_dimension"])]
+
+
+class MockedOGXClient:
+    """Mock OGX client for testing without real OGX server."""
+
+    class MockedProviders:
+        """Mock providers interface."""
+
+        def retrieve(self, provider_id: str):
+            """Return mock provider with provider_type attribute."""
+            class MockProvider:
+                provider_type = "mock_provider"
+            return MockProvider()
+
+    def __init__(self):
+        self.providers = self.MockedProviders()

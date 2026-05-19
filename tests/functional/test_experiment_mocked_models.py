@@ -53,6 +53,13 @@ def embedding_models():
 
 
 @pytest.fixture(scope="module")
+def mock_client():
+    """Mock OGX client for experiments."""
+    from dev_utils.mocks import MockedOGXClient
+    return MockedOGXClient()
+
+
+@pytest.fixture(scope="module")
 def documents():
     """5 documents with enough content to be split into multiple chunks at chunk_size=512."""
     paragraph = (
@@ -108,12 +115,13 @@ def _build_search_space(foundation_models, embedding_models):
     )
 
 
-def _make_experiment(documents, benchmark_data, foundation_models, embedding_models, **kwargs):
+def _make_experiment(documents, benchmark_data, foundation_models, embedding_models, mock_client, **kwargs):
     return AI4RAGExperiment(
         documents=documents,
         benchmark_data=benchmark_data,
         search_space=_build_search_space(foundation_models, embedding_models),
         vector_store_type="chroma",
+        client=mock_client,
         optimizer_settings=RandomOptSettings(max_evals=3),
         event_handler=LocalEventHandler(),
         **kwargs,
@@ -124,7 +132,7 @@ class TestExperimentChromaWithMockedModels:
     """Full experiment runs with mocked models, real Chroma, and real UnitxtEvaluator."""
 
     def test_mps_is_triggered_and_reduces_model_pool(
-        self, documents, benchmark_data, foundation_models, embedding_models
+        self, documents, benchmark_data, foundation_models, embedding_models, mock_client
     ):
         """
         With 4 FMs (> DEFAULT_N_FOUNDATION_MODELS=3) and 3 EMs (> DEFAULT_N_EMBEDDING_MODELS=2),
@@ -132,7 +140,7 @@ class TestExperimentChromaWithMockedModels:
         at most DEFAULT_N_FOUNDATION_MODELS FMs and DEFAULT_N_EMBEDDING_MODELS EMs, and
         every selected model must belong to the original input pool.
         """
-        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
+        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models, mock_client)
 
         assert len(experiment.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values) == _N_FOUNDATION_MODELS
         assert len(experiment.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values) == _N_EMBEDDING_MODELS
@@ -157,12 +165,12 @@ class TestExperimentChromaWithMockedModels:
             em in embedding_models for em in em_selected
         ), "MPS selected an embedding model that was not in the original pool"
 
-    def test_skip_mps_preserves_full_model_pool(self, documents, benchmark_data, foundation_models, embedding_models):
+    def test_skip_mps_preserves_full_model_pool(self, documents, benchmark_data, foundation_models, embedding_models, mock_client):
         """
         When skip_mps=True, MPS is bypassed entirely. The search space must retain all
         originally provided models after search() completes.
         """
-        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
+        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models, mock_client)
 
         experiment.search(optimizer=RandomOptimizer, skip_mps=True)
 
@@ -176,7 +184,7 @@ class TestExperimentChromaWithMockedModels:
             f"With skip_mps=True, all {_N_EMBEDDING_MODELS} embedding models should remain, " f"got {len(em_after)}"
         )
 
-    def test_evaluation_scores_are_in_valid_range(self, documents, benchmark_data, foundation_models, embedding_models):
+    def test_evaluation_scores_are_in_valid_range(self, documents, benchmark_data, foundation_models, embedding_models, mock_client):
         """
         Every EvaluationResult produced by the experiment must have a final_score in [0, 1]
         and per-metric mean scores that are either None or in [0, 1].
@@ -187,6 +195,7 @@ class TestExperimentChromaWithMockedModels:
             benchmark_data,
             foundation_models,
             embedding_models,
+            mock_client,
             optimization_metric=MetricType.FAITHFULNESS,
             metrics=(MetricType.FAITHFULNESS, MetricType.ANSWER_CORRECTNESS, MetricType.CONTEXT_CORRECTNESS),
         )
@@ -207,12 +216,12 @@ class TestExperimentChromaWithMockedModels:
                     f"Mean score {mean!r} is outside [0, 1] for metric '{metric_name}' " f"in {evaluation.pattern_name}"
                 )
 
-    def test_best_pattern_can_generate_answer(self, documents, benchmark_data, foundation_models, embedding_models):
+    def test_best_pattern_can_generate_answer(self, documents, benchmark_data, foundation_models, embedding_models, mock_client):
         """
         The best RAG pattern returned by the experiment must produce a non-empty answer,
         confirming the full inference pipeline (retrieval + generation) is intact.
         """
-        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
+        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models, mock_client)
 
         experiment.search(optimizer=RandomOptimizer)
 

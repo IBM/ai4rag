@@ -23,19 +23,21 @@ class TestValidateFoundationModel:
     def test_returns_true_when_model_responds(self):
         """Test that validation returns True when model responds successfully."""
         mock_client = MagicMock()
-        mock_client.chat.completions.create.return_value = Mock(choices=[])
+        mock_response = Mock()
+        mock_response.output_text = "Test response"
+        mock_client.responses.create.return_value = mock_response
 
         model = OGXFoundationModel(model_id="test-model", client=mock_client)
 
         result = _validate_foundation_model(model)
 
         assert result is True
-        mock_client.chat.completions.create.assert_called_once()
+        mock_client.responses.create.assert_called_once()
 
     def test_returns_false_when_model_fails(self):
         """Test that validation returns False when model raises exception."""
         mock_client = MagicMock()
-        mock_client.chat.completions.create.side_effect = Exception("Model error")
+        mock_client.responses.create.side_effect = Exception("Model error")
 
         model = OGXFoundationModel(model_id="test-model", client=mock_client)
 
