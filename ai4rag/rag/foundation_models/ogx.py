@@ -10,21 +10,18 @@ from pydantic import BaseModel
 
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.utils.constants import ChatGenerationConstants
+
 # pylint: disable=duplicate-code
 
 
 class OGXModelParameters(BaseModel):
     """Parameters to use for OGXFoundationModel."""
 
-    max_completion_tokens: Annotated[int, Gt(0)] = (
-        ChatGenerationConstants.MAX_COMPLETION_TOKENS
-    )
+    max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class OGXFoundationModel(
-    BaseFoundationModel[OgxClient, dict[str, Any] | OGXModelParameters | None]
-):
+class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXModelParameters | None]):
     """Integration point to use any model via OGX API / client"""
 
     def __init__(
@@ -61,9 +58,7 @@ class OGXFoundationModel(
         else:
             self._params = OGXModelParameters()
 
-    def create_response(
-        self, user_message: str, vector_store_id: str | None = None
-    ) -> str:
+    def create_response(self, user_message: str, vector_store_id: str | None = None) -> str:
         """
         Utilise Responses API (agent loop) to interact with the model.
 

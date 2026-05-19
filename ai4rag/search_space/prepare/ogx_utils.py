@@ -77,24 +77,16 @@ def _get_default_ogx_models(client: OgxClient) -> _DefaultModelsResponseType:
     available_models = client.models.list().data
 
     registered_foundation_models = [
-        model
-        for model in available_models
-        if model.custom_metadata.get("model_type") == "llm"
+        model for model in available_models if model.custom_metadata.get("model_type") == "llm"
     ]
     registered_embedding_models = [
-        model
-        for model in available_models
-        if model.custom_metadata.get("model_type") == "embedding"
+        model for model in available_models if model.custom_metadata.get("model_type") == "embedding"
     ]
 
     if not registered_foundation_models:
-        raise SearchSpaceValueError(
-            "There are no registered models of type 'llm' in the OGX."
-        )
+        raise SearchSpaceValueError("There are no registered models of type 'llm' in the OGX.")
     if not registered_embedding_models:
-        raise SearchSpaceValueError(
-            "There are no registered models of type 'embedding' in the OGX."
-        )
+        raise SearchSpaceValueError("There are no registered models of type 'embedding' in the OGX.")
 
     logger.info(
         "Found registered foundation models: %s.",
@@ -125,16 +117,8 @@ def _build_valid_and_invalid_models(
             try:
                 # If params is not provided model is trying to estimate parameters by sending some queries.
                 # If it fails it means that model is not available
-                embedding_dimension = (
-                    custom_metadata.get("embedding_dimension", None)
-                    if custom_metadata
-                    else None
-                )
-                context_length = (
-                    custom_metadata.get("context_length", None)
-                    if custom_metadata
-                    else None
-                )
+                embedding_dimension = custom_metadata.get("embedding_dimension", None) if custom_metadata else None
+                context_length = custom_metadata.get("context_length", None) if custom_metadata else None
                 _model = OGXEmbeddingModel(
                     model_id=model_id,
                     client=client,
@@ -206,18 +190,14 @@ def _validate_availability_and_create_models(
         candidate_ids = list(registered_models_as_dict)
     else:
         provided_not_registered_models_ids = [
-            pm_id
-            for pm_id in provided_models_ids
-            if pm_id not in registered_models_as_dict
+            pm_id for pm_id in provided_models_ids if pm_id not in registered_models_as_dict
         ]
         if provided_not_registered_models_ids:
             error_messages.append(
                 f"Provided models of type '{models_type}' are not registered in OGX: "
                 f"'{provided_not_registered_models_ids}'."
             )
-        candidate_ids = [
-            pm_id for pm_id in provided_models_ids if pm_id in registered_models_as_dict
-        ]
+        candidate_ids = [pm_id for pm_id in provided_models_ids if pm_id in registered_models_as_dict]
 
     valid_model_instances, invalid_model_ids = _build_valid_and_invalid_models(
         candidate_ids, registered_models_as_dict, models_type, client

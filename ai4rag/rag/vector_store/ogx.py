@@ -36,7 +36,10 @@ class OGXVectorStore(BaseVectorStore):
 
     @staticmethod
     def _initialize_ogx_vector_store(
-        client: OgxClient, embedding_model: OGXEmbeddingModel, provider_id: str, reuse_collection_name: str | None
+        client: OgxClient,
+        embedding_model: OGXEmbeddingModel,
+        provider_id: str,
+        reuse_collection_name: str | None,
     ) -> VectorStore:
         """
         Create or retrieve vector store instance via OGX.
@@ -198,7 +201,13 @@ class OGXVectorStore(BaseVectorStore):
 
         if include_scores:
             return [
-                (Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()), score)
+                (
+                    Document(
+                        page_content=chunk.content,
+                        metadata=chunk.chunk_metadata.to_dict(),
+                    ),
+                    score,
+                )
                 for chunk, score in zip(resp.chunks, resp.scores)
             ]
 
