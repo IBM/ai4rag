@@ -71,11 +71,7 @@ class SimpleRAG(BaseRAGTemplate):
         documents : list[Document]
             List of LangChain Document objects to index.
         """
-        if (
-            self.chunker is None
-            and self.embedding_model is None
-            and self.vector_store is None
-        ):
+        if self.chunker is None and self.embedding_model is None and self.vector_store is None:
             raise RAGTemplateError()
         chunks = self.chunker.split_documents(documents)
 
@@ -105,9 +101,7 @@ class SimpleRAG(BaseRAGTemplate):
 
         context = "\n".join(
             [
-                self.foundation_model.context_template_text.format(
-                    document=getattr(doc, "page_content", "")
-                )
+                self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
                 for doc in reference_documents
             ]
         )

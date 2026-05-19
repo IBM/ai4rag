@@ -172,12 +172,8 @@ class AI4RAGExperiment:
         self.n_mps_foundation_models = kwargs.pop(
             "n_mps_foundation_models", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS
         )
-        self.n_mps_embedding_models = kwargs.pop(
-            "n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS
-        )
-        self.known_observations: list[dict] | None = kwargs.pop(
-            "known_observations", None
-        )
+        self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
+        self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -206,16 +202,12 @@ class AI4RAGExperiment:
                         which_doc = doc.metadata.get("document_id") or idx
                         logger.warning("Empty document: %s", which_doc)
                     if not doc.metadata.get("document_id", None):
-                        logger.warning(
-                            "document_id not provided for document at index: %s", idx
-                        )
+                        logger.warning("document_id not provided for document at index: %s", idx)
 
                     proper_docs.append(doc)
 
                 else:
-                    raise ValueError(
-                        f"Incorrect type of document provided at index: {idx}."
-                    )
+                    raise ValueError(f"Incorrect type of document provided at index: {idx}.")
 
         self._documents = proper_docs
 
@@ -288,9 +280,7 @@ class AI4RAGExperiment:
         )
 
         mps = ModelsPreSelector(
-            benchmark_data=self.benchmark_data.get_random_sample(
-                n_records=n_records, random_seed=random_seed
-            ),
+            benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
@@ -336,9 +326,7 @@ class AI4RAGExperiment:
 
         distance_metric = EmbeddingModels.get_distance_metric(embedding_model.model_id)
         embedding_params_dict = (
-            asdict(embedding_model.params)
-            if is_dataclass(embedding_model.params)
-            else embedding_model.params
+            asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
         )
         indexing_params = {
             "chunking": chunking_params,
@@ -373,9 +361,7 @@ class AI4RAGExperiment:
                 "user_message_text": user_message_text,
                 "system_message_text": system_message_text,
             },
-            "vector_io_provider_type": self.client.providers.retrieve(
-                self.ogx_vector_io_provider_id
-            ).provider_type,
+            "vector_io_provider_type": self.client.providers.retrieve(self.ogx_vector_io_provider_id).provider_type,
         }
 
         logger.info("Using retrieval and generation params: %s", rag_params)
@@ -387,13 +373,9 @@ class AI4RAGExperiment:
             return result_score
 
         pattern_name = self._create_pattern_name()
-        logger.info(
-            "Using name '%s' for the currently evaluated pattern.", pattern_name
-        )
+        logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        reuse_collection_name = self._get_reusable_collection_name(
-            indexing_params=indexing_params
-        )
+        reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
 
         vector_store = get_vector_store(
             vs_type=self.vector_store_type,
@@ -439,9 +421,7 @@ class AI4RAGExperiment:
             try:
                 vector_store.add_documents(chunked_documents)
             except Exception as exc:
-                raise IndexingError(
-                    exc, collection_name, embedding_model.model_id
-                ) from exc
+                raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
         else:
             self.event_handler.on_status_change(
@@ -492,9 +472,7 @@ class AI4RAGExperiment:
 
         result_score = result_scores["scores"][self.optimization_metric]["mean"]
 
-        logger.info(
-            "Calculated optimization score for '%s': %s", pattern_name, result_score
-        )
+        logger.info("Calculated optimization score for '%s': %s", pattern_name, result_score)
 
         evaluation_result = EvaluationResult(
             pattern_name=pattern_name,
@@ -513,11 +491,7 @@ class AI4RAGExperiment:
 
         logger.info(
             "Evaluation scores: %s",
-            {
-                el.get("question_id"): el.get("scores")
-                for el in evaluation_results_json
-                if isinstance(el, dict)
-            },
+            {el.get("question_id"): el.get("scores") for el in evaluation_results_json if isinstance(el, dict)},
         )
 
         try:
@@ -556,16 +530,11 @@ class AI4RAGExperiment:
 
         # MPS - models pre-selection based on sample evaluation.
         # Run if there are more than 3 foundation models or more than 2 embedding models.
-        foundation_models = list(
-            self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values
-        )
-        embedding_models = list(
-            self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values
-        )
+        foundation_models = list(self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values)
+        embedding_models = list(self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values)
 
         if (
-            len(embedding_models) > self.n_mps_embedding_models
-            or len(foundation_models) > self.n_mps_foundation_models
+            len(embedding_models) > self.n_mps_embedding_models or len(foundation_models) > self.n_mps_foundation_models
         ) and not kwargs.get("skip_mps", False):
             selected_models = self.run_pre_selection(
                 foundation_models=foundation_models, embedding_models=embedding_models
@@ -628,44 +597,28 @@ class AI4RAGExperiment:
             Prepared partial payload for the streamed content.
         """
         retrieval_payload = {
-            "method": evaluation_result.rag_params["retrieval"][
-                AI4RAGParamNames.RETRIEVAL_METHOD
-            ],
-            "number_of_chunks": evaluation_result.rag_params["retrieval"][
-                AI4RAGParamNames.NUMBER_OF_CHUNKS
-            ],
-            "search_mode": evaluation_result.rag_params["retrieval"].get(
-                AI4RAGParamNames.SEARCH_MODE, "vector"
-            ),
+            "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
+            "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
+            "search_mode": evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.SEARCH_MODE, "vector"),
         }
 
         if evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]:
-            retrieval_payload["window_size"] = evaluation_result.rag_params[
-                "retrieval"
-            ][AI4RAGParamNames.WINDOW_SIZE]
+            retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
 
         if retrieval_payload["search_mode"] == "hybrid":
-            retrieval_payload["ranker_strategy"] = evaluation_result.rag_params[
-                "retrieval"
-            ].get(AI4RAGParamNames.RANKER_STRATEGY)
-            retrieval_payload["ranker_k"] = evaluation_result.rag_params[
-                "retrieval"
-            ].get(AI4RAGParamNames.RANKER_K)
-            retrieval_payload["ranker_alpha"] = evaluation_result.rag_params[
-                "retrieval"
-            ].get(AI4RAGParamNames.RANKER_ALPHA)
+            retrieval_payload["ranker_strategy"] = evaluation_result.rag_params["retrieval"].get(
+                AI4RAGParamNames.RANKER_STRATEGY
+            )
+            retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
+            retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
+                AI4RAGParamNames.RANKER_ALPHA
+            )
 
         indexing_payload = {
             "chunking": {
-                "method": evaluation_result.indexing_params["chunking"][
-                    AI4RAGParamNames.CHUNKING_METHOD
-                ],
-                "chunk_size": evaluation_result.indexing_params["chunking"][
-                    AI4RAGParamNames.CHUNK_SIZE
-                ],
-                "chunk_overlap": evaluation_result.indexing_params["chunking"][
-                    AI4RAGParamNames.CHUNK_OVERLAP
-                ],
+                "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
+                "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
+                "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
             },
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
@@ -687,9 +640,7 @@ class AI4RAGExperiment:
             "settings": {
                 "vector_store_binding": {
                     "provider_id": self.ogx_vector_io_provider_id,
-                    "provider_type": evaluation_result.rag_params[
-                        "vector_io_provider_type"
-                    ],
+                    "provider_type": evaluation_result.rag_params["vector_io_provider_type"],
                     "vector_store_id": evaluation_result.collection,
                     "vector_store_name": "TBD",
                 },
@@ -700,12 +651,8 @@ class AI4RAGExperiment:
                     "model": evaluation_result.rag_params["generation"]["model_id"],
                     "stream": False,  # Not supported yet
                     "store": True,  # Responses API default
-                    "input": evaluation_result.rag_params["generation"][
-                        "user_message_text"
-                    ],
-                    "instructions": evaluation_result.rag_params["generation"][
-                        "system_message_text"
-                    ],
+                    "input": evaluation_result.rag_params["generation"]["user_message_text"],
+                    "instructions": evaluation_result.rag_params["generation"]["system_message_text"],
                     "tools": [
                         {
                             "type": "file_search",
@@ -765,12 +712,8 @@ class AI4RAGExperiment:
             step="evaluation",
         )
 
-        eval_data = build_evaluation_data(
-            benchmark_data=self.benchmark_data, inference_response=inference_response
-        )
-        result = self.evaluator.evaluate_metrics(
-            evaluation_data=eval_data, metrics=self.metrics
-        )
+        eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
+        result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=self.metrics)
 
         logger.info("Response evaluation results for '%s': %s.", pattern_name, result)
         return result, eval_data
@@ -794,9 +737,7 @@ class AI4RAGExperiment:
         """
         return collection_name in self.results.collection_names
 
-    def _get_reusable_collection_name(
-        self, indexing_params: dict[str, Any]
-    ) -> str | None:
+    def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
         This method returns name of the collection / vector_store_id (for OGX)
         if chosen indexing params have already been used to create an index / collection.
@@ -814,9 +755,7 @@ class AI4RAGExperiment:
             Collection name that is new or one of the previously created.
             None if there is no collection to reuse.
         """
-        collection = self.results.get_existing_collection(
-            indexing_params=indexing_params
-        )
+        collection = self.results.get_existing_collection(indexing_params=indexing_params)
         if collection is not None:
             collection_name = collection
             logger.info("Reusing existing collection: '%s'", collection_name)
