@@ -54,7 +54,7 @@ class Retriever:
 
     @property
     def collection_name(self):
-        """Exposes the collection_name this retriever seraches through."""
+        """Exposes the collection_name this retriever searches through."""
         return self._vector_store.collection_name
 
     def retrieve(self, query: str, **kwargs) -> list[dict]:

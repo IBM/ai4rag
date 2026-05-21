@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Generic, TypeVar
+from typing import Generic, TypeVar, TypedDict
 
 from ai4rag.rag.foundation_models.utils import RAGPromptTemplateString
 from ai4rag.search_space.src.model_props import (
@@ -14,6 +14,13 @@ from ai4rag.search_space.src.model_props import (
 
 FoundationModelClientT = TypeVar("FoundationModelClientT")
 FoundationModelParamsT = TypeVar("FoundationModelParamsT")
+
+
+class MessageTyped(TypedDict):
+    """Type of the messages used by the client."""
+
+    role: str
+    content: str
 
 
 class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):

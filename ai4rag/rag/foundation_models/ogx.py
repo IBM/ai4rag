@@ -8,7 +8,7 @@ from annotated_types import Ge, Gt, Le
 from ogx_client import OgxClient
 from pydantic import BaseModel
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
 
 # pylint: disable=duplicate-code
@@ -57,6 +57,30 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
             self._params = params
         else:
             self._params = OGXModelParameters()
+
+    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+        """
+        Chat completion for communication with selected foundation model.
+
+        Parameters
+        ----------
+        messages : list[MessageTyped]
+            Messages to be included in the chat completion.
+
+        Returns
+        -------
+        str
+            Chat response from the model.
+        """
+        response_chat = self.client.chat.completions.create(
+            model=self.model_id,
+            messages=messages,
+            max_completion_tokens=self.params.max_completion_tokens,
+            temperature=self.params.temperature,
+        )
+        response_choices = response_chat.choices
+
+        return response_choices
 
     def create_response(self, user_message: str, vector_store_id: str | None = None) -> str:
         """

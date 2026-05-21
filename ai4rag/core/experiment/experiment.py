@@ -361,8 +361,11 @@ class AI4RAGExperiment:
                 "user_message_text": user_message_text,
                 "system_message_text": system_message_text,
             },
-            "vector_io_provider_type": self.client.providers.retrieve(self.ogx_vector_io_provider_id).provider_type,
         }
+        if self.client:
+            rag_params["vector_io_provider_type"] = (
+                self.client.providers.retrieve(self.ogx_vector_io_provider_id).provider_type,
+            )
 
         logger.info("Using retrieval and generation params: %s", rag_params)
 
@@ -627,6 +630,21 @@ class AI4RAGExperiment:
 
         n_known = len(self.known_observations) if self.known_observations else 0
 
+        responses_template_payload = {
+            "model": evaluation_result.rag_params["generation"]["model_id"],
+            "stream": False,  # Not supported yet
+            "store": True,  # Responses API default
+            "input": evaluation_result.rag_params["generation"]["user_message_text"],
+            "instructions": evaluation_result.rag_params["generation"]["system_message_text"],
+            "tools": [
+                {
+                    "type": "file_search",
+                    "vector_store_ids": evaluation_result.collection,
+                }
+            ],
+            "include": ["file_search_call.results"],
+        }
+
         payload = {
             "pattern_name": evaluation_result.pattern_name,
             "scores": {
@@ -647,23 +665,12 @@ class AI4RAGExperiment:
                 **indexing_payload,
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
-                "responses_template": {
-                    "model": evaluation_result.rag_params["generation"]["model_id"],
-                    "stream": False,  # Not supported yet
-                    "store": True,  # Responses API default
-                    "input": evaluation_result.rag_params["generation"]["user_message_text"],
-                    "instructions": evaluation_result.rag_params["generation"]["system_message_text"],
-                    "tools": [
-                        {
-                            "type": "file_search",
-                            "vector_store_ids": evaluation_result.collection,
-                        }
-                    ],
-                    "include": ["file_search_call.results"],
-                },
             },
             "iteration": len(self.results) + n_known,
         }
+
+        if self.vector_store_type != "chroma":
+            payload["responses_template"] = responses_template_payload
 
         self.event_handler.on_pattern_creation(
             payload=payload,
