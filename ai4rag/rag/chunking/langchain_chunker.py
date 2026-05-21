@@ -60,7 +60,6 @@ class LangChainChunker(BaseChunker[Document]):
 
         match self.method:
             case "recursive":
-
                 text_splitter = RecursiveCharacterTextSplitter(
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,

@@ -115,4 +115,4 @@ class ExperimentExceptionHandler:
 
         error_content = next((er for er in self.errors if most_common_error_type_name in er.__class__.__name__))
 
-        return f"{error_content}. " f"To find more details please see generated logs file."
+        return f"{error_content}. To find more details please see generated logs file."

@@ -28,11 +28,7 @@ from ai4rag.core.experiment.utils import (
     get_retrieval_params,
     query_rag,
 )
-from ai4rag.core.hpo.base_optimizer import (
-    BaseOptimizer,
-    OptimizationError,
-    OptimizerSettings,
-)
+from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
@@ -158,12 +154,7 @@ class AI4RAGExperiment:
 
         self.job_id = kwargs.pop("job_id", "ai4rag_job_a0b1c2d3").replace("-", "_")
         self.metrics: Sequence[str] = kwargs.pop(
-            "metrics",
-            (
-                MetricType.ANSWER_CORRECTNESS,
-                MetricType.FAITHFULNESS,
-                MetricType.CONTEXT_CORRECTNESS,
-            ),
+            "metrics", (MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS)
         )
         self.evaluator: BaseEvaluator = kwargs.pop(
             "evaluator",
@@ -289,8 +280,7 @@ class AI4RAGExperiment:
         mps.evaluate_patterns()
 
         selected_models = mps.select_models(
-            n_embedding_models=self.n_mps_embedding_models,
-            n_foundation_models=self.n_mps_foundation_models,
+            n_embedding_models=self.n_mps_embedding_models, n_foundation_models=self.n_mps_foundation_models
         )
 
         logger.info(
@@ -395,11 +385,7 @@ class AI4RAGExperiment:
             chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
             chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
 
-            chunker = LangChainChunker(
-                method=chunking_method,
-                chunk_size=chunk_size,
-                chunk_overlap=chunk_overlap,
-            )
+            chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             chunked_documents = chunker.split_documents(self.documents)
 
             if self.event_handler:
@@ -415,8 +401,7 @@ class AI4RAGExperiment:
             self.event_handler.on_status_change(
                 level=LogLevel.INFO,
                 message=(
-                    f"Embedding chunks using the {embedding_model.model_id} model. "
-                    f"Building index: {collection_name}."
+                    f"Embedding chunks using the {embedding_model.model_id} model. Building index: {collection_name}."
                 ),
                 step=ExperimentStep.EMBEDDING,
             )
@@ -543,14 +528,10 @@ class AI4RAGExperiment:
                 foundation_models=foundation_models, embedding_models=embedding_models
             )
             self.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
-                name=AI4RAGParamNames.FOUNDATION_MODEL,
-                param_type="C",
-                values=selected_models["foundation_models"],
+                name=AI4RAGParamNames.FOUNDATION_MODEL, param_type="C", values=selected_models["foundation_models"]
             )
             self.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
-                name=AI4RAGParamNames.EMBEDDING_MODEL,
-                param_type="C",
-                values=selected_models["embedding_models"],
+                name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
             )
 
         optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
@@ -709,9 +690,7 @@ class AI4RAGExperiment:
         """
 
         logger.info(
-            "Evaluating the RAG Pattern '%s' response using %s.",
-            pattern_name,
-            self.evaluator.__class__.__name__,
+            "Evaluating the RAG Pattern '%s' response using %s.", pattern_name, self.evaluator.__class__.__name__
         )
         self.event_handler.on_status_change(
             level=LogLevel.INFO,

@@ -88,14 +88,8 @@ def _get_default_ogx_models(client: OgxClient) -> _DefaultModelsResponseType:
     if not registered_embedding_models:
         raise SearchSpaceValueError("There are no registered models of type 'embedding' in the OGX.")
 
-    logger.info(
-        "Found registered foundation models: %s.",
-        [model.id for model in registered_foundation_models],
-    )
-    logger.info(
-        "Found registered embedding models: %s.",
-        [model.id for model in registered_embedding_models],
-    )
+    logger.info("Found registered foundation models: %s.", [model.id for model in registered_foundation_models])
+    logger.info("Found registered embedding models: %s.", [model.id for model in registered_embedding_models])
 
     return {
         "foundation_models": registered_foundation_models,
@@ -122,17 +116,12 @@ def _build_valid_and_invalid_models(
                 _model = OGXEmbeddingModel(
                     model_id=model_id,
                     client=client,
-                    params=OGXEmbeddingParams(
-                        embedding_dimension=embedding_dimension,
-                        context_length=context_length,
-                    ),
+                    params=OGXEmbeddingParams(embedding_dimension=embedding_dimension, context_length=context_length),
                 )
                 is_valid = _validate_embedding_model(_model)
             except RuntimeError:
                 logger.warning(
-                    "Embedding model '%s' is registered in OGX, but does not respond.",
-                    model_id,
-                    exc_info=True,
+                    "Embedding model '%s' is registered in OGX, but does not respond.", model_id, exc_info=True
                 )
                 invalid_model_ids.append(model_id)
                 continue

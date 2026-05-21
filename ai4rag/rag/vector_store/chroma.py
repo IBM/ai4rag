@@ -57,7 +57,7 @@ class ChromaVectorStore(BaseVectorStore):
         self._document_name_field = document_name_field
         self._chunk_sequence_number_field = chunk_sequence_number_field
         self._collection_name = reuse_collection_name or kwargs.pop(
-            "collection_name", f"ai4rag_{datetime.now().strftime("%Y%m%d%H%M%S")}"
+            "collection_name", f"ai4rag_{datetime.now().strftime('%Y%m%d%H%M%S')}"
         )
         self._vector_store = self._get_chroma_client(**kwargs)
 
