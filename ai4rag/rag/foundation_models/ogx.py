@@ -17,7 +17,7 @@ from ai4rag.utils.constants import ChatGenerationConstants
 class OGXModelParameters(BaseModel):
     """Parameters to use for OGXFoundationModel."""
 
-    max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
+    max_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
@@ -75,7 +75,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         response_chat = self.client.chat.completions.create(
             model=self.model_id,
             messages=messages,
-            max_completion_tokens=self.params.max_completion_tokens,
+            max_completion_tokens=self.params.max_tokens,
             temperature=self.params.temperature,
         )
         response_choices = response_chat.choices
@@ -115,7 +115,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
             model=self.model_id,
             instructions=self.system_message_text,
             input=user_message,
-            max_completion_tokens=self.params.max_completion_tokens,
+            max_output_tokens=self.params.max_tokens,
             temperature=self.params.temperature,
             tools=tools,
         )

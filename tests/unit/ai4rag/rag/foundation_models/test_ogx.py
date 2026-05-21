@@ -20,30 +20,30 @@ class TestModelParameters:
     def test_default_values(self):
         """Test OGXModelParameters with default values."""
         params = OGXModelParameters()
-        assert params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
+        assert params.max_tokens == ChatGenerationConstants.MAX_TOKENS
         assert params.temperature == ChatGenerationConstants.TEMPERATURE
 
     def test_custom_values(self):
         """Test OGXModelParameters with custom valid values."""
-        params = OGXModelParameters(max_completion_tokens=1024, temperature=0.5)
-        assert params.max_completion_tokens == 1024
+        params = OGXModelParameters(max_tokens=1024, temperature=0.5)
+        assert params.max_tokens == 1024
         assert params.temperature == 0.5
 
-    def test_max_completion_tokens_positive(self):
-        """Test that max_completion_tokens must be positive."""
-        params = OGXModelParameters(max_completion_tokens=1)
-        assert params.max_completion_tokens == 1
+    def test_max_tokens_positive(self):
+        """Test that max_tokens must be positive."""
+        params = OGXModelParameters(max_tokens=1)
+        assert params.max_tokens == 1
 
-    def test_max_completion_tokens_zero_invalid(self):
-        """Test that max_completion_tokens cannot be zero."""
+    def test_max_tokens_zero_invalid(self):
+        """Test that max_tokens cannot be zero."""
         with pytest.raises(ValidationError) as exc_info:
-            OGXModelParameters(max_completion_tokens=0)
+            OGXModelParameters(max_tokens=0)
         assert "greater than 0" in str(exc_info.value).lower()
 
-    def test_max_completion_tokens_negative_invalid(self):
-        """Test that max_completion_tokens cannot be negative."""
+    def test_max_tokens_negative_invalid(self):
+        """Test that max_tokens cannot be negative."""
         with pytest.raises(ValidationError) as exc_info:
-            OGXModelParameters(max_completion_tokens=-100)
+            OGXModelParameters(max_tokens=-100)
         assert "greater than 0" in str(exc_info.value).lower()
 
     def test_temperature_minimum_boundary(self):
@@ -68,10 +68,10 @@ class TestModelParameters:
             OGXModelParameters(temperature=1.1)
         assert "less than or equal to 1" in str(exc_info.value).lower()
 
-    def test_max_completion_tokens_float_invalid(self):
-        """Test that max_completion_tokens must be an integer."""
+    def test_max_tokens_float_invalid(self):
+        """Test that max_tokens must be an integer."""
         with pytest.raises(ValidationError) as exc_info:
-            OGXModelParameters(max_completion_tokens=100.5)
+            OGXModelParameters(max_tokens=100.5)
         assert "int" in str(exc_info.value).lower()
 
     def test_temperature_int_coerced_to_float(self):
@@ -92,8 +92,8 @@ class TestModelParameters:
     )
     def test_valid_parameter_combinations(self, max_tokens, temp):
         """Parameterized test for valid parameter combinations."""
-        params = OGXModelParameters(max_completion_tokens=max_tokens, temperature=temp)
-        assert params.max_completion_tokens == max_tokens
+        params = OGXModelParameters(max_tokens=max_tokens, temperature=temp)
+        assert params.max_tokens == max_tokens
         assert params.temperature == temp
 
 
@@ -142,7 +142,7 @@ class TestOGXFoundationModel:
         """Create a OGXFoundationModel with dict parameters."""
         return OGXFoundationModel(
             model_id="test-model-id",
-            params={"max_completion_tokens": 1024, "temperature": 0.3},
+            params={"max_tokens": 1024, "temperature": 0.3},
             client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
@@ -154,7 +154,7 @@ class TestOGXFoundationModel:
         self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
         """Create a OGXFoundationModel with OGXModelParameters."""
-        params = OGXModelParameters(max_completion_tokens=512, temperature=0.7)
+        params = OGXModelParameters(max_tokens=512, temperature=0.7)
         return OGXFoundationModel(
             model_id="test-model-id",
             params=params,
@@ -182,7 +182,7 @@ class TestOGXFoundationModel:
         """Test initialization with dict parameters."""
         assert model_with_dict_params.model_id == "test-model-id"
         assert isinstance(model_with_dict_params.params, OGXModelParameters)
-        assert model_with_dict_params.params.max_completion_tokens == 1024
+        assert model_with_dict_params.params.max_tokens == 1024
         assert model_with_dict_params.params.temperature == 0.3
         assert model_with_dict_params.client == mock_ogx_client
         assert "question" in model_with_dict_params.user_message_text
@@ -192,7 +192,7 @@ class TestOGXFoundationModel:
         """Test initialization with OGXModelParameters object."""
         assert model_with_model_params.model_id == "test-model-id"
         assert isinstance(model_with_model_params.params, OGXModelParameters)
-        assert model_with_model_params.params.max_completion_tokens == 512
+        assert model_with_model_params.params.max_tokens == 512
         assert model_with_model_params.params.temperature == 0.7
         assert model_with_model_params.client == mock_ogx_client
 
@@ -200,7 +200,7 @@ class TestOGXFoundationModel:
         """Test initialization with None parameters uses defaults."""
         assert model_with_none_params.model_id == "test-model-id"
         assert isinstance(model_with_none_params.params, OGXModelParameters)
-        assert model_with_none_params.params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
+        assert model_with_none_params.params.max_tokens == ChatGenerationConstants.MAX_TOKENS
         assert model_with_none_params.params.temperature == ChatGenerationConstants.TEMPERATURE
         assert model_with_none_params.client == mock_ogx_client
 
@@ -297,7 +297,7 @@ class TestOGXFoundationModel:
         assert call_args.kwargs["input"] == user_message
         assert call_args.kwargs["instructions"] == "You are a helpful assistant."
         assert call_args.kwargs["tools"] == [{"type": "file_search", "vector_store_ids": vector_store_id}]
-        assert call_args.kwargs["max_completion_tokens"] == 1024
+        assert call_args.kwargs["max_output_tokens"] == 1024
         assert call_args.kwargs["temperature"] == 0.3
 
         # Verify response
@@ -312,7 +312,9 @@ class TestOGXFoundationModel:
         assert call_args.kwargs["tools"] is None
         assert response == "Response from Responses API"
 
-    def test_create_response_with_different_params(self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message):
+    def test_create_response_with_different_params(
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
+    ):
         """Test create_response with different model parameters."""
         test_cases = [
             (512, 0.7),
@@ -321,7 +323,7 @@ class TestOGXFoundationModel:
         ]
 
         for max_tokens, temp in test_cases:
-            params = OGXModelParameters(max_completion_tokens=max_tokens, temperature=temp)
+            params = OGXModelParameters(max_tokens=max_tokens, temperature=temp)
             model = OGXFoundationModel(
                 model_id="test-model",
                 params=params,
@@ -334,7 +336,7 @@ class TestOGXFoundationModel:
             model.create_response("test message")
 
             call_args = mock_ogx_client.responses.create.call_args
-            assert call_args.kwargs["max_completion_tokens"] == max_tokens
+            assert call_args.kwargs["max_output_tokens"] == max_tokens
             assert call_args.kwargs["temperature"] == temp
 
     def test_chat_method(self, model_with_dict_params, mock_ogx_client):
@@ -422,7 +424,7 @@ class TestOGXFoundationModel:
         ]
 
         for max_tokens, temp in test_params:
-            params = OGXModelParameters(max_completion_tokens=max_tokens, temperature=temp)
+            params = OGXModelParameters(max_tokens=max_tokens, temperature=temp)
             model = OGXFoundationModel(
                 model_id="test-model",
                 params=params,

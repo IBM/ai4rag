@@ -112,7 +112,7 @@ class GenerationConstants(metaclass=ConstantMeta):
 class ChatGenerationConstants(metaclass=ConstantMeta):
     """Constants used for setting the generation (inference) parameters for chat models only."""
 
-    MAX_COMPLETION_TOKENS = 2048
+    MAX_TOKENS = 2048
     TEMPERATURE = 0.2
 
 
