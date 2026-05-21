@@ -102,11 +102,22 @@ class TestOGXFoundationModel:
 
     @pytest.fixture
     def mock_ogx_client(self, mocker):
-        """Create a mock OgxClient."""
+        """Create a mock OgxClient supporting both chat/completions and Responses APIs."""
         mock_client = mocker.MagicMock()
-        mock_response = mocker.MagicMock()
-        mock_response.output_text = "Test response from model"
-        mock_client.responses.create.return_value = mock_response
+
+        # Setup for Responses API (create_response method)
+        mock_responses_response = mocker.MagicMock()
+        mock_responses_response.output_text = "Response from Responses API"
+        mock_client.responses.create.return_value = mock_responses_response
+
+        # Setup for chat/completions API (chat method)
+        mock_chat_response = mocker.MagicMock()
+        mock_choice = mocker.MagicMock()
+        mock_choice.message.content = "Response from chat/completions API"
+        mock_choice.message.role = "assistant"
+        mock_chat_response.choices = [mock_choice]
+        mock_client.chat.completions.create.return_value = mock_chat_response
+
         return mock_client
 
     @pytest.fixture
@@ -290,7 +301,7 @@ class TestOGXFoundationModel:
         assert call_args.kwargs["temperature"] == 0.3
 
         # Verify response
-        assert response == "Test response from model"
+        assert response == "Response from Responses API"
         assert isinstance(response, str)
 
     def test_create_response_without_vector_store(self, model_with_dict_params, mock_ogx_client):
@@ -299,7 +310,7 @@ class TestOGXFoundationModel:
 
         call_args = mock_ogx_client.responses.create.call_args
         assert call_args.kwargs["tools"] is None
-        assert response == "Test response from model"
+        assert response == "Response from Responses API"
 
     def test_create_response_with_different_params(self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message):
         """Test create_response with different model parameters."""
@@ -323,6 +334,108 @@ class TestOGXFoundationModel:
             model.create_response("test message")
 
             call_args = mock_ogx_client.responses.create.call_args
+            assert call_args.kwargs["max_completion_tokens"] == max_tokens
+            assert call_args.kwargs["temperature"] == temp
+
+    def test_chat_method(self, model_with_dict_params, mock_ogx_client):
+        """Test that chat method calls client correctly and returns response."""
+        messages = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "What is AI?"},
+        ]
+
+        response = model_with_dict_params.chat(messages)
+
+        # Verify the client was called
+        mock_ogx_client.chat.completions.create.assert_called_once()
+        call_args = mock_ogx_client.chat.completions.create.call_args
+
+        # Verify model_id was passed
+        assert call_args.kwargs["model"] == "test-model-id"
+
+        # Verify messages were passed correctly
+        passed_messages = call_args.kwargs["messages"]
+        assert len(passed_messages) == 2
+        assert passed_messages[0]["role"] == "system"
+        assert passed_messages[0]["content"] == "You are helpful"
+        assert passed_messages[1]["role"] == "user"
+        assert passed_messages[1]["content"] == "What is AI?"
+
+        # Verify response - should return choices list
+        assert len(response) == 1
+        assert response[0].message.content == "Response from chat/completions API"
+
+    def test_chat_with_different_messages(self, model_with_dict_params, mock_ogx_client):
+        """Test chat with different message combinations."""
+        test_cases = [
+            [{"role": "system", "content": "System prompt 1"}, {"role": "user", "content": "User query 1"}],
+            [{"role": "system", "content": ""}, {"role": "user", "content": "User query 2"}],
+            [{"role": "system", "content": "System prompt 3"}, {"role": "user", "content": ""}],
+            [{"role": "system", "content": "Multi\nline\nsystem"}, {"role": "user", "content": "Multi\nline\nuser"}],
+        ]
+
+        for test_messages in test_cases:
+            model_with_dict_params.chat(test_messages)
+            call_args = mock_ogx_client.chat.completions.create.call_args
+            passed_messages = call_args.kwargs["messages"]
+            assert passed_messages[0]["role"] == test_messages[0]["role"]
+            assert passed_messages[0]["content"] == test_messages[0]["content"]
+            assert passed_messages[1]["role"] == test_messages[1]["role"]
+            assert passed_messages[1]["content"] == test_messages[1]["content"]
+
+    def test_chat_uses_model_params(self, model_with_dict_params, mock_ogx_client):
+        """Test that chat method passes model parameters correctly."""
+        messages = [{"role": "user", "content": "test"}]
+        model_with_dict_params.chat(messages)
+
+        call_args = mock_ogx_client.chat.completions.create.call_args
+        assert call_args.kwargs["max_completion_tokens"] == 1024
+        assert call_args.kwargs["temperature"] == 0.3
+
+    def test_chat_with_single_message(self, model_with_dict_params, mock_ogx_client):
+        """Test chat with a single user message (no system message)."""
+        messages = [{"role": "user", "content": "Single message test"}]
+        response = model_with_dict_params.chat(messages)
+
+        # Verify the client was called
+        mock_ogx_client.chat.completions.create.assert_called()
+        call_args = mock_ogx_client.chat.completions.create.call_args
+
+        # Verify single message was passed correctly
+        passed_messages = call_args.kwargs["messages"]
+        assert len(passed_messages) == 1
+        assert passed_messages[0]["role"] == "user"
+        assert passed_messages[0]["content"] == "Single message test"
+
+        # Verify response is returned correctly
+        assert len(response) == 1
+        assert response[0].message.content == "Response from chat/completions API"
+
+    def test_chat_with_different_params(
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
+    ):
+        """Test chat method with different model parameter combinations."""
+        test_params = [
+            (512, 0.7),
+            (2048, 0.0),
+            (100, 1.0),
+        ]
+
+        for max_tokens, temp in test_params:
+            params = OGXModelParameters(max_completion_tokens=max_tokens, temperature=temp)
+            model = OGXFoundationModel(
+                model_id="test-model",
+                params=params,
+                client=mock_ogx_client,
+                user_message_text=valid_user_message_template,
+                context_template_text=valid_context_template,
+                system_message_text=valid_system_message,
+            )
+
+            messages = [{"role": "user", "content": "test"}]
+            model.chat(messages)
+
+            call_args = mock_ogx_client.chat.completions.create.call_args
             assert call_args.kwargs["max_completion_tokens"] == max_tokens
             assert call_args.kwargs["temperature"] == temp
 

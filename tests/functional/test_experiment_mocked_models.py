@@ -232,3 +232,50 @@ class TestExperimentChromaWithMockedModels:
         assert isinstance(result, dict), f"Expected dict from generate(), got {type(result)}"
         answer = result.get("answer")
         assert isinstance(answer, str) and len(answer) > 0, f"Expected a non-empty answer string, got {answer!r}"
+
+    def test_pattern_params_include_generation_config(self, documents, benchmark_data, foundation_models, embedding_models, mock_client):
+        """
+        Verify that RAG patterns include complete generation configuration.
+        This ensures the API migration properly captures model parameters.
+        """
+        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models, mock_client)
+
+        experiment.search(
+            optimizer=RandomOptimizer,
+            skip_mps=True,  # Skip MPS to speed up test
+        )
+
+        # Get best pattern
+        best_evaluations = experiment.results.get_best_evaluations(k=1)
+        assert len(best_evaluations) > 0, f"No evaluations generated. Total results: {len(experiment.results)}"
+
+        # Verify rag_params contains both generation and retrieval configuration
+        rag_params = best_evaluations[0].rag_params
+        assert "generation" in rag_params, "RAG params should include generation config"
+        assert "retrieval" in rag_params, "RAG params should include retrieval config"
+
+        # Verify generation configuration fields
+        generation = rag_params["generation"]
+        assert "model_id" in generation, "Generation config should include model_id"
+        assert "context_template_text" in generation, "Generation config should include context_template_text"
+        assert "user_message_text" in generation, "Generation config should include user_message_text"
+        assert "system_message_text" in generation, "Generation config should include system_message_text"
+
+        # Verify field values are valid (not just present)
+        assert isinstance(generation["model_id"], str) and generation["model_id"], (
+            "model_id should be a non-empty string"
+        )
+        assert isinstance(generation["context_template_text"], str), (
+            "context_template_text should be a string"
+        )
+        assert isinstance(generation["user_message_text"], str), (
+            "user_message_text should be a string"
+        )
+        assert isinstance(generation["system_message_text"], str), (
+            "system_message_text should be a string"
+        )
+
+        # Verify the model_id matches one of our mocked models
+        assert generation["model_id"] in [fm.model_id for fm in foundation_models], (
+            f"Model ID {generation['model_id']} not in foundation models list"
+        )
