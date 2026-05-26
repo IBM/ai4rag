@@ -171,7 +171,11 @@ class TestVectorStoreInitializationError:
     def test_creation(self):
         """Test creating VectorStoreInitializationError."""
         base_exception = ConnectionError("OGX unavailable")
-        error = VectorStoreInitializationError(base_exception, "embedding-model-1")
+        error = VectorStoreInitializationError(
+            base_exception,
+            embedding_model_id="embedding-model-1",
+            vector_store_provider_id="vs-provider-id",
+        )
 
         assert error.exception == base_exception
         assert error.embedding_model_id == "embedding-model-1"
@@ -179,7 +183,11 @@ class TestVectorStoreInitializationError:
     def test_repr(self):
         """Test VectorStoreInitializationError __repr__."""
         base_exception = ConnectionError("OGX unavailable")
-        error = VectorStoreInitializationError(base_exception, "embedding-model-1")
+        error = VectorStoreInitializationError(
+            base_exception,
+            embedding_model_id="embedding-model-1",
+            vector_store_provider_id="vs-provider-id",
+        )
 
         repr_str = repr(error)
         assert "VectorStoreInitializationError" in repr_str

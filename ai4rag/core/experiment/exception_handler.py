@@ -42,14 +42,15 @@ class IndexingError(AI4RAGError):
 class VectorStoreInitializationError(AI4RAGError):
     """Exception representing error during vector store creation or retrieval."""
 
-    def __init__(self, exception, embedding_model_id):
+    def __init__(self, exception, embedding_model_id, vector_store_provider_id):
         super().__init__(exception)
         self.embedding_model_id = embedding_model_id
+        self.vector_store_provider_id = vector_store_provider_id
 
     def __repr__(self) -> str:
         return (
-            f"{self.__class__.__name__}: Unable to initialize vector store for embedding model "
-            f"'{self.embedding_model_id}' due to: {repr(self.exception)}"
+            f"{self.__class__.__name__}: Unable to initialize vector store for {self.vector_store_provider_id} "
+            f"embedding model '{self.embedding_model_id}' due to: {repr(self.exception)}"
         )
 
 
