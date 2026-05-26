@@ -21,38 +21,25 @@ from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
-    import os
     from dotenv import find_dotenv, load_dotenv
 
     load_dotenv(find_dotenv())
-    print()
 
-    # client = OgxClient(base_url="http://localhost:8321")
-
-    # Disable SSL verification for self-signed certificates
-    import httpx
-    http_client = httpx.Client(verify=False)
-
-    client = OgxClient(
-        api_key=os.environ["OGX_CLIENT_API_KEY"],
-        base_url=os.environ["OGX_CLIENT_BASE_URL"],
-        http_client=http_client,
-    )
+    client = OgxClient(base_url="http://localhost:8321")
+    # client = OgxClient()
 
     # change to direct to your local documents path
-    documents_path = _filepath.parents[1] / "local" / "data" / "documents"
+    documents_path = _filepath.parents[1] / "local" / "data" / "rh_summit_2026" / "documents"
 
     # change to direct to your benchmark_data.json
-    benchmark_data_path = (
-        _filepath.parents[1] / "local" / "data" / "benchmark_data_4q.json"
-    )
+    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "rh_summit_2026" / "benchmark_data_4q.json"
 
     file_store = FileStore(documents_path)
     documents = file_store.load_as_documents()
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
     # Configure optimizer
-    optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=4)
+    optimizer_settings = GAMOptSettings(max_evals=1, n_random_nodes=4)
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
@@ -61,21 +48,16 @@ if __name__ == "__main__":
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[
-                    OGXFoundationModel(
-                        model_id="vllm-inference-gpu-mistral/redhataimistral-small-24b-inst",
-                        client=client,
-                    )
-                ],
+                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
                     OGXEmbeddingModel(
-                        model_id="vllm-embedding/bge-m3",
+                        model_id="ollama/nomic-embed-text:latest",
                         client=client,
-                        params={"embedding_dimension": 1024, "context_length": 8192},
+                        params={"embedding_dimension": 768, "context_length": 8192},
                     )
                 ],
             ),
@@ -112,7 +94,7 @@ if __name__ == "__main__":
         # event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "hybrid_test"),
         event_handler=LocalEventHandler(),
         vector_store_type="ogx",
-        ogx_vector_io_provider_id="pgvector",
+        ogx_vector_io_provider_id="milvus-lite",
     )
 
     experiment.search(skip_mps=True)
