@@ -28,9 +28,15 @@ if __name__ == "__main__":
     print()
 
     # client = OgxClient(base_url="http://localhost:8321")
+
+    # Disable SSL verification for self-signed certificates
+    import httpx
+    http_client = httpx.Client(verify=False)
+
     client = OgxClient(
         api_key=os.environ["OGX_CLIENT_API_KEY"],
         base_url=os.environ["OGX_CLIENT_BASE_URL"],
+        http_client=http_client,
     )
 
     # change to direct to your local documents path
