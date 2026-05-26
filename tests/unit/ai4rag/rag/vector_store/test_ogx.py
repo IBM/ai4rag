@@ -2,7 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
+import logging
 
 import pytest
 from langchain_core.documents import Document
@@ -59,7 +60,9 @@ class TestOGXVectorStoreInitialization:
         assert vector_store._ogx_vs is not None
         mock_ogx_client.vector_stores.create.assert_called_once()
 
-    def test_init_with_reuse_collection_name(self, mock_embedding_model, mock_ogx_client):
+    def test_init_with_reuse_collection_name(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test initialization with reuse_collection_name retrieves existing store."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -68,7 +71,9 @@ class TestOGXVectorStoreInitialization:
             reuse_collection_name="existing-collection",
         )
 
-        mock_ogx_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
+        mock_ogx_client.vector_stores.retrieve.assert_called_once_with(
+            "existing-collection"
+        )
         mock_ogx_client.vector_stores.create.assert_not_called()
 
     def test_init_with_distance_metric(self, mock_embedding_model, mock_ogx_client):
@@ -94,7 +99,9 @@ class TestOGXVectorStoreInitialization:
         assert "extra_body" in call_kwargs
         assert call_kwargs["extra_body"]["provider_id"] == "test-provider"
 
-    def test_init_passes_embedding_model_params(self, mock_embedding_model, mock_ogx_client):
+    def test_init_passes_embedding_model_params(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that embedding model parameters are passed correctly."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -199,7 +206,9 @@ class TestOGXVectorStoreSearch:
         assert isinstance(result[0][1], float)
         assert result[0][1] == 0.95
 
-    def test_search_calls_client_with_correct_params(self, mock_embedding_model, mock_ogx_client):
+    def test_search_calls_client_with_correct_params(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that search calls client with correct parameters."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -300,7 +309,9 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60)
+        vector_store.search(
+            "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60
+        )
 
         call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
@@ -308,7 +319,9 @@ class TestOGXVectorStoreHybridSearch:
         assert params["reranker_type"] == "rrf"
         assert params["reranker_params"]["impact_factor"] == 60
 
-    def test_search_with_hybrid_mode_weighted(self, mock_embedding_model, mock_ogx_client):
+    def test_search_with_hybrid_mode_weighted(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test search with hybrid mode and weighted ranker including alpha."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -316,7 +329,13 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_alpha=0.7)
+        vector_store.search(
+            "test query",
+            k=5,
+            search_mode="hybrid",
+            ranker_strategy="weighted",
+            ranker_alpha=0.7,
+        )
 
         call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
@@ -324,7 +343,9 @@ class TestOGXVectorStoreHybridSearch:
         assert params["reranker_type"] == "weighted"
         assert params["reranker_params"]["alpha"] == 0.7
 
-    def test_search_with_hybrid_mode_normalized(self, mock_embedding_model, mock_ogx_client):
+    def test_search_with_hybrid_mode_normalized(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test search with hybrid mode and normalized ranker."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -332,7 +353,9 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="normalized")
+        vector_store.search(
+            "test query", k=5, search_mode="hybrid", ranker_strategy="normalized"
+        )
 
         call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
@@ -340,7 +363,9 @@ class TestOGXVectorStoreHybridSearch:
         assert params["reranker_type"] == "normalized"
         assert params["reranker_params"] == {}
 
-    def test_search_hybrid_empty_strategy_raises(self, mock_embedding_model, mock_ogx_client):
+    def test_search_hybrid_empty_strategy_raises(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that empty ranker_strategy with hybrid mode raises ValueError."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -348,10 +373,16 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
-            vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="")
+        with pytest.raises(
+            ValueError, match="ranker_strategy must be set when search_mode='hybrid'"
+        ):
+            vector_store.search(
+                "test query", k=5, search_mode="hybrid", ranker_strategy=""
+            )
 
-    def test_search_hybrid_alpha_with_rrf_raises(self, mock_embedding_model, mock_ogx_client):
+    def test_search_hybrid_alpha_with_rrf_raises(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that non-zero ranker_alpha with a non-weighted strategy raises ValueError."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -359,9 +390,17 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when ranker_strategy='weighted'"):
+        with pytest.raises(
+            ValueError,
+            match="ranker_alpha=0.5 is only valid when ranker_strategy='weighted'",
+        ):
             vector_store.search(
-                "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=0.5
+                "test query",
+                k=5,
+                search_mode="hybrid",
+                ranker_strategy="rrf",
+                ranker_k=60,
+                ranker_alpha=0.5,
             )
 
     def test_search_hybrid_with_scores(self, mock_embedding_model, mock_ogx_client):
@@ -373,7 +412,12 @@ class TestOGXVectorStoreHybridSearch:
         )
 
         result = vector_store.search(
-            "test query", k=5, include_scores=True, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60
+            "test query",
+            k=5,
+            include_scores=True,
+            search_mode="hybrid",
+            ranker_strategy="rrf",
+            ranker_k=60,
         )
 
         assert isinstance(result, list)
@@ -416,7 +460,9 @@ class TestOGXVectorStoreAddDocuments:
 
         mock_ogx_client.vector_io.insert.assert_called_once()
 
-    def test_add_documents_creates_chunks_with_embeddings(self, mock_embedding_model, mock_ogx_client):
+    def test_add_documents_creates_chunks_with_embeddings(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that add_documents creates chunks with embeddings."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -435,7 +481,11 @@ class TestOGXVectorStoreAddDocuments:
         assert "content" in chunks[0]
         assert "embedding" in chunks[0]
         assert "chunk_id" in chunks[0]
-        assert chunks[0]["chunk_id"] == str(hash("Test"))
+        assert chunks[0]["chunk_id"] == str(
+            hash(
+                f"{docs[0].metadata.get('document_id')}_{docs[0].metadata.get('start_index')}_{docs[0].page_content}"
+            )
+        )
         assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
         assert chunks[0]["metadata"] == {"document_id": "doc1"}
 
@@ -447,7 +497,10 @@ class TestOGXVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
+        docs = [
+            Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"})
+            for i in range(5)
+        ]
 
         vector_store.add_documents(docs)
 
@@ -456,7 +509,9 @@ class TestOGXVectorStoreAddDocuments:
 
         assert len(chunks) == 5
 
-    def test_add_documents_preserves_metadata(self, mock_embedding_model, mock_ogx_client):
+    def test_add_documents_preserves_metadata(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that add_documents preserves metadata."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -497,7 +552,9 @@ class TestOGXVectorStoreAddDocuments:
 
         mock_embed_model.embed_documents.assert_called_once_with(["Test"])
 
-    def test_add_documents_batches_large_input(self, mock_embedding_model, mock_ogx_client):
+    def test_add_documents_batches_large_input(
+        self, mock_embedding_model, mock_ogx_client
+    ):
         """Test that add_documents batches inserts exceeding batch_size."""
         vector_store = OGXVectorStore(
             embedding_model=mock_embedding_model,
@@ -505,7 +562,10 @@ class TestOGXVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
+        docs = [
+            Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"})
+            for i in range(5)
+        ]
 
         vector_store.add_documents(docs, batch_size=2)
 
@@ -581,7 +641,9 @@ class TestOGXVectorStoreInitializeVectorStore:
         )
 
         assert result == mock_vs
-        mock_client.vector_stores.retrieve.assert_called_once_with("existing-collection")
+        mock_client.vector_stores.retrieve.assert_called_once_with(
+            "existing-collection"
+        )
         mock_client.vector_stores.create.assert_not_called()
 
 
@@ -604,29 +666,40 @@ class TestOGXVectorStoreSearchValidation:
 
     def test_ranker_strategy_on_vector_mode_raises(self):
         """Test that a non-empty ranker_strategy with vector mode raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_strategy='rrf' is only valid when search_mode='hybrid'"):
+        with pytest.raises(
+            ValueError,
+            match="ranker_strategy='rrf' is only valid when search_mode='hybrid'",
+        ):
             OGXVectorStore._validate_search_params("vector", "rrf", None, None)
 
     def test_ranker_k_on_vector_mode_raises(self):
         """Test that a positive ranker_k with vector mode raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_k=60 is only valid when search_mode='hybrid'"):
+        with pytest.raises(
+            ValueError, match="ranker_k=60 is only valid when search_mode='hybrid'"
+        ):
             OGXVectorStore._validate_search_params("vector", None, 60, None)
 
     def test_ranker_alpha_on_vector_mode_raises(self):
         """Test that a positive ranker_alpha with vector mode raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when search_mode='hybrid'"):
+        with pytest.raises(
+            ValueError, match="ranker_alpha=0.5 is only valid when search_mode='hybrid'"
+        ):
             OGXVectorStore._validate_search_params("vector", None, None, 0.5)
 
     # --- hybrid mode missing ranker_strategy ---
 
     def test_hybrid_mode_none_strategy_raises(self):
         """Test that hybrid mode with ranker_strategy=None raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
+        with pytest.raises(
+            ValueError, match="ranker_strategy must be set when search_mode='hybrid'"
+        ):
             OGXVectorStore._validate_search_params("hybrid", None, None, None)
 
     def test_hybrid_mode_empty_strategy_raises(self):
         """Test that hybrid mode with ranker_strategy='' raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_strategy must be set when search_mode='hybrid'"):
+        with pytest.raises(
+            ValueError, match="ranker_strategy must be set when search_mode='hybrid'"
+        ):
             OGXVectorStore._validate_search_params("hybrid", "", None, None)
 
     # --- invalid ranker_strategy value ---
@@ -640,24 +713,34 @@ class TestOGXVectorStoreSearchValidation:
 
     def test_ranker_k_with_weighted_strategy_raises(self):
         """Test that ranker_k > 0 with weighted strategy raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_k=60 is only valid when ranker_strategy='rrf'"):
+        with pytest.raises(
+            ValueError, match="ranker_k=60 is only valid when ranker_strategy='rrf'"
+        ):
             OGXVectorStore._validate_search_params("hybrid", "weighted", 60, 0.7)
 
     def test_ranker_k_with_normalized_strategy_raises(self):
         """Test that ranker_k > 0 with normalized strategy raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_k=20 is only valid when ranker_strategy='rrf'"):
+        with pytest.raises(
+            ValueError, match="ranker_k=20 is only valid when ranker_strategy='rrf'"
+        ):
             OGXVectorStore._validate_search_params("hybrid", "normalized", 20, None)
 
     # --- ranker_alpha used with non-weighted strategy ---
 
     def test_alpha_with_rrf_strategy_raises(self):
         """Test that ranker_alpha > 0 with rrf strategy raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_alpha=0.7 is only valid when ranker_strategy='weighted'"):
+        with pytest.raises(
+            ValueError,
+            match="ranker_alpha=0.7 is only valid when ranker_strategy='weighted'",
+        ):
             OGXVectorStore._validate_search_params("hybrid", "rrf", 60, 0.7)
 
     def test_alpha_with_normalized_strategy_raises(self):
         """Test that ranker_alpha > 0 with normalized strategy raises ValueError."""
-        with pytest.raises(ValueError, match="ranker_alpha=0.3 is only valid when ranker_strategy='weighted'"):
+        with pytest.raises(
+            ValueError,
+            match="ranker_alpha=0.3 is only valid when ranker_strategy='weighted'",
+        ):
             OGXVectorStore._validate_search_params("hybrid", "normalized", None, 0.3)
 
     # --- sentinel values must not trigger errors ---
@@ -723,3 +806,164 @@ class TestOGXVectorStoreInitializeVectorStore:
         assert extra_body["embedding_model"] == "custom-model-id"
         assert extra_body["embedding_dimension"] == 256
         assert extra_body["provider_id"] == "provider1"
+
+
+class TestOGXVectorStoreDuplicateChunks:
+    """Test suite for OGXVectorStore duplicate chunk detection."""
+
+    @pytest.fixture
+    def mock_embedding_model(self):
+        """Create a mock embedding model."""
+        return MockOGXEmbeddingModel()
+
+    @pytest.fixture
+    def mock_ogx_client(self):
+        """Create a mock OgxClient."""
+        mock_client = MagicMock()
+        mock_vs = MagicMock()
+        mock_vs.id = "test-vs-id"
+        mock_client.vector_stores.create.return_value = mock_vs
+        return mock_client
+
+    def test_add_documents_with_duplicate_content_skips_duplicates(
+        self, mock_embedding_model, mock_ogx_client, caplog
+    ):
+        """Test that adding documents with duplicate content skips duplicates and logs warning."""
+
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        # Create documents with identical content (will generate same hash)
+        docs = [
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc1"}
+            ),
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc1"}
+            ),
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc1"}
+            ),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag"):
+            vector_store.add_documents(docs)
+
+        # Should have logged warnings for duplicates
+        assert "Skipping duplicate chunk_id" in caplog.text
+
+        # Should only insert 1 unique chunk (first occurrence)
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 1
+
+    def test_add_documents_with_unique_content_succeeds(
+        self, mock_embedding_model, mock_ogx_client
+    ):
+        """Test that adding documents with unique content succeeds."""
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Unique content 1", metadata={"document_id": "doc1"}),
+            Document(page_content="Unique content 2", metadata={"document_id": "doc2"}),
+            Document(page_content="Unique content 3", metadata={"document_id": "doc3"}),
+        ]
+
+        # Should not raise an error
+        vector_store.add_documents(docs)
+        mock_ogx_client.vector_io.insert.assert_called_once()
+
+        # Should insert all 3 chunks
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 3
+
+    def test_add_documents_with_mixed_content(
+        self, mock_embedding_model, mock_ogx_client, caplog
+    ):
+        """Test that adding documents with some duplicates filters them out."""
+
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Unique content", metadata={"document_id": "doc1"}),
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc2"}
+            ),
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc2"}
+            ),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag"):
+            vector_store.add_documents(docs)
+
+        # Should have logged warning for 1 duplicate
+        assert "Skipping duplicate chunk_id" in caplog.text
+
+        # Should insert 2 unique chunks
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 2
+
+    def test_duplicate_chunks_keeps_first_occurrence(
+        self, mock_embedding_model, mock_ogx_client
+    ):
+        """Test that duplicates keep the first occurrence."""
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc1"}
+            ),
+            Document(
+                page_content="Duplicate content", metadata={"document_id": "doc1"}
+            ),
+        ]
+
+        vector_store.add_documents(docs)
+
+        # Should insert only first occurrence (doc1)
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 1
+        assert chunks[0]["chunk_metadata"]["document_id"] == "doc1"
+
+    def test_no_warning_when_no_duplicates(
+        self, mock_embedding_model, mock_ogx_client, caplog
+    ):
+        """Test that no warning is logged when there are no duplicates."""
+
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Not unique 1", metadata={"document_id": "doc1"}),
+            Document(page_content="Not unique 1", metadata={"document_id": "doc2"}),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag"):
+            vector_store.add_documents(docs)
+
+        # Should not have any warnings
+        assert "Skipping duplicate chunk_id" not in [
+            record.message for record in caplog.records
+        ]
