@@ -29,29 +29,29 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 > [!IMPORTANT]
 > `ai4rag` is designed to be provider-agnostic: user may provide his own implementation for foundation model, embedding model or vector store and use them for the experiment.
-> Out of the box `ai4rag` is designed to work with [Llama Stack](https://github.com/llamastack/llama-stack).
-> To use the full capabilities of `ai4rag`, you'll need access to a Llama Stack server configured with at least one foundation model, one embedding model, and a vector database.
+> Out of the box `ai4rag` is designed to work with [OGX](https://github.com/ogx-ai/ogx).
+> To use the full capabilities of `ai4rag`, you'll need access to an OGX server configured with at least one foundation model, one embedding model, and a vector database.
 
-## Llama Stack
+## OGX
 
-ai4RAG can run experiments using a [Llama Stack](https://github.com/llamastack/llama-stack) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
+ai4RAG can run experiments using an [OGX](https://github.com/ogx-ai/ogx) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
 
-- **Client:** [llama-stack-client](https://pypi.org/project/llama-stack-client/) >= 0.7.0 (Python package used by ai4RAG; installs with this project).
-- **Server:** [Llama Stack](https://github.com/llamastack/llama-stack) >= 0.7.0.
-- **API reference:** [Llama Stack API docs](https://llamastack.github.io/docs/) — HTTP API used by the client.
+- **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 0.7.0 (Python package used by ai4RAG; installs with this project).
+- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 0.7.0.
+- **API reference:** [OGX API docs](https://ogx-ai.github.io/docs/) — HTTP API used by the client.
 
 **Features used by ai4rag**
 
-When using the Llama Stack backend, ai4rag relies on:
+When using the OGX backend, ai4rag relies on:
 
-- **Embeddings** — Text embeddings via the client (e.g. for indexing and query encoding). See [Embeddings API](https://llamastack.github.io/docs/api/embeddings) in the docs.
-- **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://llamastack.github.io/docs/api/creates-a-vector-store) in the API docs.
-- **Vector IO** — Insert document chunks (with embeddings) into a store and run similarity search (query) for retrieval. See [Vector IO](https://llamastack.github.io/docs/api/search-for-chunks-in-a-vector-store) and insert/query endpoints.
+- **Embeddings** — Text embeddings via the client (e.g. for indexing and query encoding). See [Embeddings API](https://ogx-ai.github.io/docs/api/embeddings) in the docs.
+- **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://ogx-ai.github.io/docs/api/creates-a-vector-store) in the API docs.
+- **Vector IO** — Insert document chunks (with embeddings) into a store and run similarity search (query) for retrieval. See [Vector IO](https://ogx-ai.github.io/docs/api/search-for-chunks-in-a-vector-store) and insert/query endpoints.
 - **Chat / responses** — Foundation model integration for answer generation (e.g. chat completions or responses API) when evaluating RAG patterns.
 
 
 ## Quick start
-1. [Provide an instance of `llama-stack-client` to integrate with Llama Stack.](#prepare-llama-stack-client)
+1. [Provide an instance of `ogx-client` to integrate with OGX.](#prepare-ogx-client)
 2. [Prepare your knowledge base documents for the experiment.](#prepare-knowledge-base-documents)
 3. [Prepare `benchmark_data.json` with evaluation questions and answers.](#prepare-benchmark_datajson)
 4. [Define and constrain your search space.](#define-and-constrain-search-space)
@@ -59,9 +59,9 @@ When using the Llama Stack backend, ai4rag relies on:
 6. [Create and run the experiment.](#run-the-experiment)
 
 
-### Prepare `llama-stack-client`
-To enable full integration with Llama Stack, instantiate a `LlamaStackClient`.
-This allows `ai4rag` to use the models and vector stores available on your Llama Stack server.
+### Prepare `ogx-client`
+To enable full integration with OGX, instantiate an `OgxClient`.
+This allows `ai4rag` to use the models and vector stores available on your OGX server.
 
 > [!tip]
 > Store your credentials securely in a `.env` file.
@@ -69,9 +69,9 @@ This allows `ai4rag` to use the models and vector stores available on your Llama
 ```python
 import os
 from dotenv import load_dotenv, find_dotenv
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
+client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
 ```
 
 ### Prepare knowledge base documents
@@ -131,8 +131,8 @@ During the experiment, the engine will optimize the RAG Pattern for the selected
 ```python
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
 
 search_space = AI4RAGSearchSpace(
@@ -140,13 +140,13 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                LSEmbeddingModel(
+                OGXEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192},
@@ -158,7 +158,7 @@ search_space = AI4RAGSearchSpace(
 ```
 
 > [!tip]
-> To run automatic models discovery with Llama Stack you may use `prepare_search_space_with_llama_stack()` from `ai4rag.search_space.prepare_search_space`.
+> To run automatic models discovery with OGX you may use `prepare_search_space_with_ogx()` from `ai4rag.search_space.prepare_search_space`.
 
 
 ### Configure optimizer
@@ -177,9 +177,9 @@ optimizer_settings = GAMOptSettings(
 Using the information from the previous steps, create an experiment and run the ai4rag optimization engine.
 
 > [!note]
-> For Llama Stack vector stores, use the `"ls_<provider_id>"` format where `<provider_id>` matches your Llama Stack
-> provider configuration (e.g., `"ls_milvus"`, `"ls_qdrant"`).
-> To use ChromaDB in-memory, specify `"chroma"`.
+> For OGX vector stores, use `vector_store_type="ogx"` and specify the provider with
+> `ogx_vector_io_provider_id` (e.g., `ogx_vector_io_provider_id="milvus"`, `ogx_vector_io_provider_id="qdrant"`).
+> To use ChromaDB in-memory, specify `vector_store_type="chroma"`.
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
@@ -190,7 +190,8 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",
+    vector_store_type="ogx",
+    ogx_vector_io_provider_id="milvus",
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<local-path-to-store-your-output-files>"),
 )
@@ -208,11 +209,36 @@ print(best_eval.rag_pattern.generate("What ai4rag can be used for?"))
 
 
 ## Contribution
-Pull requests are very welcome! Make sure your patches are well tested. Ideally create a topic branch for every separate change you make. For example:
+Pull requests are very welcome! Make sure your patches are well tested. Ideally create a topic branch for every separate change you make.
+
+### Development setup
+
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
+
+```bash
+# Clone the repository
+git clone https://github.com/IBM/ai4rag.git
+cd ai4rag
+
+# Install all development dependencies
+uv sync --extra dev
+
+# Run tests
+uv run pytest tests/unit/
+
+# Check code style
+uv run black --check ai4rag/
+uv run pylint ai4rag/
+
+# Build and serve documentation locally
+uv run mkdocs serve
+```
+
+### Pull request workflow
 
 1. Fork the repo
 2. Create your feature branch (`git checkout -b my-new-feature`)
-3. Commit your changes (`git commit -am 'Added some feature'`)
+3. Commit your changes (`git commit -s -am 'Added some feature'`)
 4. Push to the branch (`git push origin my-new-feature`)
 5. Create new Pull Request
 

@@ -10,7 +10,7 @@ ai4rag is designed as a modular RAG optimization engine with clear separation of
 
 ai4rag is **LLM and Vector Database provider agnostic**. It integrates with various backends through:
 
-- **Llama Stack**: Primary integration for models and vector stores
+- **OGX**: Primary integration for models and vector stores
 - **Pluggable Components**: Foundation models, embeddings, and vector stores are abstracted
 
 ### Template-Based Approach
@@ -112,13 +112,13 @@ graph TB
 **Embedding** (`ai4rag/rag/embedding/`)
 
 - Generates text embeddings
-- Integrates with Llama Stack embedding models
+- Integrates with OGX embedding models
 - Handles batching and error recovery
 
 **Vector Stores** (`ai4rag/rag/vector_store/`)
 
 - Stores and retrieves document embeddings
-- Supports Milvus (via Llama Stack) and ChromaDB
+- Supports Milvus (via OGX) and ChromaDB
 - Provides similarity search capabilities
 
 **Retrieval** (`ai4rag/rag/retrieval/`)
@@ -130,7 +130,7 @@ graph TB
 **Foundation Models** (`ai4rag/rag/foundation_models/`)
 
 - Generates answers using LLMs
-- Integrates with Llama Stack models
+- Integrates with OGX models
 - Formats prompts with retrieved context
 
 **Templates** (`ai4rag/rag/template/`)
@@ -175,7 +175,7 @@ Chunking (chunk_size, chunk_overlap)
     ↓
 Embedding Model (embedding_model)
     ↓
-Vector Store (ls_<provider_id> or chroma)
+Vector Store (ogx + ogx_vector_io_provider_id, or chroma)
 ```
 
 ### Query Phase (Per Configuration)
@@ -230,7 +230,7 @@ ai4rag is designed for extensibility:
 ## Technology Stack
 
 - **Python**: 3.12 & 3.13
-- **Llama Stack**: Model and vector store integration
+- **OGX**: Model and vector store integration
 - **LangChain**: Document chunking and processing
 - **Unitxt**: Evaluation metrics
 - **Pandas**: Results management

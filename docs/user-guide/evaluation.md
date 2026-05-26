@@ -60,7 +60,7 @@ Faithfulness: High (answer is fully grounded in the context)
 
 ```
 Question: "What vector databases does ai4rag support?"
-Ground truth: ["ChromaDB and Milvus via Llama Stack", "Milvus and ChromaDB"]
+Ground truth: ["ChromaDB and Milvus via OGX", "Milvus and ChromaDB"]
 Answer: "ai4rag supports ChromaDB and Milvus."
 Answer Correctness: High (matches ground truth)
 ```
@@ -300,7 +300,7 @@ Your `benchmark_data.json` must follow this schema:
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
-      "ChromaDB and Milvus via Llama Stack"
+      "ChromaDB and Milvus via OGX"
     ],
     "correct_answer_document_ids": ["vector_stores.md", "quick_start.md"]
   }
@@ -342,7 +342,7 @@ Provide alternative phrasings for the same correct answer:
   "correct_answers": [
     "ChromaDB and Milvus",
     "Milvus and ChromaDB",
-    "ChromaDB (in-memory) and Milvus via Llama Stack"
+    "ChromaDB (in-memory) and Milvus via OGX"
   ]
 }
 ```
@@ -401,13 +401,13 @@ Here's a complete example showing how evaluation is used in the experiment loop:
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.base_evaluator import MetricType
 from ai4rag.utils.event_handler import LocalEventHandler
@@ -417,7 +417,7 @@ from dev_utils.utils import read_benchmark_from_json
 
 # Setup
 load_dotenv()
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
 
 # Load data
 documents = FileStore(Path("./knowledge_base")).load_as_documents()
@@ -429,13 +429,13 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                LSEmbeddingModel(
+                OGXEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192},
@@ -453,7 +453,8 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",
+    vector_store_type="ogx",
+    ogx_vector_io_provider_id="milvus",
     optimizer_settings=GAMOptSettings(max_evals=8, n_random_nodes=3),
     objective_metric=MetricType.FAITHFULNESS,  # Can change to ANSWER_CORRECTNESS or CONTEXT_CORRECTNESS
     event_handler=LocalEventHandler(output_path="./results"),

@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.1](https://github.com/IBM/ai4rag/releases/tag/v0.6.1)
+
+### Changed
+- Upgraded `ogx-client` dependency from `~=0.8.0` to `~=1.0.0`
+- Updated documentation to require OGX Server >= 1.0.0
+
+---
+
+## [0.6.0](https://github.com/IBM/ai4rag/releases/tag/v0.6.0)
+
+### Added
+- `uv` package manager support as an alternative to `pip` for dependency management and development workflows
+- `AGENTS.md` file with AI agent guidelines for contributing to the project
+
+### Changed
+- Rebranded all Llama Stack integrations to OGX: `LSEmbeddingModel` → `OGXEmbeddingModel`, `LSFoundationModel` → `OGXFoundationModel`, `LSVectorStore` → `OGXVectorStore`, `prepare_search_space_with_llama_stack` → `prepare_search_space_with_ogx` (and all related classes, modules, and configuration keys)
+- Replaced `llama-stack-client` dependency with `ogx-client`
+- Improved logging during model selection and validation — clearer messages when models are filtered or skipped
+- Updated CI/CD workflows to use `uv` for dependency installation and test execution
+- Updated all documentation to reflect the Llama Stack → OGX rebranding
+
+### Removed
+- OpenAI model wrappers (`OpenAIEmbeddingModel`, `OpenAIFoundationModel`)
+- `dev_utils/run_experiment_with_openai_models.py` example script
+- Llama Stack example notebooks from `dev_utils/llama_stack_examples/`
+
+---
+
 ## [0.5.5](https://github.com/IBM/ai4rag/releases/tag/v0.5.5)
 
 ### Changed

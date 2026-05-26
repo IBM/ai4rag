@@ -40,13 +40,14 @@ Consider enabling hybrid search when:
 ## Prerequisites
 
 !!! warning "Vector Store Requirement"
-    Hybrid search is **only supported with Llama Stack vector stores** (i.e., `vector_store_type` with `ls_` prefix, e.g., `"ls_milvus"`). It is **NOT available with ChromaDB**.
+    Hybrid search is **only supported with OGX vector stores** (i.e., `vector_store_type="ogx"` with `ogx_vector_io_provider_id`). It is **NOT available with ChromaDB**.
 
 Ensure your experiment is configured with:
 
 ```python
 experiment = AI4RAGExperiment(
-    vector_store_type="ls_milvus",  # Any "ls_<provider_id>" works; required for hybrid search
+    vector_store_type="ogx",  # Required for hybrid search
+    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
     # ... other parameters
 )
 ```
@@ -348,8 +349,8 @@ Explore hybrid search using Reciprocal Rank Fusion:
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -357,13 +358,13 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name=AI4RAGParamNames.FOUNDATION_MODEL,
             param_type="C",
-            values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
         ),
         Parameter(
             name=AI4RAGParamNames.EMBEDDING_MODEL,
             param_type="C",
             values=[
-                LSEmbeddingModel(
+                OGXEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192},
@@ -535,11 +536,12 @@ print("Hybrid avg score:", hybrid_results["objective_value"].mean())
 
 **Cause**: You're using `vector_store_type="chroma"`.
 
-**Solution**: Switch to a Llama Stack vector store:
+**Solution**: Switch to an OGX vector store:
 
 ```python
 experiment = AI4RAGExperiment(
-    vector_store_type="ls_milvus",  # Any "ls_<provider_id>" format works
+    vector_store_type="ogx",
+    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
     # ...
 )
 ```
@@ -588,7 +590,7 @@ experiment = AI4RAGExperiment(
 
 Hybrid search in `ai4rag` combines the best of semantic and keyword-based retrieval:
 
-- **Use `search_mode="hybrid"`** to enable hybrid search (requires a Llama Stack vector store, i.e., `ls_` prefix)
+- **Use `search_mode="hybrid"`** to enable hybrid search (requires an OGX vector store, i.e., `vector_store_type="ogx"`)
 - **Choose a ranker strategy**: `"rrf"` (general-purpose), `"weighted"` (fine control), or `"normalized"`
 - **Configure strategy parameters**: `ranker_k` for RRF, `ranker_alpha` for weighted
 - **Let the optimizer explore**: Include both vector and hybrid modes to find the best approach

@@ -13,78 +13,43 @@ Rather than locking you into a specific vendor or technology stack, `ai4rag` def
 2. **Embedding Models** (for document and query embeddings)
 3. **Vector Stores** (for storing and retrieving document chunks)
 
-Concrete implementations for different providers (Llama Stack, OpenAI, ChromaDB) all adhere to these interfaces, making them **interchangeable** within the optimization framework.
+Concrete implementations for different providers (OGX, ChromaDB) all adhere to these interfaces, making them **interchangeable** within the optimization framework.
 
 ---
 
 ## Supported Providers
 
-### Llama Stack Integration
+### OGX Integration
 
-**What it is**: [Llama Stack](https://github.com/meta-llama/llama-stack) is a unified interface for working with Llama models and associated infrastructure.
+**What it is**: [OGX](https://github.com/ogx-ai/ogx) is a unified interface for working with various models and associated infrastructure.
 
 **What `ai4rag` supports**:
 
-- **Foundation Models**: Any model configured in your Llama Stack server (Llama 3.x, Mistral, etc.)
-- **Embedding Models**: Any embedding model available through Llama Stack
-- **Vector Stores**: Any vector database configured in Llama Stack (Milvus, Qdrant, Weaviate, etc.)
+- **Foundation Models**: Any model configured in your OGX server (Llama 3.x, Mistral, etc.)
+- **Embedding Models**: Any embedding model available through OGX
+- **Vector Stores**: Any vector database configured in OGX (Milvus, Qdrant, Weaviate, etc.)
 
 **Key advantage**: One client connection gives you access to multiple models and vector stores.
 
 **Usage**:
 
 ```python
-from llama_stack_client import LlamaStackClient
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ogx_client import OgxClient
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
 
-foundation_model = LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)
-embedding_model = LSEmbeddingModel(
+foundation_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+embedding_model = OGXEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
     client=client,
     params={"embedding_dimension": 768, "context_length": 8192}
 )
 
-# Vector store type: "ls_<provider_id>" where provider_id matches Llama Stack config
-vector_store_type = "ls_milvus"  # or "ls_qdrant", "ls_weaviate", etc.
-```
-
----
-
-### OpenAI-Compatible APIs
-
-**What it is**: Any API that implements the OpenAI API specification (OpenAI, Azure OpenAI, compatible local servers).
-
-**What `ai4rag` supports**:
-
-- **Foundation Models**: GPT-4, GPT-3.5, GPT-4o, and compatible models
-- **Embedding Models**: text-embedding-3-small, text-embedding-3-large, text-embedding-ada-002
-
-**Usage**:
-
-```python
-from openai import OpenAI
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-foundation_model = OpenAIFoundationModel(
-    model_id="gpt-4o-mini",
-    client=client,
-    params={}
-)
-
-embedding_model = OpenAIEmbeddingModel(
-    model_id="text-embedding-3-small",
-    client=client,
-    params={"embedding_dimension": 1536, "context_length": 8191}
-)
-
-# Use with Llama Stack vector store or ChromaDB
-vector_store_type = "ls_milvus"  # or "chroma"
+# Vector store type: "ogx" with ogx_vector_io_provider_id matching OGX config
+vector_store_type = "ogx"
+ogx_vector_io_provider_id = "milvus"  # or "qdrant", "weaviate", etc.
 ```
 
 ---
@@ -108,9 +73,9 @@ vector_store_type = "ls_milvus"  # or "chroma"
 **Usage**:
 
 ```python
-# Can use with any foundation/embedding models (Llama Stack, OpenAI, etc.)
+# Can use with any foundation/embedding models
 experiment = AI4RAGExperiment(
-    client=client,  # Llama Stack or OpenAI client
+    client=client,  # OGX client
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
@@ -150,8 +115,7 @@ class BaseFoundationModel:
 
 **Current implementations**:
 
-- `LSFoundationModel`: Llama Stack integration
-- `OpenAIFoundationModel`: OpenAI API integration
+- `OGXFoundationModel`: OGX integration
 
 ---
 
@@ -184,8 +148,7 @@ class BaseEmbeddingModel:
 
 **Current implementations**:
 
-- `LSEmbeddingModel`: Llama Stack integration
-- `OpenAIEmbeddingModel`: OpenAI API integration
+- `OGXEmbeddingModel`: OGX integration
 
 ---
 
@@ -224,7 +187,7 @@ class BaseVectorStore:
 
 **Current implementations**:
 
-- `LSVectorStore`: Any Llama Stack vector database (Milvus, Qdrant, etc.)
+- `OGXVectorStore`: Any OGX vector database (Milvus, Qdrant, etc.)
 - `ChromaVectorStore`: ChromaDB in-memory store
 
 ---
@@ -233,17 +196,17 @@ class BaseVectorStore:
 
 The beauty of the provider-agnostic design is that you can **mix and match** components from different providers.
 
-### Example 1: Llama Stack Everything
+### Example 1: OGX Everything
 
-Use Llama Stack for models and vector store:
+Use OGX for models and vector store:
 
 ```python
-from llama_stack_client import LlamaStackClient
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ogx_client import OgxClient
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
 
 experiment = AI4RAGExperiment(
     client=client,
@@ -254,13 +217,13 @@ experiment = AI4RAGExperiment(
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
+                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
-                    LSEmbeddingModel(
+                    OGXEmbeddingModel(
                         model_id="ollama/nomic-embed-text:latest",
                         client=client,
                         params={"embedding_dimension": 768, "context_length": 8192}
@@ -270,76 +233,25 @@ experiment = AI4RAGExperiment(
             # ... other params
         ]
     ),
-    vector_store_type="ls_milvus",  # Llama Stack Milvus
+    vector_store_type="ogx",
+    ogx_vector_io_provider_id="milvus",  # OGX Milvus
     optimizer_settings=optimizer_settings,
 )
 ```
 
 ---
 
-### Example 2: OpenAI Models with Llama Stack Vector Store
+### Example 2: OGX Models with ChromaDB
 
-Use OpenAI for generation and embeddings, but Llama Stack for vector storage:
-
-```python
-from openai import OpenAI
-from llama_stack_client import LlamaStackClient
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-from ai4rag.core.experiment.experiment import AI4RAGExperiment
-
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-llama_stack_client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
-
-experiment = AI4RAGExperiment(
-    client=llama_stack_client,  # For vector store access
-    documents=documents,
-    benchmark_data=benchmark_data,
-    search_space=AI4RAGSearchSpace(
-        params=[
-            Parameter(
-                name="foundation_model",
-                param_type="C",
-                values=[
-                    OpenAIFoundationModel(
-                        model_id="gpt-4o-mini",
-                        client=openai_client,
-                        params={}
-                    )
-                ]
-            ),
-            Parameter(
-                name="embedding_model",
-                param_type="C",
-                values=[
-                    OpenAIEmbeddingModel(
-                        model_id="text-embedding-3-small",
-                        client=openai_client,
-                        params={"embedding_dimension": 1536, "context_length": 8191}
-                    )
-                ]
-            ),
-            # ... other params
-        ]
-    ),
-    vector_store_type="ls_qdrant",  # Llama Stack Qdrant
-    optimizer_settings=optimizer_settings,
-)
-```
-
----
-
-### Example 3: Llama Stack Models with ChromaDB
-
-Use Llama Stack for models, but ChromaDB for quick local development:
+Use OGX for models, but ChromaDB for quick local development:
 
 ```python
-from llama_stack_client import LlamaStackClient
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ogx_client import OgxClient
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
 
 experiment = AI4RAGExperiment(
     client=client,
@@ -350,13 +262,13 @@ experiment = AI4RAGExperiment(
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
+                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
-                    LSEmbeddingModel(
+                    OGXEmbeddingModel(
                         model_id="ollama/nomic-embed-text:latest",
                         client=client,
                         params={"embedding_dimension": 768, "context_length": 8192}
@@ -372,61 +284,7 @@ experiment = AI4RAGExperiment(
 ```
 
 !!! warning "No Hybrid Search with ChromaDB"
-    Remember that ChromaDB doesn't support hybrid search. If your search space includes `search_mode="hybrid"`, use a Llama Stack vector store instead (e.g., `"ls_milvus"`).
-
----
-
-### Example 4: Comparing Models Across Providers
-
-Optimize across different foundation models from different providers:
-
-```python
-from llama_stack_client import LlamaStackClient
-from openai import OpenAI
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
-
-llama_client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
-openai_client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-search_space = AI4RAGSearchSpace(
-    params=[
-        # Compare Llama models against OpenAI models
-        Parameter(
-            name="foundation_model",
-            param_type="C",
-            values=[
-                LSFoundationModel(model_id="ollama/llama3.2:3b", client=llama_client),
-                LSFoundationModel(model_id="ollama/mistral:7b", client=llama_client),
-                OpenAIFoundationModel(model_id="gpt-4o-mini", client=openai_client, params={}),
-            ]
-        ),
-        # Fixed embedding (use Llama Stack)
-        Parameter(
-            name="embedding_model",
-            param_type="C",
-            values=[
-                LSEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=llama_client,
-                    params={"embedding_dimension": 768, "context_length": 8192}
-                )
-            ]
-        ),
-        # ... other params
-    ]
-)
-
-experiment = AI4RAGExperiment(
-    client=llama_client,  # Primary client for vector store
-    documents=documents,
-    benchmark_data=benchmark_data,
-    search_space=search_space,
-    vector_store_type="ls_milvus",
-    optimizer_settings=optimizer_settings,
-)
-```
+    Remember that ChromaDB doesn't support hybrid search. If your search space includes `search_mode="hybrid"`, use an OGX vector store instead (e.g., `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"`).
 
 ---
 
@@ -440,16 +298,16 @@ No configuration needed - just specify `vector_store_type="chroma"`:
 
 ```python
 from pathlib import Path
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
 from dev_utils.file_store import FileStore
 from dev_utils.utils import read_benchmark_from_json
 
 # Load data
-client = LlamaStackClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
 documents = FileStore(Path("./docs")).load_as_documents()
 benchmark_data = read_benchmark_from_json(Path("./benchmark.json"))
 
@@ -607,19 +465,19 @@ class MyCustomVectorStore(BaseVectorStore):
 
 When specifying `vector_store_type` in your experiment:
 
-| Pattern | Example | Provider |
-|---------|---------|----------|
-| `"chroma"` | `"chroma"` | ChromaDB (in-memory) |
-| `"ls_<provider_id>"` | `"ls_milvus"` | Llama Stack Milvus |
-| `"ls_<provider_id>"` | `"ls_qdrant"` | Llama Stack Qdrant |
-| `"ls_<provider_id>"` | `"ls_weaviate"` | Llama Stack Weaviate |
+| `vector_store_type` | `ogx_vector_io_provider_id` | Provider |
+|---------------------|-------------------------------|----------|
+| `"chroma"` | N/A | ChromaDB (in-memory) |
+| `"ogx"` | `"milvus"` | OGX Milvus |
+| `"ogx"` | `"qdrant"` | OGX Qdrant |
+| `"ogx"` | `"weaviate"` | OGX Weaviate |
 
-The `<provider_id>` must match the provider configured in your Llama Stack server.
+The `ogx_vector_io_provider_id` must match the provider configured in your OGX server.
 
-**Example Llama Stack configuration** (excerpt):
+**Example OGX configuration** (excerpt):
 
 ```yaml
-# In your Llama Stack config
+# In your OGX config
 vector_dbs:
   - provider_id: milvus
     config:
@@ -627,21 +485,21 @@ vector_dbs:
       port: 19530
 ```
 
-Then use `vector_store_type="ls_milvus"` in `ai4rag`.
+Then use `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"` in `ai4rag`.
 
 ---
 
 ## Provider Comparison
 
-| Feature | Llama Stack | OpenAI | ChromaDB |
-|---------|------------|--------|----------|
-| **Foundation Models** | Yes (Llama, Mistral, etc.) | Yes (GPT-4, GPT-3.5) | N/A |
-| **Embedding Models** | Yes (any compatible model) | Yes (text-embedding-*) | N/A |
-| **Vector Stores** | Yes (Milvus, Qdrant, etc.) | N/A | Yes (in-memory) |
-| **Hybrid Search** | Yes (via vector store) | N/A | No |
-| **Setup Complexity** | Medium (server required) | Low (API key only) | None |
-| **Cost** | Self-hosted (infra cost) | Pay-per-use (API cost) | Free |
-| **Best For** | On-prem, self-hosted, Llama models | Quick setup, GPT models | Local dev, testing |
+| Feature | OGX | ChromaDB |
+|---------|------------|----------|
+| **Foundation Models** | Yes (Llama, Mistral, etc.) | N/A |
+| **Embedding Models** | Yes (any compatible model) | N/A |
+| **Vector Stores** | Yes (Milvus, Qdrant, etc.) | Yes (in-memory) |
+| **Hybrid Search** | Yes (via vector store) | No |
+| **Setup Complexity** | Medium (server required) | None |
+| **Cost** | Self-hosted (infra cost) | Free |
+| **Best For** | On-prem, self-hosted, Llama models | Local dev, testing |
 
 ---
 
@@ -650,10 +508,8 @@ Then use `vector_store_type="ls_milvus"` in `ai4rag`.
 `ai4rag`'s provider-agnostic design:
 
 - **Abstract base classes**: `BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`
-- **Mix and match**: Use OpenAI for generation, Llama Stack for embeddings, ChromaDB for storage
 - **Extensible**: Add support for new providers by implementing base classes
-- **Llama Stack**: Unified access to multiple models and vector stores
-- **OpenAI**: Standard API integration for GPT models
+- **OGX**: Unified access to multiple models and vector stores
 - **ChromaDB**: Zero-config in-memory vector store for development
 
-The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of whether you're using Llama 3.2, GPT-4, or a custom model. Focus on finding the best RAG configuration for your use case, not your infrastructure.
+The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of whether you're using Llama 3.2, Mistral, or a custom model. Focus on finding the best RAG configuration for your use case, not your infrastructure.

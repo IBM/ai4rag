@@ -24,21 +24,18 @@ jobs:
           fetch-depth: 0  # Fetch all history for git-revision-date-localized plugin
           token: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN for authentication
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'
-          cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -e ".[docs]"
+        run: uv sync --extra docs
 
       - name: Extract version
         id: version
         run: |
-          VERSION=$(python -c "import ai4rag; print(ai4rag.__version__)")
+          VERSION=$(uv run python -c "import ai4rag; print(ai4rag.__version__)")
           # Strip 'v' prefix if present
           VERSION=${VERSION#v}
           echo "docs_version=$VERSION" >> $GITHUB_OUTPUT
@@ -52,4 +49,4 @@ jobs:
       - name: Deploy documentation (manual trigger)
         if: github.event_name == 'workflow_dispatch'
         run: |
-          mike deploy --push ${{ steps.version.outputs.docs_version }}
+          uv run mike deploy --push ${{ steps.version.outputs.docs_version }}

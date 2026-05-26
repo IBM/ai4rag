@@ -6,12 +6,12 @@
 
 from pathlib import Path
 
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
@@ -25,39 +25,39 @@ if __name__ == "__main__":
 
     load_dotenv(find_dotenv())
 
-    # client = LlamaStackClient(base_url="http://localhost:8321")
-    client = LlamaStackClient()
+    client = OgxClient(base_url="http://localhost:8321")
+    # client = OgxClient()
 
     # change to direct to your local documents path
-    documents_path = _filepath.parents[1] / "local" / "data" / "financial_ibm" / "documents"
+    documents_path = _filepath.parents[1] / "local" / "data" / "rh_summit_2026" / "documents"
 
     # change to direct to your benchmark_data.json
-    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "financial_ibm" / "benchmark_data.json"
+    benchmark_data_path = _filepath.parents[1] / "local" / "data" / "rh_summit_2026" / "benchmark_data_4q.json"
 
     file_store = FileStore(documents_path)
     documents = file_store.load_as_documents()
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
     # Configure optimizer
-    optimizer_settings = GAMOptSettings(max_evals=6, n_random_nodes=4)
+    optimizer_settings = GAMOptSettings(max_evals=1, n_random_nodes=4)
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
-        vector_store_type="ls_milvus",
+        vector_store_type="ogx",
         params=[
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[LSFoundationModel(model_id="vllm-inference-qwen/qwen25-7b-instruct", client=client)],
+                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
-                    LSEmbeddingModel(
-                        model_id="vllm-embedding/bge-m3",
+                    OGXEmbeddingModel(
+                        model_id="ollama/nomic-embed-text:latest",
                         client=client,
-                        params={"embedding_dimension": 1024, "context_length": 8192},
+                        params={"embedding_dimension": 768, "context_length": 8192},
                     )
                 ],
             ),
@@ -91,8 +91,10 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
-        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "hybrid_test"),
-        vector_store_type="ls_milvus",
+        # event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "hybrid_test"),
+        event_handler=LocalEventHandler(),
+        vector_store_type="ogx",
+        ogx_vector_io_provider_id="milvus-lite",
     )
 
     experiment.search(skip_mps=True)
@@ -100,5 +102,3 @@ if __name__ == "__main__":
     best_eval = experiment.results.get_best_evaluations(k=1)[0]
 
     print(best_eval)
-
-    print(best_eval.rag_pattern.generate("What is greedy decoding?"))

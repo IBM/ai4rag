@@ -16,16 +16,13 @@ jobs:
         with:
           fetch-depth: 0  # Fetch all history for git-revision-date-localized plugin
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: '3.13'
-          cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install --upgrade pip
-          pip install -e ".[docs]"
+        run: uv sync --extra docs
 
       - name: Build documentation
-        run: mkdocs build --strict
+        run: uv run mkdocs build --strict

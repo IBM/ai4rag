@@ -74,14 +74,14 @@ Parameter(
 **Example 3: Model objects**
 
 ```python
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 
 Parameter(
     name="foundation_model",
     param_type="C",
     values=[
-        LSFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-        LSFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+        OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
+        OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
     ]
 )
 ```
@@ -191,33 +191,16 @@ Two parameters are **always required** in an `AI4RAGSearchSpace`:
 
 The LLM used for text generation.
 
-**Example (Llama Stack)**:
+**Example (OGX)**:
 
 ```python
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 
 Parameter(
     name="foundation_model",
     param_type="C",
     values=[
-        LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)
-    ]
-)
-```
-
-**Example (OpenAI-compatible)**:
-
-```python
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from openai import OpenAI
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-Parameter(
-    name="foundation_model",
-    param_type="C",
-    values=[
-        OpenAIFoundationModel(model_id="gpt-4o-mini", client=client, params={})
+        OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
     ]
 )
 ```
@@ -228,40 +211,19 @@ Parameter(
 
 The model used for generating document and query embeddings.
 
-**Example (Llama Stack)**:
+**Example (OGX)**:
 
 ```python
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
 Parameter(
     name="embedding_model",
     param_type="C",
     values=[
-        LSEmbeddingModel(
+        OGXEmbeddingModel(
             model_id="ollama/nomic-embed-text:latest",
             client=client,
             params={"embedding_dimension": 768, "context_length": 8192}
-        )
-    ]
-)
-```
-
-**Example (OpenAI-compatible)**:
-
-```python
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-from openai import OpenAI
-
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-
-Parameter(
-    name="embedding_model",
-    param_type="C",
-    values=[
-        OpenAIEmbeddingModel(
-            model_id="text-embedding-3-small",
-            client=client,
-            params={"embedding_dimension": 1536, "context_length": 8191}
         )
     ]
 )
@@ -276,11 +238,11 @@ Parameter(
 
 ## Default Parameters
 
-If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. These defaults differ slightly between ChromaDB and Llama Stack vector stores.
+If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. These defaults differ slightly between ChromaDB and OGX vector stores.
 
 ### Default Values
 
-| Parameter | Default (Llama Stack) | Default (ChromaDB) | Type |
+| Parameter | Default (OGX) | Default (ChromaDB) | Type |
 |-----------|----------------------|-------------------|------|
 | `chunking_method` | `("recursive",)` | `("recursive",)` | Categorical |
 | `chunk_size` | `(1024, 2048)` | `(1024, 2048)` | Categorical |
@@ -296,7 +258,7 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 !!! note "Why Different Defaults?"
     - **ChromaDB** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
     - **ChromaDB** defaults include window retrieval options since it's an in-memory store (faster experimentation)
-    - **Llama Stack** defaults focus on simple retrieval but include hybrid search exploration
+    - **OGX** defaults focus on simple retrieval but include hybrid search exploration
 
 ---
 
@@ -394,7 +356,7 @@ estimated_tokens = 1024 / 3.6 ≈ 284 tokens
 
 ```python
 # Embedding model with context_length = 512
-embedding = LSEmbeddingModel(
+embedding = OGXEmbeddingModel(
     model_id="small-embedder",
     params={"context_length": 512, "embedding_dimension": 384}
 )
@@ -564,8 +526,8 @@ Optimize chunking and retrieval with fixed models:
 ```python
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.search_space.src.parameter import Parameter
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -573,13 +535,13 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
+            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                LSEmbeddingModel(
+                OGXEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192}
@@ -631,7 +593,8 @@ search_space = AI4RAGSearchSpace(
         Parameter(name="ranker_k", param_type="C", values=[0, 30, 60, 100]),
         Parameter(name="ranker_alpha", param_type="C", values=[1, 0.3, 0.5, 0.7]),
     ],
-    vector_store_type="ls_milvus"  # Required for hybrid search
+    vector_store_type="ogx",  # Required for hybrid search
+    ogx_vector_io_provider_id="milvus",
 )
 ```
 
@@ -649,9 +612,9 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                LSFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-                LSFoundationModel(model_id="ollama/llama3.1:8b", client=client),
-                LSFoundationModel(model_id="ollama/mistral:7b", client=client),
+                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
+                OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+                OGXFoundationModel(model_id="ollama/mistral:7b", client=client),
             ]
         ),
 
@@ -687,8 +650,8 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                LSFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-                LSFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
+                OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
             ]
         ),
         Parameter(name="embedding_model", param_type="C", values=[embedding]),

@@ -8,7 +8,7 @@ from typing import Any, Sequence
 
 import pandas as pd
 from langchain_core.documents import Document
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -77,12 +77,17 @@ class AI4RAGExperiment:
 
     vector_store_type : str
         Specific type of Vector Data Base that will be used during the experiment.
+        Supported values: ``"ogx"`` and ``"chroma"``.
+
+    ogx_vector_io_provider_id : str | None
+        Provider ID for OGX vector store (e.g., ``"milvus"``, ``"qdrant"``).
+        Required when ``vector_store_type="ogx"``.
 
     optimizer_settings : OptimizerSettings
         Settings for the optimizer to be used during the experiment.
 
-    client : LlamaStackClient | Any
-        Instance of the llama stack client or other client allowing to communicate
+    client : OgxClient | Any
+        Instance of the OGX client or other client allowing to communicate
         with the available vector store providers.
 
     event_handler : BaseEventHandler
@@ -132,7 +137,8 @@ class AI4RAGExperiment:
         vector_store_type: str,
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
-        client: LlamaStackClient | Any = None,
+        client: OgxClient | Any = None,
+        ogx_vector_io_provider_id: str | None = None,
         optimization_metric: str = MetricType.FAITHFULNESS,
         **kwargs,
     ):
@@ -140,6 +146,7 @@ class AI4RAGExperiment:
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.search_space = search_space
         self.vector_store_type = vector_store_type
+        self.ogx_vector_io_provider_id = ogx_vector_io_provider_id
         self.optimizer_settings = optimizer_settings
         self.event_handler = event_handler
         self.client = client
@@ -153,8 +160,10 @@ class AI4RAGExperiment:
             "evaluator",
             UnitxtEvaluator(),
         )
-        self.n_mps_foundation_models = kwargs.pop("n_mps_fm", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS)
-        self.n_mps_embedding_models = kwargs.pop("n_mps_em", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
+        self.n_mps_foundation_models = kwargs.pop(
+            "n_mps_foundation_models", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS
+        )
+        self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
 
         self.results: ExperimentResults = ExperimentResults()
@@ -366,6 +375,7 @@ class AI4RAGExperiment:
             embedding_model=embedding_model,
             reuse_collection_name=reuse_collection_name,
             client=self.client,
+            ogx_vector_io_provider_id=self.ogx_vector_io_provider_id,
         )
 
         collection_name = vector_store.collection_name
@@ -597,7 +607,7 @@ class AI4RAGExperiment:
             )
 
         vector_store_payload = {
-            "datasource_type": self.vector_store_type,
+            "datasource_type": self.ogx_vector_io_provider_id or "local_chroma",
             "collection_name": evaluation_result.collection,
         }
 
@@ -710,7 +720,7 @@ class AI4RAGExperiment:
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method returns name of the collection / vector_store_id (for llama stack)
+        This method returns name of the collection / vector_store_id (for OGX)
         if chosen indexing params have already been used to create an index / collection.
 
         Parameters

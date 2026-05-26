@@ -1,7 +1,7 @@
 # Quick Start
 
 This guide walks you through running your first RAG optimization experiment with `ai4rag`.
-For the sake of quick-start Llama Stack server will be used, but this can be run with independently deployed models as long as they are introduced to the experiment with proper wrapper.
+For the sake of quick-start OGX server will be used, but this can be run with independently deployed models as long as they are introduced to the experiment with proper wrapper.
 
 ---
 
@@ -16,25 +16,25 @@ For the development purposes you may use `FileStore` implementation from `dev_ut
 Before starting, ensure you have:
 
 - [x] Installed ai4rag ([Installation Guide](installation.md))
-- [x] A running Llama Stack server with models configured or other deployed models that can be used for the experiment
-- [x] Environment variables set (e.g. `BASE_URL`, `APIKEY`) to communicate with Llama Stack server or deployed models
+- [x] A running OGX server with models configured or other deployed models that can be used for the experiment
+- [x] Environment variables set (e.g. `BASE_URL`, `APIKEY`) to communicate with OGX server or deployed models
 
 ---
 
-## Step-by-Step Guide with Llama Stack
+## Step-by-Step Guide with OGX
 
-### 1. Prepare Llama Stack Client
+### 1. Prepare OGX Client
 
-Create a client instance to connect to your Llama Stack server:
+Create a client instance to connect to your OGX server:
 
 ```python
 import os
 from dotenv import load_dotenv, find_dotenv
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 load_dotenv(find_dotenv())
 
-client = LlamaStackClient(
+client = OgxClient(
     base_url=os.getenv("BASE_URL"),
     api_key=os.getenv("APIKEY")
 )
@@ -112,8 +112,8 @@ Specify which parameters to optimize and their possible values:
 ```python
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -122,7 +122,7 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                LSFoundationModel(
+                OGXFoundationModel(
                     model_id="ollama/llama3.2:3b",
                     client=client
                 )
@@ -133,7 +133,7 @@ search_space = AI4RAGSearchSpace(
             name="embedding_model",
             param_type="C",
             values=[
-                LSEmbeddingModel(
+                OGXEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={
@@ -203,7 +203,8 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",  # "ls_<provider_id>" for Llama Stack, or "chroma" for in-memory
+    vector_store_type="ogx",  # "ogx" for OGX, or "chroma" for in-memory
+    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<path_to_store_results>"),  # Tracks progress
 )
@@ -234,13 +235,13 @@ Here's the full code in one place:
 import os
 from pathlib import Path
 from dotenv import load_dotenv
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.utils.event_handler import LocalEventHandler
 
@@ -249,7 +250,7 @@ from dev_utils.utils import read_benchmark_from_json
 
 # 1. Setup client
 load_dotenv()
-client = LlamaStackClient(
+client = OgxClient(
     base_url=os.getenv("BASE_URL"),
     api_key=os.getenv("APIKEY")
 )
@@ -266,13 +267,13 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[LSFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                LSEmbeddingModel(
+                OGXEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192},
@@ -295,7 +296,8 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ls_milvus",
+    vector_store_type="ogx",
+    ogx_vector_io_provider_id="milvus",
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="./results"),
 )

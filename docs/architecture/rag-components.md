@@ -19,15 +19,9 @@ classDiagram
         +chat(messages)* list
     }
 
-    class LSFoundationModel {
-        +client: LlamaStackClient
-        +params: LSModelParameters
-        +chat(messages) list
-    }
-
-    class OpenAIFoundationModel {
-        +client: OpenAI
-        +params: OpenAIModelParameters
+    class OGXFoundationModel {
+        +client: OgxClient
+        +params: OGXModelParameters
         +chat(messages) list
     }
 
@@ -40,16 +34,9 @@ classDiagram
         +embed_query(query)* list
     }
 
-    class LSEmbeddingModel {
-        +client: LlamaStackClient
-        +params: LSEmbeddingParams
-        +embed_documents(texts) list
-        +embed_query(query) list
-    }
-
-    class OpenAIEmbeddingModel {
-        +client: OpenAI
-        +params: OpenAIEmbeddingParams
+    class OGXEmbeddingModel {
+        +client: OgxClient
+        +params: OGXEmbeddingParams
         +embed_documents(texts) list
         +embed_query(query) list
     }
@@ -63,8 +50,8 @@ classDiagram
         +add_documents(docs)* void
     }
 
-    class LSVectorStore {
-        +client: LlamaStackClient
+    class OGXVectorStore {
+        +client: OgxClient
         +search(query, k, search_mode, ranker_*) list
         +add_documents(docs) void
     }
@@ -118,11 +105,9 @@ classDiagram
         +generate_stream(question) iterator
     }
 
-    BaseFoundationModel <|-- LSFoundationModel
-    BaseFoundationModel <|-- OpenAIFoundationModel
-    BaseEmbeddingModel <|-- LSEmbeddingModel
-    BaseEmbeddingModel <|-- OpenAIEmbeddingModel
-    BaseVectorStore <|-- LSVectorStore
+    BaseFoundationModel <|-- OGXFoundationModel
+    BaseEmbeddingModel <|-- OGXEmbeddingModel
+    BaseVectorStore <|-- OGXVectorStore
     BaseVectorStore <|-- ChromaVectorStore
     BaseChunker <|-- LangChainChunker
     BaseRAGTemplate <|-- SimpleRAG
@@ -199,7 +184,7 @@ Placeholder:
 **Customization Example:**
 
 ```python
-foundation_model = LSFoundationModel(
+foundation_model = OGXFoundationModel(
     model_id="ollama/llama3.2:3b",
     client=client,
     system_message_text="You are a technical documentation assistant specialized in software APIs.",
@@ -224,17 +209,17 @@ class MessageTyped(TypedDict):
     content: str   # Message text
 ```
 
-### LSFoundationModel
+### OGXFoundationModel
 
-Llama Stack integration for foundation models:
+OGX integration for foundation models:
 
 ```python
-class LSFoundationModel(BaseFoundationModel[LlamaStackClient, LSModelParameters]):
+class OGXFoundationModel(BaseFoundationModel[OgxClient, OGXModelParameters]):
     def __init__(
         self,
-        client: LlamaStackClient,
+        client: OgxClient,
         model_id: str,
-        params: dict | LSModelParameters | None = None,
+        params: dict | OGXModelParameters | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
@@ -245,7 +230,7 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, LSModelParameters]
 
 ```python
 @dataclass
-class LSModelParameters:
+class OGXModelParameters:
     max_completion_tokens: int = 1024  # Max tokens in response
     temperature: float = 0.1            # Sampling temperature (0.0-1.0)
 ```
@@ -266,9 +251,9 @@ def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
 **Usage:**
 
 ```python
-foundation_model = LSFoundationModel(
+foundation_model = OGXFoundationModel(
     model_id="ollama/llama3.2:3b",
-    client=llama_stack_client,
+    client=ogx_client,
     params={"max_completion_tokens": 512, "temperature": 0.0}
 )
 
@@ -280,20 +265,6 @@ messages = [
 response = foundation_model.chat(messages)
 answer = response[0].message.content
 ```
-
-### OpenAIFoundationModel
-
-OpenAI integration for foundation models:
-
-```python
-class OpenAIFoundationModel(BaseFoundationModel[OpenAI, OpenAIModelParameters]):
-    # Similar interface to LSFoundationModel but uses OpenAI client
-```
-
-**Supported Models:**
-- GPT-4, GPT-4 Turbo
-- GPT-3.5 Turbo
-- Any model accessible via OpenAI API
 
 ---
 
@@ -327,17 +298,17 @@ def embed_query(self, query: str) -> list[float]:
     """Embed a single query (used during retrieval)."""
 ```
 
-### LSEmbeddingModel
+### OGXEmbeddingModel
 
-Llama Stack integration with auto-detection of model capabilities:
+OGX integration with auto-detection of model capabilities:
 
 ```python
-class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
+class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
     def __init__(
         self,
-        client: LlamaStackClient,
+        client: OgxClient,
         model_id: str,
-        params: dict | LSEmbeddingParams | None = None
+        params: dict | OGXEmbeddingParams | None = None
     ):
 ```
 
@@ -345,7 +316,7 @@ class LSEmbeddingModel(BaseEmbeddingModel[LlamaStackClient, LSEmbeddingParams]):
 
 ```python
 @dataclass
-class LSEmbeddingParams:
+class OGXEmbeddingParams:
     embedding_dimension: int | None = None    # Auto-detected if None
     context_length: int | None = None         # Auto-detected if None
     timeout: float | Timeout | None = None
@@ -406,18 +377,18 @@ def embed_documents(self, texts: list[str]) -> list[list[float]]:
 
 ```python
 # Auto-detect parameters
-embedding_model = LSEmbeddingModel(
+embedding_model = OGXEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=llama_stack_client,
+    client=ogx_client,
 )
 # First call triggers detection:
 # - embedding_dimension = 768 (detected)
 # - context_length = 8192 (detected)
 
 # Or explicitly provide parameters
-embedding_model = LSEmbeddingModel(
+embedding_model = OGXEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=llama_stack_client,
+    client=ogx_client,
     params={"embedding_dimension": 768, "context_length": 8192}
 )
 
@@ -429,20 +400,6 @@ embeddings = embedding_model.embed_documents(["text 1", "text 2", ...])
 query_embedding = embedding_model.embed_query("What is X?")
 # Returns: [0.05, -0.12, ...]
 ```
-
-### OpenAIEmbeddingModel
-
-OpenAI integration for embeddings:
-
-```python
-class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
-    # Similar interface but uses OpenAI client
-```
-
-**Supported Models:**
-- text-embedding-3-small
-- text-embedding-3-large
-- text-embedding-ada-002
 
 ---
 
@@ -579,16 +536,16 @@ results = vector_store.window_search(query="What is X?", k=5, window_size=2)
 # Returns: [merged_doc_1, merged_doc_2, ...]
 ```
 
-### LSVectorStore
+### OGXVectorStore
 
-Llama Stack integration supporting any vector store provider and hybrid search:
+OGX integration supporting any vector store provider and hybrid search:
 
 ```python
-class LSVectorStore(BaseVectorStore):
+class OGXVectorStore(BaseVectorStore):
     def __init__(
         self,
-        embedding_model: LSEmbeddingModel,
-        client: LlamaStackClient,
+        embedding_model: OGXEmbeddingModel,
+        client: OgxClient,
         provider_id: str,
         reuse_collection_name: str | None = None,
         distance_metric: str | None = None,
@@ -601,20 +558,20 @@ The `provider_id` parameter determines the backend vector store:
 
 ```python
 # Milvus
-vector_store = LSVectorStore(
+vector_store = OGXVectorStore(
     embedding_model=embedding_model,
     client=client,
     provider_id="milvus"
 )
 
 # Qdrant
-vector_store = LSVectorStore(
+vector_store = OGXVectorStore(
     embedding_model=embedding_model,
     client=client,
     provider_id="qdrant"
 )
 
-# Any provider supported by Llama Stack server
+# Any provider supported by OGX server
 ```
 
 **Collection Creation:**
@@ -705,7 +662,7 @@ params = {
 
 **Validation:**
 
-LSVectorStore validates hybrid search parameters:
+OGXVectorStore validates hybrid search parameters:
 
 ```python
 def _validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha):
@@ -724,7 +681,7 @@ def _validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha
 
 ```python
 def add_documents(self, documents: list[Document], batch_size: int = 2048):
-    """Add documents with embeddings to Llama Stack vector store."""
+    """Add documents with embeddings to OGX vector store."""
     chunks = [
         {
             "content": doc.page_content,
@@ -748,9 +705,9 @@ def add_documents(self, documents: list[Document], batch_size: int = 2048):
 
 ```python
 # Create vector store
-vector_store = LSVectorStore(
-    embedding_model=ls_embedding_model,
-    client=llama_stack_client,
+vector_store = OGXVectorStore(
+    embedding_model=ogx_embedding_model,
+    client=ogx_client,
     provider_id="milvus"
 )
 
@@ -958,7 +915,7 @@ def retrieve(self, query: str, **kwargs) -> list[Document]:
 
 The `method` parameter determines retrieval strategy but actual implementation depends on vector store:
 
-- **LSVectorStore**: Always returns simple chunks (no window expansion)
+- **OGXVectorStore**: Always returns simple chunks (no window expansion)
 - **ChromaVectorStore**:
   - `method="simple"`: Returns top-k chunks
   - `method="window"`: Returns top-k chunks expanded with adjacent chunks
@@ -979,7 +936,7 @@ docs = retriever.retrieve("What is X?")
 
 # Hybrid retrieval with RRF
 retriever = Retriever(
-    vector_store=ls_vector_store,
+    vector_store=ogx_vector_store,
     number_of_chunks=5,
     method="simple",
     search_mode="hybrid",
@@ -1030,7 +987,7 @@ def generate_stream(self, question: str, **kwargs):
 
 ### SimpleRAG
 
-Complete RAG implementation using Llama Stack and LangChain:
+Complete RAG implementation using OGX and LangChain:
 
 ```python
 class SimpleRAG(BaseRAGTemplate):
@@ -1107,11 +1064,11 @@ def generate_stream(self, question: str, **kwargs):
 ```python
 # Create RAG template
 rag = SimpleRAG(
-    foundation_model=ls_foundation_model,
+    foundation_model=ogx_foundation_model,
     retriever=retriever,
     chunker=chunker,
-    embedding_model=ls_embedding_model,
-    vector_store=ls_vector_store
+    embedding_model=ogx_embedding_model,
+    vector_store=ogx_vector_store
 )
 
 # Index documents (if building index manually)
@@ -1146,33 +1103,33 @@ rag_pattern = SimpleRAG(
 Full RAG pipeline with all components:
 
 ```python
-from llama_stack_client import LlamaStackClient
-from ai4rag.rag.foundation_models.llama_stack import LSFoundationModel
-from ai4rag.rag.embedding.llama_stack import LSEmbeddingModel
-from ai4rag.rag.vector_store.llama_stack import LSVectorStore
+from ogx_client import OgxClient
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store.ogx import OGXVectorStore
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 
 # 1. Initialize client
-client = LlamaStackClient(base_url="http://localhost:8000", api_key="...")
+client = OgxClient(base_url="http://localhost:8000", api_key="...")
 
 # 2. Create foundation model
-foundation_model = LSFoundationModel(
+foundation_model = OGXFoundationModel(
     model_id="ollama/llama3.2:3b",
     client=client,
     params={"max_completion_tokens": 512, "temperature": 0.1}
 )
 
 # 3. Create embedding model
-embedding_model = LSEmbeddingModel(
+embedding_model = OGXEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
     client=client,
     params={"embedding_dimension": 768, "context_length": 8192}
 )
 
 # 4. Create vector store
-vector_store = LSVectorStore(
+vector_store = OGXVectorStore(
     embedding_model=embedding_model,
     client=client,
     provider_id="milvus"
@@ -1292,7 +1249,7 @@ class CustomRAG(BaseRAGTemplate):
 
 **Vector Stores:**
 
-1. **Use LSVectorStore with Milvus/Qdrant** for production (better performance, hybrid search)
+1. **Use OGXVectorStore with Milvus/Qdrant** for production (better performance, hybrid search)
 2. **Use ChromaVectorStore** for development/testing (in-memory, simpler setup)
 3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical)
 4. **Tune ranker parameters** (ranker_k, ranker_alpha) via optimization

@@ -24,16 +24,16 @@ _default_ranker_k = (0, 60)
 _default_ranker_alpha = (1, 0.5)
 
 
-def get_default_ai4rag_search_space_parameters(vector_store_type: str = "ls_milvus") -> list[Parameter]:
+def get_default_ai4rag_search_space_parameters(vector_store_type: str = "ogx") -> list[Parameter]:
     """
     Function to return default search space containing experiment parameters.
 
     Parameters
     ----------
-    vector_store_type : str, default="ls_milvus"
-        Type of vector store. Use "ls_<provider_id>" for Llama Stack vector stores
-        (e.g., "ls_milvus", "ls_qdrant"). When "chroma", hybrid search parameters
-        are excluded since ChromaDB does not support hybrid search.
+    vector_store_type : str, default="ogx"
+        Type of vector store. Supported values: ``"ogx"`` and ``"chroma"``.
+        When ``"chroma"``, hybrid search parameters are excluded since
+        ChromaDB does not support hybrid search.
 
     Returns
     -------

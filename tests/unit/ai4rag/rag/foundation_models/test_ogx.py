@@ -6,77 +6,77 @@
 import pytest
 from pydantic import ValidationError
 
-from ai4rag.rag.foundation_models.llama_stack import (
-    LSFoundationModel,
-    LSModelParameters,
+from ai4rag.rag.foundation_models.ogx import (
+    OGXFoundationModel,
+    OGXModelParameters,
 )
 from ai4rag.utils.constants import ChatGenerationConstants
 from ai4rag.utils.validators import ConstraintsValidationError
 
 
 class TestModelParameters:
-    """Test suite for OpenAIModelParameters class."""
+    """Test suite for OGXModelParameters class."""
 
     def test_default_values(self):
-        """Test OpenAIModelParameters with default values."""
-        params = LSModelParameters()
+        """Test OGXModelParameters with default values."""
+        params = OGXModelParameters()
         assert params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
         assert params.temperature == ChatGenerationConstants.TEMPERATURE
 
     def test_custom_values(self):
-        """Test OpenAIModelParameters with custom valid values."""
-        params = LSModelParameters(max_completion_tokens=1024, temperature=0.5)
+        """Test OGXModelParameters with custom valid values."""
+        params = OGXModelParameters(max_completion_tokens=1024, temperature=0.5)
         assert params.max_completion_tokens == 1024
         assert params.temperature == 0.5
 
     def test_max_completion_tokens_positive(self):
         """Test that max_completion_tokens must be positive."""
-        params = LSModelParameters(max_completion_tokens=1)
+        params = OGXModelParameters(max_completion_tokens=1)
         assert params.max_completion_tokens == 1
 
     def test_max_completion_tokens_zero_invalid(self):
         """Test that max_completion_tokens cannot be zero."""
         with pytest.raises(ValidationError) as exc_info:
-            LSModelParameters(max_completion_tokens=0)
+            OGXModelParameters(max_completion_tokens=0)
         assert "greater than 0" in str(exc_info.value).lower()
 
     def test_max_completion_tokens_negative_invalid(self):
         """Test that max_completion_tokens cannot be negative."""
         with pytest.raises(ValidationError) as exc_info:
-            LSModelParameters(max_completion_tokens=-100)
+            OGXModelParameters(max_completion_tokens=-100)
         assert "greater than 0" in str(exc_info.value).lower()
 
     def test_temperature_minimum_boundary(self):
         """Test temperature at minimum boundary (0)."""
-        params = LSModelParameters(temperature=0.0)
+        params = OGXModelParameters(temperature=0.0)
         assert params.temperature == 0.0
 
     def test_temperature_maximum_boundary(self):
         """Test temperature at maximum boundary (1)."""
-        params = LSModelParameters(temperature=1.0)
+        params = OGXModelParameters(temperature=1.0)
         assert params.temperature == 1.0
 
     def test_temperature_below_minimum_invalid(self):
         """Test that temperature below 0 is invalid."""
         with pytest.raises(ValidationError) as exc_info:
-            LSModelParameters(temperature=-0.1)
+            OGXModelParameters(temperature=-0.1)
         assert "greater than or equal to 0" in str(exc_info.value).lower()
 
     def test_temperature_above_maximum_invalid(self):
         """Test that temperature above 1 is invalid."""
         with pytest.raises(ValidationError) as exc_info:
-            LSModelParameters(temperature=1.1)
+            OGXModelParameters(temperature=1.1)
         assert "less than or equal to 1" in str(exc_info.value).lower()
 
     def test_max_completion_tokens_float_invalid(self):
         """Test that max_completion_tokens must be an integer."""
         with pytest.raises(ValidationError) as exc_info:
-            LSModelParameters(max_completion_tokens=100.5)
+            OGXModelParameters(max_completion_tokens=100.5)
         assert "int" in str(exc_info.value).lower()
 
     def test_temperature_int_coerced_to_float(self):
         """Test that integer temperature values are accepted and coerced to float."""
-        params = LSModelParameters(temperature=0)
+        params = OGXModelParameters(temperature=0)
         assert params.temperature == 0.0
         assert isinstance(params.temperature, float)
 
@@ -92,17 +92,17 @@ class TestModelParameters:
     )
     def test_valid_parameter_combinations(self, max_tokens, temp):
         """Parameterized test for valid parameter combinations."""
-        params = LSModelParameters(max_completion_tokens=max_tokens, temperature=temp)
+        params = OGXModelParameters(max_completion_tokens=max_tokens, temperature=temp)
         assert params.max_completion_tokens == max_tokens
         assert params.temperature == temp
 
 
-class TestLlamaStackFoundationModel:
-    """Test suite for LSFoundationModel class."""
+class TestOGXFoundationModel:
+    """Test suite for OGXFoundationModel class."""
 
     @pytest.fixture
-    def mock_llama_client(self, mocker):
-        """Create a mock LlamaStackClient."""
+    def mock_ogx_client(self, mocker):
+        """Create a mock OgxClient."""
         mock_client = mocker.MagicMock()
         mock_response = mocker.MagicMock()
         mock_response.choices = [mocker.MagicMock()]
@@ -127,13 +127,13 @@ class TestLlamaStackFoundationModel:
 
     @pytest.fixture
     def model_with_dict_params(
-        self, mock_llama_client, valid_user_message_template, valid_context_template, valid_system_message
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
-        """Create a LSFoundationModel with dict parameters."""
-        return LSFoundationModel(
+        """Create a OGXFoundationModel with dict parameters."""
+        return OGXFoundationModel(
             model_id="test-model-id",
             params={"max_completion_tokens": 1024, "temperature": 0.3},
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
@@ -141,14 +141,14 @@ class TestLlamaStackFoundationModel:
 
     @pytest.fixture
     def model_with_model_params(
-        self, mock_llama_client, valid_user_message_template, valid_context_template, valid_system_message
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
-        """Create a LSFoundationModel with OpenAIModelParameters."""
-        params = LSModelParameters(max_completion_tokens=512, temperature=0.7)
-        return LSFoundationModel(
+        """Create a OGXFoundationModel with OGXModelParameters."""
+        params = OGXModelParameters(max_completion_tokens=512, temperature=0.7)
+        return OGXFoundationModel(
             model_id="test-model-id",
             params=params,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
@@ -156,51 +156,51 @@ class TestLlamaStackFoundationModel:
 
     @pytest.fixture
     def model_with_none_params(
-        self, mock_llama_client, valid_user_message_template, valid_context_template, valid_system_message
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
-        """Create a LSFoundationModel with None parameters."""
-        return LSFoundationModel(
+        """Create a OGXFoundationModel with None parameters."""
+        return OGXFoundationModel(
             model_id="test-model-id",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
         )
 
-    def test_init_with_dict_params(self, model_with_dict_params, mock_llama_client):
+    def test_init_with_dict_params(self, model_with_dict_params, mock_ogx_client):
         """Test initialization with dict parameters."""
         assert model_with_dict_params.model_id == "test-model-id"
-        assert isinstance(model_with_dict_params.params, LSModelParameters)
+        assert isinstance(model_with_dict_params.params, OGXModelParameters)
         assert model_with_dict_params.params.max_completion_tokens == 1024
         assert model_with_dict_params.params.temperature == 0.3
-        assert model_with_dict_params.client == mock_llama_client
+        assert model_with_dict_params.client == mock_ogx_client
         assert "question" in model_with_dict_params.user_message_text
         assert "document" in model_with_dict_params.context_template_text
 
-    def test_init_with_model_parameters(self, model_with_model_params, mock_llama_client):
-        """Test initialization with OpenAIModelParameters object."""
+    def test_init_with_model_parameters(self, model_with_model_params, mock_ogx_client):
+        """Test initialization with OGXModelParameters object."""
         assert model_with_model_params.model_id == "test-model-id"
-        assert isinstance(model_with_model_params.params, LSModelParameters)
+        assert isinstance(model_with_model_params.params, OGXModelParameters)
         assert model_with_model_params.params.max_completion_tokens == 512
         assert model_with_model_params.params.temperature == 0.7
-        assert model_with_model_params.client == mock_llama_client
+        assert model_with_model_params.client == mock_ogx_client
 
-    def test_init_with_none_params(self, model_with_none_params, mock_llama_client):
+    def test_init_with_none_params(self, model_with_none_params, mock_ogx_client):
         """Test initialization with None parameters uses defaults."""
         assert model_with_none_params.model_id == "test-model-id"
-        assert isinstance(model_with_none_params.params, LSModelParameters)
+        assert isinstance(model_with_none_params.params, OGXModelParameters)
         assert model_with_none_params.params.max_completion_tokens == ChatGenerationConstants.MAX_COMPLETION_TOKENS
         assert model_with_none_params.params.temperature == ChatGenerationConstants.TEMPERATURE
-        assert model_with_none_params.client == mock_llama_client
+        assert model_with_none_params.client == mock_ogx_client
 
-    def test_user_message_text_custom(self, mock_llama_client, valid_context_template, valid_system_message):
+    def test_user_message_text_custom(self, mock_ogx_client, valid_context_template, valid_system_message):
         """Test that custom user_message_text is used when provided."""
         custom_template = "Custom question: {question} and refs: {reference_documents}"
-        model = LSFoundationModel(
+        model = OGXFoundationModel(
             model_id="test-model",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=custom_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
@@ -208,17 +208,17 @@ class TestLlamaStackFoundationModel:
         assert model.user_message_text == custom_template
 
     def test_user_message_text_default_when_none(
-        self, mock_llama_client, valid_context_template, valid_system_message, mocker
+        self, mock_ogx_client, valid_context_template, valid_system_message, mocker
     ):
         """Test that default user_message_text is used when None is provided."""
         mock_get_user_message = mocker.patch(
             "ai4rag.rag.foundation_models.base_model.get_user_message_text",
             return_value="Default user message: {question} {reference_documents}",
         )
-        model = LSFoundationModel(
+        model = OGXFoundationModel(
             model_id="llama-3-70b",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=None,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
@@ -226,13 +226,13 @@ class TestLlamaStackFoundationModel:
         mock_get_user_message.assert_called_once_with(model_name="llama-3-70b")
         assert "Default user message" in model.user_message_text
 
-    def test_context_template_text_custom(self, mock_llama_client, valid_user_message_template, valid_system_message):
+    def test_context_template_text_custom(self, mock_ogx_client, valid_user_message_template, valid_system_message):
         """Test that custom context_template_text is used when provided."""
         custom_template = "Custom: {document}"
-        model = LSFoundationModel(
+        model = OGXFoundationModel(
             model_id="test-model",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=custom_template,
             system_message_text=valid_system_message,
@@ -240,17 +240,17 @@ class TestLlamaStackFoundationModel:
         assert model.context_template_text == custom_template
 
     def test_context_template_text_default_when_none(
-        self, mock_llama_client, valid_user_message_template, valid_system_message, mocker
+        self, mock_ogx_client, valid_user_message_template, valid_system_message, mocker
     ):
         """Test that default context_template_text is used when None is provided."""
         mock_get_context_template = mocker.patch(
             "ai4rag.rag.foundation_models.base_model.get_context_template_text",
             return_value="Default: {document}",
         )
-        model = LSFoundationModel(
+        model = OGXFoundationModel(
             model_id="granite-13b",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=None,
             system_message_text=valid_system_message,
@@ -258,22 +258,20 @@ class TestLlamaStackFoundationModel:
         mock_get_context_template.assert_called_once_with(model_name="granite-13b")
         assert "Default" in model.context_template_text
 
-    def test_system_message_text_assignment(
-        self, mock_llama_client, valid_user_message_template, valid_context_template
-    ):
+    def test_system_message_text_assignment(self, mock_ogx_client, valid_user_message_template, valid_context_template):
         """Test that system_message_text is properly assigned."""
         system_msg = "Custom system message"
-        model = LSFoundationModel(
+        model = OGXFoundationModel(
             model_id="test-model",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=system_msg,
         )
         assert model.system_message_text == system_msg
 
-    def test_chat_method(self, model_with_dict_params, mock_llama_client):
+    def test_chat_method(self, model_with_dict_params, mock_ogx_client):
         """Test that chat method calls client correctly and returns response."""
         messages = [
             {"role": "system", "content": "You are helpful"},
@@ -283,8 +281,8 @@ class TestLlamaStackFoundationModel:
         response = model_with_dict_params.chat(messages)
 
         # Verify the client was called
-        mock_llama_client.chat.completions.create.assert_called_once()
-        call_args = mock_llama_client.chat.completions.create.call_args
+        mock_ogx_client.chat.completions.create.assert_called_once()
+        call_args = mock_ogx_client.chat.completions.create.call_args
 
         # Verify model_id was passed
         assert call_args.kwargs["model"] == "test-model-id"
@@ -301,7 +299,7 @@ class TestLlamaStackFoundationModel:
         assert len(response) == 1
         assert response[0].message.content == "Test response from model"
 
-    def test_chat_method_extracts_content(self, model_with_dict_params, mock_llama_client):
+    def test_chat_method_extracts_content(self, model_with_dict_params, mock_ogx_client):
         """Test that chat method correctly returns choices from response."""
         messages = [
             {"role": "system", "content": "system"},
@@ -311,7 +309,7 @@ class TestLlamaStackFoundationModel:
         assert len(response) == 1
         assert response[0].message.content == "Test response from model"
 
-    def test_chat_with_different_messages(self, model_with_dict_params, mock_llama_client):
+    def test_chat_with_different_messages(self, model_with_dict_params, mock_ogx_client):
         """Test chat with different message combinations."""
         test_cases = [
             [{"role": "system", "content": "System prompt 1"}, {"role": "user", "content": "User query 1"}],
@@ -322,21 +320,21 @@ class TestLlamaStackFoundationModel:
 
         for test_messages in test_cases:
             model_with_dict_params.chat(test_messages)
-            call_args = mock_llama_client.chat.completions.create.call_args
+            call_args = mock_ogx_client.chat.completions.create.call_args
             passed_messages = call_args.kwargs["messages"]
             assert passed_messages[0]["content"] == test_messages[0]["content"]
             assert passed_messages[1]["content"] == test_messages[1]["content"]
 
     def test_invalid_user_message_template_missing_placeholder(
-        self, mock_llama_client, valid_context_template, valid_system_message
+        self, mock_ogx_client, valid_context_template, valid_system_message
     ):
         """Test that invalid user_message_text raises validation error."""
         invalid_template = "Only question: {question}"  # Missing reference_documents
         with pytest.raises(ConstraintsValidationError) as exc_info:
-            LSFoundationModel(
+            OGXFoundationModel(
                 model_id="test-model",
                 params=None,
-                client=mock_llama_client,
+                client=mock_ogx_client,
                 user_message_text=invalid_template,
                 context_template_text=valid_context_template,
                 system_message_text=valid_system_message,
@@ -344,15 +342,15 @@ class TestLlamaStackFoundationModel:
         assert "Incorrect number of placeholders" in str(exc_info.value)
 
     def test_invalid_user_message_template_wrong_placeholder(
-        self, mock_llama_client, valid_context_template, valid_system_message
+        self, mock_ogx_client, valid_context_template, valid_system_message
     ):
         """Test that invalid placeholder in user_message_text raises validation error."""
         invalid_template = "Question: {question} Context: {document}"
         with pytest.raises(ConstraintsValidationError) as exc_info:
-            LSFoundationModel(
+            OGXFoundationModel(
                 model_id="test-model",
                 params=None,
-                client=mock_llama_client,
+                client=mock_ogx_client,
                 user_message_text=invalid_template,
                 context_template_text=valid_context_template,
                 system_message_text=valid_system_message,
@@ -360,15 +358,15 @@ class TestLlamaStackFoundationModel:
         assert "unexpected placeholder" in str(exc_info.value)
 
     def test_invalid_context_template_missing_placeholder(
-        self, mock_llama_client, valid_user_message_template, valid_system_message
+        self, mock_ogx_client, valid_user_message_template, valid_system_message
     ):
         """Test that invalid context_template_text raises validation error."""
         invalid_template = "No placeholder here"
         with pytest.raises(ConstraintsValidationError) as exc_info:
-            LSFoundationModel(
+            OGXFoundationModel(
                 model_id="test-model",
                 params=None,
-                client=mock_llama_client,
+                client=mock_ogx_client,
                 user_message_text=valid_user_message_template,
                 context_template_text=invalid_template,
                 system_message_text=valid_system_message,
@@ -376,15 +374,15 @@ class TestLlamaStackFoundationModel:
         assert "Incorrect number of placeholders" in str(exc_info.value)
 
     def test_invalid_context_template_wrong_placeholder(
-        self, mock_llama_client, valid_user_message_template, valid_system_message
+        self, mock_ogx_client, valid_user_message_template, valid_system_message
     ):
         """Test that wrong placeholder in context_template_text raises validation error."""
         invalid_template = "Context: {question}"  # Wrong placeholder for context_template
         with pytest.raises(ConstraintsValidationError) as exc_info:
-            LSFoundationModel(
+            OGXFoundationModel(
                 model_id="test-model",
                 params=None,
-                client=mock_llama_client,
+                client=mock_ogx_client,
                 user_message_text=valid_user_message_template,
                 context_template_text=invalid_template,
                 system_message_text=valid_system_message,
@@ -392,7 +390,7 @@ class TestLlamaStackFoundationModel:
         assert "unexpected placeholder" in str(exc_info.value)
 
     def test_model_inherits_from_foundation_model(self, model_with_dict_params):
-        """Test that LSFoundationModel inherits BaseFoundationModel methods."""
+        """Test that OGXFoundationModel inherits BaseFoundationModel methods."""
         # Test __repr__
         assert repr(model_with_dict_params) == "test-model-id"
 
@@ -403,21 +401,21 @@ class TestLlamaStackFoundationModel:
         assert hash(model_with_dict_params) == hash("test-model-id")
 
     def test_model_equality(
-        self, mock_llama_client, valid_user_message_template, valid_context_template, valid_system_message
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message
     ):
         """Test that models with same model_id are equal."""
-        model1 = LSFoundationModel(
+        model1 = OGXFoundationModel(
             model_id="same-id",
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
         )
-        model2 = LSFoundationModel(
+        model2 = OGXFoundationModel(
             model_id="same-id",
             params={"different": "params"},
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
@@ -434,13 +432,13 @@ class TestLlamaStackFoundationModel:
         ],
     )
     def test_various_model_ids(
-        self, mock_llama_client, valid_user_message_template, valid_context_template, valid_system_message, model_id
+        self, mock_ogx_client, valid_user_message_template, valid_context_template, valid_system_message, model_id
     ):
         """Test initialization with various model IDs."""
-        model = LSFoundationModel(
+        model = OGXFoundationModel(
             model_id=model_id,
             params=None,
-            client=mock_llama_client,
+            client=mock_ogx_client,
             user_message_text=valid_user_message_template,
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,

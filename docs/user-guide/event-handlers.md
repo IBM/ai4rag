@@ -79,7 +79,7 @@ def on_pattern_creation(
         "embedding":   {"model_id": "...", "distance_metric": "cosine", ...},
         "retrieval":   {"method": "simple", "number_of_chunks": 5, "search_mode": "vector"},
         "generation":  {"model_id": "...", ...},
-        "vector_store": {"datasource_type": "chroma", "collection_name": "..."},
+        "vector_store": {"ogx_vector_io_provider_id": "local_chroma", "collection_name": "..."},
     },
 }
 ```

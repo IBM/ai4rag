@@ -5,7 +5,7 @@
 from typing import Annotated, Any
 
 from annotated_types import Ge, Gt, Le
-from llama_stack_client import LlamaStackClient
+from ogx_client import OgxClient
 from pydantic import BaseModel
 
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
@@ -14,21 +14,21 @@ from ai4rag.utils.constants import ChatGenerationConstants
 # pylint: disable=duplicate-code
 
 
-class LSModelParameters(BaseModel):
-    """Parameters to use for LSFoundationModel."""
+class OGXModelParameters(BaseModel):
+    """Parameters to use for OGXFoundationModel."""
 
     max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | LSModelParameters | None]):
-    """Integration point to use any model via Llama-stack API / client"""
+class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXModelParameters | None]):
+    """Integration point to use any model via OGX API / client"""
 
     def __init__(
         self,
-        client: LlamaStackClient,
+        client: OgxClient,
         model_id: str,
-        params: dict[str, Any] | LSModelParameters | None = None,
+        params: dict[str, Any] | OGXModelParameters | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
@@ -44,19 +44,19 @@ class LSFoundationModel(BaseFoundationModel[LlamaStackClient, dict[str, Any] | L
         )
 
     @property
-    def params(self) -> LSModelParameters:
+    def params(self) -> OGXModelParameters:
         """Get models params."""
         return self._params
 
     @params.setter
-    def params(self, params: dict | LSModelParameters | None) -> None:
+    def params(self, params: dict | OGXModelParameters | None) -> None:
         """Set models params."""
         if isinstance(params, dict):
-            self._params = LSModelParameters(**params)
-        elif isinstance(params, LSModelParameters):
+            self._params = OGXModelParameters(**params)
+        elif isinstance(params, OGXModelParameters):
             self._params = params
         else:
-            self._params = LSModelParameters()
+            self._params = OGXModelParameters()
 
     def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """

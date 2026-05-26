@@ -273,8 +273,8 @@ _REQUIRED_PARAMS = [
 
 
 class TestGetDefaultSearchSpaceParameters:
-    def test_ls_milvus_includes_hybrid_params_by_default(self):
-        params = get_default_ai4rag_search_space_parameters(vector_store_type="ls_milvus")
+    def test_ogx_includes_hybrid_params_by_default(self):
+        params = get_default_ai4rag_search_space_parameters(vector_store_type="ogx")
         param_names = {p.name for p in params}
 
         assert "search_mode" in param_names
@@ -299,9 +299,9 @@ class TestGetDefaultSearchSpaceParameters:
         assert search_mode_param.values == ("vector",)
         assert "hybrid" not in search_mode_param.values
 
-    def test_default_is_ls_milvus(self):
+    def test_default_is_ogx(self):
         params_default = get_default_ai4rag_search_space_parameters()
-        params_milvus = get_default_ai4rag_search_space_parameters(vector_store_type="ls_milvus")
+        params_milvus = get_default_ai4rag_search_space_parameters(vector_store_type="ogx")
         assert params_default == params_milvus
 
     def test_common_params_present_for_both_types(self):
@@ -314,15 +314,15 @@ class TestGetDefaultSearchSpaceParameters:
             "number_of_chunks",
             "search_mode",
         }
-        for vs_type in ("ls_milvus", "chroma"):
+        for vs_type in ("ogx", "chroma"):
             params = get_default_ai4rag_search_space_parameters(vector_store_type=vs_type)
             param_names = {p.name for p in params}
             assert common_params.issubset(param_names)
 
 
 class TestAI4RAGSearchSpaceVectorStoreType:
-    def test_ls_milvus_includes_hybrid_params_by_default(self):
-        ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
+    def test_ogx_includes_hybrid_params_by_default(self):
+        ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ogx")
         param_names = {p.name for p in ss.params}
         assert _HYBRID_PARAM_NAMES.issubset(param_names)
 
@@ -339,7 +339,7 @@ class TestAI4RAGSearchSpaceVectorStoreType:
         search_mode_param = ss["search_mode"]
         assert search_mode_param.values == ("vector",)
 
-    def test_default_vector_store_type_is_ls_milvus(self):
+    def test_default_vector_store_type_is_ogx(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS))
         param_names = {p.name for p in ss.params}
         assert _HYBRID_PARAM_NAMES.issubset(param_names)
@@ -351,8 +351,8 @@ class TestAI4RAGSearchSpaceVectorStoreType:
             assert "ranker_k" not in combination
             assert "ranker_alpha" not in combination
 
-    def test_ls_milvus_default_includes_hybrid_mode(self):
-        ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ls_milvus")
+    def test_ogx_default_includes_hybrid_mode(self):
+        ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="ogx")
         search_modes = {c["search_mode"] for c in ss.combinations}
         assert "vector" in search_modes
         assert "hybrid" in search_modes
@@ -373,14 +373,14 @@ class TestAI4RAGSearchSpaceVectorStoreType:
                 else:
                     assert combination["ranker_alpha"] == 1
 
-    def test_ls_milvus_user_provided_hybrid_params_apply_rules(self):
+    def test_ogx_user_provided_hybrid_params_apply_rules(self):
         hybrid_params = list(_REQUIRED_PARAMS) + [
             Parameter(name="search_mode", values=("vector", "hybrid")),
             Parameter(name="ranker_strategy", values=("", "rrf", "weighted")),
             Parameter(name="ranker_k", values=(0, 60)),
             Parameter(name="ranker_alpha", values=(1, 0.5)),
         ]
-        ss = AI4RAGSearchSpace(params=hybrid_params, vector_store_type="ls_milvus")
+        ss = AI4RAGSearchSpace(params=hybrid_params, vector_store_type="ogx")
         for combination in ss.combinations:
             search_mode = combination.get("search_mode")
             if search_mode == "vector":
