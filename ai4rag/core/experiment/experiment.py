@@ -17,6 +17,7 @@ from ai4rag.core.experiment.exception_handler import (
     AssetSaveError,
     ExperimentExceptionHandler,
     IndexingError,
+    VectorStoreInitializationError,
 )
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
@@ -366,13 +367,16 @@ class AI4RAGExperiment:
 
         reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
 
-        vector_store = get_vector_store(
-            vs_type=self.vector_store_type,
-            embedding_model=embedding_model,
-            reuse_collection_name=reuse_collection_name,
-            client=self.client,
-            ogx_vector_io_provider_id=self.ogx_vector_io_provider_id,
-        )
+        try:
+            vector_store = get_vector_store(
+                vs_type=self.vector_store_type,
+                embedding_model=embedding_model,
+                reuse_collection_name=reuse_collection_name,
+                client=self.client,
+                ogx_vector_io_provider_id=self.ogx_vector_io_provider_id,
+            )
+        except Exception as exc:
+            raise VectorStoreInitializationError(exc, embedding_model_id=embedding_model.model_id) from exc
 
         collection_name = vector_store.collection_name
 
