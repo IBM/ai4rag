@@ -39,6 +39,21 @@ class IndexingError(AI4RAGError):
         )
 
 
+class VectorStoreInitializationError(AI4RAGError):
+    """Exception representing error during vector store creation or retrieval."""
+
+    def __init__(self, exception, embedding_model_id, vector_store_provider_id):
+        super().__init__(exception)
+        self.embedding_model_id = embedding_model_id
+        self.vector_store_provider_id = vector_store_provider_id
+
+    def __repr__(self) -> str:
+        return (
+            f"{self.__class__.__name__}: Unable to initialize vector store for {self.vector_store_provider_id} "
+            f"embedding model '{self.embedding_model_id}' due to: {repr(self.exception)}"
+        )
+
+
 class GenerationError(AI4RAGError):
     """Exception representing error during retrieval or inference."""
 
@@ -115,4 +130,4 @@ class ExperimentExceptionHandler:
 
         error_content = next((er for er in self.errors if most_common_error_type_name in er.__class__.__name__))
 
-        return f"{error_content}. " f"To find more details please see generated logs file."
+        return error_content

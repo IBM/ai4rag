@@ -9,6 +9,7 @@ from ai4rag.core.experiment.exception_handler import (
     ExperimentExceptionHandler,
     GenerationError,
     IndexingError,
+    VectorStoreInitializationError,
 )
 from ai4rag.utils.event_handler import LogLevel
 
@@ -164,6 +165,41 @@ class TestAssetSaveError:
         assert issubclass(AssetSaveError, AI4RAGError)
 
 
+class TestVectorStoreInitializationError:
+    """Test suite for VectorStoreInitializationError exception class."""
+
+    def test_creation(self):
+        """Test creating VectorStoreInitializationError."""
+        base_exception = ConnectionError("OGX unavailable")
+        error = VectorStoreInitializationError(
+            base_exception,
+            embedding_model_id="embedding-model-1",
+            vector_store_provider_id="vs-provider-id",
+        )
+
+        assert error.exception == base_exception
+        assert error.embedding_model_id == "embedding-model-1"
+
+    def test_repr(self):
+        """Test VectorStoreInitializationError __repr__."""
+        base_exception = ConnectionError("OGX unavailable")
+        error = VectorStoreInitializationError(
+            base_exception,
+            embedding_model_id="embedding-model-1",
+            vector_store_provider_id="vs-provider-id",
+        )
+
+        repr_str = repr(error)
+        assert "VectorStoreInitializationError" in repr_str
+        assert "Unable to initialize vector store" in repr_str
+        assert "embedding-model-1" in repr_str
+        assert "ConnectionError" in repr_str
+
+    def test_is_ai4rag_error(self):
+        """Test that VectorStoreInitializationError inherits from AI4RAGError."""
+        assert issubclass(VectorStoreInitializationError, AI4RAGError)
+
+
 class TestExperimentExceptionsHandlerInitialization:
     """Test suite for ExperimentExceptionsHandler initialization."""
 
@@ -284,11 +320,10 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
         # Reset logger mock after handle_exception
         mock_logger.reset_mock()
 
-        msg = handler.get_final_error_msg()
+        result = handler.get_final_error_msg()
 
-        assert isinstance(msg, str)
-        assert "IndexingError" in msg
-        assert "please see generated logs file" in msg.lower()
+        assert isinstance(result, IndexingError)
+        assert result is error
         mock_logger.error.assert_called_once()
 
     def test_get_final_error_msg_multiple_errors_same_type(self, mocker):
@@ -307,9 +342,10 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
 
         mock_logger.reset_mock()
 
-        msg = handler.get_final_error_msg()
+        result = handler.get_final_error_msg()
 
-        assert "IndexingError" in msg
+        assert isinstance(result, IndexingError)
+        assert result is errors[0]
         mock_logger.error.assert_called_once()
 
     def test_get_final_error_msg_multiple_error_types(self, mocker):
@@ -328,10 +364,11 @@ class TestExperimentExceptionsHandlerGetFinalErrorMsg:
 
         mock_logger.reset_mock()
 
-        msg = handler.get_final_error_msg()
+        result = handler.get_final_error_msg()
 
         # Most common error type is IndexingError (2 occurrences)
-        assert "IndexingError" in msg
+        assert isinstance(result, IndexingError)
+        assert result is errors[0]
         mock_logger.error.assert_called_once()
 
     def test_get_final_error_msg_logs_all_errors(self, mocker):
@@ -385,10 +422,11 @@ class TestExperimentExceptionsHandlerIntegration:
 
         # Get final error message
         mock_logger.reset_mock()
-        msg = handler.get_final_error_msg()
+        result = handler.get_final_error_msg()
 
         # Most common error is IndexingError
-        assert "IndexingError" in msg
+        assert isinstance(result, IndexingError)
+        assert result is errors[0]
         mock_logger.error.assert_called_once()
 
     def test_full_workflow_without_event_handler(self, mocker):
@@ -409,6 +447,7 @@ class TestExperimentExceptionsHandlerIntegration:
         assert len(handler.errors) == 2
 
         mock_logger.reset_mock()
-        msg = handler.get_final_error_msg()
+        result = handler.get_final_error_msg()
 
-        assert "GenerationError" in msg
+        assert isinstance(result, GenerationError)
+        assert result is errors[0]
