@@ -379,7 +379,7 @@ class AI4RAGExperiment:
             raise VectorStoreInitializationError(
                 exc,
                 embedding_model_id=embedding_model.model_id,
-                vector_store_provider_id=self.ogx_vector_io_provider_id or "local_chroma"
+                vector_store_provider_id=self.ogx_vector_io_provider_id or "local_chroma",
             ) from exc
 
         collection_name = vector_store.collection_name
