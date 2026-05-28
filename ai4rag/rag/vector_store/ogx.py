@@ -114,8 +114,7 @@ class OGXVectorStore(BaseVectorStore):
                 )
             if has_k:
                 raise ValueError(
-                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', "
-                    f"but search_mode='{search_mode}'."
+                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', but search_mode='{search_mode}'."
                 )
             if has_alpha:
                 raise ValueError(
@@ -124,9 +123,7 @@ class OGXVectorStore(BaseVectorStore):
                 )
         else:
             if not has_strategy:
-                raise ValueError(
-                    "ranker_strategy must be set when search_mode='hybrid'."
-                )
+                raise ValueError("ranker_strategy must be set when search_mode='hybrid'.")
             if ranker_strategy not in OGXVectorStore._VALID_RANKER_STRATEGIES:
                 raise ValueError(
                     f"Invalid ranker_strategy='{ranker_strategy}'. "
@@ -186,9 +183,7 @@ class OGXVectorStore(BaseVectorStore):
         list[Document] | list[tuple[Document, float]]
             List of chunks as Document instances with or without scores, depending on the input.
         """
-        self._validate_search_params(
-            search_mode, ranker_strategy, ranker_k, ranker_alpha
-        )
+        self._validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
         params = {
             "max_chunks": k,
             "mode": search_mode,
@@ -199,17 +194,11 @@ class OGXVectorStore(BaseVectorStore):
             reranker_params = {}
             if ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
                 reranker_params["impact_factor"] = ranker_k
-            if (
-                ranker_strategy == "weighted"
-                and ranker_alpha is not None
-                and ranker_alpha != 1
-            ):
+            if ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
                 reranker_params["alpha"] = ranker_alpha
             params["reranker_params"] = reranker_params
 
-        resp = self.client.vector_io.query(
-            query=query, vector_store_id=self._ogx_vs.id, params=params
-        )
+        resp = self.client.vector_io.query(query=query, vector_store_id=self._ogx_vs.id, params=params)
 
         if include_scores:
             return [
@@ -223,12 +212,7 @@ class OGXVectorStore(BaseVectorStore):
                 for chunk, score in zip(resp.chunks, resp.scores)
             ]
 
-        return [
-            Document(
-                page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()
-            )
-            for chunk in resp.chunks
-        ]
+        return [Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()) for chunk in resp.chunks]
 
     def add_documents(self, documents: list[Document], **kwargs) -> None:
         """
@@ -254,20 +238,14 @@ class OGXVectorStore(BaseVectorStore):
                     "document_id": doc.metadata["document_id"],
                 },
                 "metadata": doc.metadata,
-                "chunk_id": str(
-                    hash(
-                        f"{doc.metadata.get('document_id')}_{doc.metadata.get('start_index')}_{doc.page_content}"
-                    )
-                ),
+                "chunk_id": str(hash(doc.page_content)),
                 "embedding_model": self.embedding_model.model_id,
                 "embedding_dimension": embedding_dimension,
             }
             for doc in documents
         ]
 
-        embeddings = self.embedding_model.embed_documents(
-            [doc.page_content for doc in documents]
-        )
+        embeddings = self.embedding_model.embed_documents([doc.page_content for doc in documents])
 
         seen_ids = set()
         unique_chunks = []
@@ -286,10 +264,7 @@ class OGXVectorStore(BaseVectorStore):
             unique_chunks.append(chunk)
             unique_embeddings.append(embedding)
 
-        full_chunks = [
-            chunk | {"embedding": embedding}
-            for chunk, embedding in zip(unique_chunks, unique_embeddings)
-        ]
+        full_chunks = [chunk | {"embedding": embedding} for chunk, embedding in zip(unique_chunks, unique_embeddings)]
 
         for idx in range(0, len(full_chunks), batch_size):
             self.client.vector_io.insert(
