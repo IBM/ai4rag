@@ -317,13 +317,7 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        vector_store.search(
-            "test query",
-            k=5,
-            search_mode="hybrid",
-            ranker_strategy="weighted",
-            ranker_alpha=0.7,
-        )
+        vector_store.search("test query", k=5, search_mode="hybrid", ranker_strategy="weighted", ranker_alpha=0.7)
 
         call_kwargs = mock_ogx_client.vector_io.query.call_args.kwargs
         params = call_kwargs["params"]
@@ -366,10 +360,7 @@ class TestOGXVectorStoreHybridSearch:
             provider_id="milvus",
         )
 
-        with pytest.raises(
-            ValueError,
-            match="ranker_alpha=0.5 is only valid when ranker_strategy='weighted'",
-        ):
+        with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when ranker_strategy='weighted'"):
             vector_store.search(
                 "test query",
                 k=5,
@@ -388,12 +379,7 @@ class TestOGXVectorStoreHybridSearch:
         )
 
         result = vector_store.search(
-            "test query",
-            k=5,
-            include_scores=True,
-            search_mode="hybrid",
-            ranker_strategy="rrf",
-            ranker_k=60,
+            "test query", k=5, include_scores=True, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60
         )
 
         assert isinstance(result, list)
@@ -624,10 +610,7 @@ class TestOGXVectorStoreSearchValidation:
 
     def test_ranker_strategy_on_vector_mode_raises(self):
         """Test that a non-empty ranker_strategy with vector mode raises ValueError."""
-        with pytest.raises(
-            ValueError,
-            match="ranker_strategy='rrf' is only valid when search_mode='hybrid'",
-        ):
+        with pytest.raises(ValueError, match="ranker_strategy='rrf' is only valid when search_mode='hybrid'"):
             OGXVectorStore._validate_search_params("vector", "rrf", None, None)
 
     def test_ranker_k_on_vector_mode_raises(self):
@@ -675,18 +658,12 @@ class TestOGXVectorStoreSearchValidation:
 
     def test_alpha_with_rrf_strategy_raises(self):
         """Test that ranker_alpha > 0 with rrf strategy raises ValueError."""
-        with pytest.raises(
-            ValueError,
-            match="ranker_alpha=0.7 is only valid when ranker_strategy='weighted'",
-        ):
+        with pytest.raises(ValueError, match="ranker_alpha=0.7 is only valid when ranker_strategy='weighted'"):
             OGXVectorStore._validate_search_params("hybrid", "rrf", 60, 0.7)
 
     def test_alpha_with_normalized_strategy_raises(self):
         """Test that ranker_alpha > 0 with normalized strategy raises ValueError."""
-        with pytest.raises(
-            ValueError,
-            match="ranker_alpha=0.3 is only valid when ranker_strategy='weighted'",
-        ):
+        with pytest.raises(ValueError, match="ranker_alpha=0.3 is only valid when ranker_strategy='weighted'"):
             OGXVectorStore._validate_search_params("hybrid", "normalized", None, 0.3)
 
     # --- sentinel values must not trigger errors ---
