@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.2](https://github.com/IBM/ai4rag/releases/tag/v0.6.2)
+
+### Added
+- `VectorStoreInitializationError` exception for clearer diagnostics when vector store creation or retrieval fails
+
+### Fixed
+- Vector store initialization errors are now caught and wrapped with contextual information (embedding model ID, vector store provider) instead of propagating raw exceptions
+- Simplified experiment error summary — removed redundant log-file reminder suffix from error messages
+
+---
+
 ## [0.6.1](https://github.com/IBM/ai4rag/releases/tag/v0.6.1)
 
 ### Changed
