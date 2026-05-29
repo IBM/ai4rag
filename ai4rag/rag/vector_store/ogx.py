@@ -6,6 +6,7 @@ from langchain_core.documents import Document
 from ogx_client import OgxClient
 from ogx_client.types.vector_store import VectorStore
 
+from ai4rag import logger
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
@@ -110,7 +111,7 @@ class OGXVectorStore(BaseVectorStore):
                 )
             if has_k:
                 raise ValueError(
-                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', " f"but search_mode='{search_mode}'."
+                    f"ranker_k={ranker_k} is only valid when search_mode='hybrid', but search_mode='{search_mode}'."
                 )
             if has_alpha:
                 raise ValueError(
@@ -234,8 +235,27 @@ class OGXVectorStore(BaseVectorStore):
             }
             for doc in documents
         ]
+
         embeddings = self.embedding_model.embed_documents([doc.page_content for doc in documents])
-        full_chunks = [chunk | {"embedding": embedding} for chunk, embedding in zip(chunks, embeddings)]
+
+        seen_ids = set()
+        unique_chunks = []
+        unique_embeddings = []
+
+        for chunk, embedding in zip(chunks, embeddings):
+            chunk_id = chunk["chunk_id"]
+            if chunk_id in seen_ids:
+                logger.warning(
+                    "Skipping duplicate chunk_id: %s from document: %s",
+                    chunk_id,
+                    chunk["chunk_metadata"]["document_id"],
+                )
+                continue
+            seen_ids.add(chunk_id)
+            unique_chunks.append(chunk)
+            unique_embeddings.append(embedding)
+
+        full_chunks = [chunk | {"embedding": embedding} for chunk, embedding in zip(unique_chunks, unique_embeddings)]
 
         for idx in range(0, len(full_chunks), batch_size):
             self.client.vector_io.insert(

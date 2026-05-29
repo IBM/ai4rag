@@ -2,7 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from unittest.mock import MagicMock, Mock
+from unittest.mock import MagicMock
+import logging
 
 import pytest
 from langchain_core.documents import Document
@@ -361,7 +362,12 @@ class TestOGXVectorStoreHybridSearch:
 
         with pytest.raises(ValueError, match="ranker_alpha=0.5 is only valid when ranker_strategy='weighted'"):
             vector_store.search(
-                "test query", k=5, search_mode="hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=0.5
+                "test query",
+                k=5,
+                search_mode="hybrid",
+                ranker_strategy="rrf",
+                ranker_k=60,
+                ranker_alpha=0.5,
             )
 
     def test_search_hybrid_with_scores(self, mock_embedding_model, mock_ogx_client):
@@ -435,7 +441,7 @@ class TestOGXVectorStoreAddDocuments:
         assert "content" in chunks[0]
         assert "embedding" in chunks[0]
         assert "chunk_id" in chunks[0]
-        assert chunks[0]["chunk_id"] == str(hash("Test"))
+        assert chunks[0]["chunk_id"] == str(hash(docs[0].page_content))
         assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
         assert chunks[0]["metadata"] == {"document_id": "doc1"}
 
@@ -723,3 +729,138 @@ class TestOGXVectorStoreInitializeVectorStore:
         assert extra_body["embedding_model"] == "custom-model-id"
         assert extra_body["embedding_dimension"] == 256
         assert extra_body["provider_id"] == "provider1"
+
+
+class TestOGXVectorStoreDuplicateChunks:
+    """Test suite for OGXVectorStore duplicate chunk detection."""
+
+    @pytest.fixture
+    def mock_embedding_model(self):
+        """Create a mock embedding model."""
+        return MockOGXEmbeddingModel()
+
+    @pytest.fixture
+    def mock_ogx_client(self):
+        """Create a mock OgxClient."""
+        mock_client = MagicMock()
+        mock_vs = MagicMock()
+        mock_vs.id = "test-vs-id"
+        mock_client.vector_stores.create.return_value = mock_vs
+        return mock_client
+
+    def test_add_documents_with_duplicate_content_skips_duplicates(self, mock_embedding_model, mock_ogx_client, caplog):
+        """Test that adding documents with duplicate content skips duplicates and logs warning."""
+
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        # Create documents with identical content (will generate same hash)
+        docs = [
+            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag"):
+            vector_store.add_documents(docs)
+
+        # Should have logged warnings for duplicates
+        assert "Skipping duplicate chunk_id" in caplog.text
+
+        # Should only insert 1 unique chunk (first occurrence)
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 1
+
+    def test_add_documents_with_unique_content_succeeds(self, mock_embedding_model, mock_ogx_client):
+        """Test that adding documents with unique content succeeds."""
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Unique content 1", metadata={"document_id": "doc1"}),
+            Document(page_content="Unique content 2", metadata={"document_id": "doc2"}),
+            Document(page_content="Unique content 3", metadata={"document_id": "doc3"}),
+        ]
+
+        # Should not raise an error
+        vector_store.add_documents(docs)
+        mock_ogx_client.vector_io.insert.assert_called_once()
+
+        # Should insert all 3 chunks
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 3
+
+    def test_add_documents_with_mixed_content(self, mock_embedding_model, mock_ogx_client, caplog):
+        """Test that adding documents with some duplicates filters them out."""
+
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Unique content", metadata={"document_id": "doc1"}),
+            Document(page_content="Duplicate content", metadata={"document_id": "doc2"}),
+            Document(page_content="Duplicate content", metadata={"document_id": "doc2"}),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag"):
+            vector_store.add_documents(docs)
+
+        # Should have logged warning for 1 duplicate
+        assert "Skipping duplicate chunk_id" in caplog.text
+
+        # Should insert 2 unique chunks
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 2
+
+    def test_duplicate_chunks_keeps_first_occurrence(self, mock_embedding_model, mock_ogx_client):
+        """Test that duplicates keep the first occurrence."""
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+        ]
+
+        vector_store.add_documents(docs)
+
+        # Should insert only first occurrence (doc1)
+        call_kwargs = mock_ogx_client.vector_io.insert.call_args.kwargs
+        chunks = call_kwargs["chunks"]
+        assert len(chunks) == 1
+        assert chunks[0]["chunk_metadata"]["document_id"] == "doc1"
+
+    def test_no_warning_when_no_duplicates(self, mock_embedding_model, mock_ogx_client, caplog):
+        """Test that no warning is logged when there are no duplicates."""
+
+        vector_store = OGXVectorStore(
+            embedding_model=mock_embedding_model,
+            client=mock_ogx_client,
+            provider_id="pgvector",
+        )
+
+        docs = [
+            Document(page_content="Not unique 1", metadata={"document_id": "doc1"}),
+            Document(page_content="Not unique 1", metadata={"document_id": "doc2"}),
+        ]
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag"):
+            vector_store.add_documents(docs)
+
+        # Should not have any warnings
+        assert "Skipping duplicate chunk_id" not in [record.message for record in caplog.records]
