@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.6.3](https://github.com/IBM/ai4rag/releases/tag/v0.6.3)
+
+### Fixed
+- Duplicate chunk IDs in `OGXVectorStore.add_documents()` now detected and skipped with a warning, preventing insertion failures when documents produce identical chunk hashes
+
+---
+
 ## [0.6.2](https://github.com/IBM/ai4rag/releases/tag/v0.6.2)
 
 ### Added
