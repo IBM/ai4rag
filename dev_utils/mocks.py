@@ -54,3 +54,19 @@ class MockedEmbeddingModel(BaseEmbeddingModel[None, dict[str, Any]]):
 
     def embed_query(self, query: str) -> list[float]:
         return [random() for _ in range(self.params["embedding_dimension"])]
+
+
+class MockedOGXClient:
+    """Mock OGX client for testing without real OGX server."""
+
+    class MockedProviders:
+        """Mock providers interface."""
+
+        def retrieve(self, provider_id: str):
+            class MockProvider:
+                provider_type = "mock_provider"
+
+            return MockProvider()
+
+    def __init__(self):
+        self.providers = self.MockedProviders()

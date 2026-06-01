@@ -223,3 +223,32 @@ class TestExperimentChromaWithMockedModels:
         assert isinstance(result, dict), f"Expected dict from generate(), got {type(result)}"
         answer = result.get("answer")
         assert isinstance(answer, str) and len(answer) > 0, f"Expected a non-empty answer string, got {answer!r}"
+
+    def test_pattern_params_include_generation_config(
+        self, documents, benchmark_data, foundation_models, embedding_models
+    ):
+        """
+        Verify that RAG patterns include complete generation configuration.
+        With chroma (no client), vector_io_provider_type should be 'chroma::local'.
+        """
+        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
+
+        experiment.search(optimizer=RandomOptimizer, skip_mps=True)
+
+        best_evaluations = experiment.results.get_best_evaluations(k=1)
+        assert len(best_evaluations) > 0, f"No evaluations generated. Total results: {len(experiment.results)}"
+
+        rag_params = best_evaluations[0].rag_params
+        assert "generation" in rag_params
+        assert "retrieval" in rag_params
+
+        generation = rag_params["generation"]
+        assert isinstance(generation["model_id"], str) and generation["model_id"]
+        assert isinstance(generation["context_template_text"], str)
+        assert isinstance(generation["user_message_text"], str)
+        assert isinstance(generation["system_message_text"], str)
+        assert generation["model_id"] in [fm.model_id for fm in foundation_models]
+
+        assert rag_params.get("vector_io_provider_type") == "chroma::local", (
+            "Chroma path (no client) should set vector_io_provider_type to 'chroma::local'"
+        )

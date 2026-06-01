@@ -353,6 +353,12 @@ class AI4RAGExperiment:
                 "system_message_text": system_message_text,
             },
         }
+        if self.client:
+            rag_params["vector_io_provider_type"] = self.client.providers.retrieve(
+                self.ogx_vector_io_provider_id
+            ).provider_type
+        else:
+            rag_params["vector_io_provider_type"] = "chroma::local"
 
         logger.info("Using retrieval and generation params: %s", rag_params)
 
@@ -603,11 +609,6 @@ class AI4RAGExperiment:
                 AI4RAGParamNames.RANKER_ALPHA
             )
 
-        vector_store_payload = {
-            "datasource_type": self.ogx_vector_io_provider_id or "local_chroma",
-            "collection_name": evaluation_result.collection,
-        }
-
         indexing_payload = {
             "chunking": {
                 "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
@@ -621,6 +622,21 @@ class AI4RAGExperiment:
 
         n_known = len(self.known_observations) if self.known_observations else 0
 
+        responses_template_payload = {
+            "model": evaluation_result.rag_params["generation"]["model_id"],
+            "stream": False,  # Not supported yet
+            "store": True,  # Responses API default
+            "input": evaluation_result.rag_params["generation"]["user_message_text"],
+            "instructions": evaluation_result.rag_params["generation"]["system_message_text"],
+            "tools": [
+                {
+                    "type": "file_search",
+                    "vector_store_ids": [evaluation_result.collection],
+                }
+            ],
+            "include": ["file_search_call.results"],
+        }
+
         payload = {
             "pattern_name": evaluation_result.pattern_name,
             "scores": {
@@ -632,13 +648,21 @@ class AI4RAGExperiment:
             "schema_version": "1.0",
             "producer": "ai4rag",
             "settings": {
-                "vector_store": vector_store_payload,
+                "vector_store_binding": {
+                    "provider_id": self.ogx_vector_io_provider_id,
+                    "provider_type": evaluation_result.rag_params["vector_io_provider_type"],
+                    "vector_store_id": evaluation_result.collection,
+                    "vector_store_name": "TBD",
+                },
                 **indexing_payload,
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
             },
             "iteration": len(self.results) + n_known,
         }
+
+        if self.vector_store_type != "chroma":
+            payload["responses_template"] = responses_template_payload
 
         self.event_handler.on_pattern_creation(
             payload=payload,
