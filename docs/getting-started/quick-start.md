@@ -6,7 +6,7 @@ For the sake of quick-start OGX server will be used, but this can be run with in
 ---
 
 ## Data loading
-To run the experiment you need to provide documents in the format of LangChain's `Document` instances with proper metadata.
+To run the experiment you need to provide documents as `DoclingDocument` instances (from the `docling-core` library).
 For the development purposes you may use `FileStore` implementation from `dev_utils`, but this will be available only when cloning the repository, as this is not part of the project.
 
 ---

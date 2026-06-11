@@ -105,9 +105,9 @@ graph TB
 
 **Chunking** (`ai4rag/rag/chunking/`)
 
-- Splits documents into chunks
+- Splits `DoclingDocument` objects into `AI4RAGChunk` instances
+- Two chunker implementations: `DoclingChunker` (structure-aware, via docling `HybridChunker`) and `LangChainChunker` (token-based, via LangChain `RecursiveCharacterTextSplitter`)
 - Configurable chunk size and overlap
-- Uses LangChain text splitters
 
 **Embedding** (`ai4rag/rag/embedding/`)
 
@@ -231,7 +231,8 @@ ai4rag is designed for extensibility:
 
 - **Python**: 3.12 & 3.13
 - **OGX**: Model and vector store integration
-- **LangChain**: Document chunking and processing
+- **Docling Core**: Document representation and structure-aware chunking
+- **LangChain**: Token-based text splitting
 - **Unitxt**: Evaluation metrics
 - **Pandas**: Results management
 - **Pydantic**: Data validation

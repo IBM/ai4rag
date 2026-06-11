@@ -244,9 +244,9 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 
 | Parameter | Default (OGX) | Default (ChromaDB) | Type |
 |-----------|----------------------|-------------------|------|
-| `chunking_method` | `("recursive",)` | `("recursive",)` | Categorical |
-| `chunk_size` | `(1024, 2048)` | `(1024, 2048)` | Categorical |
-| `chunk_overlap` | `(128, 256)` | `(128, 256)` | Categorical |
+| `chunking_method` | `("recursive", "hybrid")` | `("recursive", "hybrid")` | Categorical |
+| `chunk_size` | `(512, 1024, 2048)` | `(512, 1024, 2048)` | Categorical |
+| `chunk_overlap` | `(0, 128, 256)` | `(0, 128, 256)` | Categorical |
 | `retrieval_method` | `("simple",)` | `("simple", "window")` | Categorical |
 | `window_size` | `(0,)` | `(0, 1, 3, 5)` | Categorical |
 | `number_of_chunks` | `(3, 5, 10)` | `(3, 5, 10)` | Categorical |
@@ -334,23 +334,43 @@ search_space = AI4RAGSearchSpace(
 
 ---
 
-### Rule 3: Chunk Size Within Embedding Context Length
+### Rule 3: Chunk Overlap Consistent with Chunking Method
 
-**Rule**: Estimated token count of `chunk_size` must fit within the embedding model's `context_length`.
+**Rule**:
 
-**How it works**: Uses a conservative ratio of **3.6 characters per token** to estimate tokens:
+- When `chunking_method == "hybrid"` (DoclingChunker), `chunk_overlap` must be `0` — the chunker does not support overlap
+- When `chunking_method == "recursive"` (LangChainChunker), `chunk_overlap` must be `> 0` — splitting without overlap loses context between chunks
+
+**Example**:
 
 ```python
-estimated_tokens = chunk_size / 3.6
+# Valid
+{"chunking_method": "hybrid", "chunk_overlap": 0}      ✓
+{"chunking_method": "recursive", "chunk_overlap": 128}  ✓
+
+# Invalid (filtered out)
+{"chunking_method": "hybrid", "chunk_overlap": 128}     ✗
+{"chunking_method": "recursive", "chunk_overlap": 0}    ✗
+```
+
+---
+
+### Rule 4: Chunk Size Within Embedding Context Length
+
+**Rule**: `chunk_size` (in tokens) must fit within the embedding model's `context_length`, with a 10% safety margin to account for tokenizer divergence.
+
+**How it works**: Both chunkers express `chunk_size` in tokens, so the comparison is direct:
+
+```python
+chunk_size <= context_length * 0.9
 
 # Example
 chunk_size = 1024
-estimated_tokens = 1024 / 3.6 ≈ 284 tokens
-
-# Check: 284 <= context_length (e.g., 8192) ✓
+context_length = 8192
+# Check: 1024 <= 8192 * 0.9 = 7372.8 ✓
 ```
 
-**Why**: If chunks exceed the embedding model's context window, embedding generation will fail or be truncated.
+**Why**: If chunks exceed the embedding model's context window, embedding generation will fail or be truncated. The 10% margin accounts for tokenizer divergence between the chunker's tiktoken encoder and the embedding model's native tokenizer.
 
 **Example**:
 
@@ -362,15 +382,15 @@ embedding = OGXEmbeddingModel(
 )
 
 # Valid
-{"chunk_size": 1024, "embedding_model": embedding}  # ~284 tokens ✓
+{"chunk_size": 256, "embedding_model": embedding}   # 256 <= 460.8 ✓
 
 # Invalid (filtered out)
-{"chunk_size": 2048, "embedding_model": embedding}  # ~569 tokens ✗ (exceeds 512)
+{"chunk_size": 512, "embedding_model": embedding}    # 512 <= 460.8 ✗
 ```
 
 ---
 
-### Rule 4: Hybrid Search Ranker Consistency
+### Rule 5: Hybrid Search Ranker Consistency
 
 **Rule**: Ranker parameters must only be set when `search_mode == "hybrid"`.
 
@@ -399,7 +419,7 @@ embedding = OGXEmbeddingModel(
 
 ---
 
-### Rule 5: ranker_k Only for RRF
+### Rule 6: ranker_k Only for RRF
 
 **Rule**:
 
@@ -420,7 +440,7 @@ embedding = OGXEmbeddingModel(
 
 ---
 
-### Rule 6: ranker_alpha Only for Weighted
+### Rule 7: ranker_alpha Only for Weighted
 
 **Rule**:
 
@@ -578,7 +598,7 @@ search_space = AI4RAGSearchSpace(
         Parameter(name="embedding_model", param_type="C", values=[embedding]),
 
         # Chunking
-        Parameter(name="chunking_method", param_type="C", values=["recursive", "markdown"]),
+        Parameter(name="chunking_method", param_type="C", values=["recursive", "hybrid"]),
         Parameter(name="chunk_size", param_type="C", values=[512, 1024, 1536]),
         Parameter(name="chunk_overlap", param_type="C", values=[64, 128, 200]),
 

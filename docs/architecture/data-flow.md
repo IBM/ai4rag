@@ -22,7 +22,7 @@ The indexing phase transforms raw documents into searchable vector embeddings st
 ```mermaid
 sequenceDiagram
     participant Exp as AI4RAGExperiment
-    participant LC as LangChainChunker
+    participant LC as BaseChunker
     participant EM as OGXEmbeddingModel
     participant VS as OGXVectorStore
     participant OGXClient as OGX Client
@@ -31,19 +31,18 @@ sequenceDiagram
     alt Collection exists
         Note over Exp: Reuse existing collection
     else New collection needed
-        Exp->>LC: split_documents(documents)
+        Exp->>LC: split_documents(DoclingDocuments)
         activate LC
-        LC->>LC: set document_id if missing
         LC->>LC: apply chunking method
-        LC->>LC: set sequence_number
-        LC-->>Exp: chunks (with metadata)
+        LC->>LC: set document_id and sequence_number
+        LC-->>Exp: AI4RAGChunks (with metadata)
         deactivate LC
 
         Exp->>VS: add_documents(chunks)
         activate VS
-        VS->>EM: embed_documents([chunk.page_content])
+        VS->>EM: embed_documents([chunk.text])
         activate EM
-        loop Batches of 2048 chunks
+        loop Batches of 1024 chunks
             EM->>OGXClient: embeddings.create(batch)
             OGXClient-->>EM: embeddings
         end
@@ -63,58 +62,32 @@ sequenceDiagram
 
 **Input Documents:**
 
-Documents are provided as `list[Document]` where each `Document` must have:
-
-```python
-Document(
-    page_content="Document text content...",
-    metadata={
-        "document_id": "unique_doc_id",  # Required
-        # other metadata fields...
-    }
-)
-```
-
-If `document_id` is missing, the chunker auto-generates it via `hash(page_content)`.
+Documents are provided as `list[DoclingDocument]` (from the `docling-core` library). Each document is a structured representation of a parsed file, with the document name used as `document_id`. If the name is not set, a content-based hash is generated instead.
 
 ### Chunking
 
-**LangChainChunker** splits documents into smaller chunks:
+The configured chunker (`DoclingChunker` or `LangChainChunker`) splits `DoclingDocument` objects into `AI4RAGChunk` instances. Both chunkers use tiktoken for token counting.
 
-**Step 1: Split Documents**
+**DoclingChunker** (structure-aware): Operates directly on the document structure, preserving headings and tables. Does not support overlap.
 
-Uses `RecursiveCharacterTextSplitter` with configured parameters:
+**LangChainChunker** (token-based): Converts each `DoclingDocument` to markdown internally, then applies `RecursiveCharacterTextSplitter` with token-based length measurement.
 
-```python
-chunker = LangChainChunker(
-    method="recursive",
-    chunk_size=512,          # Max chunk size in characters
-    chunk_overlap=128,       # Overlap between chunks
-    separators=["\n\n", r"(?<=\. )", "\n", " ", ""]  # Split hierarchy
-)
-```
-
-**Splitting hierarchy:**
-
-1. Try splitting on double newlines (`\n\n`)
-2. If chunks still too large, try sentence boundaries (`(?<=\. )`)
-3. Then single newlines, spaces, characters
-
-**Step 2: Add Metadata**
+**Metadata:**
 
 Each chunk receives:
 
 ```python
-chunk.metadata = {
-    "document_id": "original_doc_id",    # Inherited from parent document
-    "sequence_number": 1,                 # Position within document
-    "start_index": 0,                     # Character offset in original
-    # ... original metadata preserved ...
-}
+AI4RAGChunk(
+    text="Chunk text content...",
+    metadata={
+        "document_id": "original_doc_id",    # From document name or content hash
+        "sequence_number": 1,                 # Position within document
+        # chunker-specific keys (e.g. "start_index" for LangChain, "headings" for Docling)
+    }
+)
 ```
 
 **Sequence numbering:**
-- Chunks sorted by `(document_id, start_index)`
 - Sequence numbers assigned sequentially per document
 - Enables window-based retrieval (adjacent chunks)
 
@@ -122,13 +95,13 @@ chunk.metadata = {
 
 ```python
 [
-    Document(
-        page_content="First chunk text...",
-        metadata={"document_id": "doc1", "sequence_number": 1, "start_index": 0}
+    AI4RAGChunk(
+        text="First chunk text...",
+        metadata={"document_id": "doc1", "sequence_number": 1}
     ),
-    Document(
-        page_content="Second chunk text (with overlap)...",
-        metadata={"document_id": "doc1", "sequence_number": 2, "start_index": 384}
+    AI4RAGChunk(
+        text="Second chunk text...",
+        metadata={"document_id": "doc1", "sequence_number": 2}
     ),
     # ...
 ]
@@ -154,13 +127,13 @@ If `embedding_dimension` or `context_length` not provided:
 
 **Batch Processing:**
 
-Embeddings created in batches of 2048 chunks to respect API limits:
+Embeddings created in batches of 1024 chunks to respect API limits:
 
 ```python
 def embed_documents(texts: list[str]) -> list[list[float]]:
     embeddings = []
-    for idx in range(0, len(texts), 2048):
-        batch = texts[idx : idx + 2048]
+    for idx in range(0, len(texts), 1024):
+        batch = texts[idx : idx + 1024]
         batch_embeddings = self.client.embeddings.create(
             input=batch,
             model=self.model_id
@@ -203,7 +176,7 @@ Chunks inserted in batches of 2048:
 ```python
 chunks = [
     {
-        "content": chunk.page_content,
+        "content": chunk.text,
         "chunk_metadata": chunk.metadata,
         "chunk_id": chunk.metadata["document_id"],
         "embedding_model": embedding_model.model_id,
@@ -382,12 +355,12 @@ response = client.vector_io.query(...)
 
 Combines dense vector search with sparse keyword search (e.g., BM25), then re-ranks using specified strategy.
 
-**Step 3: Convert to Documents**
+**Step 3: Convert to AI4RAGChunks**
 
 ```python
 reference_documents = [
-    Document(
-        page_content=chunk.content,
+    AI4RAGChunk(
+        text=chunk.content,
         metadata=chunk.chunk_metadata.to_dict()
     )
     for chunk in response.chunks
@@ -401,8 +374,8 @@ reference_documents = [
 ```python
 # Default context_template_text: "{document}\n"
 context = "\n".join([
-    foundation_model.context_template_text.format(document=doc.page_content)
-    for doc in reference_documents
+    foundation_model.context_template_text.format(document=chunk.text)
+    for chunk in reference_documents
 ])
 ```
 
@@ -863,13 +836,13 @@ with ThreadPoolExecutor(max_workers=10) as executor:
 **Implementation:**
 
 ```python
-for idx in range(0, len(texts), 2048):
-    batch = texts[idx : idx + 2048]
+for idx in range(0, len(texts), 1024):
+    batch = texts[idx : idx + 1024]
     embeddings.extend(embed_batch(batch))
 ```
 
 **Constraints:**
-- OGX max batch size: 2048 chunks
+- OGX max batch size: 1024 chunks
 - Smaller batches = more API calls = slower
 
 ### 3. Collection Reuse
@@ -915,11 +888,11 @@ cache_key = hash((
 **Documents → Chunks:**
 
 ```python
-Document(page_content="Long text...", metadata={"document_id": "doc1"})
-↓ (LangChainChunker)
+DoclingDocument(name="doc1", ...)
+↓ (DoclingChunker or LangChainChunker)
 [
-    Document(page_content="Chunk 1", metadata={"document_id": "doc1", "sequence_number": 1}),
-    Document(page_content="Chunk 2", metadata={"document_id": "doc1", "sequence_number": 2}),
+    AI4RAGChunk(text="Chunk 1", metadata={"document_id": "doc1", "sequence_number": 1}),
+    AI4RAGChunk(text="Chunk 2", metadata={"document_id": "doc1", "sequence_number": 2}),
     ...
 ]
 ```
@@ -954,8 +927,8 @@ Collection "xyz" in OGX vector DB
 [0.05, -0.12, ...]
 ↓ (OGXVectorStore.search via vector_io.query)
 [
-    Document(page_content="Paris is the capital...", metadata={...}),
-    Document(page_content="France's capital city...", metadata={...}),
+    AI4RAGChunk(text="Paris is the capital...", metadata={...}),
+    AI4RAGChunk(text="France's capital city...", metadata={...}),
     ...
 ]
 ```

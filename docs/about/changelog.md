@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.7.0](https://github.com/IBM/ai4rag/releases/tag/v0.7.0)
+
+### Added
+- `DoclingChunker` — structure-aware, token-aware chunker wrapping docling's `HybridChunker`, operating directly on `DoclingDocument` objects and preserving document hierarchy (headings, tables, figures) during chunking
+- `AI4RAGChunk` — framework-agnostic chunk dataclass replacing langchain `Document` as the pipeline's canonical chunk representation
+- `"hybrid"` chunking method in the default search space, enabling `DoclingChunker` alongside the existing `"recursive"` method
+- Search space validation rule `_rule_chunk_overlap_for_chunking_method` enforcing chunker-specific overlap constraints (`hybrid` requires overlap = 0; `recursive` requires overlap > 0)
+- Minimum context length validation for embedding models — models with `context_length` below 700 tokens are now rejected during initialization with a descriptive error
+
+### Changed
+- **Breaking:** `BaseChunker.split_documents()` now accepts `Sequence[DoclingDocument]` and returns `list[AI4RAGChunk]` (was `Sequence[Document]` → `list[Document]`)
+- **Breaking:** `BaseVectorStore.add_documents()` now accepts `Sequence[AI4RAGChunk]` (was `Sequence[Document]`)
+- **Breaking:** `BaseVectorStore.search()` now returns `list[AI4RAGChunk]` (was `list[dict]`)
+- `LangChainChunker` updated to accept `DoclingDocument` input (converts to markdown internally) and return `AI4RAGChunk` output
+- `ChromaVectorStore` and `OGXVectorStore` updated to work with `AI4RAGChunk`, with internal conversions handled transparently
+- `OGXEmbeddingModel` embedding batch size reduced from 2048 to 1024
+- Added `docling-core` as a project dependency
+
+---
+
 ## [0.6.3](https://github.com/IBM/ai4rag/releases/tag/v0.6.3)
 
 ### Fixed
