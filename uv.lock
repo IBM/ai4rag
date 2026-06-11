@@ -90,7 +90,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "docling", marker = "extra == 'dev'" },
-    { name = "docling-core", extras = ["chunking-openai"] },
+    { name = "docling-core", extras = ["chunking-openai"], specifier = "~=2.74.1" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },

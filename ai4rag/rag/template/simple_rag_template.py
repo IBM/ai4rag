@@ -96,10 +96,7 @@ class SimpleRAG(BaseRAGTemplate):
         reference_documents = self.retriever.retrieve(question, **kwargs)
 
         context = "\n".join(
-            [
-                self.foundation_model.context_template_text.format(document=chunk.text)
-                for chunk in reference_documents
-            ]
+            [self.foundation_model.context_template_text.format(document=chunk.text) for chunk in reference_documents]
         )
 
         user_message = self.foundation_model.user_message_text.format(

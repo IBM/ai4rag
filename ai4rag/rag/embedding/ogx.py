@@ -28,6 +28,8 @@ class OGXEmbeddingParams:
 class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
     """Creates embeddings for OGX client."""
 
+    _BATCH_SIZE = 1024
+
     def __init__(self, client: OgxClient, model_id: str, params: dict | OGXEmbeddingParams | None = None):
         super().__init__(client=client, model_id=model_id, params=params)
 
@@ -141,8 +143,8 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             Embeddings made from the list of texts.
         """
         resp = []
-        for idx in range(0, len(texts), 512):
-            resp.extend(self._embed_text(text_input=texts[idx : idx + 512]))
+        for idx in range(0, len(texts), self._BATCH_SIZE):
+            resp.extend(self._embed_text(text_input=texts[idx : idx + self._BATCH_SIZE]))
 
         return resp
 

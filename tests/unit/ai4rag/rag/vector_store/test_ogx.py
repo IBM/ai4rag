@@ -2,12 +2,12 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from unittest.mock import MagicMock
 import logging
+from unittest.mock import MagicMock
 
 import pytest
-from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.vector_store.ogx import OGXVectorStore
 

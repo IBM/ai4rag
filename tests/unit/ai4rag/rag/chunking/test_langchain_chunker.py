@@ -2,14 +2,14 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import tiktoken
 import pytest
+import tiktoken
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 from langchain_core.documents import Document
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker, _DEFAULT_TIKTOKEN_MODEL
+from ai4rag.rag.chunking.langchain_chunker import _DEFAULT_TIKTOKEN_MODEL, LangChainChunker
 
 
 def _make_docling_doc(name: str, text: str) -> DoclingDocument:

@@ -9,7 +9,6 @@ from typing import Any, cast
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
-from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 from ..embedding.base_model import BaseEmbeddingModel

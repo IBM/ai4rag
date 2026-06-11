@@ -170,22 +170,27 @@ class TestOGXEmbeddingModel:
         assert embeddings[1] == [0.4, 0.5, 0.6]
 
     def test_embed_documents_batches_large_input(self, mock_ogx_client, mocker):
-        """Test embed_documents batches inputs exceeding 2048 texts."""
+        """Test embed_documents batches inputs exceeding _BATCH_SIZE texts."""
         model = OGXEmbeddingModel(
             client=mock_ogx_client,
             model_id="all-MiniLM-L6-v2",
             params=OGXEmbeddingParams(embedding_dimension=3, context_length=512),
         )
 
-        batch1_response = _make_mock_ogx_embedding_response(mocker, [[0.1] for _ in range(2048)])
-        batch2_response = _make_mock_ogx_embedding_response(mocker, [[0.2] for _ in range(100)])
-        mock_ogx_client.embeddings.create.side_effect = [batch1_response, batch2_response]
+        batch_size = OGXEmbeddingModel._BATCH_SIZE
+        remainder = 100
+        total = 2 * batch_size + remainder
 
-        texts = [f"text{i}" for i in range(2148)]
+        batch1_response = _make_mock_ogx_embedding_response(mocker, [[0.1] for _ in range(batch_size)])
+        batch2_response = _make_mock_ogx_embedding_response(mocker, [[0.2] for _ in range(batch_size)])
+        batch3_response = _make_mock_ogx_embedding_response(mocker, [[0.3] for _ in range(remainder)])
+        mock_ogx_client.embeddings.create.side_effect = [batch1_response, batch2_response, batch3_response]
+
+        texts = [f"text{i}" for i in range(total)]
         embeddings = model.embed_documents(texts)
 
-        assert len(embeddings) == 2148
-        assert mock_ogx_client.embeddings.create.call_count == 2
+        assert len(embeddings) == total
+        assert mock_ogx_client.embeddings.create.call_count == 3
 
     def test_embed_query(self, mock_ogx_client, mocker):
         """Test embed_query method."""

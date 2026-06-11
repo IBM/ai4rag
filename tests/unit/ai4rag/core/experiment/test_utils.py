@@ -8,7 +8,6 @@ import pytest
 
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import GenerationError
-from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.core.experiment.utils import (
     RAGExperimentError,
     build_evaluation_data,
@@ -17,6 +16,7 @@ from ai4rag.core.experiment.utils import (
     query_rag,
 )
 from ai4rag.evaluator.base_evaluator import EvaluationData
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 
 class TestQueryRag:

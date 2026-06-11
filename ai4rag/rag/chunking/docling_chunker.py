@@ -91,11 +91,7 @@ class DoclingChunker(BaseChunker):
             for chunk in self._chunker.chunk(doc):
                 seq_num += 1
 
-                text = (
-                    self._chunker.contextualize(chunk)
-                    if self.contextualize
-                    else chunk.text
-                )
+                text = self._chunker.contextualize(chunk) if self.contextualize else chunk.text
 
                 metadata: dict[str, Any] = {
                     "document_id": doc_id,
