@@ -179,7 +179,8 @@ class FileStore:
         except Exception as exc:
             raise FileStoreException("Failed to convert files") from exc
 
-        ordered = [cached.get(str(fp)) or next(r for r in results if r.name == fp.name) for fp in filepaths]
+        converted_by_name = {r.name: r for r in results}
+        ordered = [cached.get(str(fp)) or converted_by_name[fp.name] for fp in filepaths]
         return ordered
 
     def _save_markdown(self, filepath: Path, content: str) -> None:

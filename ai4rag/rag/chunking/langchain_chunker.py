@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import hashlib
 from typing import Any, Iterable, Literal, Sequence
 
 import tiktoken
@@ -167,7 +168,7 @@ class LangChainChunker(BaseChunker):
         return [
             Document(
                 page_content=doc.export_to_markdown(),
-                metadata={"document_id": doc.name or str(hash(str(doc)))},
+                metadata={"document_id": doc.name or hashlib.sha256(str(doc).encode()).hexdigest()[:16]},
             )
             for doc in documents
         ]

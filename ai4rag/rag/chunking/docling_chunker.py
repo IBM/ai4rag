@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import hashlib
 from typing import Any, Sequence
 
 import tiktoken
@@ -85,7 +86,7 @@ class DoclingChunker(BaseChunker):
         all_chunks: list[AI4RAGChunk] = []
 
         for doc in documents:
-            doc_id = doc.name or str(hash(str(doc)))
+            doc_id = doc.name or hashlib.sha256(str(doc).encode()).hexdigest()[:16]
             seq_num = 0
 
             for chunk in self._chunker.chunk(doc):
