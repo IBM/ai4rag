@@ -28,7 +28,7 @@ wheels = [
 name = "ai4rag"
 source = { editable = "." }
 dependencies = [
-    { name = "docling-core", extra = ["chunking-openai"] },
+    { name = "docling-core", extra = ["chunking", "chunking-openai"] },
     { name = "langchain" },
     { name = "langchain-chroma" },
     { name = "langchain-text-splitters" },
@@ -90,7 +90,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "docling", marker = "extra == 'dev'" },
-    { name = "docling-core", extras = ["chunking-openai"], specifier = "~=2.74.1" },
+    { name = "docling-core", extras = ["chunking", "chunking-openai"], specifier = "~=2.74.1" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
