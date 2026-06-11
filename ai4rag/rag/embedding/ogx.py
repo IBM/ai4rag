@@ -13,6 +13,9 @@ from .base_model import BaseEmbeddingModel
 __all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 
+MIN_CONTEXT_LENGTH = 700
+
+
 @dataclass
 class OGXEmbeddingParams:
     """OGX parameters to be used to create embeddings."""
@@ -40,7 +43,7 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
 
     @params.setter
     def params(self, params: dict | OGXEmbeddingParams | None) -> None:
-        """Set model params."""
+        """Set model params and validate context length."""
         if params is None:
             self._params = OGXEmbeddingParams()
         elif isinstance(params, OGXEmbeddingParams):
@@ -53,6 +56,12 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             self._params.embedding_dimension = self._detect_embedding_dimension()
         if self._params.context_length is None:
             self._params.context_length = self._detect_context_length()
+
+        if self._params.context_length < MIN_CONTEXT_LENGTH:
+            raise ValueError(
+                f"Embedding model {self.model_id} supports `context_length` {self._params.context_length}. "
+                f"Minimal required value is {MIN_CONTEXT_LENGTH}. Use embedding model with greater `context_length`."
+            )
 
     def _detect_embedding_dimension(self) -> int:
         """Detect embedding dimension by making a minimal embedding call.
