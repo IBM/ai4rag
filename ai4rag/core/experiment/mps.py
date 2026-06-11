@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from typing import Any, TypedDict
 
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -17,6 +17,7 @@ from ai4rag.core.experiment.exception_handler import (
 from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
@@ -66,7 +67,7 @@ class ModelsPreSelector:
     embedding_models : list[BaseEmbeddingModel]
         Embedding models to models pre-selection.
 
-    documents : list[Document]
+    documents : list[DoclingDocument]
         Grounding documents that will be sampled to perform pre-selection.
 
     benchmark_data : BenchmarkData
@@ -103,7 +104,7 @@ class ModelsPreSelector:
         metric: str,
         foundation_models: list[BaseFoundationModel],
         embedding_models: list[BaseEmbeddingModel],
-        documents: list[Document],
+        documents: list[DoclingDocument],
         benchmark_data: BenchmarkData,
         **kwargs,
     ):
@@ -147,7 +148,7 @@ class ModelsPreSelector:
         for element in self.benchmark_data.document_ids:
             document_ids.extend(element)
 
-        documents = [document for document in self.documents if document.metadata["document_id"] in document_ids]
+        documents = [document for document in self.documents if document.name in document_ids]
         chunked_documents = self._chunk_documents(documents)
 
         for i, embedding_model in enumerate(self.embedding_models):
@@ -219,7 +220,7 @@ class ModelsPreSelector:
     @staticmethod
     def _create_vector_store(
         embedding_model: BaseEmbeddingModel,
-        chunked_documents: list[Document],
+        chunked_documents: list[AI4RAGChunk],
         collection_name: str,
     ) -> BaseVectorStore:
         """
@@ -230,8 +231,8 @@ class ModelsPreSelector:
         embedding_model : BaseEmbeddingModel
             Embedding model used for collection creation.
 
-        chunked_documents : list[Document]
-            Chunked documents fot the embedding process.
+        chunked_documents : list[AI4RAGChunk]
+            Chunked documents for the embedding process.
 
         collection_name : str
             Name of the collection in the chroma vector database.
@@ -417,18 +418,18 @@ class ModelsPreSelector:
 
         return evaluation_result
 
-    def _chunk_documents(self, documents: list[Document]) -> list[Document]:
+    def _chunk_documents(self, documents: list[DoclingDocument]) -> list[AI4RAGChunk]:
         """
         Chunk provided documents.
 
         Parameters
         ----------
-        documents : list[Document]
-            List of LangChain.Document instance that will be chunked.
+        documents : list[DoclingDocument]
+            Docling documents to chunk.
 
         Returns
         -------
-        list[Document]
+        list[AI4RAGChunk]
             Chunked documents.
         """
         logger.debug("MPS: Chunking documents...")

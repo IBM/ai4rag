@@ -2,27 +2,26 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Any
+from typing import Any, Sequence
 
 import pytest
+from docling_core.types.doc import DoclingDocument
 
 from ai4rag.rag.chunking.base_chunker import BaseChunker
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 
-class ConcreteChunker(BaseChunker[str]):
+class ConcreteChunker(BaseChunker):
     """Concrete implementation of BaseChunker for testing purposes."""
 
-    def split_documents(self, documents: list[str]) -> list[str]:
-        """Simple split implementation for testing."""
-        return [doc[:5] for doc in documents if doc]
+    def split_documents(self, documents: Sequence[DoclingDocument]) -> list[AI4RAGChunk]:
+        return [AI4RAGChunk(text=doc.name[:5], metadata={}) for doc in documents]
 
     def to_dict(self) -> dict[str, Any]:
-        """Return dictionary representation."""
         return {"type": "concrete", "param": "value"}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "ConcreteChunker":
-        """Create instance from dictionary."""
         return cls()
 
 
@@ -30,21 +29,17 @@ class TestBaseChunker:
     """Test suite for BaseChunker abstract base class."""
 
     def test_base_chunker_cannot_be_instantiated(self):
-        """Test that BaseChunker cannot be instantiated directly."""
         with pytest.raises(TypeError) as exc_info:
             BaseChunker()
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
     def test_base_chunker_initialization_via_subclass(self):
-        """Test that BaseChunker can be instantiated via a concrete subclass."""
         chunker = ConcreteChunker()
         assert isinstance(chunker, BaseChunker)
 
     def test_split_documents_is_abstract(self):
-        """Test that split_documents is abstract and must be implemented."""
 
-        # Create a subclass without implementing split_documents
-        class IncompleteChunker(BaseChunker[str]):
+        class IncompleteChunker(BaseChunker):
             def to_dict(self) -> dict[str, Any]:
                 return {}
 
@@ -57,12 +52,10 @@ class TestBaseChunker:
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
     def test_to_dict_is_abstract(self):
-        """Test that to_dict is abstract and must be implemented."""
 
-        # Create a subclass without implementing to_dict
-        class IncompleteChunker(BaseChunker[str]):
-            def split_documents(self, documents: list[str]) -> list[str]:
-                return documents
+        class IncompleteChunker(BaseChunker):
+            def split_documents(self, documents: Sequence[DoclingDocument]) -> list[AI4RAGChunk]:
+                return []
 
             @classmethod
             def from_dict(cls, d: dict[str, Any]) -> "IncompleteChunker":
@@ -73,12 +66,10 @@ class TestBaseChunker:
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
     def test_from_dict_is_abstract(self):
-        """Test that from_dict is abstract and must be implemented."""
 
-        # Create a subclass without implementing from_dict
-        class IncompleteChunker(BaseChunker[str]):
-            def split_documents(self, documents: list[str]) -> list[str]:
-                return documents
+        class IncompleteChunker(BaseChunker):
+            def split_documents(self, documents: Sequence[DoclingDocument]) -> list[AI4RAGChunk]:
+                return []
 
             def to_dict(self) -> dict[str, Any]:
                 return {}
@@ -88,44 +79,21 @@ class TestBaseChunker:
         assert "Can't instantiate abstract class" in str(exc_info.value)
 
     def test_concrete_chunker_split_documents(self):
-        """Test that concrete implementation's split_documents works."""
         chunker = ConcreteChunker()
-        documents = ["hello world", "test document", "another one"]
-        result = chunker.split_documents(documents)
-        assert result == ["hello", "test ", "anoth"]
+        docs = [DoclingDocument(name="hello_world"), DoclingDocument(name="test_document")]
+        result = chunker.split_documents(docs)
+        assert len(result) == 2
+        assert all(isinstance(c, AI4RAGChunk) for c in result)
+        assert result[0].text == "hello"
+        assert result[1].text == "test_"
 
     def test_concrete_chunker_to_dict(self):
-        """Test that concrete implementation's to_dict works."""
         chunker = ConcreteChunker()
         result = chunker.to_dict()
         assert isinstance(result, dict)
         assert result["type"] == "concrete"
 
     def test_concrete_chunker_from_dict(self):
-        """Test that concrete implementation's from_dict works."""
         chunker = ConcreteChunker.from_dict({"type": "concrete", "param": "value"})
         assert isinstance(chunker, ConcreteChunker)
         assert isinstance(chunker, BaseChunker)
-
-    def test_base_chunker_is_generic(self):
-        """Test that BaseChunker supports generic types."""
-        # Test with string type
-        chunker_str = ConcreteChunker()
-        assert isinstance(chunker_str, BaseChunker)
-
-        # Test that we can create different type-specific chunkers
-        class IntChunker(BaseChunker[int]):
-            def split_documents(self, documents: list[int]) -> list[int]:
-                return [x // 2 for x in documents]
-
-            def to_dict(self) -> dict[str, Any]:
-                return {}
-
-            @classmethod
-            def from_dict(cls, d: dict[str, Any]) -> "IntChunker":
-                return cls()
-
-        chunker_int = IntChunker()
-        assert isinstance(chunker_int, BaseChunker)
-        result = chunker_int.split_documents([10, 20, 30])
-        assert result == [5, 10, 15]

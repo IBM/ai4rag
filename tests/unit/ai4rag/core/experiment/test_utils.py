@@ -5,7 +5,6 @@
 
 import pandas as pd
 import pytest
-from langchain_core.documents import Document
 
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import GenerationError
@@ -17,6 +16,7 @@ from ai4rag.core.experiment.utils import (
     query_rag,
 )
 from ai4rag.evaluator.base_evaluator import EvaluationData
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 
 class TestQueryRag:
@@ -31,7 +31,7 @@ class TestQueryRag:
             "question": q,
             "answer": f"Answer to {q}",
             "reference_documents": [
-                Document(page_content="Doc content", metadata={"document_id": "doc1"}),
+                AI4RAGChunk(text="Doc content", metadata={"document_id": "doc1"}),
             ],
         }
         return mock
@@ -120,15 +120,15 @@ class TestBuildEvaluationData:
                 "question": "What is AI?",
                 "answer": "AI is artificial intelligence.",
                 "reference_documents": [
-                    Document(page_content="AI context", metadata={"document_id": "doc1"}),
-                    Document(page_content="More AI context", metadata={"document_id": "doc2"}),
+                    AI4RAGChunk(text="AI context", metadata={"document_id": "doc1"}),
+                    AI4RAGChunk(text="More AI context", metadata={"document_id": "doc2"}),
                 ],
             },
             {
                 "question": "What is ML?",
                 "answer": "ML is machine learning.",
                 "reference_documents": [
-                    Document(page_content="ML context", metadata={"document_id": "doc3"}),
+                    AI4RAGChunk(text="ML context", metadata={"document_id": "doc3"}),
                 ],
             },
         ]
@@ -193,14 +193,14 @@ class TestBuildEvaluationData:
         assert result[0].ground_truths_context_ids == []
         assert result[1].ground_truths_context_ids == []
 
-    def test_build_evaluation_data_with_missing_page_content(self, benchmark_data):
-        """Test handling of documents without page_content attribute."""
+    def test_build_evaluation_data_with_empty_text(self, benchmark_data):
+        """Test handling of chunks with empty text."""
         inference_response = [
             {
                 "question": "What is AI?",
                 "answer": "AI is artificial intelligence.",
                 "reference_documents": [
-                    type("Doc", (), {"metadata": {"document_id": "doc1"}})(),
+                    AI4RAGChunk(text="", metadata={"document_id": "doc1"}),
                 ],
             },
             {
@@ -212,17 +212,17 @@ class TestBuildEvaluationData:
 
         result = build_evaluation_data(benchmark_data, inference_response)
 
-        assert result[0].contexts[0] is None
+        assert result[0].contexts[0] == ""
         assert result[0].context_ids[0] == "doc1"
 
-    def test_build_evaluation_data_with_missing_metadata(self, benchmark_data):
-        """Test handling of documents without metadata."""
+    def test_build_evaluation_data_with_missing_document_id(self, benchmark_data):
+        """Test handling of chunks without document_id in metadata."""
         inference_response = [
             {
                 "question": "What is AI?",
                 "answer": "AI is artificial intelligence.",
                 "reference_documents": [
-                    type("Doc", (), {"page_content": "Content"})(),
+                    AI4RAGChunk(text="Content", metadata={}),
                 ],
             },
             {

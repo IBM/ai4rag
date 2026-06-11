@@ -57,17 +57,13 @@ def _rule_adjust_window_to_retrieval_method(combination: dict) -> bool:
     return True
 
 
-def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
-    """Check that estimated token count of a chunk fits the embedding model's context length.
+def _rule_chunk_overlap_for_chunking_method(combination: dict) -> bool:
+    """Enforce chunker-specific overlap constraints.
 
-    The chunk_size is in characters.  We convert to an estimated token count
-    using a conservative ratio of 4.5 characters per token (i.e. we
-    *overestimate* the number of tokens so that borderline cases are pruned
-    rather than silently failing at runtime).
-
-    Note: ``chunk_overlap`` is not included in the estimation because
-    ``RecursiveCharacterTextSplitter`` already keeps chunks within the
-    ``chunk_size`` budget — overlap is not added on top.
+    - ``hybrid`` (DoclingChunker): overlap must be ``0`` — the chunker
+      does not support overlap.
+    - ``recursive`` (LangChainChunker): overlap must be ``> 0`` — splitting
+      without overlap loses context between chunks.
 
     Parameters
     ----------
@@ -77,7 +73,37 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     Returns
     -------
     bool
-        Whether the estimated token count fits within the embedding model's context length.
+        Whether the overlap value is valid for the given chunking method.
+    """
+    chunking_method = combination.get(AI4RAGParamNames.CHUNKING_METHOD)
+    chunk_overlap = combination.get(AI4RAGParamNames.CHUNK_OVERLAP)
+
+    if chunking_method is None or chunk_overlap is None:
+        return True
+
+    if chunking_method == "hybrid":
+        return chunk_overlap == 0
+
+    return chunk_overlap > 0
+
+
+def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
+    """Check that chunk token count fits the embedding model's context length.
+
+    Both chunkers (``LangChainChunker`` and ``DoclingChunker``) express
+    ``chunk_size`` in tokens, so the comparison is direct.  A 10 % safety
+    margin is applied to account for tokenizer divergence between the
+    chunker's tiktoken encoder and the embedding model's native tokenizer.
+
+    Parameters
+    ----------
+    combination : dict
+        Single node in the solutions space represented as a dict.
+
+    Returns
+    -------
+    bool
+        Whether the chunk size fits within the embedding model's context length.
     """
     chunk_size = combination.get(AI4RAGParamNames.CHUNK_SIZE)
     embedding_model = combination.get(AI4RAGParamNames.EMBEDDING_MODEL)
@@ -94,10 +120,7 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
     if context_length is None:
         return True
 
-    chars_per_token = 3.6
-    estimated_tokens = chunk_size / chars_per_token
-
-    return estimated_tokens <= context_length
+    return chunk_size <= context_length * 0.9
 
 
 def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
@@ -330,6 +353,7 @@ class AI4RAGSearchSpace(SearchSpace):
     """
 
     _base_rules = (
+        _rule_chunk_overlap_for_chunking_method,
         _rule_chunk_size_bigger_than_chunk_overlap,
         _rule_adjust_window_to_retrieval_method,
         _rule_chunk_size_within_embedding_context_length,

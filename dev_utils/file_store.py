@@ -12,11 +12,14 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PdfPipelineOptions
 from docling.document_converter import DocumentConverter, PdfFormatOption, settings
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 
 logger = logging.getLogger(__name__)
 
 SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".pptx", ".md", ".html", ".txt"}
+
+_DEFAULT_CACHE_DIR = Path(__file__).parent / "local" / "docling_cache"
 
 
 class FileStoreException(Exception):
@@ -26,10 +29,15 @@ class FileStoreException(Exception):
 class FileStore:
     """
     Class used to load locally saved input files.
-    Uses docling library to extract content from documents as markdown.
+    Uses docling library to extract content from documents.
     """
 
-    def __init__(self, path: str | Path | Sequence[str] | Sequence[Path], save_dir: str | Path | None = None):
+    def __init__(
+        self,
+        path: str | Path | Sequence[str] | Sequence[Path],
+        save_dir: str | Path | None = None,
+        cache_dir: str | Path | None = _DEFAULT_CACHE_DIR,
+    ):
         """
         Parameters
         ----------
@@ -37,10 +45,14 @@ class FileStore:
             Path to a single file or a directory of files.
         save_dir : str | Path | None
             Optional directory to save extracted markdown files. If None, no files are saved.
+        cache_dir : str | Path | None
+            Directory for caching DoclingDocument JSON files. Set to None to disable caching.
+            Defaults to ``dev_utils/local/docling_cache``.
         """
         self.path = Path(path)
         self.is_dir = self.path.is_dir()
         self.save_dir = Path(save_dir) if save_dir is not None else None
+        self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.files = {}
 
         pipeline_options = PdfPipelineOptions()
@@ -59,58 +71,117 @@ class FileStore:
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(path={self.path})"
 
-    def load_as_documents(self) -> list[Document]:
-        """Read files as langchain documents"""
-        contents = self._load_content()
-        return [Document(page_content=content[0], metadata={"document_id": content[1]}) for content in contents]
+    def load_as_documents(self) -> list[DoclingDocument]:
+        """Load files as ``DoclingDocument`` objects preserving document structure.
+
+        Returns
+        -------
+        list[DoclingDocument]
+            Parsed documents with full structural representation.
+        """
+        return self._load_docling_documents()
 
     @lru_cache(maxsize=2)
-    def _load_content(self) -> list[tuple[str, str]]:
-        """Load file(s) from given path"""
+    def _load_docling_documents(self) -> list[DoclingDocument]:
+        """Load files as ``DoclingDocument`` objects."""
         if self.is_dir:
             all_files = [f for f in self.path.iterdir() if f.is_file() and f.suffix.lower() in SUPPORTED_EXTENSIONS]
             txt_files = [f for f in all_files if f.suffix.lower() == ".txt"]
             docling_files = [f for f in all_files if f.suffix.lower() != ".txt"]
 
-            contents = [(self._read_txt(f), f.name) for f in txt_files]
-            contents.extend(self._convert_batch(docling_files))
-            return contents
+            docs = [self._txt_to_docling_document(f) for f in txt_files]
+            docs.extend(self._convert_batch_as_docling(docling_files))
+            return docs
 
         if self.path.suffix.lower() == ".txt":
-            return [(self._read_txt(self.path), self.path.name)]
+            return [self._txt_to_docling_document(self.path)]
 
-        return self._convert_batch([self.path])
+        return self._convert_batch_as_docling([self.path])
 
-    def _read_txt(self, filepath: Path) -> str:
-        """Read a plain text file directly."""
+    def _cache_path_for(self, filepath: Path) -> Path | None:
+        """Return the JSON cache path for a source file, or None if caching is disabled."""
+        if self.cache_dir is None:
+            return None
+        return self.cache_dir / f"{filepath.name}.json"
+
+    def _load_from_cache(self, filepath: Path) -> DoclingDocument | None:
+        """Load a ``DoclingDocument`` from the JSON cache if it exists."""
+        cache_path = self._cache_path_for(filepath)
+        if cache_path is None or not cache_path.exists():
+            return None
+
+        try:
+            doc = DoclingDocument.model_validate_json(cache_path.read_bytes())
+            logger.info("Loaded from cache: %s", cache_path.name)
+            return doc
+        except Exception:
+            logger.warning("Corrupted cache file %s — will re-convert", cache_path.name)
+            return None
+
+    def _save_to_cache(self, filepath: Path, doc: DoclingDocument) -> None:
+        """Persist a ``DoclingDocument`` as JSON to the cache directory."""
+        cache_path = self._cache_path_for(filepath)
+        if cache_path is None:
+            return
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(doc.model_dump_json(), encoding="utf-8")
+        logger.info("Cached DoclingDocument: %s", cache_path.name)
+
+    @staticmethod
+    def _txt_to_docling_document(filepath: Path) -> DoclingDocument:
+        """Wrap a plain text file into a ``DoclingDocument``."""
         content = filepath.read_text(encoding="utf-8", errors="ignore")
-        self.files[str(filepath)] = content
-        self._save_markdown(filepath, content)
-        return content
+        doc = DoclingDocument(name=filepath.name)
+        doc.add_text(label=DocItemLabel.PARAGRAPH, text=content)
+        return doc
 
-    def _convert_batch(self, filepaths: list[Path]) -> list[tuple[str, str]]:
-        """Convert multiple files to markdown using docling's batch processing."""
+    def _convert_batch_as_docling(self, filepaths: list[Path]) -> list[DoclingDocument]:
+        """Convert multiple files to ``DoclingDocument`` objects.
+
+        Checks the JSON cache first; only files without a cached representation
+        are sent through the docling converter.
+        """
         if not filepaths:
             return []
 
-        results = []
+        cached: dict[str, DoclingDocument] = {}
+        to_convert: list[Path] = []
+
+        for fp in filepaths:
+            doc = self._load_from_cache(fp)
+            if doc is not None:
+                cached[str(fp)] = doc
+            else:
+                to_convert.append(fp)
+
+        if to_convert:
+            logger.info("Converting %d file(s) (cache hit for %d)", len(to_convert), len(cached))
+        elif cached:
+            logger.info("All %d file(s) loaded from cache", len(cached))
+
+        results: list[DoclingDocument] = []
         try:
-            for conv_result in self._converter.convert_all(filepaths, raises_on_error=False):
+            for conv_result in self._converter.convert_all(to_convert, raises_on_error=False):
                 filepath = Path(conv_result.input.file)
                 if conv_result.errors:
                     error_msgs = "; ".join(e.error_message for e in conv_result.errors)
                     raise FileStoreException(f"Failed to convert file: {filepath.name}: {error_msgs}")
 
-                markdown_content = conv_result.document.export_to_markdown()
-                self.files[str(filepath)] = markdown_content
-                self._save_markdown(filepath, markdown_content)
-                results.append((markdown_content, filepath.name))
+                doc = conv_result.document
+                doc.name = filepath.name
+
+                self._save_markdown(filepath, doc.export_to_markdown())
+                self._save_to_cache(filepath, doc)
+                results.append(doc)
         except FileStoreException:
             raise
         except Exception as exc:
-            raise FileStoreException(f"Failed to convert files") from exc
+            raise FileStoreException("Failed to convert files") from exc
 
-        return results
+        converted_by_name = {r.name: r for r in results}
+        ordered = [cached.get(str(fp)) or converted_by_name[fp.name] for fp in filepaths]
+        return ordered
 
     def _save_markdown(self, filepath: Path, content: str) -> None:
         """Save extracted content as a markdown file if save_dir is set."""

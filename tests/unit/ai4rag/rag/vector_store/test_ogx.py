@@ -2,12 +2,12 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from unittest.mock import MagicMock
 import logging
+from unittest.mock import MagicMock
 
 import pytest
-from langchain_core.documents import Document
 
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.vector_store.ogx import OGXVectorStore
 
@@ -178,8 +178,8 @@ class TestOGXVectorStoreSearch:
 
         assert isinstance(result, list)
         assert len(result) == 1
-        assert isinstance(result[0], Document)
-        assert result[0].page_content == "Test content"
+        assert isinstance(result[0], AI4RAGChunk)
+        assert result[0].text == "Test content"
         assert result[0].metadata == {"doc_id": "doc1", "seq": 1}
 
     def test_search_with_scores(self, mock_embedding_model, mock_ogx_client):
@@ -196,7 +196,7 @@ class TestOGXVectorStoreSearch:
         assert len(result) == 1
         assert isinstance(result[0], tuple)
         assert len(result[0]) == 2
-        assert isinstance(result[0][0], Document)
+        assert isinstance(result[0][0], AI4RAGChunk)
         assert isinstance(result[0][1], float)
         assert result[0][1] == 0.95
 
@@ -248,7 +248,7 @@ class TestOGXVectorStoreSearch:
 
         assert len(result) == 3
         for i, (doc, score) in enumerate(result):
-            assert doc.page_content == f"Content {i}"
+            assert doc.text == f"Content {i}"
             assert score == 0.9 - i * 0.1
 
 
@@ -414,8 +414,8 @@ class TestOGXVectorStoreAddDocuments:
         )
 
         docs = [
-            Document(page_content="Doc 1", metadata={"document_id": "doc1"}),
-            Document(page_content="Doc 2", metadata={"document_id": "doc2"}),
+            AI4RAGChunk(text="Doc 1", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Doc 2", metadata={"document_id": "doc2"}),
         ]
 
         vector_store.add_documents(docs)
@@ -430,7 +430,7 @@ class TestOGXVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [Document(page_content="Test", metadata={"document_id": "doc1"})]
+        docs = [AI4RAGChunk(text="Test", metadata={"document_id": "doc1"})]
 
         vector_store.add_documents(docs)
 
@@ -441,7 +441,7 @@ class TestOGXVectorStoreAddDocuments:
         assert "content" in chunks[0]
         assert "embedding" in chunks[0]
         assert "chunk_id" in chunks[0]
-        assert chunks[0]["chunk_id"] == str(hash(docs[0].page_content))
+        assert chunks[0]["chunk_id"] == str(hash(docs[0].text))
         assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
         assert chunks[0]["metadata"] == {"document_id": "doc1"}
 
@@ -453,7 +453,7 @@ class TestOGXVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
+        docs = [AI4RAGChunk(text=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
 
         vector_store.add_documents(docs)
 
@@ -471,8 +471,8 @@ class TestOGXVectorStoreAddDocuments:
         )
 
         docs = [
-            Document(
-                page_content="Test",
+            AI4RAGChunk(
+                text="Test",
                 metadata={"document_id": "doc1", "custom_field": "value"},
             )
         ]
@@ -497,7 +497,7 @@ class TestOGXVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [Document(page_content="Test", metadata={"document_id": "doc1"})]
+        docs = [AI4RAGChunk(text="Test", metadata={"document_id": "doc1"})]
 
         vector_store.add_documents(docs)
 
@@ -511,7 +511,7 @@ class TestOGXVectorStoreAddDocuments:
             provider_id="milvus",
         )
 
-        docs = [Document(page_content=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
+        docs = [AI4RAGChunk(text=f"Doc {i}", metadata={"document_id": f"doc{i}"}) for i in range(5)]
 
         vector_store.add_documents(docs, batch_size=2)
 
@@ -759,9 +759,9 @@ class TestOGXVectorStoreDuplicateChunks:
 
         # Create documents with identical content (will generate same hash)
         docs = [
-            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
-            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
-            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc1"}),
         ]
 
         with caplog.at_level(logging.WARNING, logger="ai4rag"):
@@ -784,9 +784,9 @@ class TestOGXVectorStoreDuplicateChunks:
         )
 
         docs = [
-            Document(page_content="Unique content 1", metadata={"document_id": "doc1"}),
-            Document(page_content="Unique content 2", metadata={"document_id": "doc2"}),
-            Document(page_content="Unique content 3", metadata={"document_id": "doc3"}),
+            AI4RAGChunk(text="Unique content 1", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Unique content 2", metadata={"document_id": "doc2"}),
+            AI4RAGChunk(text="Unique content 3", metadata={"document_id": "doc3"}),
         ]
 
         # Should not raise an error
@@ -808,9 +808,9 @@ class TestOGXVectorStoreDuplicateChunks:
         )
 
         docs = [
-            Document(page_content="Unique content", metadata={"document_id": "doc1"}),
-            Document(page_content="Duplicate content", metadata={"document_id": "doc2"}),
-            Document(page_content="Duplicate content", metadata={"document_id": "doc2"}),
+            AI4RAGChunk(text="Unique content", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc2"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc2"}),
         ]
 
         with caplog.at_level(logging.WARNING, logger="ai4rag"):
@@ -833,8 +833,8 @@ class TestOGXVectorStoreDuplicateChunks:
         )
 
         docs = [
-            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
-            Document(page_content="Duplicate content", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Duplicate content", metadata={"document_id": "doc1"}),
         ]
 
         vector_store.add_documents(docs)
@@ -855,8 +855,8 @@ class TestOGXVectorStoreDuplicateChunks:
         )
 
         docs = [
-            Document(page_content="Not unique 1", metadata={"document_id": "doc1"}),
-            Document(page_content="Not unique 1", metadata={"document_id": "doc2"}),
+            AI4RAGChunk(text="Not unique 1", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Not unique 1", metadata={"document_id": "doc2"}),
         ]
 
         with caplog.at_level(logging.WARNING, logger="ai4rag"):

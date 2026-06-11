@@ -4,13 +4,15 @@
 # -----------------------------------------------------------------------------
 import pandas as pd
 import pytest
+from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 
 from ai4rag.core.experiment.mps import (
+    AI4RAGChunk,
     BaseEmbeddingModel,
     BaseFoundationModel,
     BenchmarkData,
     ChromaVectorStore,
-    Document,
     GenerationError,
     ModelsPreSelector,
     PreSelectorError,
@@ -32,19 +34,18 @@ def benchmark_data() -> BenchmarkData:
     return benchmark_data
 
 
+def _make_docling_doc(name: str, text: str) -> DoclingDocument:
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text=text)
+    return doc
+
+
 @pytest.fixture
-def documents() -> list[Document]:
-    docs = [
-        Document(
-            page_content="Page content 1",
-            metadata={"document_id": "id_1_1"},
-        ),
-        Document(
-            page_content="Page content 2",
-            metadata={"document_id": "id_2_1"},
-        ),
+def documents() -> list[DoclingDocument]:
+    return [
+        _make_docling_doc("id_1_1", "Page content 1"),
+        _make_docling_doc("id_2_1", "Page content 2"),
     ]
-    return docs
 
 
 @pytest.fixture
@@ -221,7 +222,7 @@ class TestModelsPreSelector:
 
     def test_create_vector_store(self, mocker, fully_mocked_selector, caplog):
         vs = mocker.MagicMock(ChromaVectorStore)
-        document = mocker.MagicMock(Document)
+        document = mocker.MagicMock(AI4RAGChunk)
         val_err = ValueError("Fake embeddings error")
         vs.add_documents.side_effect = val_err
         mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", return_value=vs)

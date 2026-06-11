@@ -7,7 +7,7 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Sequence
 
 import pandas as pd
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
 from ogx_client import OgxClient
 
 from ai4rag import logger
@@ -34,7 +34,7 @@ from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.chunking import LangChainChunker
+from ai4rag.rag.chunking import DoclingChunker, LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
@@ -63,12 +63,8 @@ class AI4RAGExperiment:
 
     Parameters
     ----------
-    documents : list[Document | tuple[str, str]]
-        List of documents to embed in vector db and use as context in RAG.
-        When given as list of langchain's Document instances, both content and document
-        ids must be provided:
-        Document(page_content=..., metadata={document_id: 'some_id'})
-        When given as list of tuples it should be (content, document_id)
+    documents : list[DoclingDocument]
+        List of parsed docling documents to embed in vector db and use as context in RAG.
 
     benchmark_data : pd.DataFrame | BenchmarkData
         Structure with 3 columns: 'question', 'correct_answers' and - if applicable - 'correct_answer_document_ids'.
@@ -132,7 +128,7 @@ class AI4RAGExperiment:
     # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
-        documents: list[Document],
+        documents: list[DoclingDocument],
         benchmark_data: pd.DataFrame,
         search_space: AI4RAGSearchSpace,
         vector_store_type: str,
@@ -174,32 +170,25 @@ class AI4RAGExperiment:
             logger.warning("Unknown parameters: %s", kwargs)
 
     @property
-    def documents(self) -> list[Document]:
-        """Get list of documents"""
+    def documents(self) -> list[DoclingDocument]:
+        """Get list of documents."""
         return self._documents
 
     @documents.setter
-    def documents(self, docs: list[Document | tuple[str, str]] | None) -> None:
+    def documents(self, docs: list[DoclingDocument] | None) -> None:
         """
         Validate and set documents value.
-        We need to make sure if we have needed content and document_ids
-        provided and the documents. All documents need to be instances
-        of LangChain's Document class.
+        All documents must be ``DoclingDocument`` instances.
         """
         proper_docs = []
         if docs:
             for idx, doc in enumerate(docs):
-                if isinstance(doc, Document):
-                    if not doc.page_content:
-                        which_doc = doc.metadata.get("document_id") or idx
-                        logger.warning("Empty document: %s", which_doc)
-                    if not doc.metadata.get("document_id", None):
-                        logger.warning("document_id not provided for document at index: %s", idx)
-
+                if isinstance(doc, DoclingDocument):
+                    if not doc.name:
+                        logger.warning("Document at index %s has no name set.", idx)
                     proper_docs.append(doc)
-
                 else:
-                    raise ValueError(f"Incorrect type of document provided at index: {idx}.")
+                    raise ValueError(f"Incorrect type of document provided at index: {idx}. Expected DoclingDocument.")
 
         self._documents = proper_docs
 
@@ -389,7 +378,10 @@ class AI4RAGExperiment:
             chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
             chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
 
-            chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+            if chunking_method == "hybrid":
+                chunker = DoclingChunker(max_tokens=chunk_size)
+            else:
+                chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             chunked_documents = chunker.split_documents(self.documents)
 
             if self.event_handler:

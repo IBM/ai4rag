@@ -10,9 +10,9 @@ __all__ = [
 ]
 
 # Note: "" and 0 are sentinels for unused params; ranker_alpha uses 1 as sentinel (0 means 100% sparse)
-_default_chunking_methods = ("recursive",)
-_default_chunk_sizes = (1024, 2048)
-_default_chunk_overlaps = (128, 256)
+_default_chunking_methods = ("recursive", "hybrid")
+_default_chunk_sizes = (512, 1024, 2048)
+_default_chunk_overlaps = (0, 128, 256)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
 _default_chroma_retrieval_methods = ("simple", "window")

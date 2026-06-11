@@ -5,11 +5,11 @@
 
 from typing import Any
 
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
 
-from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
+from ai4rag.rag.chunking.base_chunker import BaseChunker
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.vector_store.ogx import OGXVectorStore
+from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 from ..embedding.base_model import BaseEmbeddingModel
 from ..foundation_models.base_model import BaseFoundationModel
@@ -19,10 +19,7 @@ from .base_template import BaseRAGTemplate, RAGTemplateError
 class SimpleRAG(BaseRAGTemplate):
     """
     RAG template using OGX components for embedding, vector store,
-    retrieval, and foundation model, with LangChain for document chunking.
-
-    This template implements the BaseRAGTemplate using OGX services
-    for all major RAG components while utilizing LangChain's chunking capabilities.
+    retrieval, and foundation model.
 
     Parameters
     ----------
@@ -32,23 +29,23 @@ class SimpleRAG(BaseRAGTemplate):
     retriever : Retriever
         Initialized retriever for document retrieval.
 
-    chunker : LangChainChunker | None, default=None
-        Initialized LangChain chunker for document splitting.
+    chunker : BaseChunker | None, default=None
+        Initialized chunker for document splitting.
 
-    embedding_model : OGXEmbeddingModel | None, default=None
-        Initialized OGX embedding model.
+    embedding_model : BaseEmbeddingModel | None, default=None
+        Initialized embedding model.
 
-    vector_store : OGXVectorStore | None, default=None
-        Initialized OGX vector store.
+    vector_store : BaseVectorStore | None, default=None
+        Initialized vector store.
     """
 
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        chunker: LangChainChunker | None = None,
+        chunker: BaseChunker | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: OGXVectorStore | None = None,
+        vector_store: BaseVectorStore | None = None,
     ):
         super().__init__(
             foundation_model=foundation_model,
@@ -59,17 +56,16 @@ class SimpleRAG(BaseRAGTemplate):
 
         self.chunker = chunker
 
-    def build_index(self, documents: list[Document], **kwargs) -> None:
+    def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
         """
         Index documents into the vector store.
 
-        This method chunks the documents using the LangChain chunker and
-        adds them to the vector store.
+        This method chunks the documents and adds them to the vector store.
 
         Parameters
         ----------
-        documents : list[Document]
-            List of LangChain Document objects to index.
+        documents : list[DoclingDocument]
+            Parsed docling documents to index.
         """
         if self.chunker is None and self.embedding_model is None and self.vector_store is None:
             raise RAGTemplateError()
@@ -100,10 +96,7 @@ class SimpleRAG(BaseRAGTemplate):
         reference_documents = self.retriever.retrieve(question, **kwargs)
 
         context = "\n".join(
-            [
-                self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
-                for doc in reference_documents
-            ]
+            [self.foundation_model.context_template_text.format(document=chunk.text) for chunk in reference_documents]
         )
 
         user_message = self.foundation_model.user_message_text.format(

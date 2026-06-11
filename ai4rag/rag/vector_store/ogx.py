@@ -2,11 +2,11 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from langchain_core.documents import Document
 from ogx_client import OgxClient
 from ogx_client.types.vector_store import VectorStore
 
 from ai4rag import logger
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
@@ -147,7 +147,7 @@ class OGXVectorStore(BaseVectorStore):
         ranker_k: int | None = None,
         ranker_alpha: float | None = None,
         **kwargs,
-    ) -> list[Document] | list[tuple[Document, float]]:
+    ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
         """
         Search for the chunks relevant to the query.
 
@@ -177,8 +177,8 @@ class OGXVectorStore(BaseVectorStore):
 
         Returns
         -------
-        list[Document] | list[tuple[Document, float]]
-            List of chunks as Document instances with or without scores, depending on the input.
+        list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
+            List of chunks with or without scores, depending on the input.
         """
         self._validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
         params = {
@@ -199,20 +199,20 @@ class OGXVectorStore(BaseVectorStore):
 
         if include_scores:
             return [
-                (Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()), score)
+                (AI4RAGChunk(text=chunk.content, metadata=chunk.chunk_metadata.to_dict()), score)
                 for chunk, score in zip(resp.chunks, resp.scores)
             ]
 
-        return [Document(page_content=chunk.content, metadata=chunk.chunk_metadata.to_dict()) for chunk in resp.chunks]
+        return [AI4RAGChunk(text=chunk.content, metadata=chunk.chunk_metadata.to_dict()) for chunk in resp.chunks]
 
-    def add_documents(self, documents: list[Document], **kwargs) -> None:
+    def add_documents(self, documents: list[AI4RAGChunk], **kwargs) -> None:
         """
         Add documents to the collection.
 
         Parameters
         ----------
-        documents : Sequence[Document]
-            Documents to add to the collection.
+        documents : list[AI4RAGChunk]
+            Chunks to add to the collection.
         """
         batch_size = kwargs.get("batch_size", 2048)
 
@@ -224,19 +224,19 @@ class OGXVectorStore(BaseVectorStore):
 
         chunks = [
             {
-                "content": doc.page_content,
+                "content": doc.text,
                 "chunk_metadata": {
                     "document_id": doc.metadata["document_id"],
                 },
                 "metadata": doc.metadata,
-                "chunk_id": str(hash(doc.page_content)),
+                "chunk_id": str(hash(doc.text)),
                 "embedding_model": self.embedding_model.model_id,
                 "embedding_dimension": embedding_dimension,
             }
             for doc in documents
         ]
 
-        embeddings = self.embedding_model.embed_documents([doc.page_content for doc in documents])
+        embeddings = self.embedding_model.embed_documents([doc.text for doc in documents])
 
         seen_ids = set()
         unique_chunks = []

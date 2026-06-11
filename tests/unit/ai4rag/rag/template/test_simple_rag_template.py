@@ -4,10 +4,19 @@
 # -----------------------------------------------------------------------------
 
 import pytest
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.template.base_template import RAGTemplateError
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
+
+
+def _make_docling_doc(name: str, text: str) -> DoclingDocument:
+    """Create a minimal DoclingDocument for testing."""
+    doc = DoclingDocument(name=name)
+    doc.add_text(label=DocItemLabel.PARAGRAPH, text=text)
+    return doc
 
 
 class TestOGXRAGInitialization:
@@ -155,8 +164,8 @@ class TestOGXRAGBuildIndex:
         """Create a mock chunker."""
         mock = mocker.MagicMock()
         mock.split_documents.return_value = [
-            Document(page_content="chunk1", metadata={"document_id": "doc1", "sequence_number": 1}),
-            Document(page_content="chunk2", metadata={"document_id": "doc1", "sequence_number": 2}),
+            AI4RAGChunk(text="chunk1", metadata={"document_id": "doc1", "sequence_number": 1}),
+            AI4RAGChunk(text="chunk2", metadata={"document_id": "doc1", "sequence_number": 2}),
         ]
         return mock
 
@@ -169,10 +178,10 @@ class TestOGXRAGBuildIndex:
 
     @pytest.fixture
     def sample_documents(self):
-        """Create sample documents for testing."""
+        """Create sample DoclingDocuments for testing."""
         return [
-            Document(page_content="This is test document 1.", metadata={"document_id": "doc1"}),
-            Document(page_content="This is test document 2.", metadata={"document_id": "doc2"}),
+            _make_docling_doc("doc1", "This is test document 1."),
+            _make_docling_doc("doc2", "This is test document 2."),
         ]
 
     def test_build_index_chunks_and_adds_to_vector_store(
@@ -200,8 +209,8 @@ class TestOGXRAGBuildIndex:
         mock_vector_store.add_documents.assert_called_once()
         added_chunks = mock_vector_store.add_documents.call_args[0][0]
         assert len(added_chunks) == 2
-        assert added_chunks[0].page_content == "chunk1"
-        assert added_chunks[1].page_content == "chunk2"
+        assert added_chunks[0].text == "chunk1"
+        assert added_chunks[1].text == "chunk2"
 
     def test_build_index_raises_error_when_chunker_is_none(
         self,
@@ -216,7 +225,7 @@ class TestOGXRAGBuildIndex:
         )
 
         with pytest.raises(RAGTemplateError):
-            rag.build_index([Document(page_content="test", metadata={})])
+            rag.build_index([_make_docling_doc("test", "test")])
 
     def test_build_index_fails_when_vector_store_is_none(
         self,
@@ -235,7 +244,7 @@ class TestOGXRAGBuildIndex:
         )
 
         with pytest.raises(AttributeError):
-            rag.build_index([Document(page_content="test", metadata={})])
+            rag.build_index([_make_docling_doc("test", "test")])
 
     def test_build_index_works_with_embedding_model_none(
         self,
@@ -254,7 +263,7 @@ class TestOGXRAGBuildIndex:
         )
 
         # Should not raise RAGTemplateError - embedding_model is not used in build_index
-        rag.build_index([Document(page_content="test", metadata={})])
+        rag.build_index([_make_docling_doc("test", "test")])
         mock_chunker.split_documents.assert_called_once()
         mock_vector_store.add_documents.assert_called_once()
 
@@ -273,7 +282,7 @@ class TestOGXRAGBuildIndex:
         )
 
         with pytest.raises(RAGTemplateError):
-            rag.build_index([Document(page_content="test", metadata={})])
+            rag.build_index([_make_docling_doc("test", "test")])
 
     def test_build_index_with_empty_document_list(
         self,
@@ -304,11 +313,9 @@ class TestOGXRAGBuildIndex:
         mock_vector_store,
     ):
         """Test build_index with large document list."""
-        large_doc_list = [
-            Document(page_content=f"Document {i}", metadata={"document_id": f"doc{i}"}) for i in range(100)
-        ]
+        large_doc_list = [_make_docling_doc(f"doc{i}", f"Document {i}") for i in range(100)]
         large_chunk_list = [
-            Document(page_content=f"Chunk {i}", metadata={"document_id": f"doc{i % 100}", "sequence_number": i})
+            AI4RAGChunk(text=f"Chunk {i}", metadata={"document_id": f"doc{i % 100}", "sequence_number": i})
             for i in range(500)
         ]
         mock_chunker.split_documents.return_value = large_chunk_list
@@ -352,8 +359,8 @@ class TestOGXRAGGenerate:
         """Create a mock retriever."""
         mock = mocker.MagicMock()
         mock.retrieve.return_value = [
-            Document(page_content="Relevant document 1", metadata={"document_id": "doc1"}),
-            Document(page_content="Relevant document 2", metadata={"document_id": "doc2"}),
+            AI4RAGChunk(text="Relevant document 1", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Relevant document 2", metadata={"document_id": "doc2"}),
         ]
         return mock
 
@@ -491,8 +498,8 @@ class TestOGXRAGGenerate:
         result = rag.generate("What is AI?")
 
         assert len(result["reference_documents"]) == 2
-        assert result["reference_documents"][0].page_content == "Relevant document 1"
-        assert result["reference_documents"][1].page_content == "Relevant document 2"
+        assert result["reference_documents"][0].text == "Relevant document 1"
+        assert result["reference_documents"][1].text == "Relevant document 2"
 
     def test_generate_returns_original_question(
         self,
@@ -542,7 +549,7 @@ class TestOGXRAGGenerate:
     ):
         """Test generate with single retrieved document."""
         mock_retriever.retrieve.return_value = [
-            Document(page_content="Single document", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Single document", metadata={"document_id": "doc1"}),
         ]
 
         rag = SimpleRAG(
@@ -553,33 +560,28 @@ class TestOGXRAGGenerate:
         result = rag.generate("What is AI?")
 
         assert len(result["reference_documents"]) == 1
-        assert result["reference_documents"][0].page_content == "Single document"
+        assert result["reference_documents"][0].text == "Single document"
 
-    def test_generate_handles_document_without_page_content_attribute(
+    def test_generate_handles_chunk_without_text_attribute(
         self,
         mock_foundation_model,
         mock_retriever,
         mocker,
     ):
-        """Test that generate handles documents without page_content attribute gracefully."""
-        # Create a mock document-like object without page_content
-        mock_doc = mocker.MagicMock(spec=[])
-        del mock_doc.page_content  # Ensure page_content doesn't exist
-        mock_retriever.retrieve.return_value = [mock_doc]
+        """Test that generate raises AttributeError for chunks without text attribute."""
+        # Create a mock chunk-like object without text
+        mock_chunk = mocker.MagicMock(spec=[])
+        del mock_chunk.text  # Ensure text doesn't exist
+        mock_retriever.retrieve.return_value = [mock_chunk]
 
         rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
 
-        result = rag.generate("What is AI?")
-
-        # Should use empty string when page_content is missing
-        call_args = mock_foundation_model.chat.call_args
-        messages = call_args.kwargs["messages"]
-        user_message = messages[1]["content"]
-        assert "Document: " in user_message
-        assert result["answer"] == "This is the generated answer."
+        # Source code accesses chunk.text directly, so missing attribute raises
+        with pytest.raises(AttributeError):
+            rag.generate("What is AI?")
 
     def test_generate_with_different_questions(
         self,
@@ -654,7 +656,7 @@ class TestOGXRAGGenerateStream:
         """Create a mock retriever."""
         mock = mocker.MagicMock()
         mock.retrieve.return_value = [
-            Document(page_content="Relevant document", metadata={"document_id": "doc1"}),
+            AI4RAGChunk(text="Relevant document", metadata={"document_id": "doc1"}),
         ]
         return mock
 
@@ -790,8 +792,8 @@ class TestOGXRAGIntegration:
         # Retriever
         retriever = mocker.MagicMock()
         retriever.retrieve.return_value = [
-            Document(
-                page_content="The answer to everything is 42.",
+            AI4RAGChunk(
+                text="The answer to everything is 42.",
                 metadata={"document_id": "doc1", "sequence_number": 1},
             ),
         ]
@@ -799,8 +801,8 @@ class TestOGXRAGIntegration:
         # Chunker
         chunker = mocker.MagicMock()
         chunker.split_documents.return_value = [
-            Document(
-                page_content="The answer to everything is 42.",
+            AI4RAGChunk(
+                text="The answer to everything is 42.",
                 metadata={"document_id": "doc1", "sequence_number": 1},
             ),
         ]
@@ -832,7 +834,7 @@ class TestOGXRAGIntegration:
 
         # Step 1: Build index
         documents = [
-            Document(page_content="The answer to everything is 42.", metadata={"document_id": "doc1"}),
+            _make_docling_doc("doc1", "The answer to everything is 42."),
         ]
         rag.build_index(documents)
 
@@ -863,7 +865,7 @@ class TestOGXRAGIntegration:
 
         # Build index once
         documents = [
-            Document(page_content="Test content", metadata={"document_id": "doc1"}),
+            _make_docling_doc("doc1", "Test content"),
         ]
         rag.build_index(documents)
 
