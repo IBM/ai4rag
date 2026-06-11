@@ -428,7 +428,6 @@ class AI4RAGSearchSpace(SearchSpace):
         params: list[Parameter] | None = None,
         rules: list[RuleFunction] | None = None,
         vector_store_type: str = "ogx",
-        ogx_vector_io_provider_id: str = "milvus",
     ):
 ```
 
@@ -436,30 +435,32 @@ class AI4RAGSearchSpace(SearchSpace):
 
 **Base Rules (always applied):**
 
-1. **Chunk size > 2 × chunk overlap**
-   - Ensures sufficient non-overlapping content
-   - Skipped when `chunk_size == 0` (structural-only splitting)
+1. **Chunk overlap consistent with chunking method**
+   - `chunking_method == "hybrid"` (DoclingChunker) requires `chunk_overlap == 0`
+   - `chunking_method == "recursive"` (LangChainChunker) requires `chunk_overlap > 0`
 
-2. **Window size ↔ retrieval method consistency**
+2. **Chunk size > 2 × chunk overlap**
+   - Ensures sufficient non-overlapping content
+
+3. **Window size ↔ retrieval method consistency**
    - `window_size == 0` requires `retrieval_method == "simple"`
    - `window_size > 0` requires `retrieval_method == "window"`
 
-3. **Chunk size within embedding context length**
-   - Estimates token count: `estimated_tokens = chunk_size / 3.6`
-   - Verifies `estimated_tokens <= embedding_model.params.context_length`
-   - Conservative ratio prevents runtime failures
+4. **Chunk size within embedding context length**
+   - Verifies `chunk_size <= context_length * 0.9` (both in tokens)
+   - 10% safety margin accounts for tokenizer divergence
 
 **Hybrid Search Rules (only for `vector_store_type != "chroma"`):**
 
-4. **Search mode ↔ ranker parameter consistency**
+5. **Search mode ↔ ranker parameter consistency**
    - When `search_mode == "vector"`: all ranker params must be sentinels (`""`, `0`, `1`)
    - When `search_mode == "hybrid"`: `ranker_strategy` must be non-empty
 
-5. **Ranker K for RRF only**
+6. **Ranker K for RRF only**
    - `ranker_k > 0` only when `ranker_strategy == "rrf"`
    - `ranker_k == 0` (sentinel) for all other strategies
 
-6. **Ranker alpha for weighted only**
+7. **Ranker alpha for weighted only**
    - `ranker_alpha != 1` only when `ranker_strategy == "weighted"`
    - `ranker_alpha == 1` (sentinel, means 100% dense) for all other strategies
 
@@ -620,7 +621,7 @@ The `ExperimentExceptionHandler` can be extended to customize error handling beh
 - Configurable via `max_threads` in `query_rag()`
 
 **Batch Embedding:**
-- OGXEmbeddingModel processes documents in batches of 2048 chunks
+- OGXEmbeddingModel processes documents in batches of 1024 chunks
 - Prevents API request size limits
 - Applied in both indexing and query phases
 

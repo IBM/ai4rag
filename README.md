@@ -36,8 +36,8 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 ai4RAG can run experiments using an [OGX](https://github.com/ogx-ai/ogx) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
 
-- **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 0.7.0 (Python package used by ai4RAG; installs with this project).
-- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 0.7.0.
+- **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 1.0.0 (Python package used by ai4RAG; installs with this project).
+- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 1.0.0.
 - **API reference:** [OGX API docs](https://ogx-ai.github.io/docs/) — HTTP API used by the client.
 
 **Features used by ai4rag**
@@ -48,6 +48,10 @@ When using the OGX backend, ai4rag relies on:
 - **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://ogx-ai.github.io/docs/api/creates-a-vector-store) in the API docs.
 - **Vector IO** — Insert document chunks (with embeddings) into a store and run similarity search (query) for retrieval. See [Vector IO](https://ogx-ai.github.io/docs/api/search-for-chunks-in-a-vector-store) and insert/query endpoints.
 - **Chat / responses** — Foundation model integration for answer generation (e.g. chat completions or responses API) when evaluating RAG patterns.
+
+## Document processing
+
+ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. Both `docling-core` and `ogx-client` are installed automatically with `ai4rag`.
 
 
 ## Quick start
@@ -76,7 +80,7 @@ client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
 
 ### Prepare knowledge base documents
 Prepare a set of documents to serve as the knowledge base for retrieval.
-These documents will be used to ground the LLM's responses and should be stored in a local directory.
+Documents are represented as `DoclingDocument` instances (from the [`docling-core`](https://github.com/DS4SD/docling-core) library) and should be stored in a local directory.
 
 > [!note]
 > If you are using the project locally, you can load documents using the `FileStore` class from the `dev_utils` module.
@@ -151,11 +155,30 @@ search_space = AI4RAGSearchSpace(
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192},
                 )
-            ]
-        )
+            ],
+        ),
+        Parameter(
+            name="chunking_method",
+            param_type="C",
+            values=["recursive", "hybrid"],
+        ),
+        Parameter(
+            name="chunk_size",
+            param_type="C",
+            values=[512, 1024, 2048],
+        ),
+        Parameter(
+            name="chunk_overlap",
+            param_type="C",
+            values=[0, 128, 256],
+        ),
     ]
 )
 ```
+
+> [!tip]
+> `chunking_method` controls the chunking strategy: `"recursive"` uses LangChain's `RecursiveCharacterTextSplitter`, while `"hybrid"` uses docling's structure-aware `HybridChunker` (requires `chunk_overlap=0`).
+> When omitted, both methods are included by default.
 
 > [!tip]
 > To run automatic models discovery with OGX you may use `prepare_search_space_with_ogx()` from `ai4rag.search_space.prepare_search_space`.

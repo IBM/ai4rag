@@ -46,34 +46,41 @@ classDiagram
         +embedding_model: BaseEmbeddingModel
         +distance_metric: str
         +collection_name: str
-        +search(query, k)* list
-        +add_documents(docs)* void
+        +search(query, k)* AI4RAGChunk[]
+        +add_documents(AI4RAGChunk[])* void
     }
 
     class OGXVectorStore {
         +client: OgxClient
-        +search(query, k, search_mode, ranker_*) list
-        +add_documents(docs) void
+        +search(query, k, search_mode, ranker_*) AI4RAGChunk[]
+        +add_documents(AI4RAGChunk[]) void
     }
 
     class ChromaVectorStore {
-        +search(query, k) list
-        +window_search(query, k, window_size) list
-        +add_documents(docs) list
+        +search(query, k) AI4RAGChunk[]
+        +window_search(query, k, window_size) AI4RAGChunk[]
+        +add_documents(AI4RAGChunk[]) void
     }
 
     class BaseChunker {
         <<abstract>>
-        +split_documents(docs)* list
+        +split_documents(DoclingDocument[])* AI4RAGChunk[]
         +to_dict()* dict
         +from_dict(d)* BaseChunker
+    }
+
+    class DoclingChunker {
+        +max_tokens: int
+        +contextualize: bool
+        +merge_peers: bool
+        +split_documents(DoclingDocument[]) AI4RAGChunk[]
     }
 
     class LangChainChunker {
         +method: str
         +chunk_size: int
         +chunk_overlap: int
-        +split_documents(docs) list
+        +split_documents(DoclingDocument[]) AI4RAGChunk[]
     }
 
     class Retriever {
@@ -97,10 +104,10 @@ classDiagram
     }
 
     class SimpleRAG {
-        +chunker: LangChainChunker
+        +chunker: BaseChunker
         +embedding_model: BaseEmbeddingModel
         +vector_store: BaseVectorStore
-        +build_index(docs) void
+        +build_index(DoclingDocument[]) void
         +generate(question) dict
         +generate_stream(question) iterator
     }
@@ -109,6 +116,7 @@ classDiagram
     BaseEmbeddingModel <|-- OGXEmbeddingModel
     BaseVectorStore <|-- OGXVectorStore
     BaseVectorStore <|-- ChromaVectorStore
+    BaseChunker <|-- DoclingChunker
     BaseChunker <|-- LangChainChunker
     BaseRAGTemplate <|-- SimpleRAG
 
@@ -116,7 +124,7 @@ classDiagram
     Retriever --> BaseVectorStore : uses
     BaseRAGTemplate --> BaseFoundationModel : uses
     BaseRAGTemplate --> Retriever : uses
-    SimpleRAG --> LangChainChunker : uses
+    SimpleRAG --> BaseChunker : uses
 ```
 
 ---
@@ -179,7 +187,7 @@ Template for formatting each retrieved document:
 ```
 
 Placeholder:
-- `{document}`: Individual chunk's `page_content`
+- `{document}`: Individual chunk's text content
 
 **Customization Example:**
 
@@ -364,10 +372,10 @@ def _detect_context_length(self) -> int:
 
 ```python
 def embed_documents(self, texts: list[str]) -> list[list[float]]:
-    """Process in batches of 2048 to respect API limits."""
+    """Process in batches of 1024 to respect API limits."""
     embeddings = []
-    for idx in range(0, len(texts), 2048):
-        batch = texts[idx : idx + 2048]
+    for idx in range(0, len(texts), 1024):
+        batch = texts[idx : idx + 1024]
         batch_embeddings = self._embed_text(batch)
         embeddings.extend(batch_embeddings)
     return embeddings
@@ -425,12 +433,12 @@ class BaseVectorStore(ABC):
 
 ```python
 @abstractmethod
-def search(self, query: str, k: int, **kwargs) -> list[Document]:
+def search(self, query: str, k: int, **kwargs) -> list[AI4RAGChunk]:
     """Search for k most relevant chunks."""
 
 @abstractmethod
-def add_documents(self, documents: Sequence[Document]) -> None:
-    """Add documents to the collection."""
+def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
+    """Add chunks to the collection."""
 
 @property
 @abstractmethod
@@ -469,7 +477,7 @@ def search(
     k: int = 5,
     include_scores: bool = False,
     **kwargs
-) -> list[Document] | list[tuple[Document, float]]:
+) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
     """Vector similarity search."""
 ```
 
@@ -483,7 +491,7 @@ def window_search(
     window_size: int = 2,
     include_scores: bool = False,
     **kwargs
-) -> list[Document]:
+) -> list[AI4RAGChunk]:
     """Retrieve chunks + adjacent chunks (window) from same document."""
 ```
 
@@ -495,7 +503,7 @@ For each retrieved chunk:
    - Same `document_id`
    - `sequence_number` in `[seq - window_size, seq + window_size]`
 3. Sort by `sequence_number`
-4. Merge into single document (concatenate `page_content`)
+4. Merge into single chunk (concatenate text)
 
 **Example:**
 
@@ -509,8 +517,8 @@ For each retrieved chunk:
 **Batch Document Addition:**
 
 ```python
-def add_documents(self, documents: list, max_batch_size: int = 2048) -> list[str]:
-    """Add documents in batches of max_batch_size."""
+def add_documents(self, documents: list[AI4RAGChunk], max_batch_size: int = 2048) -> list[str]:
+    """Add chunks in batches of max_batch_size."""
     for batch_start in range(0, len(docs), max_batch_size):
         batch = docs[batch_start : batch_start + max_batch_size]
         self._vector_store.add_documents(batch, ids=ids)
@@ -529,11 +537,11 @@ vector_store.add_documents(chunked_documents)
 
 # Search
 results = vector_store.search(query="What is X?", k=5)
-# Returns: [Document(...), Document(...), ...]
+# Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]
 
 # Window search
 results = vector_store.window_search(query="What is X?", k=5, window_size=2)
-# Returns: [merged_doc_1, merged_doc_2, ...]
+# Returns: [merged_chunk_1, merged_chunk_2, ...]
 ```
 
 ### OGXVectorStore
@@ -599,7 +607,7 @@ def search(
     ranker_k: int | None = None,
     ranker_alpha: float | None = None,
     **kwargs
-) -> list[Document]:
+) -> list[AI4RAGChunk]:
 ```
 
 **Search Modes:**
@@ -680,13 +688,13 @@ def _validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha
 **Document Addition:**
 
 ```python
-def add_documents(self, documents: list[Document], batch_size: int = 2048):
-    """Add documents with embeddings to OGX vector store."""
+def add_documents(self, documents: list[AI4RAGChunk], batch_size: int = 2048):
+    """Add chunks with embeddings to OGX vector store."""
     chunks = [
         {
-            "content": doc.page_content,
-            "chunk_metadata": doc.metadata,
-            "chunk_id": doc.metadata["document_id"],
+            "content": chunk.text,
+            "chunk_metadata": chunk.metadata,
+            "chunk_id": chunk.metadata["document_id"],
             "embedding_model": self.embedding_model.model_id,
             "embedding_dimension": self.embedding_model.params.embedding_dimension,
             "embedding": embedding_vector,
@@ -740,16 +748,27 @@ results = vector_store.search(
 
 ## Chunking
 
-Chunkers split documents into smaller, overlapping chunks for embedding and retrieval.
+Chunkers split `DoclingDocument` objects into `AI4RAGChunk` instances for embedding and retrieval.
+
+### AI4RAGChunk
+
+Framework-agnostic chunk representation used across the pipeline:
+
+```python
+@dataclass(frozen=True)
+class AI4RAGChunk:
+    text: str                                  # Chunk content
+    metadata: dict[str, Any] = field(default_factory=dict)  # document_id, sequence_number, etc.
+```
 
 ### BaseChunker
 
 Abstract base class for chunkers:
 
 ```python
-class BaseChunker(ABC, Generic[ChunkT]):
+class BaseChunker(ABC):
     @abstractmethod
-    def split_documents(self, documents: Sequence[ChunkT]) -> list[ChunkT]:
+    def split_documents(self, documents: Sequence[DoclingDocument]) -> list[AI4RAGChunk]:
         """Split documents into smaller chunks."""
 
     @abstractmethod
@@ -762,12 +781,44 @@ class BaseChunker(ABC, Generic[ChunkT]):
         """Deserialize chunker configuration."""
 ```
 
-### LangChainChunker
+### DoclingChunker
 
-LangChain-based chunking with metadata management:
+Structure-aware, token-aware chunker wrapping docling's `HybridChunker`. Preserves document hierarchy (headings, tables, figures) during chunking:
 
 ```python
-class LangChainChunker(BaseChunker[Document]):
+class DoclingChunker(BaseChunker):
+    def __init__(
+        self,
+        max_tokens: int = 8192,
+        contextualize: bool = True,
+        tokenizer: BaseTokenizer | None = None,
+        merge_peers: bool = True,
+    ):
+```
+
+**Key Features:**
+
+- Operates directly on `DoclingDocument` objects
+- Token-bounded chunks aligned to the embedding model
+- When `contextualize=True`, enriches each chunk with its heading hierarchy
+- Merges adjacent undersized chunks that share the same heading context
+- Does **not** support chunk overlap (overlap must be `0`)
+
+**Usage:**
+
+```python
+chunker = DoclingChunker(max_tokens=1024, contextualize=True)
+
+chunks = chunker.split_documents(docling_documents)
+# Returns: list[AI4RAGChunk] with document_id, sequence_number, and headings metadata
+```
+
+### LangChainChunker
+
+Token-based chunking via LangChain's `RecursiveCharacterTextSplitter`, adapted for `DoclingDocument` input:
+
+```python
+class LangChainChunker(BaseChunker):
     def __init__(
         self,
         method: Literal["recursive"] = "recursive",
@@ -779,15 +830,15 @@ class LangChainChunker(BaseChunker[Document]):
 
 **Chunking Method:**
 
-Currently supports `"recursive"`:
+Currently supports `"recursive"`. Converts each `DoclingDocument` to markdown internally, then applies token-based splitting via tiktoken:
 
 ```python
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=chunk_size,
     chunk_overlap=chunk_overlap,
     separators=["\n\n", r"(?<=\. )", "\n", " ", ""],
-    length_function=len,
-    add_start_index=True,  # Adds "start_index" to metadata
+    length_function=lambda text: len(encoding.encode(text)),  # tiktoken-based
+    add_start_index=True,
 )
 ```
 
@@ -834,13 +885,12 @@ def _set_sequence_number_in_metadata(chunks):
 **Output Chunk Structure:**
 
 ```python
-Document(
-    page_content="Chunk text content...",
+AI4RAGChunk(
+    text="Chunk text content...",
     metadata={
         "document_id": "doc1",
         "sequence_number": 3,
         "start_index": 1024,
-        # ... original document metadata preserved ...
     }
 )
 ```
@@ -854,8 +904,8 @@ chunker = LangChainChunker(
     chunk_overlap=128
 )
 
-chunks = chunker.split_documents(documents)
-# Returns: list[Document] with sequence_number and start_index metadata
+chunks = chunker.split_documents(docling_documents)
+# Returns: list[AI4RAGChunk] with sequence_number and start_index metadata
 ```
 
 ---
@@ -897,7 +947,7 @@ class Retriever:
 **Retrieve Method:**
 
 ```python
-def retrieve(self, query: str, **kwargs) -> list[Document]:
+def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
     """Retrieve relevant documents from vector store."""
     _number_of_chunks = kwargs.get("number_of_chunks", self.number_of_chunks)
 
@@ -932,7 +982,7 @@ retriever = Retriever(
 )
 
 docs = retriever.retrieve("What is X?")
-# Returns: [Document(...), Document(...), ...]  (5 chunks)
+# Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]  (5 chunks)
 
 # Hybrid retrieval with RRF
 retriever = Retriever(
@@ -973,7 +1023,7 @@ class BaseRAGTemplate(ABC):
 
 ```python
 @abstractmethod
-def build_index(self, documents: list[Document], **kwargs) -> None:
+def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
     """Index documents into vector store."""
 
 @abstractmethod
@@ -995,7 +1045,7 @@ class SimpleRAG(BaseRAGTemplate):
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        chunker: LangChainChunker | None = None,
+        chunker: BaseChunker | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
         vector_store: BaseVectorStore | None = None,
     ):
@@ -1004,7 +1054,7 @@ class SimpleRAG(BaseRAGTemplate):
 **build_index() Method:**
 
 ```python
-def build_index(self, documents: list[Document], **kwargs) -> None:
+def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
     """Index documents: chunk → embed → store."""
     chunks = self.chunker.split_documents(documents)
     self.vector_store.add_documents(chunks)
@@ -1022,9 +1072,9 @@ def generate(self, question: str, **kwargs) -> dict[str, Any]:
     # 2. Format context
     context = "\n".join([
         self.foundation_model.context_template_text.format(
-            document=doc.page_content
+            document=chunk.text
         )
-        for doc in reference_documents
+        for chunk in reference_documents
     ])
 
     # 3. Format user message
@@ -1080,7 +1130,7 @@ print(result["answer"])
 # "Based on the provided documents, Paris is the capital of France."
 
 print(result["reference_documents"])
-# [Document(...), Document(...), ...]
+# [AI4RAGChunk(...), AI4RAGChunk(...), ...]
 ```
 
 **Within AI4RAGExperiment:**
@@ -1201,11 +1251,11 @@ class CustomEmbeddingModel(BaseEmbeddingModel[MyClient, MyParams]):
 
 ```python
 class CustomVectorStore(BaseVectorStore):
-    def search(self, query: str, k: int, **kwargs) -> list[Document]:
+    def search(self, query: str, k: int, **kwargs) -> list[AI4RAGChunk]:
         # Your implementation
         pass
 
-    def add_documents(self, documents: Sequence[Document]) -> None:
+    def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
         # Your implementation
         pass
 
@@ -1218,7 +1268,7 @@ class CustomVectorStore(BaseVectorStore):
 
 ```python
 class CustomRAG(BaseRAGTemplate):
-    def build_index(self, documents: list[Document], **kwargs) -> None:
+    def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
         # Your indexing logic
         pass
 
