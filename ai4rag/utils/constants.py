@@ -7,17 +7,11 @@ from typing import Any
 __all__ = [
     "ConstantMeta",
     "AI4RAGParamNames",
-    "GenerationConstants",
     "ChunkingConstraints",
     "ExperimentStep",
     "RetrievalConstraints",
-    "SearchSpaceValidationErrors",
-    "DEFAULT_WORD_TO_TOKEN_RATIO",
     "ChatGenerationConstants",
-    "DefaultVectorStoreFieldNames",
 ]
-
-DEFAULT_WORD_TO_TOKEN_RATIO = 1.5
 
 
 class ConstantMeta(type):
@@ -101,14 +95,6 @@ class ExperimentStep(metaclass=ConstantMeta):
     EVALUATION = "evaluation"
 
 
-class GenerationConstants(metaclass=ConstantMeta):
-    """Constants used for setting the generation (inference) parameters."""
-
-    MAX_NEW_TOKENS = 1000
-    MIN_NEW_TOKENS = 1
-    DECODING_METHOD = "greedy"
-
-
 class ChatGenerationConstants(metaclass=ConstantMeta):
     """Constants used for setting the generation (inference) parameters for chat models only."""
 
@@ -119,10 +105,10 @@ class ChatGenerationConstants(metaclass=ConstantMeta):
 class ChunkingConstraints(metaclass=ConstantMeta):
     """Constants used to define chunking constraints on what below parameters can be."""
 
-    MIN_CHUNK_SIZE = 128
+    MIN_CHUNK_SIZE = 512
     MAX_CHUNK_SIZE = 2048
     MIN_CHUNK_OVERLAP = 0
-    MAX_CHUNK_OVERLAP = 512
+    MAX_CHUNK_OVERLAP = 256
     METHODS = ["recursive", "hybrid"]
 
 
@@ -138,29 +124,3 @@ class RetrievalConstraints(metaclass=ConstantMeta):
     RANKER_STRATEGIES = ["rrf", "weighted", "normalized"]
     MIN_RANKER_K = 1
     MAX_RANKER_K = 100
-
-
-class DefaultVectorStoreFieldNames(metaclass=ConstantMeta):
-    """Constants used as field names during index building for Milvus and Elasticsearch"""
-
-    CHUNK_SEQUENCE_NUMBER_FIELD = "sequence_number"
-    DENSE_EMBEDDINGS_FIELD = "vector"
-    SPARSE_EMBEDDINGS_FIELD = "sparse_embeddings"
-    MILVUS_TEXT_FIELD = "text"
-    ELASTICSEARCH_TEXT_FIELD = "text_field"
-    METADATA_DOCUMENT_NAME_FIELD = "document_id"
-
-
-class SearchSpaceValidationErrors(metaclass=ConstantMeta):
-    """Constants used to define payload validation errors."""
-
-    UNEXPECTED_KEYWORD_ARGUMENT = "unexpected_keyword_argument"
-    LITERAL_ERROR = "literal_error"
-    TOO_SHORT = "too_short"
-    TOO_LONG = "too_long"
-    LESS_THAN_EQUAL = "less_than_equal"
-    GREATER_THAN_EQUAL = "greater_than_equal"
-    INT_FROM_FLOAT = "int_from_float"
-    INT_PARSING = "int_parsing"
-    INT_TYPE = "int_type"
-    LIST_TYPE = "list_type"

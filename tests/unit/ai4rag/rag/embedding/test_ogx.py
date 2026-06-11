@@ -5,7 +5,7 @@
 
 import pytest
 
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel, OGXEmbeddingParams
+from ai4rag.rag.embedding.ogx import MIN_CONTEXT_LENGTH, OGXEmbeddingModel, OGXEmbeddingParams
 
 
 def _make_mock_ogx_embedding_response(mocker, embeddings):
@@ -31,11 +31,11 @@ class TestOGXEmbeddingModel:
 
     def test_init_with_explicit_dimension(self, mock_ogx_client):
         """Test initialization with explicit embedding_dimension and context_length does not trigger auto-detection."""
-        params = OGXEmbeddingParams(embedding_dimension=768, context_length=512)
+        params = OGXEmbeddingParams(embedding_dimension=768, context_length=1024)
         model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params=params)
 
         assert model.params.embedding_dimension == 768
-        assert model.params.context_length == 512
+        assert model.params.context_length == 1024
         mock_ogx_client.embeddings.create.assert_not_called()
 
     def test_init_with_dict_params_with_dimension(self, mock_ogx_client):
@@ -43,11 +43,11 @@ class TestOGXEmbeddingModel:
         model = OGXEmbeddingModel(
             client=mock_ogx_client,
             model_id="all-MiniLM-L6-v2",
-            params={"embedding_dimension": 384, "context_length": 512},
+            params={"embedding_dimension": 384, "context_length": 1024},
         )
 
         assert model.params.embedding_dimension == 384
-        assert model.params.context_length == 512
+        assert model.params.context_length == 1024
         mock_ogx_client.embeddings.create.assert_not_called()
 
     def test_init_without_params_auto_detects_dimension(self, mock_ogx_client):
@@ -157,7 +157,7 @@ class TestOGXEmbeddingModel:
         model = OGXEmbeddingModel(
             client=mock_ogx_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
         mock_ogx_client.embeddings.create.return_value = _make_mock_ogx_embedding_response(
             mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
@@ -174,7 +174,7 @@ class TestOGXEmbeddingModel:
         model = OGXEmbeddingModel(
             client=mock_ogx_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
 
         batch_size = OGXEmbeddingModel._BATCH_SIZE
@@ -197,7 +197,7 @@ class TestOGXEmbeddingModel:
         model = OGXEmbeddingModel(
             client=mock_ogx_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
         mock_ogx_client.embeddings.create.return_value = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
@@ -205,12 +205,68 @@ class TestOGXEmbeddingModel:
 
         assert embedding == [0.1, 0.2, 0.3]
 
+    def test_explicit_context_length_below_minimum_raises(self, mock_ogx_client):
+        """Test that explicit context_length below MIN_CONTEXT_LENGTH raises ValueError."""
+        params = OGXEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH - 1)
+        with pytest.raises(ValueError, match="Minimal required value is"):
+            OGXEmbeddingModel(client=mock_ogx_client, model_id="small-ctx-model", params=params)
+
+    def test_explicit_context_length_at_minimum_succeeds(self, mock_ogx_client):
+        """Test that context_length exactly at MIN_CONTEXT_LENGTH is accepted."""
+        params = OGXEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH)
+        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="boundary-model", params=params)
+
+        assert model.params.context_length == MIN_CONTEXT_LENGTH
+
+    def test_dict_params_context_length_below_minimum_raises(self, mock_ogx_client):
+        """Test that dict params with context_length below minimum raises ValueError."""
+        with pytest.raises(ValueError, match="Minimal required value is"):
+            OGXEmbeddingModel(
+                client=mock_ogx_client,
+                model_id="small-ctx-model",
+                params={"embedding_dimension": 384, "context_length": 200},
+            )
+
+    def test_auto_detected_context_length_below_minimum_raises(self, mocker):
+        """Test that auto-detected context_length below MIN_CONTEXT_LENGTH raises ValueError."""
+        mock_client = mocker.MagicMock()
+        dim_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return dim_response
+            text = kwargs.get("input", "")
+            if isinstance(text, str) and len(text) > 500 * 5:
+                raise ValueError("Input too long")
+            return dim_response
+
+        mock_client.embeddings.create.side_effect = side_effect
+
+        with pytest.raises(ValueError, match="Minimal required value is"):
+            OGXEmbeddingModel(client=mock_client, model_id="tiny-ctx-model", params=None)
+
+    def test_context_length_error_message_contains_model_id_and_values(self, mock_ogx_client):
+        """Test that the ValueError message includes model_id, actual value, and minimum."""
+        ctx_len = 300
+        model_id = "test-model-xyz"
+        params = OGXEmbeddingParams(embedding_dimension=384, context_length=ctx_len)
+
+        with pytest.raises(ValueError, match=model_id) as exc_info:
+            OGXEmbeddingModel(client=mock_ogx_client, model_id=model_id, params=params)
+
+        message = str(exc_info.value)
+        assert str(ctx_len) in message
+        assert str(MIN_CONTEXT_LENGTH) in message
+
     def test_model_repr(self, mock_ogx_client):
         """Test string representation."""
         model = OGXEmbeddingModel(
             client=mock_ogx_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=384, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=384, context_length=1024),
         )
 
         assert repr(model) == "all-MiniLM-L6-v2"

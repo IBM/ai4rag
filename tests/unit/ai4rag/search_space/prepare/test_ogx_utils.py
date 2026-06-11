@@ -59,7 +59,7 @@ class TestValidateEmbeddingModel:
         model = OGXEmbeddingModel(
             model_id="test-model",
             client=mock_client,
-            params=OGXEmbeddingParams(embedding_dimension=768, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=768, context_length=1024),
         )
 
         result = _validate_embedding_model(model)
@@ -73,7 +73,7 @@ class TestValidateEmbeddingModel:
         model = OGXEmbeddingModel(
             model_id="test-model",
             client=mock_client,
-            params=OGXEmbeddingParams(embedding_dimension=768, context_length=512),
+            params=OGXEmbeddingParams(embedding_dimension=768, context_length=1024),
         )
 
         mock_client.embeddings.create.side_effect = Exception("Model error")
@@ -168,7 +168,7 @@ class TestValidateAvailabilityAndCreateModels:
         m.custom_metadata = {"model_type": "llm"}
         return m
 
-    def _make_emb_registry_mock(self, model_id: str, dim: int = 768, ctx: int = 512) -> Mock:
+    def _make_emb_registry_mock(self, model_id: str, dim: int = 768, ctx: int = 1024) -> Mock:
         m = Mock()
         m.id = model_id
         m.custom_metadata = {"model_type": "embedding", "embedding_dimension": dim, "context_length": ctx}
@@ -194,7 +194,7 @@ class TestValidateAvailabilityAndCreateModels:
     def test_returns_embedding_instances_for_valid_models(self, mocker):
         """Returns OGXEmbeddingModel instances for each valid embedding model."""
         mock_client = MagicMock()
-        registered = [self._make_emb_registry_mock("emb-1", dim=768, ctx=512)]
+        registered = [self._make_emb_registry_mock("emb-1", dim=768, ctx=1024)]
         mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=True)
 
         result = _validate_availability_and_create_models(

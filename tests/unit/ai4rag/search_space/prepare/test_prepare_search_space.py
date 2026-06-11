@@ -317,12 +317,12 @@ class TestPrepareSearchSpaceWithOgx:
 
         mock_emb_ok = Mock()
         mock_emb_ok.id = "emb-ok"
-        mock_emb_ok.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_emb_ok.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 1024}
         mock_emb_ok.metadata = {}
 
         mock_emb_bad = Mock()
         mock_emb_bad.id = "emb-bad"
-        mock_emb_bad.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 512}
+        mock_emb_bad.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768, "context_length": 1024}
         mock_emb_bad.metadata = {}
 
         mock_client.models.list.return_value.data = [mock_llm, mock_emb_ok, mock_emb_bad]
