@@ -10,6 +10,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from ai4rag import logger
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
@@ -19,6 +20,9 @@ from .utils import merge_window_into_a_document
 class ChromaVectorStore(BaseVectorStore):
     """
     Class representing single index in the chroma vector database.
+
+    Internally converts between ``AI4RAGChunk`` (pipeline type) and
+    langchain ``Document`` (required by ``langchain_chroma.Chroma``).
 
     Parameters
     ----------
@@ -122,72 +126,42 @@ class ChromaVectorStore(BaseVectorStore):
         return len(self._vector_store.get()["ids"])
 
     @staticmethod
-    def _as_langchain_documents(content: list) -> list[Document]:
-        """Creates a LangChain ``Document`` list from a list of potentially unstructured data.
+    def _to_langchain_documents(chunks: list[AI4RAGChunk]) -> list[Document]:
+        """Convert ``AI4RAGChunk`` objects to langchain ``Document`` for Chroma storage.
 
         Parameters
         ----------
-        content : list
-            Unstructured data to be parsed.
+        chunks : list[AI4RAGChunk]
+            Pipeline chunks to convert.
 
         Returns
         -------
         list[Document]
-            List of `Document` instances.
+            Langchain documents suitable for ``langchain_chroma.Chroma``.
         """
-        result = []
-        for doc in content:
-            if isinstance(doc, str):
-                result.append(Document(page_content=doc))
-            elif isinstance(doc, dict):
-                content_str: str | None = doc.get("content", None)
-                metadata = doc.get("metadata", {})
+        return [Document(page_content=chunk.text, metadata=chunk.metadata) for chunk in chunks]
 
-                if content_str:
-                    if isinstance(metadata, dict):
-                        result.append(Document(page_content=content_str, metadata=metadata))
-                    else:
-                        logger.warning(
-                            "Document: %s is incorrect. Metadata needs to be given with 'metadata' "
-                            "attribute and it needs to be a serializable dict. Skipping.",
-                            doc,
-                        )
-                        continue
-                else:
-                    logger.warning("Document: %s is incorrect. Field 'content' is required.", doc)
-                    continue
-            else:
-                try:
-                    result.append(Document(page_content=doc.page_content, metadata=doc.metadata))
-                except AttributeError:
-                    logger.warning(
-                        "Document: %s is not a dict, nor string, nor LangChain Document-like object. Skipping.", doc
-                    )
+    @staticmethod
+    def _from_langchain_document(doc: Document) -> AI4RAGChunk:
+        """Convert a single langchain ``Document`` back to ``AI4RAGChunk``."""
+        return AI4RAGChunk(text=doc.page_content, metadata=doc.metadata)
 
-        return result
-
-    def _process_documents(self, content: list) -> tuple[list[str], list[Document]]:
+    def _process_documents(self, chunks: list[AI4RAGChunk]) -> tuple[list[str], list[Document]]:
         """
-        Processes arbitrary list of data to produce two lists:
-        one with unique IDs, and one with LangChain documents.
-
-        Handles duplicate documents.
+        Convert chunks to langchain documents and deduplicate by content hash.
 
         Parameters
         ----------
-        content : list
-            Arbitrary data.
+        chunks : list[AI4RAGChunk]
+            Pipeline chunks.
 
         Returns
         -------
         tuple[list[str], list[Document]]
-            Lists with IDs and docs
+            Lists with unique IDs and deduplicated langchain documents.
         """
-        docs = self._as_langchain_documents(content)
+        docs = self._to_langchain_documents(chunks)
         if docs:
-            # Take only unique ID document. Get two lists, one with ids, one with documents
-            # For some documents, not all chars can be encoded properly.
-            # In such cases, replace invalid chars by question marks, i.e. setting errors="replace"
             return tuple(
                 map(
                     list,
@@ -196,19 +170,19 @@ class ChromaVectorStore(BaseVectorStore):
             )
         return [], []
 
-    def add_documents(self, documents: list, **kwargs: Any) -> list[str]:
+    def add_documents(self, documents: list[AI4RAGChunk], **kwargs: Any) -> list[str]:
         """
-        Embed and add documents to the vector store.
+        Embed and add chunks to the vector store.
 
         Parameters
         ----------
-        documents : list
-            Documents to be embedded and added to the vector store.
+        documents : list[AI4RAGChunk]
+            Chunks to be embedded and added to the vector store.
 
         Returns
         -------
         list[str]
-            List of documents IDs.
+            List of document IDs.
         """
         max_batch_size = kwargs.get("max_batch_size", 2048)
 
@@ -272,7 +246,7 @@ class ChromaVectorStore(BaseVectorStore):
         k: int = 5,
         include_scores: bool = False,
         **kwargs: Any,
-    ) -> list[Document] | list[tuple[Document, float]]:
+    ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
         """Searches for documents most similar to the query.
 
         The method is designed as a wrapper for respective LangChain VectorStores' similarity search methods.
@@ -292,16 +266,16 @@ class ChromaVectorStore(BaseVectorStore):
 
         Returns
         -------
-        list[Document] | list[tuple[Document, float]]
-            Found documents with or without scores.
+        list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
+            Found chunks with or without scores.
         """
         filtered_kwargs = {k_: v for k_, v in kwargs.items() if k_ not in self._HYBRID_KWARGS}
         if include_scores:
-            result = self._vector_store.similarity_search_with_score(query, k=k, **filtered_kwargs)
-        else:
-            result = self._vector_store.similarity_search(query, k=k, **filtered_kwargs)
+            lc_results = self._vector_store.similarity_search_with_score(query, k=k, **filtered_kwargs)
+            return [(self._from_langchain_document(doc), score) for doc, score in lc_results]
 
-        return result
+        lc_results = self._vector_store.similarity_search(query, k=k, **filtered_kwargs)
+        return [self._from_langchain_document(doc) for doc in lc_results]
 
     def window_search(
         self,
@@ -310,7 +284,7 @@ class ChromaVectorStore(BaseVectorStore):
         include_scores: bool = False,
         window_size: int = 2,
         **kwargs: Any,
-    ) -> list:
+    ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
         """
         Searches for documents most similar to the query and extend a document (a chunk)
         to its adjacent chunks (if they exist) from the same origin document.
@@ -335,58 +309,58 @@ class ChromaVectorStore(BaseVectorStore):
 
         Returns
         -------
-        list
-            Found documents with or without scores.
+        list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
+            Found chunks with or without scores.
         """
-        documents = self.search(query, k, include_scores, **kwargs)
+        results = self.search(query, k, include_scores, **kwargs)
         if window_size <= 0:
-            return documents
+            return results
 
         if not include_scores:
-            documents = cast(list[Document], documents)
-            return [self._window_extend_and_merge(document, window_size) for document in documents]
+            chunks = cast(list[AI4RAGChunk], results)
+            return [self._window_extend_and_merge(chunk, window_size) for chunk in chunks]
 
-        documents_and_scores = cast(list[tuple[Document, float]], documents)
-        documents = [t[0] for t in documents_and_scores]
-        scores = [t[1] for t in documents_and_scores]
-        extended_documents = [self._window_extend_and_merge(document, window_size) for document in documents]
-        return list(zip(extended_documents, scores))
+        chunks_and_scores = cast(list[tuple[AI4RAGChunk, float]], results)
+        chunks = [t[0] for t in chunks_and_scores]
+        scores = [t[1] for t in chunks_and_scores]
+        extended = [self._window_extend_and_merge(chunk, window_size) for chunk in chunks]
+        return list(zip(extended, scores))
 
     def delete(self, ids: list[str], **kwargs: Any) -> None:
-        """Delete by vector ID or other criteria. Sor more details see LangChain documentation
+        """Delete by vector ID or other criteria. For more details see LangChain documentation
         https://python.langchain.com/api_reference/core/vectorstores/langchain_core.vectorstores.base.VectorStore.html#langchain_core.vectorstores.base.VectorStore
         """
         self._vector_store.delete(ids, **kwargs)
 
-    def _window_extend_and_merge(self, document: Document, window_size: int) -> Document:
+    def _window_extend_and_merge(self, chunk: AI4RAGChunk, window_size: int) -> AI4RAGChunk:
         """
-        Extends a document (a chunk) to its adjacent chunks (if they exist) from the same origin document.
-        Then merges the adjacent chunks into one chunk while keeping their order,
+        Extends a chunk to its adjacent chunks (if they exist) from the same origin document.
+        Then merges the adjacent chunks into one while keeping their order,
         and merges intersecting text between them (if it exists).
-        This requires chunks to have "document_id" and "sequence_number" in their metadata.
 
         Parameters
         ----------
-        document : Document
-            Chunk / document to be extended to its window and merged.
+        chunk : AI4RAGChunk
+            Chunk to be extended to its window and merged.
 
         window_size : int
-            Number of adjacent chunks to retrieve before and after the center, according to the sequence_number.
+            Number of adjacent chunks to retrieve before and after the center.
 
         Returns
         -------
-        Document
-            Chunk / document after extending and merging.
+        AI4RAGChunk
+            Chunk after extending and merging.
         """
-        if "document_id" not in document.metadata:
-            raise ValueError('document must have "document_id" in its metadata')
-        if "sequence_number" not in document.metadata:
-            raise ValueError('document must have "sequence_number" in its metadata')
-        doc_id = document.metadata["document_id"]
-        seq_num = document.metadata["sequence_number"]
+        if "document_id" not in chunk.metadata:
+            raise ValueError('chunk must have "document_id" in its metadata')
+        if "sequence_number" not in chunk.metadata:
+            raise ValueError('chunk must have "sequence_number" in its metadata')
+        doc_id = chunk.metadata["document_id"]
+        seq_num = chunk.metadata["sequence_number"]
         seq_nums_window = [seq_num + i for i in range(-window_size, window_size + 1, 1)]
 
         window_documents = self._get_window_documents(doc_id, seq_nums_window)
-
         window_documents.sort(key=lambda x: x.metadata["sequence_number"])
-        return merge_window_into_a_document(window_documents)
+
+        merged_lc_doc = merge_window_into_a_document(window_documents)
+        return self._from_langchain_document(merged_lc_doc)

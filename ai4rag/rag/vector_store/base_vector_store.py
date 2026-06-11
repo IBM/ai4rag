@@ -5,8 +5,7 @@
 from abc import ABC, abstractmethod
 from typing import Sequence
 
-from langchain_core.documents import Document
-
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 
 __all__ = ["BaseVectorStore"]
@@ -26,7 +25,7 @@ class BaseVectorStore(ABC):
         self.reuse_collection_name = reuse_collection_name
 
     @abstractmethod
-    def search(self, query: str, k: int, **kwargs) -> list[dict]:
+    def search(self, query: str, k: int, **kwargs) -> list[AI4RAGChunk]:
         """
         Search for the chunks relevant to the query.
         The method used will be simple similarity search.
@@ -41,19 +40,19 @@ class BaseVectorStore(ABC):
 
         Returns
         -------
-        list[dict]
-            List of chunks as dicts with content and metadata.
+        list[AI4RAGChunk]
+            List of chunks with content and metadata.
         """
 
     @abstractmethod
-    def add_documents(self, documents: Sequence[Document]) -> None:
+    def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
         """
         Add documents to the collection.
 
         Parameters
         ----------
-        documents : Sequence[Document]
-            Documents to add to the collection.
+        documents : Sequence[AI4RAGChunk]
+            Chunks to add to the collection.
         """
 
     @property

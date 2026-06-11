@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 from typing import Literal
 
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 
@@ -52,18 +53,18 @@ class Retriever:
         self.ranker_k = ranker_k
         self.ranker_alpha = ranker_alpha
 
-    def retrieve(self, query: str, **kwargs) -> list[dict]:
-        """Retrieve relevant documents from vector store.
+    def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
+        """Retrieve relevant chunks from vector store.
 
         Parameters
         ----------
         query : str
-            question for which documents should be retrieved.
+            Question for which chunks should be retrieved.
 
         Returns
         -------
-        list[Document]
-            list of documents with their metadata corresponding to the query.
+        list[AI4RAGChunk]
+            Chunks with their metadata corresponding to the query.
         """
         _number_of_chunks = kwargs.get("number_of_chunks", self.number_of_chunks)
 

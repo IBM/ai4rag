@@ -141,8 +141,8 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             Embeddings made from the list of texts.
         """
         resp = []
-        for idx in range(0, len(texts), 2048):
-            resp.extend(self._embed_text(text_input=texts[idx : idx + 2048]))
+        for idx in range(0, len(texts), 512):
+            resp.extend(self._embed_text(text_input=texts[idx : idx + 512]))
 
         return resp
 

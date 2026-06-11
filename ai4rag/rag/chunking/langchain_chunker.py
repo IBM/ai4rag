@@ -4,19 +4,27 @@
 # -----------------------------------------------------------------------------
 from typing import Any, Iterable, Literal, Sequence
 
+import tiktoken
+from docling_core.types.doc import DoclingDocument
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
 
 from .base_chunker import BaseChunker
+from .chunk import AI4RAGChunk
 
 __all__ = [
     "LangChainChunker",
 ]
 
+_DEFAULT_TIKTOKEN_MODEL = "text-embedding-3-small"
 
-class LangChainChunker(BaseChunker[Document]):
+
+class LangChainChunker(BaseChunker):
     """
-    Wrapper for LangChain TextSplitter.
+    Wrapper for LangChain TextSplitter operating on ``DoclingDocument`` input.
+
+    Converts each ``DoclingDocument`` to markdown internally, applies
+    token-based splitting via tiktoken, and returns ``AI4RAGChunk`` objects.
 
     Parameters
     ----------
@@ -24,10 +32,10 @@ class LangChainChunker(BaseChunker[Document]):
         Describes the type of TextSplitter as the main instance performing the chunking.
 
     chunk_size : int, default=2048
-        Maximum size of a single chunk that is returned.
+        Maximum number of tokens per chunk.
 
     chunk_overlap : int, default=256
-        Overlap in characters between chunks.
+        Overlap in tokens between chunks.
 
     Other Parameters
     ----------------
@@ -48,6 +56,7 @@ class LangChainChunker(BaseChunker[Document]):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.separators = kwargs.pop("separators", ["\n\n", r"(?<=\. )", "\n", " ", ""])
+        self._encoding = tiktoken.encoding_for_model(_DEFAULT_TIKTOKEN_MODEL)
         self._text_splitter = self._get_text_splitter()
 
     def __eq__(self, other: object) -> bool:
@@ -65,7 +74,7 @@ class LangChainChunker(BaseChunker[Document]):
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,
                     separators=self.separators,
-                    length_function=len,
+                    length_function=lambda text: len(self._encoding.encode(text)),
                     add_start_index=True,
                 )
 
@@ -139,23 +148,49 @@ class LangChainChunker(BaseChunker[Document]):
 
         return sorted_chunks
 
-    def split_documents(self, documents: Sequence[Document]) -> list[Document]:
+    @staticmethod
+    def _docling_to_langchain(documents: Sequence[DoclingDocument]) -> list[Document]:
         """
-        Split series of documents into smaller chunks based on the provided
-        chunker settings. Each chunk has metadata that includes the document_id,
-        sequence_number, and start_index.
+        Convert ``DoclingDocument`` objects to langchain ``Document`` objects
+        by exporting each to markdown.
 
         Parameters
         ----------
-        documents : Sequence[Document]
-            Sequence of elements that contain context in a text format.
+        documents : Sequence[DoclingDocument]
+            Parsed docling documents.
 
         Returns
         -------
         list[Document]
-            List of documents split into smaller chunks.
+            Langchain documents with markdown content and ``document_id`` metadata.
         """
-        self._set_document_id_in_metadata_if_missing(documents)
-        chunks = self._text_splitter.split_documents(documents)
+        return [
+            Document(
+                page_content=doc.export_to_markdown(),
+                metadata={"document_id": doc.name or str(hash(str(doc)))},
+            )
+            for doc in documents
+        ]
+
+    def split_documents(self, documents: Sequence[DoclingDocument]) -> list[AI4RAGChunk]:
+        """
+        Split docling documents into smaller chunks using token-based splitting.
+
+        Each ``DoclingDocument`` is first exported to markdown, then split using
+        the configured ``TextSplitter``. Results are returned as ``AI4RAGChunk``.
+
+        Parameters
+        ----------
+        documents : Sequence[DoclingDocument]
+            Parsed docling documents to chunk.
+
+        Returns
+        -------
+        list[AI4RAGChunk]
+            Chunks with ``document_id``, ``sequence_number``, and ``start_index`` metadata.
+        """
+        lc_docs = self._docling_to_langchain(documents)
+        self._set_document_id_in_metadata_if_missing(lc_docs)
+        chunks = self._text_splitter.split_documents(lc_docs)
         sorted_chunks = self._set_sequence_number_in_metadata(chunks)
-        return sorted_chunks
+        return [AI4RAGChunk(text=chunk.page_content, metadata=chunk.metadata) for chunk in sorted_chunks]

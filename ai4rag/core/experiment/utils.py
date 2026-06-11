@@ -44,7 +44,7 @@ class RAGParamsType(TypedDict):
     foundation_model: BaseFoundationModel
     chunk_size: int
     chunk_overlap: int | float
-    chunking_method: Literal["recursive"]
+    chunking_method: Literal["recursive", "hybrid"]
     window_size: int
     number_of_chunks: int
     retrieval_method: Literal["simple", "window"]
@@ -59,7 +59,7 @@ class RAGChunkingParamsType(TypedDict):
 
     chunk_size: int
     chunk_overlap: int | float
-    chunking_method: Literal["recursive"]
+    chunking_method: Literal["recursive", "hybrid"]
 
 
 class RAGRetrievalParamsType(TypedDict):
@@ -173,8 +173,8 @@ def build_evaluation_data(
         contexts = []
         context_ids = []
         for el in inference_response[idx]["reference_documents"]:
-            contexts.append(getattr(el, "page_content", None))
-            context_ids.append(getattr(el, "metadata", {}).get("document_id"))
+            contexts.append(el.text)
+            context_ids.append(el.metadata.get("document_id"))
 
         evaluation_data.append(
             EvaluationData(

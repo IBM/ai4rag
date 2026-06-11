@@ -3,36 +3,41 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
-from typing import Any, Generic, Sequence, TypeVar
+from typing import Any, Sequence
+
+from docling_core.types.doc import DoclingDocument
+
+from .chunk import AI4RAGChunk
 
 __all__ = [
     "BaseChunker",
 ]
 
-ChunkT = TypeVar("ChunkT")
 
-
-class BaseChunker(ABC, Generic[ChunkT]):
+class BaseChunker(ABC):
     """
     Responsible for handling splitting document operations
     in the RAG application.
+
+    All chunkers accept ``DoclingDocument`` as input and
+    produce ``AI4RAGChunk`` as output.
     """
 
     @abstractmethod
-    def split_documents(self, documents: Sequence[ChunkT]) -> list[ChunkT]:
+    def split_documents(self, documents: Sequence[DoclingDocument]) -> list[AI4RAGChunk]:
         """
         Split series of documents into smaller parts based on
         the provided chunker settings.
 
         Parameters
         ----------
-        documents : Sequence[ChunkType]
-            Sequence of elements that contain context in a text format.
+        documents : Sequence[DoclingDocument]
+            Parsed docling documents to chunk.
 
         Returns
         -------
-        list[ChunkType]
-            List of documents split into smaller ones, having less content.
+        list[AI4RAGChunk]
+            List of chunks produced from the input documents.
         """
 
     @abstractmethod

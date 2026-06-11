@@ -16,7 +16,6 @@ from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
 from dev_utils.file_store import FileStore
-from dev_utils.mocks import MockedEmbeddingModel, MockedFoundationModel
 from dev_utils.utils import read_benchmark_from_json
 
 if __name__ == "__main__":
@@ -25,8 +24,7 @@ if __name__ == "__main__":
 
     load_dotenv(find_dotenv())
 
-    client = OgxClient(base_url="http://localhost:8321")
-    # client = OgxClient()
+    client = OgxClient()
 
     # change to direct to your local documents path
     documents_path = _filepath.parents[1] / "local" / "data" / "rh_summit_2026" / "documents"
@@ -39,7 +37,7 @@ if __name__ == "__main__":
     benchmark_data = read_benchmark_from_json(benchmark_data_path)
 
     # Configure optimizer
-    optimizer_settings = GAMOptSettings(max_evals=1, n_random_nodes=4)
+    optimizer_settings = GAMOptSettings(max_evals=8, n_random_nodes=4)
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
@@ -48,42 +46,21 @@ if __name__ == "__main__":
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+                values=[OGXFoundationModel(model_id="vllm-inference-gpu-llama/llama-31-8b-instruct", client=client)],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
                 values=[
                     OGXEmbeddingModel(
-                        model_id="ollama/nomic-embed-text:latest",
+                        model_id="vllm-embedding/bge-m3",
                         client=client,
-                        params={"embedding_dimension": 768, "context_length": 8192},
+                        params={"embedding_dimension": 1024, "context_length": 8192},
                     )
                 ],
             ),
-            Parameter(name="search_mode", values=["hybrid"]),
         ],
     )
-
-    # search_space = AI4RAGSearchSpace(
-    #     vector_store_type="chroma",
-    #     params=[
-    #         Parameter(
-    #             name="foundation_model",
-    #             param_type="C",
-    #             values=[MockedFoundationModel(model_id="mocked_fm_1"), MockedFoundationModel(model_id="mocked_fm_2")],
-    #         ),
-    #         Parameter(
-    #             name="embedding_model",
-    #             param_type="C",
-    #             values=[
-    #                 MockedEmbeddingModel(
-    #                     model_id="ollama/nomic-embed-text:latest", params={"embedding_dimension": 768}
-    #                 ),
-    #             ],
-    #         ),
-    #     ]
-    # )
 
     experiment = AI4RAGExperiment(
         client=client,
@@ -91,10 +68,10 @@ if __name__ == "__main__":
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
-        # event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "hybrid_test"),
-        event_handler=LocalEventHandler(),
+        event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chunkers"),
+        # event_handler=LocalEventHandler(),
         vector_store_type="ogx",
-        ogx_vector_io_provider_id="milvus-lite",
+        ogx_vector_io_provider_id="milvus-remote",
     )
 
     experiment.search(skip_mps=True)

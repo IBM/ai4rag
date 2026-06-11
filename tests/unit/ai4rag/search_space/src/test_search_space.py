@@ -11,6 +11,7 @@ from ai4rag.search_space.src.search_space import (
     SearchSpace,
     SearchSpaceValueError,
     _rule_adjust_window_to_retrieval_method,
+    _rule_chunk_overlap_for_chunking_method,
     _rule_chunk_size_bigger_than_chunk_overlap,
     _rule_chunk_size_within_embedding_context_length,
     _rule_ranker_alpha_for_weighted_only,
@@ -43,6 +44,26 @@ def test_rule_chunk_size_bigger_than_chunk_overlap_returns(combination, expected
 def test_rule_chunk_size_bigger_than_chunk_overlap_raises():
     with pytest.raises(SearchSpaceValueError):
         _ = _rule_chunk_size_bigger_than_chunk_overlap({"chunk_size": 512})
+
+
+@pytest.mark.parametrize(
+    "combination, expected_value",
+    (
+        ({"chunking_method": "hybrid", "chunk_overlap": 0}, True),
+        ({"chunking_method": "hybrid", "chunk_overlap": 128}, False),
+        ({"chunking_method": "recursive", "chunk_overlap": 128}, True),
+        ({"chunking_method": "recursive", "chunk_overlap": 0}, False),
+    ),
+)
+def test_rule_chunk_overlap_for_chunking_method(combination, expected_value):
+    val = _rule_chunk_overlap_for_chunking_method(combination)
+    assert val == expected_value
+
+
+def test_rule_chunk_overlap_for_chunking_method_missing_fields():
+    assert _rule_chunk_overlap_for_chunking_method({"chunking_method": "recursive"}) is True
+    assert _rule_chunk_overlap_for_chunking_method({"chunk_overlap": 0}) is True
+    assert _rule_chunk_overlap_for_chunking_method({}) is True
 
 
 @pytest.mark.parametrize(
@@ -81,29 +102,36 @@ class _MockEmbeddingModelWithDictParams:
 @pytest.mark.parametrize(
     "combination, expected_value",
     (
-        # chunk_size=512 → estimated_tokens = 512 / 4 = 128, context=256 → True
+        # chunk_size in tokens, 10% safety margin: chunk_size <= context_length * 0.9
+        (
+            {
+                "chunk_size": 128,
+                "embedding_model": _MockEmbeddingModelWithParams(256),
+            },
+            True,
+        ),
         (
             {
                 "chunk_size": 512,
                 "embedding_model": _MockEmbeddingModelWithParams(256),
             },
+            False,
+        ),
+        # exact boundary: chunk_size == context_length → False (exceeds 90% margin)
+        (
+            {
+                "chunk_size": 256,
+                "embedding_model": _MockEmbeddingModelWithParams(256),
+            },
+            False,
+        ),
+        # within margin: chunk_size <= context_length * 0.9 → True
+        (
+            {
+                "chunk_size": 230,
+                "embedding_model": _MockEmbeddingModelWithParams(256),
+            },
             True,
-        ),
-        # chunk_size=2048 → estimated_tokens = 2048 / 4 = 512, context=256 → False
-        (
-            {
-                "chunk_size": 2048,
-                "embedding_model": _MockEmbeddingModelWithParams(256),
-            },
-            False,
-        ),
-        # Exact boundary: chunk_size=1024 → estimated_tokens = 256, context=256 → True
-        (
-            {
-                "chunk_size": 1024,
-                "embedding_model": _MockEmbeddingModelWithParams(256),
-            },
-            False,
         ),
     ),
 )
