@@ -45,10 +45,11 @@ class SimpleRAG(BaseRAGTemplate):
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
-        retriever: Retriever,
+        retriever: Retriever | None = None,
         chunker: LangChainChunker | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
         vector_store: OGXVectorStore | None = None,
+        rag_params: dict | None = None,
     ):
         super().__init__(
             foundation_model=foundation_model,
@@ -57,6 +58,7 @@ class SimpleRAG(BaseRAGTemplate):
             vector_store=vector_store,
         )
 
+        self.rag_params = rag_params
         self.chunker = chunker
 
     def build_index(self, documents: list[Document], **kwargs) -> None:
@@ -97,23 +99,25 @@ class SimpleRAG(BaseRAGTemplate):
             - "reference_documents": The retrieved document chunks
             - "question": The original question
         """
-        reference_documents = self.retriever.retrieve(question, **kwargs)
+        if self.retriever:
+            reference_documents = self.retriever.retrieve(question, **kwargs)
 
-        context = "\n".join(
-            [
-                self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
-                for doc in reference_documents
-            ]
-        )
+            context = "\n".join(
+                [
+                    self.foundation_model.context_template_text.format(document=getattr(doc, "page_content", ""))
+                    for doc in reference_documents
+                ]
+            )
+        else:
+            context = ""
 
         user_message = self.foundation_model.user_message_text.format(
             reference_documents=context,
             question=question,
         )
 
-        answer = self.foundation_model.create_response(
-            user_message=user_message,
-            vector_store_id=self.retriever.collection_name,
+        answer, reference_documents = self.foundation_model.create_response_with_file_search_tool(
+            user_message=user_message, vector_store_id=self.vector_store.collection_name, rag_params=self.rag_params
         )
 
         return {

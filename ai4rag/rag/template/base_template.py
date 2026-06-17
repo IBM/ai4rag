@@ -49,7 +49,7 @@ class BaseRAGTemplate(ABC):
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
-        retriever: Retriever,
+        retriever: Retriever | None = None,
         vector_store: BaseVectorStore | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
     ):

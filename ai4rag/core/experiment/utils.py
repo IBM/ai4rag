@@ -105,7 +105,7 @@ def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10)
     try:
         _generate_function = partial(_generate_response, rag=rag)
 
-        with ThreadPoolExecutor(max_workers=max_threads) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             responses = list(executor.map(_generate_function, questions))
 
     except Exception as exc:
@@ -172,7 +172,7 @@ def build_evaluation_data(
     for idx in range(len(benchmark_data)):
         contexts = []
         context_ids = []
-        for el in inference_response[idx]["reference_documents"]:
+        for el in inference_response[idx]["reference_documents"]:  # TODO this might need tweaking
             contexts.append(getattr(el, "page_content", None))
             context_ids.append(getattr(el, "metadata", {}).get("document_id"))
 

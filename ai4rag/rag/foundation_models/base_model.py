@@ -12,6 +12,8 @@ from ai4rag.search_space.src.model_props import (
     get_user_message_text,
 )
 
+from typing import overload
+
 FoundationModelClientT = TypeVar("FoundationModelClientT")
 FoundationModelParamsT = TypeVar("FoundationModelParamsT")
 
@@ -72,5 +74,5 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         return self.model_id < other.model_id
 
     @abstractmethod
-    def create_response(self, user_message: str, vector_store_id: str | None = None) -> str:
+    def create_response(self, user_message: str) -> str:
         """Utilise Responses API (agent loop) to interact with the model."""

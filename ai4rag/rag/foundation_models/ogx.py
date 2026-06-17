@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
+from langchain_core.documents import Document
 
 # pylint: disable=duplicate-code
 
@@ -82,7 +83,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
 
         return response_choices
 
-    def create_response(self, user_message: str, vector_store_id: str | None = None) -> str:
+    def create_response(self, user_message: str) -> str:
         """
         Utilise Responses API (agent loop) to interact with the model.
 
@@ -90,10 +91,6 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         ----------
         user_message : str
             User message for the model to answer.
-
-        vector_store_id : str | None
-            If provided then references the vector store to search against using
-            the built-int `file_search` tool.
 
         Returns
         -------
@@ -108,8 +105,13 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         """
 
         tools = None
-        if vector_store_id:
-            tools = [{"type": "file_search", "vector_store_ids": vector_store_id}]
+        # if vector_store_id:
+        #     tools = [
+        #         {
+        #             "type": "file_search",
+        #             "vector_store_ids": [vector_store_id],
+        #         }
+        #     ]
 
         response = self.client.responses.create(
             model=self.model_id,
@@ -121,3 +123,63 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         )
 
         return response.output_text
+
+    def create_response_with_file_search_tool(
+        self, user_message: str, vector_store_id: str, rag_params: dict
+    ) -> tuple[str, list]:
+        """
+        Utilise Responses API (agent loop) to interact with the model.
+
+        Parameters
+        ----------
+        user_message : str
+            User message for the model to answer.
+
+        vector_store_id : str | None
+            If provided then references the vector store to search against using
+            the built-int `file_search` tool.
+
+        Returns
+        -------
+        tuple[str, list]
+            Response text from the model, reference documents used to enhance the question context during model inference.
+
+        Notes
+        -----
+        For the time being the only supported input type is a string representing the user's message.
+        For more input types please refer to:
+        https://developers.openai.com/api/reference/resources/responses/methods/create
+        """
+
+        match rag_params:
+            case {"retrieval": {"search_mode": "hybrid", "ranker_strategy": "rrf", **kwargs}}:
+                ranker_params = {"impact_factor": kwargs["ranker_k"]}
+            case {"retrieval": {"search_mode": "hybrid", "ranker_strategy": "weighted", **kwargs}}:
+                ranker_params = {"alpha": kwargs["ranker_alpha"]}
+            case _:
+                ranker_params = {"ranker": "auto"}
+
+        response = self.client.responses.create(
+            model=self.model_id,
+            instructions="Please answer the question I provide in the user question below, using only information found in file_search results. If the question is unanswerable, please say you cannot answer. Respond in the same language as the user question.",
+            input=[
+                {"content": [{"text": self.system_message_text, "type": "input_text"}], "role": "system"},
+                {"content": [{"text": user_message, "type": "input_text"}], "role": "user"},
+            ],
+            max_output_tokens=self.params.max_tokens,
+            temperature=self.params.temperature,
+            tool_choice={"mode": "required", "tools": [{}], "type": "file_search"},
+            tools=[{"type": "file_search", "vector_store_ids": [vector_store_id], "ranking_options": ranker_params}],
+            include=["file_search_call.results"],
+        )
+
+        reference_documents = []
+
+        for fs_res in (msg for msg in response.output if msg.type == "file_search_call"):
+            if hasattr(fs_res, "results"):
+                for single_res in fs_res.results:
+                    reference_documents.append(
+                        Document(page_content=single_res.text, metadata={"document_id": single_res.filename})
+                    )
+
+        return response.output_text, reference_documents

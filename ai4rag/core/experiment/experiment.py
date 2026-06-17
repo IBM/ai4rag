@@ -329,8 +329,8 @@ class AI4RAGExperiment:
 
         logger.info("Using indexing params: %s", indexing_params)
 
-        retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
-        number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
+        # retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
+        # number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
         if search_mode != "vector" and self.vector_store_type == "chroma":
@@ -420,19 +420,21 @@ class AI4RAGExperiment:
 
         logger.info("Using retriever with parameters: %s", retrieval_params)
 
-        retriever = Retriever(
-            vector_store=vector_store,
-            number_of_chunks=number_of_chunks,
-            method=retrieval_method,
-            search_mode=search_mode,
-            ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
-            ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
-            ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
-        )
+        # retriever = Retriever(
+        #     vector_store=vector_store,
+        #     number_of_chunks=number_of_chunks,
+        #     method=retrieval_method,
+        #     search_mode=search_mode,
+        #     ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
+        #     ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
+        #     ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
+        # )
 
         rag_pattern = SimpleRAG(
             foundation_model=foundation_model,
-            retriever=retriever,
+            vector_store=vector_store,
+            # retriever=retriever,
+            rag_params=rag_params,
         )
 
         _rag_log = (
@@ -651,7 +653,7 @@ class AI4RAGExperiment:
         }
 
         if self.vector_store_type != "chroma":
-            payload["responses_template"] = responses_template_payload
+            payload["settings"]["responses_template"] = responses_template_payload
 
         self.event_handler.on_pattern_creation(
             payload=payload,
