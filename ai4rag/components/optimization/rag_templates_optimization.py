@@ -33,7 +33,7 @@ _logger.addHandler(handler)
 
 DEFAULT_MAX_RAG_PATTERNS = 8
 MIN_MAX_RAG_PATTERNS_RANGE = (4, 20)
-_DEFAULT_METRIC = "faithfulness"
+DEFAULT_METRIC = "faithfulness"
 SUPPORTED_OPTIMIZATION_METRICS = frozenset({"faithfulness", "answer_correctness", "context_correctness"})
 
 
@@ -119,7 +119,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     vector_io_provider_id = vector_io_provider_id.strip()
 
     settings = _validate_optimization_settings(optimization_settings)
-    optimization_metric = settings.get("metric") or _DEFAULT_METRIC
+    optimization_metric = settings.get("metric") or DEFAULT_METRIC
     if optimization_metric not in SUPPORTED_OPTIMIZATION_METRICS:
         raise ValueError(
             f"Optimization metric {optimization_metric} is not supported. "
