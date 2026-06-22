@@ -31,6 +31,7 @@ name = "ai4rag"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
+    { name = "docling" },
     { name = "docling-core", extra = ["chunking", "chunking-openai"] },
     { name = "langchain" },
     { name = "langchain-chroma" },
@@ -55,7 +56,6 @@ components = [
 dev = [
     { name = "beautifulsoup4" },
     { name = "black" },
-    { name = "docling" },
     { name = "dotenv" },
     { name = "ipykernel" },
     { name = "isort" },
@@ -98,7 +98,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
-    { name = "docling", marker = "extra == 'dev'" },
+    { name = "docling", specifier = "~=2.93.0" },
     { name = "docling-core", extras = ["chunking", "chunking-openai"], specifier = "~=2.78.1" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
@@ -114,7 +114,7 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.25.0" },
     { name = "multiprocess", marker = "extra == 'components'", specifier = ">=0.70" },
     { name = "nbformat", marker = "extra == 'test'" },
-    { name = "ogx-client", specifier = "~=1.0.0" },
+    { name = "ogx-client", specifier = "~=1.1.0" },
     { name = "pandas", specifier = "==2.2.*" },
     { name = "psutil", marker = "extra == 'test'" },
     { name = "pydantic", specifier = "==2.11.*" },
@@ -2494,7 +2494,7 @@ wheels = [
 
 [[package]]
 name = "ogx-client"
-version = "1.0.0"
+version = "1.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -2513,9 +2513,9 @@ dependencies = [
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f7/ed/bbcd77921d29dc0a84a4767cc3661d027bfc5db6a0c32a4f82dadc182542/ogx_client-1.0.0.tar.gz", hash = "sha256:a13133105149b77384ba804cc1fa340c1defce9ebb4820e3c593c36b103f0010", size = 435209, upload-time = "2026-05-12T13:58:58.883Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/72/15/5f02de6eba355443a5687abfc8474beec4ac0aae3357629dc889547f62cb/ogx_client-1.1.2.tar.gz", hash = "sha256:2bb2e7d9100e6332d45dc003777027f9a2f7e9ec82d77cfa6c08ccb670172657", size = 440847, upload-time = "2026-06-17T14:11:44.312Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/0b/95/2cafdc4e3ff4a89db82862c0e0ed10fed2154ba74c7b16c2a5e371bac5d9/ogx_client-1.0.0-py3-none-any.whl", hash = "sha256:d0ef468f3a46b5bf3af9de3540902aa0d4a0c9d4370444697ca710473843c439", size = 309279, upload-time = "2026-05-12T13:58:57.356Z" },
+    { url = "https://files.pythonhosted.org/packages/24/4f/c17e5520c0fc282b4b1654bdd5432c7c5e393ce1c5a5b305b34e5ce3ea14/ogx_client-1.1.2-py3-none-any.whl", hash = "sha256:c8b0a0657231da8151ed7267261d3dd7713482ef7d19d97adc13bb42ca25a5da", size = 314013, upload-time = "2026-06-17T14:11:42.51Z" },
 ]
 
 [[package]]

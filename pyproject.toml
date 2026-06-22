@@ -34,11 +34,12 @@ dynamic = ["version"]
 
 dependencies = [
     "boto3>=1.28",
+    "docling~=2.93.0",
     "docling-core[chunking,chunking-openai]~=2.78.1",
     "langchain~=1.1.3",
     "langchain_chroma~=1.1.0",
     "langchain-text-splitters~=1.1.0",
-    "ogx-client~=1.0.0",
+    "ogx-client~=1.1.0",
     "pandas==2.2.*",
     "pydantic==2.11.*",
     "pygam~=0.12.0",
@@ -67,7 +68,6 @@ dev = [
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "ipykernel",
-    "docling",             # document text extraction
 ]
 
 test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
