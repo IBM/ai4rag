@@ -183,6 +183,7 @@ nav:
       - Optimizers: user-guide/optimizers.md
       - Evaluation: user-guide/evaluation.md
       - Event Handlers: user-guide/event-handlers.md
+      - Pipeline Components: user-guide/pipeline-components.md
   - Architecture:
       - Overview: architecture/overview.md
       - Core Components: architecture/core-components.md
@@ -200,6 +201,12 @@ nav:
           - Vector Stores: api-reference/rag/vector-stores.md
           - Chunking: api-reference/rag/chunking.md
           - Retrieval: api-reference/rag/retrieval.md
+      - Components:
+          - Data: api-reference/components/data.md
+          - Optimization: api-reference/components/optimization.md
+      - Assets Generator:
+          - Notebooks & Templates: api-reference/assets-generator/notebooks.md
+          - Leaderboard: api-reference/assets-generator/leaderboard.md
       - Evaluator:
           - Evaluator: api-reference/evaluator/evaluator.md
   - Development:

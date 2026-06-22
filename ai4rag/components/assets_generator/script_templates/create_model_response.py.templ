@@ -1,0 +1,101 @@
+#!/usr/bin/env python3
+"""Simple script to query OpenAI /v1/responses endpoint."""
+
+import os
+import sys
+
+import httpx
+
+
+def get_verify_param():
+    """Determine SSL verification parameter for httpx."""
+    insecure = os.environ.get("OGX_TLS_INSECURE", "").lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+    if insecure:
+        print("WARNING: TLS verification disabled", file=sys.stderr)
+        return False
+
+    return True  # Use system trust store
+
+
+def main():
+    # Read configuration from environment
+    base_url = os.environ.get("OGX_BASE_URL", "")
+    if not base_url:
+        print(
+            "Error: OGX_BASE_URL environment variable is required",
+            file=sys.stderr,
+        )
+        return 1
+
+    api_key = os.environ.get("OGX_API_KEY", "")
+
+    # Configure HTTP client
+    verify = get_verify_param()
+    client = httpx.Client(verify=verify, timeout=120.0)
+
+    # Request body template
+    body_template = $responses_template
+
+    # Build headers
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    url = f"{base_url}/v1/responses"
+
+    # Interactive loop
+    print("Enter questions (Ctrl-D to exit):")
+    while True:
+        try:
+            question = input("Question: ")  # TODO nice multiline input with formatting
+            if not question:
+                continue
+
+            body_template["input"] = question
+
+            try:
+                response = client.post(url, json=body_template, headers=headers)
+                response.raise_for_status()
+                assistant_last_message = [msg for msg in response.json()["output"][::-1]
+                                          if msg.get("role") == "assistant"]
+                if assistant_last_message:
+                    output_text = [obj for obj in assistant_last_message[0]["content"] if obj["type"] == "output_text"]
+                    print(output_text[0]["text"])
+                else:
+                    print("It seems that the model did not return response in the expected format. "
+                          "Below is the raw response object:")
+                    print(response)
+            except httpx.HTTPStatusError as e:
+                print(
+                    f"HTTP {e.response.status_code}: {e.response.reason_phrase}",
+                    file=sys.stderr,
+                )
+                print(e.response.text, file=sys.stderr)
+            except httpx.RequestError as e:
+                print(f"Connection error: {e}", file=sys.stderr)
+
+        except EOFError:  # Ctrl-D
+            print("\nExiting..")
+            break
+        except KeyboardInterrupt: # Ctrl-C
+            print("\nExiting..")
+            break
+
+        except Exception:
+            client.close()
+            raise
+
+    client.close()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

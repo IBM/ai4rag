@@ -40,7 +40,6 @@ from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
-from ai4rag.search_space.src.models import EmbeddingModels
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep
@@ -304,7 +303,6 @@ class AI4RAGExperiment:
         foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
 
-        distance_metric = EmbeddingModels.get_distance_metric(embedding_model.model_id)
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
         )
@@ -312,7 +310,6 @@ class AI4RAGExperiment:
             "chunking": chunking_params,
             "embedding": {
                 "model_id": embedding_model.model_id,
-                "distance_metric": distance_metric,
                 "embedding_params": embedding_params_dict,
             },
         }
@@ -587,18 +584,32 @@ class AI4RAGExperiment:
             retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
 
         if retrieval_payload["search_mode"] == "hybrid":
-            retrieval_payload["ranker_strategy"] = evaluation_result.rag_params["retrieval"].get(
-                AI4RAGParamNames.RANKER_STRATEGY
-            )
-            retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
-            retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
-                AI4RAGParamNames.RANKER_ALPHA
-            )
+            ranker_strategy = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_STRATEGY)
+            retrieval_payload["ranker_strategy"] = ranker_strategy
+
+            if ranker_strategy == "rrf":
+                retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
+
+            if ranker_strategy == "weighted":
+                retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
+                    AI4RAGParamNames.RANKER_ALPHA
+                )
 
         vector_store_payload = {
-            "datasource_type": self.ogx_vector_io_provider_id or "local_chroma",
-            "collection_name": evaluation_result.collection,
+            "provider_id": self.ogx_vector_io_provider_id or "local_chroma",
+            "vector_store_id": evaluation_result.collection,
         }
+        if self.vector_store_type == "ogx":
+            try:
+                provider = self.client.providers.retrieve(self.ogx_vector_io_provider_id)
+                provider_type = getattr(provider, "provider_type", "unknown")
+            except Exception as exc:
+                provider_type = "unknown"
+                logger.warning(
+                    "Could not retrieve provider_type attribute of vector store in use...",
+                    exc_info=exc,
+                )
+            vector_store_payload["provider_type"] = provider_type
 
         indexing_payload = {
             "chunking": {
@@ -614,17 +625,13 @@ class AI4RAGExperiment:
         n_known = len(self.known_observations) if self.known_observations else 0
 
         payload = {
-            "pattern_name": evaluation_result.pattern_name,
-            "scores": {
-                "scores": evaluation_result.scores["scores"],
-                "question_scores": evaluation_result.scores["question_scores"],
-            },
-            "execution_time": int(evaluation_result.execution_time),
+            "name": evaluation_result.pattern_name,
+            "max_combinations": self.search_space.max_combinations,
+            "scores": evaluation_result.scores["scores"],
+            "duration_seconds": int(evaluation_result.execution_time),
             "final_score": evaluation_result.final_score,
-            "schema_version": "1.0",
-            "producer": "ai4rag",
             "settings": {
-                "vector_store": vector_store_payload,
+                "vector_store_binding": vector_store_payload,
                 **indexing_payload,
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,

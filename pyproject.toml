@@ -33,7 +33,8 @@ keywords = [
 dynamic = ["version"]
 
 dependencies = [
-    "docling-core[chunking,chunking-openai]~=2.74.1",
+    "boto3>=1.28",
+    "docling-core[chunking,chunking-openai]~=2.78.1",
     "langchain~=1.1.3",
     "langchain_chroma~=1.1.0",
     "langchain-text-splitters~=1.1.0",
@@ -54,10 +55,15 @@ Documentation = "https://ibm.github.io/ai4rag/"
 
 
 [project.optional-dependencies]
+components = [
+    "multiprocess>=0.70",
+]
+
 dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
     "ai4rag[docs]",
+    "ai4rag[components]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "ipykernel",
@@ -80,6 +86,12 @@ docs = [
 [tool.setuptools.dynamic]
 version = { attr = "ai4rag.__version__" }
 
+[tool.setuptools.package-data]
+"ai4rag.components.assets_generator" = [
+    "notebook_templates/*.ipynb",
+    "script_templates/*.templ",
+]
+
 [tool.setuptools.packages.find]
 exclude = ["tests*", "dev_utils*"]
 namespaces = false
@@ -91,9 +103,11 @@ log_cli = false
 log_level = "INFO"
 
 [tool.coverage.run]
-# Skipping function templates for notebooks
+# Skipping orchestration modules that require integration tests (S3, multiprocessing, full experiment runs)
 omit = [
     "ai4rag/core/experiment/experiment.py",
+    "ai4rag/components/data/text_extraction.py",
+    "ai4rag/components/optimization/rag_templates_optimization.py",
 ]
 
 [tool.black]
@@ -107,7 +121,7 @@ skip = ["scripts/"]
 
 
 [tool.pylint]
-disable = ["missing-module-docstring", "too-few-public-methods", "arguments-differ"]
+disable = ["missing-module-docstring", "too-few-public-methods", "arguments-differ", "import-outside-toplevel", "broad-exception-caught"]
 max-line-length = 120
 max-args = 8
 max-positional-arguments = 8
