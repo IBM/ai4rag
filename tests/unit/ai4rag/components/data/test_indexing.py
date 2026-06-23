@@ -2,15 +2,12 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest
 
-from ai4rag.components.data.indexing import (
+from ai4rag.components.data.documents_indexing import (
     SUPPORTED_CHUNK_SIZE_RANGE,
-    SUPPORTED_CHUNKING_METHODS,
     SUPPORTED_DISTANCE_METRICS,
     index_documents,
 )
@@ -140,11 +137,11 @@ class TestIndexDocumentsValidation:
     @pytest.mark.parametrize("valid_metric", list(SUPPORTED_DISTANCE_METRICS))
     def test_valid_distance_metrics_accepted(self, populated_dir, mock_ogx_client, mocker, valid_metric):
         """All supported distance metrics must pass validation (verified by reaching next stage)."""
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingParams")
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingModel")
-        mocker.patch("ai4rag.components.data.indexing.OGXVectorStore")
-        mocker.patch("ai4rag.components.data.indexing.DoclingDocument")
-        mocker.patch("ai4rag.components.data.indexing.LangChainChunker")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingParams")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingModel")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXVectorStore")
+        mocker.patch("ai4rag.components.data.documents_indexing.DoclingDocument")
+        mocker.patch("ai4rag.components.data.documents_indexing.LangChainChunker")
 
         index_documents(
             extracted_text_dir=populated_dir,
@@ -157,11 +154,11 @@ class TestIndexDocumentsValidation:
     @pytest.mark.parametrize("valid_size", [SUPPORTED_CHUNK_SIZE_RANGE[0], 512, 1024, SUPPORTED_CHUNK_SIZE_RANGE[1]])
     def test_boundary_chunk_sizes_accepted(self, populated_dir, mock_ogx_client, mocker, valid_size):
         """Chunk sizes at the boundaries must be accepted."""
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingParams")
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingModel")
-        mocker.patch("ai4rag.components.data.indexing.OGXVectorStore")
-        mocker.patch("ai4rag.components.data.indexing.DoclingDocument")
-        mocker.patch("ai4rag.components.data.indexing.LangChainChunker")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingParams")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingModel")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXVectorStore")
+        mocker.patch("ai4rag.components.data.documents_indexing.DoclingDocument")
+        mocker.patch("ai4rag.components.data.documents_indexing.LangChainChunker")
 
         index_documents(
             extracted_text_dir=populated_dir,
@@ -186,11 +183,11 @@ class TestIndexDocumentsProcessing:
 
         Returns a dict with the mocks for assertions.
         """
-        mock_params_cls = mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingParams")
-        mock_emb_cls = mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingModel")
-        mock_vs_cls = mocker.patch("ai4rag.components.data.indexing.OGXVectorStore")
-        mock_docling = mocker.patch("ai4rag.components.data.indexing.DoclingDocument")
-        mock_lang_chunker_cls = mocker.patch("ai4rag.components.data.indexing.LangChainChunker")
+        mock_params_cls = mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingParams")
+        mock_emb_cls = mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingModel")
+        mock_vs_cls = mocker.patch("ai4rag.components.data.documents_indexing.OGXVectorStore")
+        mock_docling = mocker.patch("ai4rag.components.data.documents_indexing.DoclingDocument")
+        mock_lang_chunker_cls = mocker.patch("ai4rag.components.data.documents_indexing.LangChainChunker")
 
         mock_doc = mocker.MagicMock()
         mock_docling.load_from_json.return_value = mock_doc
@@ -210,9 +207,9 @@ class TestIndexDocumentsProcessing:
         """An empty directory must return 0 chunks without raising."""
         mock_client = mocker.MagicMock()
 
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingParams")
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingModel")
-        mocker.patch("ai4rag.components.data.indexing.OGXVectorStore")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingParams")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingModel")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXVectorStore")
 
         result = index_documents(
             extracted_text_dir=tmp_path,
@@ -295,11 +292,11 @@ class TestIndexDocumentsProcessing:
         """``chunking_method='hybrid'`` must instantiate ``DoclingChunker``."""
         _create_json_files(tmp_path, 1)
 
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingParams")
-        mocker.patch("ai4rag.components.data.indexing.OGXEmbeddingModel")
-        mocker.patch("ai4rag.components.data.indexing.OGXVectorStore")
-        mocker.patch("ai4rag.components.data.indexing.DoclingDocument")
-        mock_docling_chunker = mocker.patch("ai4rag.components.data.indexing.DoclingChunker")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingParams")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXEmbeddingModel")
+        mocker.patch("ai4rag.components.data.documents_indexing.OGXVectorStore")
+        mocker.patch("ai4rag.components.data.documents_indexing.DoclingDocument")
+        mock_docling_chunker = mocker.patch("ai4rag.components.data.documents_indexing.DoclingChunker")
         mock_docling_chunker.return_value.split_documents.return_value = []
 
         index_documents(
