@@ -11,6 +11,7 @@ from ai4rag.rag.foundation_models.utils import (
 )
 from ai4rag.search_space.src.model_props import (
     CONTEXT_TEXT_PLACEHOLDER,
+    DOCUMENT_NUMBER_PLACEHOLDER,
     QUESTION_PLACEHOLDER,
     REFERENCE_DOCUMENTS_PLACEHOLDER,
 )
@@ -52,7 +53,13 @@ class TestValidatePromptTemplatesPlaceholders:
         with pytest.raises(ValueError) as exc_info:
             _validate_prompt_templates_placeholders(template, "context_template_text")
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected 1 but got 0" in str(exc_info.value)
+        assert "expected exactly one" in str(exc_info.value)
+
+    def test_context_template_with_doc_number(self):
+        """Test that context template may include optional doc_number placeholder."""
+        template = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}}:\n{{{CONTEXT_TEXT_PLACEHOLDER}}}\n"
+        result = _validate_prompt_templates_placeholders(template, "context_template_text")
+        assert result == template
 
     def test_user_message_missing_one_placeholder(self):
         """Test that user message with only one placeholder raises ValueError."""
@@ -117,7 +124,7 @@ class TestValidatePromptTemplatesPlaceholders:
         with pytest.raises(ValueError) as exc_info:
             _validate_prompt_templates_placeholders(template, "context_template_text")
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected 1 but got 2" in str(exc_info.value)
+        assert "expected exactly one" in str(exc_info.value)
 
     def test_user_message_duplicate_placeholder(self):
         """Test that user message with duplicate placeholder raises ValueError."""
@@ -223,7 +230,14 @@ class TestRAGPromptTemplateString:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             validator.validate(None, template)
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected 1 but got 0" in str(exc_info.value)
+        assert "expected exactly one" in str(exc_info.value)
+
+    def test_context_template_with_doc_number(self):
+        """Test that context template may include optional doc_number placeholder."""
+        validator = RAGPromptTemplateString("context_template_text")
+        template = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}}:\n{{{CONTEXT_TEXT_PLACEHOLDER}}}\n"
+        result = validator.validate(None, template)
+        assert result == template
 
     def test_user_message_missing_one_placeholder(self):
         """Test that user message with only one placeholder raises ConstraintsValidationError."""
@@ -296,7 +310,7 @@ class TestRAGPromptTemplateString:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             validator.validate(None, template)
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected 1 but got 2" in str(exc_info.value)
+        assert "expected exactly one" in str(exc_info.value)
 
     def test_user_message_duplicate_placeholder(self):
         """Test that user message with duplicate placeholder raises ConstraintsValidationError."""

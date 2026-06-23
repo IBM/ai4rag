@@ -10,6 +10,7 @@ from docling_core.types.doc import DoclingDocument
 from ai4rag.rag.chunking.base_chunker import BaseChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
+from ai4rag.search_space.src.model_props import DOCUMENT_NUMBER_PLACEHOLDER
 
 from ..embedding.base_model import BaseEmbeddingModel
 from ..foundation_models.base_model import BaseFoundationModel
@@ -95,9 +96,15 @@ class SimpleRAG(BaseRAGTemplate):
         """
         reference_documents = self.retriever.retrieve(question, **kwargs)
 
-        context = "\n".join(
-            [self.foundation_model.context_template_text.format(document=chunk.text) for chunk in reference_documents]
-        )
+        context_template = self.foundation_model.context_template_text
+        uses_doc_number = f"{{{DOCUMENT_NUMBER_PLACEHOLDER}}}" in context_template
+        context_parts: list[str] = []
+        for doc_number, chunk in enumerate(reference_documents, start=1):
+            format_kwargs: dict[str, str | int] = {"document": chunk.text}
+            if uses_doc_number:
+                format_kwargs[DOCUMENT_NUMBER_PLACEHOLDER] = doc_number
+            context_parts.append(context_template.format(**format_kwargs))
+        context = "\n\n".join(context_parts)
 
         user_message = self.foundation_model.user_message_text.format(
             reference_documents=context,

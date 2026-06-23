@@ -2,17 +2,79 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from collections import Counter
 from string import Formatter
 from typing import Literal, TypeVar
 
 from ai4rag.search_space.src.model_props import (
     CONTEXT_TEXT_PLACEHOLDER,
+    DOCUMENT_NUMBER_PLACEHOLDER,
     QUESTION_PLACEHOLDER,
     REFERENCE_DOCUMENTS_PLACEHOLDER,
 )
 from ai4rag.utils.validators import ConstraintsValidationError, OneOf, Validator
 
 T = TypeVar("T")
+
+_CONTEXT_TEMPLATE_ALLOWED_PLACEHOLDERS = frozenset(
+    {CONTEXT_TEXT_PLACEHOLDER, DOCUMENT_NUMBER_PLACEHOLDER},
+)
+
+
+def _count_template_placeholders(template_str: str) -> Counter[str]:
+    counts: Counter[str] = Counter()
+    for _, field_name, _, _ in Formatter().parse(template_str):
+        if field_name is not None:
+            counts[field_name] += 1
+    return counts
+
+
+def _validate_context_template_placeholders(template_str: str) -> str:
+    counts = _count_template_placeholders(template_str)
+
+    for field_name in counts:
+        if field_name not in _CONTEXT_TEMPLATE_ALLOWED_PLACEHOLDERS:
+            raise ValueError(
+                f"Custom context template text got unexpected placeholder `{field_name}`, "
+                f"valid placeholders are `{tuple(_CONTEXT_TEMPLATE_ALLOWED_PLACEHOLDERS)}`."
+            )
+
+    if counts.get(CONTEXT_TEXT_PLACEHOLDER, 0) != 1:
+        raise ValueError(
+            "Incorrect number of placeholders required for context template text, "
+            f"expected exactly one `{CONTEXT_TEXT_PLACEHOLDER}` placeholder but got "
+            f"{counts.get(CONTEXT_TEXT_PLACEHOLDER, 0)}."
+        )
+
+    if counts.get(DOCUMENT_NUMBER_PLACEHOLDER, 0) > 1:
+        raise ValueError(
+            "Incorrect number of placeholders required for context template text, "
+            f"expected at most one `{DOCUMENT_NUMBER_PLACEHOLDER}` placeholder but got "
+            f"{counts[DOCUMENT_NUMBER_PLACEHOLDER]}."
+        )
+
+    return template_str
+
+
+def _validate_user_message_template_placeholders(template_str: str) -> str:
+    required_placeholders = (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
+    counts = _count_template_placeholders(template_str)
+
+    for field_name in counts:
+        if field_name not in required_placeholders:
+            raise ValueError(
+                f"Custom user template text got unexpected placeholder `{field_name}`, "
+                f"valid placeholders are `{required_placeholders}`."
+            )
+
+    for field_name in required_placeholders:
+        if counts.get(field_name, 0) != 1:
+            raise ValueError(
+                "Incorrect number of placeholders required for user template text, "
+                f"expected 2 but got {sum(counts.values())}."
+            )
+
+    return template_str
 
 
 class RAGPromptTemplateString(Validator[str]):
@@ -62,25 +124,13 @@ class RAGPromptTemplateString(Validator[str]):
         if not isinstance(value, str):
             raise TypeError(f"Expected {value!r} to be a str or None.")
 
-        placeholders_count = 0
-
-        for _, field_name, _, _ in Formatter().parse(value):
-            if field_name is None:
-                # when there is text NOT followed by a placeholder template
-                continue
-            if field_name not in self._required_placeholders:
-                raise ConstraintsValidationError(
-                    f"Custom {field_name.split('_')[0]} template text got unexpected placeholder `{field_name}`, "
-                    f"valid placeholders are `{self._required_placeholders}`."
-                )
-
-            placeholders_count += 1
-
-        if placeholders_count != len(self._required_placeholders):
-            raise ConstraintsValidationError(
-                f"Incorrect number of placeholders required for: '{value.split('_')[0]}' template text, "
-                f"expected {len(self._required_placeholders)} but got {placeholders_count}."
-            )
+        try:
+            if self.template_name == "context_template_text":
+                _validate_context_template_placeholders(value)
+            else:
+                _validate_user_message_template_placeholders(value)
+        except ValueError as exc:
+            raise ConstraintsValidationError(str(exc)) from exc
 
         return value
 
@@ -113,29 +163,8 @@ def _validate_prompt_templates_placeholders(
         When user provided wrong placeholder name.
     """
     if template_name == "context_template_text":
-        required_placeholders = (CONTEXT_TEXT_PLACEHOLDER,)
-    elif template_name == "user_message_text":
-        required_placeholders = (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
-    else:
-        raise ValueError(f"Cannot validate presence of expected template placeholders on field: {template_name}")
+        return _validate_context_template_placeholders(template_str)
+    if template_name == "user_message_text":
+        return _validate_user_message_template_placeholders(template_str)
 
-    placeholders_count = 0
-
-    for _, field_name, _, _ in Formatter().parse(template_str):
-        if field_name is None:
-            # when there is text NOT followed by a placeholder template
-            continue
-        if field_name not in required_placeholders:
-            raise ValueError(
-                f"Custom {field_name.split('_')[0]} template text got unexpected placeholder `{field_name}`, "
-                f"valid placeholders are `{required_placeholders}`."
-            )
-
-        placeholders_count += 1
-
-    if placeholders_count != len(required_placeholders):
-        raise ValueError(
-            f"Incorrect number of placeholders required for {template_name.split('_')[0]} template text, "
-            f"expected {len(required_placeholders)} but got {placeholders_count}."
-        )
-    return template_str
+    raise ValueError(f"Cannot validate presence of expected template placeholders on field: {template_name}")
