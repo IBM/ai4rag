@@ -342,7 +342,7 @@ def _build_docling_format_options() -> dict:
     pdf_pipeline_options = ThreadedPdfPipelineOptions(
         artifacts_path=ap,
         do_ocr=False,
-        do_table_structure=False,
+        do_table_structure=True,
         accelerator_options=accel,
     )
     paginated_pipeline_options = PaginatedPipelineOptions(
