@@ -12,6 +12,18 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docling.datamodel.accelerator_options import AcceleratorOptions
+from docling.datamodel.base_models import InputFormat
+from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
+from docling.document_converter import (
+    HTMLFormatOption,
+    MarkdownFormatOption,
+    PdfFormatOption,
+    PowerpointFormatOption,
+    WordFormatOption,
+)
+from docling.document_converter import DocumentConverter
+
 from ai4rag import handler
 
 _logger = logging.getLogger("text-extraction")
@@ -325,17 +337,6 @@ def _resolve_artifacts_path(explicit: str | None) -> Path | None:
 
 def _build_docling_format_options() -> dict:
     """Build Docling pipeline format options for each supported input format."""
-    from docling.datamodel.accelerator_options import AcceleratorOptions
-    from docling.datamodel.base_models import InputFormat
-    from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
-    from docling.document_converter import (
-        HTMLFormatOption,
-        MarkdownFormatOption,
-        PdfFormatOption,
-        PowerpointFormatOption,
-        WordFormatOption,
-    )
-
     ap = _resolve_artifacts_path(None)
     accel = AcceleratorOptions(device="cpu", num_threads=2)
 
@@ -362,8 +363,6 @@ def _build_docling_format_options() -> dict:
 
 def _text_extraction_pool_initializer() -> None:
     """Pool initializer that creates a ``DocumentConverter`` per worker process."""
-    from docling.document_converter import DocumentConverter
-
     os.environ["TQDM_DISABLE"] = "1"
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     os.environ.setdefault("MKL_NUM_THREADS", "1")
