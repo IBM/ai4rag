@@ -5,6 +5,7 @@
 from pathlib import Path
 from typing import Any
 
+from ai4rag import __version__
 from ai4rag.components.assets_generator.notebook import Notebook
 
 
@@ -39,6 +40,7 @@ def create_placeholder_mapping(
     """
     mapping: dict[str, Any] = {}
 
+    mapping["AI4RAG_VERSION"] = __version__
     mapping["PATTERN_NAME"] = output_data.get("name", "")
     settings = output_data.get("settings", {})
     fm = settings.get("generation", {})
