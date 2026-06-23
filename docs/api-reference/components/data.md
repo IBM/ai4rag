@@ -21,7 +21,7 @@ Data processing functions for the AutoRAG pipeline.
 
 ## Document Indexing
 
-::: ai4rag.components.data.indexing
+::: ai4rag.components.data.documents_indexing
     options:
       members:
         - index_documents
