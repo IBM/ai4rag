@@ -52,9 +52,9 @@ def build_pattern_json(
     ranker_k = retrieval_settings.get("ranker_k")
     ranker_alpha = retrieval_settings.get("ranker_alpha")
 
-    if search_mode == "hybrid" and ranker_strategy == "rrf":
+    if search_mode == "hybrid" and ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
         pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]["impact_factor"] = ranker_k
-    elif search_mode == "hybrid" and ranker_strategy == "weighted":
+    elif search_mode == "hybrid" and ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
         pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]["alpha"] = ranker_alpha
 
     return pattern

@@ -15,7 +15,8 @@ from ai4rag.utils.event_handler.event_handler import KFPEventHandler, LocalEvent
 # ---------------------------------------------------------------------------
 
 PAYLOAD = {
-    "pattern_name": "Pattern1",
+    "name": "Pattern1",
+    "max_combinations": 24,
     "scores": {
         "scores": {
             "answer_correctness": {"mean": 0.8, "ci_low": 0.7, "ci_high": 0.9},
@@ -26,12 +27,10 @@ PAYLOAD = {
             "faithfulness": {"q0": 0.9, "q1": 0.9},
         },
     },
-    "execution_time": 42,
+    "duration_seconds": 42,
     "final_score": 0.9,
-    "schema_version": "1.0",
-    "producer": "ai4rag",
     "settings": {
-        "vector_store": {"datasource_type": "local_chroma", "collection_name": "col_1"},
+        "vector_store_binding": {"provider_id": "local_chroma", "vector_store_id": "col_1"},
         "chunking": {"method": "recursive", "chunk_size": 512, "chunk_overlap": 64},
         "embedding": {"model_id": "em-1", "distance_metric": "cosine", "embedding_params": {}},
         "retrieval": {"method": "simple", "number_of_chunks": 3, "search_mode": "vector"},
@@ -160,7 +159,7 @@ class TestLocalEventHandlerOnPatternCreationWithOutputPath:
         assert pattern_file.exists()
         with open(pattern_file, encoding="utf-8") as f:
             written = json.load(f)
-        assert written["pattern_name"] == "Pattern1"
+        assert written["name"] == "Pattern1"
         assert written["final_score"] == 0.9
 
     def test_writes_evaluation_results_json(self, tmp_path, mocker):
@@ -177,10 +176,10 @@ class TestLocalEventHandlerOnPatternCreationWithOutputPath:
         assert written == EVALUATION_RESULTS
 
     def test_uses_default_pattern_name_when_missing(self, tmp_path, mocker):
-        """Falls back to 'default_pattern_name' when payload has no pattern_name."""
+        """Falls back to 'default_pattern_name' when payload has no name."""
         mocker.patch("ai4rag.utils.event_handler.event_handler.logger")
         handler = LocalEventHandler(output_path=tmp_path)
-        payload_without_name = {k: v for k, v in PAYLOAD.items() if k != "pattern_name"}
+        payload_without_name = {k: v for k, v in PAYLOAD.items() if k != "name"}
 
         handler.on_pattern_creation(payload=payload_without_name, evaluation_results=EVALUATION_RESULTS)
 
@@ -327,14 +326,14 @@ class TestKFPEventHandlerOnPatternCreation:
     def test_multiple_patterns_accumulate(self):
         """All on_pattern_creation calls are kept in insertion order."""
         handler = KFPEventHandler()
-        second_payload = {**PAYLOAD, "pattern_name": "Pattern2"}
+        second_payload = {**PAYLOAD, "name": "Pattern2"}
 
         handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS)
         handler.on_pattern_creation(payload=second_payload, evaluation_results=[])
 
         assert len(handler.patterns) == 2
-        assert handler.patterns[0]["payload"]["pattern_name"] == "Pattern1"
-        assert handler.patterns[1]["payload"]["pattern_name"] == "Pattern2"
+        assert handler.patterns[0]["payload"]["name"] == "Pattern1"
+        assert handler.patterns[1]["payload"]["name"] == "Pattern2"
 
     def test_extra_kwargs_are_stored(self):
         """Additional keyword arguments passed via **kwargs are included in the stored entry."""

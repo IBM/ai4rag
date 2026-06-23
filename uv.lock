@@ -36,6 +36,7 @@ dependencies = [
     { name = "langchain" },
     { name = "langchain-chroma" },
     { name = "langchain-text-splitters" },
+    { name = "multiprocess" },
     { name = "ogx-client" },
     { name = "pandas" },
     { name = "pydantic" },
@@ -50,9 +51,6 @@ code-check = [
     { name = "isort" },
     { name = "pylint" },
 ]
-components = [
-    { name = "multiprocess" },
-]
 dev = [
     { name = "beautifulsoup4" },
     { name = "black" },
@@ -65,7 +63,6 @@ dev = [
     { name = "mkdocs-material" },
     { name = "mkdocs-minify-plugin" },
     { name = "mkdocstrings", extra = ["python"] },
-    { name = "multiprocess" },
     { name = "nbformat" },
     { name = "psutil" },
     { name = "pylint" },
@@ -112,7 +109,7 @@ requires-dist = [
     { name = "mkdocs-material", marker = "extra == 'docs'", specifier = "~=9.5" },
     { name = "mkdocs-minify-plugin", marker = "extra == 'docs'", specifier = ">=0.8.0" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.25.0" },
-    { name = "multiprocess", marker = "extra == 'components'", specifier = ">=0.70" },
+    { name = "multiprocess", specifier = ">=0.70" },
     { name = "nbformat", marker = "extra == 'test'" },
     { name = "ogx-client", specifier = "~=1.1.0" },
     { name = "pandas", specifier = "==2.2.*" },
@@ -126,7 +123,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = "==1.8.*" },
     { name = "unitxt", specifier = "~=1.26.1" },
 ]
-provides-extras = ["components", "dev", "test", "code-check", "docs"]
+provides-extras = ["dev", "test", "code-check", "docs"]
 
 [[package]]
 name = "aiohappyeyeballs"

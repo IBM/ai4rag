@@ -274,8 +274,6 @@ def _download_document(
     Path
         Path to the downloaded local file.
     """
-    from botocore.exceptions import SSLError
-
     raw_key = doc["key"]
     safe_key = raw_key.strip().lstrip("/")
     rel = Path(safe_key)
@@ -290,6 +288,8 @@ def _download_document(
     local_path.parent.mkdir(parents=True, exist_ok=True)
     dl_start = time.perf_counter()
     _logger.info("Downloading %s", raw_key)
+
+    from botocore.exceptions import SSLError
 
     try:
         _make_s3_client(s3_creds).download_file(bucket, raw_key, str(local_path))

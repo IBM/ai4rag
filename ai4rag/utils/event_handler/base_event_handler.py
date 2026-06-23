@@ -42,11 +42,12 @@ class PatternScores(TypedDict):
     question_scores: dict[str, dict[str, float]]
 
 
-class VectorStoreSettings(TypedDict):
+class VectorStoreSettings(TypedDict, total=False):
     """Vector store configuration used by a RAG pattern."""
 
-    datasource_type: str
-    collection_name: str
+    provider_id: str
+    vector_store_id: str
+    provider_type: str
 
 
 class ChunkingSettings(TypedDict):
@@ -57,11 +58,10 @@ class ChunkingSettings(TypedDict):
     chunk_overlap: int
 
 
-class EmbeddingSettings(TypedDict):
+class EmbeddingSettings(TypedDict, total=False):
     """Embedding model configuration used during indexing."""
 
     model_id: str
-    distance_metric: str
     embedding_params: dict
 
 
@@ -91,7 +91,7 @@ class GenerationSettings(TypedDict):
 class PatternSettings(TypedDict):
     """Full settings block of :class:`PatternPayload`."""
 
-    vector_store: VectorStoreSettings
+    vector_store_binding: VectorStoreSettings
     chunking: ChunkingSettings
     embedding: EmbeddingSettings
     retrieval: RetrievalSettings
@@ -101,12 +101,11 @@ class PatternSettings(TypedDict):
 class PatternPayload(TypedDict):
     """Payload passed to :meth:`BaseEventHandler.on_pattern_creation`."""
 
-    pattern_name: str
+    name: str
+    max_combinations: int
     scores: PatternScores
-    execution_time: int
+    duration_seconds: int
     final_score: float
-    schema_version: str
-    producer: str
     settings: PatternSettings
     iteration: int
 
@@ -172,7 +171,8 @@ class BaseEventHandler(ABC):
             Example content:
 
             {
-                'pattern_name': 'Pattern1',
+                'name': 'Pattern1',
+                'max_combinations': 24,
                 'scores': {
                     'scores': {
                         'answer_correctness': {'mean': 0.0, 'ci_low': None, 'ci_high': None},
@@ -185,23 +185,20 @@ class BaseEventHandler(ABC):
                         'context_correctness': {'q0': 0, 'q1': 0, 'q2': 0},
                     },
                 },
-                'execution_time': 0,
+                'duration_seconds': 42,
                 'final_score': 0.0909,
-                'schema_version': '1.0',
-                'producer': 'ai4rag',
                 'settings': {
-                    'vector_store': {'datasource_type': 'local_chroma', 'collection_name': 'ai4rag_20260317092550'},
+                    'vector_store_binding': {'provider_id': 'local_chroma', 'vector_store_id': 'ai4rag_20260317092550'},
                     'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},
                     'embedding': {
                         'model_id': 'mock-em-1',
-                        'distance_metric': 'cosine',
                         'embedding_params': {'embedding_dimension': 64},
                     },
                     'retrieval': {'method': 'window', 'number_of_chunks': 3, 'search_mode': 'vector', 'window_size': 3},
                     'generation': {
                         'model_id': 'mock-fm-2',
                         'context_template_text': '{document}',
-                        'user_message_text': '\n\nContext:\n{reference_documents}:\n\nQuestion: {question}.\n
+                        'user_message_text': 'Context:\n{reference_documents}\n\nQuestion: {question}',
                         'system_message_text': 'System instruction...'
                     }
                 },

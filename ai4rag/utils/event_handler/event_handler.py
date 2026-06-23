@@ -30,7 +30,7 @@ class LocalEventHandler(BaseEventHandler):
         self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
     ) -> None:
         logger.debug("LocalEventHandler ::: Pattern creation ::: %s", payload)
-        pattern_name = payload.get("pattern_name", "default_pattern_name")
+        pattern_name = payload.get("name", "default_pattern_name")
 
         if self.output_path:
             dir_path = self.output_path / pattern_name

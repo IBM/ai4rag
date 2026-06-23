@@ -329,6 +329,9 @@ def _detect_language_via_llm(  # pylint: disable=too-many-locals
             max_completion_tokens=10,
             temperature=0.0,
         )
+        if not response.choices:
+            _logger.warning("LLM returned empty choices for language detection.")
+            return None
         raw = response.choices[0].message.content.strip().lower().replace('"', "").replace("'", "")
         detected_code = raw.split()[0] if raw else None
 
