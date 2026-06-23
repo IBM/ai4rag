@@ -22,16 +22,16 @@ MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER = "multilingual_support"
 
 
 _MULTILINGUAL_SUPPORT_ENABLED_PROMPT = (
-    "Respond exclusively in the language of the question, "
-    "regardless of any other language used in the provided context. "
-    "Ensure that your entire response is in the same language as the question."
+    "You MUST write your entire answer in the same language as the question. "
+    "Do NOT respond in any other language, even if the documents use a different language. "
+    "Every word of your answer must match the question's language."
 )
 
 
 _MULTILINGUAL_SUPPORT_DISABLED_PROMPT = (
-    "Respond exclusively in English, "
-    "regardless of the language of the question or any other language used in the provided context. "
-    "Ensure that your entire response is in English only."
+    "You MUST write your entire answer in English only. "
+    "Do NOT use any other language, even if the question or documents are in another language. "
+    "Every word of your answer must be in English."
 )
 
 
@@ -45,6 +45,12 @@ _RAG_GROUNDING_INSTRUCTION = (
 _RAG_CITATION_INSTRUCTION = (
     "You MUST cite sources using [1], [2], etc. matching the document numbers for every factual claim."
 )
+
+
+_RAG_ANSWER_LENGTH_GUIDANCE = "max 150 words"
+
+
+_RAG_ANSWER_PROMPT_LINE = f"Answer ({_RAG_ANSWER_LENGTH_GUIDANCE}, with citations):\n"
 
 
 _RAG_SYSTEM_PREFIX = "You are a retrieval-augmented assistant. Answer using ONLY the provided documents. "
@@ -63,7 +69,7 @@ _DEFAULT_USER_MESSAGE_TEXT = (
     f"{_RAG_CITATION_INSTRUCTION}\n\n"
     f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
     f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"Answer (with citations):\n"
+    f"{_RAG_ANSWER_PROMPT_LINE}"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
 
@@ -83,7 +89,7 @@ _DEFAULT_GRANITE_USER_MESSAGE_TEXT = (
     "Prioritize correctness and ensure your response is grounded in the documents.\n\n"
     f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
     f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"Answer (detailed, with citations):\n"
+    f"{_RAG_ANSWER_PROMPT_LINE}"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
 
@@ -103,7 +109,7 @@ _DEFAULT_LLAMA_USER_MESSAGE_TEXT = (
     f"{_RAG_CITATION_INSTRUCTION}\n\n"
     f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
     f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"Answer (max 150 words, with citations):\n"
+    f"{_RAG_ANSWER_PROMPT_LINE}"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
 
@@ -124,7 +130,7 @@ _DEFAULT_MISTRAL_USER_MESSAGE_TEXT = (
     f"{_RAG_CITATION_INSTRUCTION}\n\n"
     f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
     f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"Answer (with citations):\n"
+    f"{_RAG_ANSWER_PROMPT_LINE}"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
 
@@ -137,7 +143,7 @@ _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT = (
     "When the question cannot be answered using the context or document, output the following response: "
     "'I am sorry, I do not have the information you are looking for in my knowledge base.'. "
     "Always make sure that your response is relevant to the question. If an explanation is needed, "
-    "first provide the explanation or reasoning, and then give the final answer.\nAnswer Length: concise.\n\n"
+    "first provide the explanation or reasoning, and then give the final answer.\n\n"
 )
 
 
@@ -146,7 +152,7 @@ _DEFAULT_OPENAI_USER_MESSAGE_TEXT = (
     f"{_RAG_CITATION_INSTRUCTION}\n\n"
     f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
     f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"Answer (concise, with citations):\n"
+    f"{_RAG_ANSWER_PROMPT_LINE}"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
 

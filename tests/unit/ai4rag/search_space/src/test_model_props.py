@@ -66,9 +66,26 @@ def test_context_template_numbers_documents(model_name: str):
 
 def test_language_autodetect_defaults_to_english_only():
     user_message = get_user_message_text("meta-llama/llama-3-1-8b-instruct")
-    assert "English only" in user_message
+    assert "You MUST write your entire answer in English only" in user_message
+    assert "Do NOT use any other language" in user_message
 
 
-def test_language_autodetect_enabled_uses_question_language():
+def test_language_autodetect_enabled_uses_strong_question_language_instruction():
     user_message = get_user_message_text("meta-llama/llama-3-1-8b-instruct", language_autodetect=True)
-    assert "language of the question" in user_message
+    assert "You MUST write your entire answer in the same language as the question" in user_message
+    assert "Do NOT respond in any other language" in user_message
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    [
+        "meta-llama/llama-3-1-8b-instruct",
+        "ibm/granite-3-8b-instruct",
+        "mistralai/mistral-large",
+        "openai/gpt-oss-120b",
+        "unknown-model",
+    ],
+)
+def test_user_message_includes_consistent_answer_length(model_name: str):
+    user_message = get_user_message_text(model_name)
+    assert "Answer (max 150 words, with citations):" in user_message
