@@ -28,8 +28,16 @@ def build_pattern_json(
         "model": pattern["settings"]["generation"]["model_id"],
         "stream": False,
         "store": False,
-        "input": "<user_query_placeholder>",
-        "instructions": pattern["settings"]["generation"]["system_message_text"],
+        "input": [
+            {
+                "content": [{"text": pattern["settings"]["generation"]["system_message_text"], "type": "input_text"}],
+                "role": "system",
+            },
+            {"content": [{"text": "<user_query_placeholder>", "type": "input_text"}], "role": "user"},
+        ],
+        "max_output_tokens": pattern["settings"]["generation"]["max_completion_tokens"],
+        "temperature": pattern["settings"]["generation"]["temperature"],
+        "tool_choice": {"mode": "required", "tools": [{}], "type": "file_search"},
         "tools": [
             {
                 "type": "file_search",
@@ -37,6 +45,7 @@ def build_pattern_json(
                 "ranking_options": {
                     "max_num_results": pattern["settings"]["retrieval"]["number_of_chunks"],
                 },
+                "max_num_results": pattern["settings"]["retrieval"]["number_of_chunks"],
             },
         ],
         "include": ["file_search_call.results"],
@@ -52,5 +61,9 @@ def build_pattern_json(
         pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]["impact_factor"] = ranker_k
     elif search_mode == "hybrid" and ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
         pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]["alpha"] = ranker_alpha
+    else:
+        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"].update(
+            {"ranker": "auto", "weights": {"vector": 1.0, "neural": 0.0, "keyword": 0.0}}
+        )
 
     return pattern
