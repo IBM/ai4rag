@@ -88,7 +88,6 @@ class TestBuildPatternJson:
         assert len(rt["tools"]) == 1
         assert rt["tools"][0]["type"] == "file_search"
         assert "test_collection_001" in rt["tools"][0]["vector_store_ids"]
-        assert rt["tools"][0]["ranking_options"]["max_num_results"] == 5
         assert rt["tools"][0]["max_num_results"] == 5
         assert rt["include"] == ["file_search_call.results"]
 
@@ -112,7 +111,7 @@ class TestBuildPatternJson:
         assert pattern["settings"]["generation"]["detected_language"] == lang
 
     def test_hybrid_rrf_ranking_options(self):
-        """Hybrid search with RRF ranker must merge impact_factor into ranking_options."""
+        """Hybrid search with RRF ranker must set ranker and impact_factor in ranking_options."""
         pattern = _make_pattern()
         pattern["settings"]["retrieval"]["search_mode"] = "hybrid"
         pattern["settings"]["retrieval"]["ranker_strategy"] = "rrf"
@@ -121,11 +120,10 @@ class TestBuildPatternJson:
         build_pattern_json(pattern)
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
-        assert ro["impact_factor"] == 60
-        assert ro["max_num_results"] == 5
+        assert ro == {"ranker": "rrf", "impact_factor": 60}
 
     def test_hybrid_weighted_ranking_options(self):
-        """Hybrid search with weighted ranker must merge alpha into ranking_options."""
+        """Hybrid search with weighted ranker must set ranker and alpha in ranking_options."""
         pattern = _make_pattern()
         pattern["settings"]["retrieval"]["search_mode"] = "hybrid"
         pattern["settings"]["retrieval"]["ranker_strategy"] = "weighted"
@@ -134,20 +132,15 @@ class TestBuildPatternJson:
         build_pattern_json(pattern)
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
-        assert ro["alpha"] == 0.7
-        assert ro["max_num_results"] == 5
+        assert ro == {"ranker": "weighted", "alpha": 0.7}
 
     def test_simple_retrieval_default_ranking_options(self):
-        """Simple retrieval must have default ranker and weights in ranking_options."""
+        """Simple retrieval must have default weights in ranking_options."""
         pattern = _make_pattern()
         build_pattern_json(pattern)
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
-        assert ro == {
-            "max_num_results": 5,
-            "ranker": "auto",
-            "weights": {"vector": 1.0, "neural": 0.0, "keyword": 0.0},
-        }
+        assert ro == {"weights": {"vector": 1.0, "keyword": 0.0}}
         assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_preserves_existing_pattern_fields(self):
