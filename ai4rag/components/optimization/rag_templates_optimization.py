@@ -2,13 +2,11 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import importlib.resources
 import logging
 import os
 from dataclasses import dataclass
 from json import dump as json_dump
 from pathlib import Path
-from string import Template
 from typing import Any
 
 import pandas as pd
@@ -205,9 +203,6 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         with (patt_dir / "pattern.json").open("w+", encoding="utf-8") as f:
             json_dump(pattern_data, f, indent=2)
 
-        # Generate create_model_response.py from script template
-        _write_model_response_script(patt_dir, pattern_data)
-
         # Write evaluation results
         evaluation_result_list = pattern.get("evaluation_results", [])
         with (patt_dir / "evaluation_results.json").open("w+", encoding="utf-8") as f:
@@ -359,28 +354,3 @@ def _validate_optimization_settings(optimization_settings: dict | None) -> dict:
         )
 
     return optimization_settings
-
-
-def _write_model_response_script(
-    patt_dir: Path,
-    pattern_data: dict,
-) -> None:
-    """Render the ``create_model_response.py`` script from its template.
-
-    Parameters
-    ----------
-    patt_dir
-        Pattern output directory.
-    pattern_data
-        The pattern definition containing ``settings.responses_template``.
-    """
-    template_context = {"responses_template": pattern_data["settings"]["responses_template"]}
-
-    templ_ref = importlib.resources.files("ai4rag.components.assets_generator").joinpath(
-        "script_templates", "create_model_response.py.templ"
-    )
-    with importlib.resources.as_file(templ_ref) as resolved:
-        templ_text = resolved.read_text(encoding="utf-8")
-
-    rendered = Template(templ_text).substitute(template_context)
-    (patt_dir / "create_model_response.py").write_text(rendered, encoding="utf-8")

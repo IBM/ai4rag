@@ -6,11 +6,7 @@ def build_pattern_json(
     pattern: dict,
     detected_language: dict | None = None,
 ) -> dict:
-    """Build a ``pattern.json`` dictionary from evaluation results.
-
-    Normalises parameters from various locations in the evaluation result
-    (indexing params, RAG params, flat attributes) into the canonical flat
-    schema used by downstream consumers (notebook templating, leaderboard).
+    """Update pattern information with detected language and responses template.
 
     Parameters
     ----------

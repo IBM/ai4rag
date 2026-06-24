@@ -16,13 +16,13 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
 from docling.document_converter import (
+    DocumentConverter,
     HTMLFormatOption,
     MarkdownFormatOption,
     PdfFormatOption,
     PowerpointFormatOption,
     WordFormatOption,
 )
-from docling.document_converter import DocumentConverter
 
 from ai4rag import handler
 
