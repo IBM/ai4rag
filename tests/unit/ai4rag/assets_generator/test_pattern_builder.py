@@ -41,6 +41,8 @@ def _make_pattern(**overrides) -> dict:
             },
             "generation": {
                 "model_id": "ibm/granite-3-8b-instruct",
+                "temperature": 0.7,
+                "max_completion_tokens": 1024,
                 "system_message_text": "Answer based on context only.",
                 "user_message_text": "Context: {reference_documents}\nQ: {question}",
                 "context_template_text": "{document}",
@@ -73,12 +75,21 @@ class TestBuildPatternJson:
         assert rt["model"] == "ibm/granite-3-8b-instruct"
         assert rt["stream"] is False
         assert rt["store"] is False
-        assert rt["input"] == "<user_query_placeholder>"
-        assert rt["instructions"] == "Answer based on context only."
+        assert rt["input"] == [
+            {
+                "content": [{"text": "Answer based on context only.", "type": "input_text"}],
+                "role": "system",
+            },
+            {"content": [{"text": "<user_query_placeholder>", "type": "input_text"}], "role": "user"},
+        ]
+        assert rt["max_output_tokens"] == 1024
+        assert rt["temperature"] == 0.7
+        assert rt["tool_choice"] == {"mode": "required", "tools": [{}], "type": "file_search"}
         assert len(rt["tools"]) == 1
         assert rt["tools"][0]["type"] == "file_search"
         assert "test_collection_001" in rt["tools"][0]["vector_store_ids"]
         assert rt["tools"][0]["ranking_options"]["max_num_results"] == 5
+        assert rt["tools"][0]["max_num_results"] == 5
         assert rt["include"] == ["file_search_call.results"]
 
     def test_returns_same_dict(self):
@@ -126,13 +137,18 @@ class TestBuildPatternJson:
         assert ro["alpha"] == 0.7
         assert ro["max_num_results"] == 5
 
-    def test_simple_retrieval_has_only_max_num_results(self):
-        """Simple retrieval must have ranking_options with only max_num_results."""
+    def test_simple_retrieval_default_ranking_options(self):
+        """Simple retrieval must have default ranker and weights in ranking_options."""
         pattern = _make_pattern()
         build_pattern_json(pattern)
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
-        assert ro == {"max_num_results": 5}
+        assert ro == {
+            "max_num_results": 5,
+            "ranker": "auto",
+            "weights": {"vector": 1.0, "neural": 0.0, "keyword": 0.0},
+        }
+        assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_preserves_existing_pattern_fields(self):
         """Existing pattern fields (name, chunking, embedding, etc.) must not be altered."""

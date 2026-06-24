@@ -334,6 +334,8 @@ class AI4RAGExperiment:
             "retrieval": retrieval_params,
             "generation": {
                 "model_id": foundation_model.model_id,
+                "temperature": foundation_model.params.temperature,
+                "max_completion_tokens": foundation_model.params.max_completion_tokens,
                 "context_template_text": context_template_text,
                 "user_message_text": user_message_text,
                 "system_message_text": system_message_text,
