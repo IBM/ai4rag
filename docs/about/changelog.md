@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.8.1](https://github.com/IBM/ai4rag/releases/tag/v0.8.1)
+
+### Changed
+- Downgraded `docling-core` dependency from `~=2.84.0` to `~=2.83.0` to resolve compatibility issues
+
+---
+
 ## [0.8.0](https://github.com/IBM/ai4rag/releases/tag/v0.8.0)
 
 ### Added
