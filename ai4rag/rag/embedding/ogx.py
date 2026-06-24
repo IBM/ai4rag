@@ -5,7 +5,6 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from httpx import Timeout
 from ogx_client import OgxClient
 
 from .base_model import BaseEmbeddingModel
@@ -22,10 +21,6 @@ class OGXEmbeddingParams:
 
     embedding_dimension: Optional[int] = None
     context_length: Optional[int] = None
-    timeout: Optional[float | Timeout] = None
-    model_type: Optional[str] = None
-    provider_id: Optional[str] = None
-    provider_resource_id: Optional[str] = None
 
 
 class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):

@@ -57,7 +57,7 @@ class FileStore:
 
         pipeline_options = PdfPipelineOptions()
         pipeline_options.do_ocr = False
-        pipeline_options.do_table_structure = False
+        pipeline_options.do_table_structure = True
         pipeline_options.accelerator_options = AcceleratorOptions(device="auto")
 
         num_workers = os.cpu_count() or 1

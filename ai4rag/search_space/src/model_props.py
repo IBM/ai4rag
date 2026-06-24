@@ -2,8 +2,6 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from ai4rag.search_space.src.models import FoundationModels
-
 __all__ = [
     "get_system_message_text",
     "get_user_message_text",
@@ -136,30 +134,30 @@ _DEFAULT_OPENAI_USER_MESSAGE_TEXT = (
 
 
 _model_name_to_system_message_text = {
-    FoundationModels.META_LLAMA_3_1_70B_INSTRUCT: _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.META_LLAMA_3_1_8B_INSTRUCT: _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.META_LLAMA_3_3_70B_INSTRUCT: _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.META_LLAMA_4_MAVERICK_17B_128E_INSTRUCT_FP8: _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.GRANITE_3_8B_INSTRUCT: _DEFAULT_GRANITE_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.GRANITE_3_3_8B_INSTRUCT: _DEFAULT_GRANITE_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.MISTRAL_SMALL_3_1_24B_INSTRUCT: _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.MISTRAL_MEDIUM_2505: _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.MISTRAL_MISTRAL_LARGE: _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
-    FoundationModels.OPENAI_GPT_OSS_120B: _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT,
+    "meta-llama/llama-3-1-70b-instruct": _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
+    "meta-llama/llama-3-1-8b-instruct": _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
+    "meta-llama/llama-3-3-70b-instruct": _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
+    "meta-llama/llama-4-maverick-17b-128e-instruct-fp8": _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT,
+    "ibm/granite-3-8b-instruct": _DEFAULT_GRANITE_SYSTEM_MESSAGE_TEXT,
+    "ibm/granite-3-3-8b-instruct": _DEFAULT_GRANITE_SYSTEM_MESSAGE_TEXT,
+    "mistralai/mistral-small-3-1-24b-instruct-2503": _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
+    "mistralai/mistral-medium-2505": _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
+    "mistralai/mistral-large": _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT,
+    "openai/gpt-oss-120b": _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT,
 }
 
 
 _model_name_to_user_message_text = {
-    FoundationModels.META_LLAMA_3_1_70B_INSTRUCT: _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
-    FoundationModels.META_LLAMA_3_1_8B_INSTRUCT: _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
-    FoundationModels.META_LLAMA_3_3_70B_INSTRUCT: _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
-    FoundationModels.META_LLAMA_4_MAVERICK_17B_128E_INSTRUCT_FP8: _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
-    FoundationModels.GRANITE_3_8B_INSTRUCT: _DEFAULT_GRANITE_USER_MESSAGE_TEXT,
-    FoundationModels.GRANITE_3_3_8B_INSTRUCT: _DEFAULT_GRANITE_USER_MESSAGE_TEXT,
-    FoundationModels.MISTRAL_SMALL_3_1_24B_INSTRUCT: _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
-    FoundationModels.MISTRAL_MEDIUM_2505: _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
-    FoundationModels.MISTRAL_MISTRAL_LARGE: _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
-    FoundationModels.OPENAI_GPT_OSS_120B: _DEFAULT_OPENAI_USER_MESSAGE_TEXT,
+    "meta-llama/llama-3-1-70b-instruct": _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
+    "meta-llama/llama-3-1-8b-instruct": _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
+    "meta-llama/llama-3-3-70b-instruct": _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
+    "meta-llama/llama-4-maverick-17b-128e-instruct-fp8": _DEFAULT_LLAMA_USER_MESSAGE_TEXT,
+    "ibm/granite-3-8b-instruct": _DEFAULT_GRANITE_USER_MESSAGE_TEXT,
+    "ibm/granite-3-3-8b-instruct": _DEFAULT_GRANITE_USER_MESSAGE_TEXT,
+    "mistralai/mistral-small-3-1-24b-instruct-2503": _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
+    "mistralai/mistral-medium-2505": _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
+    "mistralai/mistral-large": _DEFAULT_MISTRAL_USER_MESSAGE_TEXT,
+    "openai/gpt-oss-120b": _DEFAULT_OPENAI_USER_MESSAGE_TEXT,
 }
 
 
@@ -171,13 +169,13 @@ _DEFAULT_LLAMA_CONTEXT_TEMPLATE = f"[document]: {{{CONTEXT_TEXT_PLACEHOLDER}}}\n
 _DEFAULT_CONTEXT_TEMPLATE = f"{{{CONTEXT_TEXT_PLACEHOLDER}}}"
 
 _model_name_to_context_template_text = {
-    FoundationModels.META_LLAMA_3_1_70B_INSTRUCT: _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
-    FoundationModels.META_LLAMA_3_1_8B_INSTRUCT: _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
-    FoundationModels.META_LLAMA_3_3_70B_INSTRUCT: _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
-    FoundationModels.META_LLAMA_4_MAVERICK_17B_128E_INSTRUCT_FP8: _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
-    FoundationModels.GRANITE_3_8B_INSTRUCT: _DEFAULT_GRANITE_CONTEXT_TEMPLATE,
-    FoundationModels.GRANITE_3_3_8B_INSTRUCT: _DEFAULT_GRANITE_CONTEXT_TEMPLATE,
-    FoundationModels.OPENAI_GPT_OSS_120B: _DEFAULT_CONTEXT_TEMPLATE,
+    "meta-llama/llama-3-1-70b-instruct": _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
+    "meta-llama/llama-3-1-8b-instruct": _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
+    "meta-llama/llama-3-3-70b-instruct": _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
+    "meta-llama/llama-4-maverick-17b-128e-instruct-fp8": _DEFAULT_LLAMA_CONTEXT_TEMPLATE,
+    "ibm/granite-3-8b-instruct": _DEFAULT_GRANITE_CONTEXT_TEMPLATE,
+    "ibm/granite-3-3-8b-instruct": _DEFAULT_GRANITE_CONTEXT_TEMPLATE,
+    "openai/gpt-oss-120b": _DEFAULT_CONTEXT_TEMPLATE,
 }
 
 

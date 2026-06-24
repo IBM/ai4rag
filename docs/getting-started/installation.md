@@ -61,7 +61,18 @@ To install only a specific subset of dependencies, use the corresponding extra n
 uv sync --extra test        # testing tools only
 uv sync --extra code_check  # linting/formatting tools only
 uv sync --extra docs        # documentation tools only
+uv sync --extra components  # pipeline component support (multiprocessing)
 ```
+
+### Optional Extras
+
+| Extra | Dependencies | Purpose |
+|-------|-------------|---------|
+| `components` | `multiprocess` | Full pipeline component support (multiprocessing for text extraction) |
+| `test` | `pytest`, `pytest-cov`, `pytest-mock` | Testing tools |
+| `code_check` | `black`, `pylint`, `isort` | Code quality tools |
+| `docs` | `mkdocs`, `mkdocs-material` | Documentation tools |
+| `dev` | All of the above | Full development environment |
 
 ---
 

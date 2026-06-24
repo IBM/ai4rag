@@ -148,7 +148,28 @@ graph TB
 - Compares generated answers to ground truth
 - Returns scores for optimization
 
-### 5. Utilities Layer
+### 5. Pipeline Components Layer
+
+**Data Components** (`ai4rag/components/data/`)
+
+- Reusable functions for pipeline data stages: document discovery, text extraction, indexing, and test data loading
+- Extracted from Kubeflow Pipeline components for standalone use
+- Provider-agnostic — accepts injected S3 clients and OGX clients
+
+**Optimization Components** (`ai4rag/components/optimization/`)
+
+- Search space preparation with model pre-selection
+- Full RAG optimization orchestration
+- Language detection for multilingual benchmark support
+
+**Assets Generator** (`ai4rag/components/assets_generator/`)
+
+- Programmatic Jupyter notebook generation from templates
+- HTML leaderboard rendering from pattern evaluations
+- RAG pattern JSON building from experiment results
+- Bundled notebook and script templates via `importlib.resources`
+
+### 6. Utilities Layer
 
 **Event Handlers** (`ai4rag/utils/event_handler/`)
 

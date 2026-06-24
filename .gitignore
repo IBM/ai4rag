@@ -58,7 +58,6 @@ ruff_cache/
 .python-version
 
 # --- Local data ---
-data/
 local/
 tmp/
 *.sqlite3

@@ -1,0 +1,121 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
+from pathlib import Path
+from typing import Any
+
+from ai4rag import __version__
+from ai4rag.components.assets_generator.notebook import Notebook
+
+
+def create_placeholder_mapping(
+    output_data: dict[str, Any],
+    test_data_key: str = "",
+    input_data_key: str = "",
+    ogx_base_url: str = "",
+) -> dict[str, Any]:
+    """Create a mapping from placeholder names to their values from a pattern definition.
+
+    Extracts values from the ``pattern.json`` structure produced by the
+    optimisation pipeline and returns a flat dictionary suitable for
+    ``NotebookCell.format_source()``.
+
+    Parameters
+    ----------
+    output_data : dict[str, Any]
+        The parsed ``pattern.json`` data.
+    test_data_key : str, default=""
+        S3 key of the test data file used as input to AI4RAG.
+    input_data_key : str, default=""
+        S3 key of the documents directory used as input to AI4RAG.
+    ogx_base_url : str, default=""
+        Base URL for the OGX API.  Falls back to an empty string when not
+        provided, allowing the generated notebook to prompt users for the URL.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary mapping placeholder names to their values.
+    """
+    mapping: dict[str, Any] = {}
+
+    mapping["AI4RAG_VERSION"] = __version__
+    mapping["PATTERN_NAME"] = output_data.get("name", "")
+    settings = output_data.get("settings", {})
+    fm = settings.get("generation", {})
+    mapping["FM_MODEL_ID"] = fm.get("model_id", "")
+    mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")
+    mapping["USER_MESSAGE"] = fm.get("user_message_text", "")
+    mapping["CONTEXT_TEXT"] = fm.get("context_template_text", "")
+
+    em = settings.get("embedding", {})
+    mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
+    mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
+    vs = settings.get("vector_store_binding", {})
+    mapping["PROVIDER_ID"] = vs.get("provider_id", "")
+    mapping["COLLECTION_NAME"] = vs.get("vector_store_id", "")
+
+    ret = settings.get("retrieval", {})
+    mapping["RETRIEVAL_METHOD"] = ret.get("method", "")
+    mapping["NUMBER_OF_CHUNKS"] = ret.get("number_of_chunks", 5)
+    mapping["SEARCH_MODE"] = ret.get("search_mode")
+    mapping["RANKER_STRATEGY"] = ret.get("ranker_strategy")
+    mapping["RANKER_K"] = ret.get("ranker_k")
+    mapping["RANKER_ALPHA"] = ret.get("ranker_alpha")
+
+    ch = settings.get("chunking", {})
+    mapping["CHUNKING_METHOD"] = ch.get("method", "")
+    mapping["CHUNK_SIZE"] = ch.get("chunk_size", 512)
+    mapping["CHUNK_OVERLAP"] = ch.get("chunk_overlap", 50)
+
+    mapping["TEST_DATA_KEY"] = test_data_key
+    mapping["INPUT_DATA_KEY"] = input_data_key
+
+    mapping["OGX_CLIENT_BASE_URL"] = ogx_base_url.strip() if ogx_base_url else ""
+
+    return mapping
+
+
+def generate_notebook_from_template(
+    notebook_template: str,
+    output_data: dict[str, Any],
+    output_notebook_path: str | Path,
+    test_data_key: str = "",
+    input_data_key: str = "",
+    ogx_base_url: str = "",
+) -> None:
+    """Generate a filled notebook from a template and pattern configuration.
+
+    Loads the named template, substitutes all placeholders with values
+    extracted from *output_data*, and writes the result to disk.
+
+    Parameters
+    ----------
+    notebook_template : str
+        Template base name without the ``_template.ipynb`` suffix
+        (e.g. ``"ogx_inference"`` or ``"ogx_indexing"``).
+    output_data : dict[str, Any]
+        The parsed ``pattern.json`` data.
+    output_notebook_path : str | Path
+        Path where the generated notebook is saved.
+    test_data_key : str, default=""
+        S3 key of the test data file used as input to AI4RAG.
+    input_data_key : str, default=""
+        S3 key of the documents directory used as input to AI4RAG.
+    ogx_base_url : str, default=""
+        Base URL for the OGX API.
+    """
+    placeholder_mapping = create_placeholder_mapping(
+        output_data,
+        test_data_key=test_data_key,
+        input_data_key=input_data_key,
+        ogx_base_url=ogx_base_url,
+    )
+    notebook = Notebook.load(
+        notebook_name=f"{notebook_template}_template.ipynb",
+    )
+    filled_cells = [cell.format_source(placeholder_mapping) for cell in notebook.cells]
+
+    notebook = Notebook(cells=filled_cells)
+    notebook.save(Path(output_notebook_path))

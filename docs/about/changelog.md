@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased] — 0.8.0
+
+### Added
+- `ai4rag.components` package — pipeline step business logic extracted from `pipelines-components`, usable standalone or within KFP wrappers
+    - `components.data`: `discover_documents()`, `extract_text()`, `index_documents()`, `load_test_data()`
+    - `components.optimization`: `prepare_search_space_report()`, `run_rag_optimization()`, `detect_benchmark_language()`
+    - Shared utilities: `create_s3_client()`, `create_ogx_client()`, `load_docling_documents()`
+- `ai4rag.components.assets_generator` — notebook, leaderboard, and pattern artefact generation
+    - `Notebook` / `NotebookCell` classes with `importlib.resources` template loading
+    - `build_leaderboard_html()` for styled HTML leaderboard generation
+    - `build_pattern_json()` for RAG pattern definition building
+    - `generate_notebook_from_template()` for notebook rendering from templates
+    - Bundled notebook and script templates as package data
+- `ai4rag.utils.compat.ensure_sqlite3()` — centralized pysqlite3 patch for RHEL 9 / older sqlite
+- `boto3` added as a core dependency for S3-compatible storage access
+- Optional dependency extra: `ai4rag[components]` (multiprocessing support for text extraction)
+- Pipeline Components user guide and API reference documentation
+
+### Changed
+- `components/assets_generator/__init__.py` now exports public API symbols (`Notebook`, `NotebookCell`, `build_leaderboard_html`, etc.)
+
+---
+
 ## [0.7.0](https://github.com/IBM/ai4rag/releases/tag/v0.7.0)
 
 ### Added
