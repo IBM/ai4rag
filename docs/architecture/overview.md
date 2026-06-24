@@ -167,7 +167,7 @@ graph TB
 - Programmatic Jupyter notebook generation from templates
 - HTML leaderboard rendering from pattern evaluations
 - RAG pattern JSON building from experiment results
-- Bundled notebook and script templates via `importlib.resources`
+- Bundled notebook templates via `importlib.resources`
 
 ### 6. Utilities Layer
 

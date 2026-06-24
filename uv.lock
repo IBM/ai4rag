@@ -89,14 +89,13 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "ai4rag", extras = ["code-check"], marker = "extra == 'dev'" },
-    { name = "ai4rag", extras = ["components"], marker = "extra == 'dev'" },
     { name = "ai4rag", extras = ["docs"], marker = "extra == 'dev'" },
     { name = "ai4rag", extras = ["test"], marker = "extra == 'dev'" },
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
     { name = "docling", specifier = "~=2.88.0" },
-    { name = "docling-core", extras = ["chunking", "chunking-openai"], specifier = "~=2.78.1" },
+    { name = "docling-core", extras = ["chunking", "chunking-openai"], specifier = "~=2.84.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
@@ -854,7 +853,7 @@ wheels = [
 
 [[package]]
 name = "docling-core"
-version = "2.78.1"
+version = "2.84.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "defusedxml" },
@@ -870,9 +869,9 @@ dependencies = [
     { name = "typer" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/f7/b13e4449cf11e6c17d20951fd17812cf9f37af0cbe0434130435e683c0ea/docling_core-2.78.1.tar.gz", hash = "sha256:7463a2ce3e70590f330cf16dce11a7dbb761ece007a50e9082b44b7fed849820", size = 333514, upload-time = "2026-06-04T08:05:51.21Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/cb/bc/41d9d5a38502538a7cd3c7fb66a06eb676f8cc1d6d275d7fbe971352efd7/docling_core-2.84.0.tar.gz", hash = "sha256:331035d5032be683a6d66d476146652491d2c75e4562e04da3f1a8d989d74bfc", size = 317993, upload-time = "2026-06-23T09:44:42.339Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a5/d7/8331ddd40cbd2887b616694b19255710999325a8dc7b6590f3d0ba63372b/docling_core-2.78.1-py3-none-any.whl", hash = "sha256:a700d4dc98592e95c05c57ae8d25698f514b8dfbe25e97f36a314f85e9cc0684", size = 285702, upload-time = "2026-06-04T08:05:49.367Z" },
+    { url = "https://files.pythonhosted.org/packages/50/d4/a8742fdd4c8b782608005ffde77a24bbfd54602c4c49825bf04ea25363ab/docling_core-2.84.0-py3-none-any.whl", hash = "sha256:2aee881b94138234c703298066b5ed94999490323ae6a29cbe5110f9248b83dd", size = 257936, upload-time = "2026-06-23T09:44:40.506Z" },
 ]
 
 [package.optional-dependencies]
