@@ -42,9 +42,6 @@ def build_pattern_json(
             {
                 "type": "file_search",
                 "vector_store_ids": [pattern["settings"]["vector_store_binding"]["vector_store_id"]],
-                "ranking_options": {
-                    "max_num_results": pattern["settings"]["retrieval"]["number_of_chunks"],
-                },
                 "max_num_results": pattern["settings"]["retrieval"]["number_of_chunks"],
             },
         ],
@@ -58,12 +55,18 @@ def build_pattern_json(
     ranker_alpha = retrieval_settings.get("ranker_alpha")
 
     if search_mode == "hybrid" and ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
-        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]["impact_factor"] = ranker_k
+        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
+            "ranker": "rrf",
+            "impact_factor": ranker_k,
+        }
     elif search_mode == "hybrid" and ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
-        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]["alpha"] = ranker_alpha
+        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
+            "ranker": "weighted",
+            "alpha": ranker_alpha,
+        }
     else:
-        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"].update(
-            {"ranker": "auto", "weights": {"vector": 1.0, "neural": 0.0, "keyword": 0.0}}
-        )
+        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
+            "weights": {"vector": 1.0, "keyword": 0.0}
+        }
 
     return pattern
