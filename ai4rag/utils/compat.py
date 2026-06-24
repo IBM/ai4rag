@@ -14,7 +14,7 @@ def ensure_sqlite3() -> None:
 
     Safe to call multiple times — the patch is idempotent.
     """
-    if "pysqlite3" in sys.modules or getattr(sys.modules.get("sqlite3"), "__name__", None) == "pysqlite3":
+    if getattr(sys.modules.get("sqlite3"), "__name__", None) == "pysqlite3":
         return
     try:
         import pysqlite3  # type: ignore[import-untyped]
