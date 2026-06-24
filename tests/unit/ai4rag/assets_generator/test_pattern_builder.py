@@ -140,7 +140,7 @@ class TestBuildPatternJson:
         build_pattern_json(pattern)
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
-        assert ro == {"weights": {"vector": 1.0, "keyword": 0.0}}
+        assert ro == {"ranker": "weighted", "alpha": 1.0}
         assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_preserves_existing_pattern_fields(self):
