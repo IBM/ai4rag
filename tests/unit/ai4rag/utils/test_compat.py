@@ -41,16 +41,15 @@ class TestEnsureSqlite3:
     # Idempotency
     # ------------------------------------------------------------------
 
-    def test_idempotent_when_pysqlite3_already_in_modules(self, mocker):
-        """Calling ``ensure_sqlite3`` is a no-op if ``pysqlite3`` is already loaded."""
+    def test_patches_sqlite3_even_if_pysqlite3_already_imported(self):
+        """``ensure_sqlite3`` must substitute ``sqlite3`` even when ``pysqlite3`` was already imported independently."""
         fake_pysqlite3 = types.ModuleType("pysqlite3")
         sys.modules["pysqlite3"] = fake_pysqlite3
 
         ensure_sqlite3 = self._import_ensure_sqlite3()
         ensure_sqlite3()
 
-        # sqlite3 should NOT be overwritten (the function returned early).
-        assert sys.modules.get("sqlite3") is not fake_pysqlite3
+        assert sys.modules["sqlite3"] is fake_pysqlite3
 
     def test_idempotent_when_sqlite3_already_patched(self):
         """Calling ``ensure_sqlite3`` is a no-op if ``sqlite3`` is already the pysqlite3 module."""
