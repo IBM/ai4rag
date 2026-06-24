@@ -36,8 +36,8 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 ai4RAG can run experiments using an [OGX](https://github.com/ogx-ai/ogx) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
 
-- **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 1.0.0 (Python package used by ai4RAG; installs with this project).
-- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 1.0.0.
+- **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 1.1.0 (Python package used by ai4RAG; installs with this project).
+- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 1.1.0.
 - **API reference:** [OGX API docs](https://ogx-ai.github.io/docs/) — HTTP API used by the client.
 
 **Features used by ai4rag**

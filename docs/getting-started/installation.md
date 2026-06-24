@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) OGX Server** >= 1.0.0: With at least one foundation model, one embedding model, and vector database configured
+- **(Optional) OGX Server** >= 1.1.0: With at least one foundation model, one embedding model, and vector database configured
 
 
 !!! note "External models and vector database integration"
@@ -53,7 +53,7 @@ The `dev` optional dependencies include:
 - Testing tools (`pytest`, `pytest-cov`, `pytest-mock`)
 - Code quality tools (`black`, `pylint`, `isort`)
 - Documentation tools (`mkdocs`, `mkdocs-material`)
-- Development utilities (`beautifulsoup4`, `pypdf`, `dotenv`)
+- Development utilities (`beautifulsoup4`, `dotenv`, `ipykernel`)
 
 To install only a specific subset of dependencies, use the corresponding extra name (see `pyproject.toml`):
 
@@ -61,14 +61,12 @@ To install only a specific subset of dependencies, use the corresponding extra n
 uv sync --extra test        # testing tools only
 uv sync --extra code_check  # linting/formatting tools only
 uv sync --extra docs        # documentation tools only
-uv sync --extra components  # pipeline component support (multiprocessing)
 ```
 
 ### Optional Extras
 
 | Extra | Dependencies | Purpose |
 |-------|-------------|---------|
-| `components` | `multiprocess` | Full pipeline component support (multiprocessing for text extraction) |
 | `test` | `pytest`, `pytest-cov`, `pytest-mock` | Testing tools |
 | `code_check` | `black`, `pylint`, `isort` | Code quality tools |
 | `docs` | `mkdocs`, `mkdocs-material` | Documentation tools |
@@ -84,7 +82,7 @@ Follow these steps:
 ### 1. Install OGX
 
 ```bash
-pip install "ogx>=1.0.0"
+pip install "ogx>=1.1.0"
 ```
 
 ### 2. Configure Your Stack

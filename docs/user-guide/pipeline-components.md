@@ -36,12 +36,7 @@ and Kubernetes-specific concerns (secrets, resource limits).  All business logic
 
 ## Installation
 
-S3 support (`boto3`) is included in the core `ai4rag` install. For text extraction with multiprocessing, install the `components` extra:
-
-```bash
-# Full pipeline component support (adds multiprocessing)
-pip install "ai4rag[components]"
-```
+S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction (`docling`) are all included in the core `ai4rag` install — no extra dependencies are needed to use pipeline components.
 
 ## Data Components
 
@@ -157,11 +152,11 @@ The `ai4rag.components` package provides three shared utility modules used acros
 
 | Module | Function | Purpose |
 |--------|----------|---------|
-| `_s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `_ogx_client` | `create_ogx_client()` | OGX client with SSL self-signed cert fallback |
-| `_docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
+| `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
+| `utils.ogx_client` | `create_ogx_client()` | OGX client with SSL self-signed cert fallback |
+| `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
-These are importable from `ai4rag.components`:
+These are importable from `ai4rag.components` or `ai4rag.components.utils`:
 
 ```python
 from ai4rag.components import create_s3_client, create_ogx_client, load_docling_documents

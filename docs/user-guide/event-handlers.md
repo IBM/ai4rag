@@ -57,12 +57,11 @@ def on_pattern_creation(
 
 ```python
 {
-    "pattern_name": "Pattern1",
+    "name": "Pattern1",
     "iteration": 0,
+    "max_combinations": 24,
     "final_score": 0.72,
-    "execution_time": 134,           # seconds
-    "schema_version": "1.0",
-    "producer": "ai4rag",
+    "duration_seconds": 134,
     "scores": {
         "scores": {
             "faithfulness":        {"mean": 0.72, "ci_low": 0.61, "ci_high": 0.83},
@@ -76,10 +75,10 @@ def on_pattern_creation(
     },
     "settings": {
         "chunking":    {"method": "recursive", "chunk_size": 512, "chunk_overlap": 64},
-        "embedding":   {"model_id": "...", "distance_metric": "cosine", ...},
+        "embedding":   {"model_id": "...", "embedding_params": {"embedding_dimension": 768}},
         "retrieval":   {"method": "simple", "number_of_chunks": 5, "search_mode": "vector"},
         "generation":  {"model_id": "...", ...},
-        "vector_store": {"ogx_vector_io_provider_id": "local_chroma", "collection_name": "..."},
+        "vector_store_binding": {"provider_id": "local_chroma", "vector_store_id": "..."},
     },
 }
 ```
@@ -149,7 +148,7 @@ class MyEventHandler(BaseEventHandler):
         self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
     ) -> None:
         requests.post("https://my-service/patterns", json={
-            "name": payload["pattern_name"],
+            "name": payload["name"],
             "score": payload["final_score"],
             "settings": payload["settings"],
         })

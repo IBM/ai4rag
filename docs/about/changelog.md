@@ -7,10 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased] — 0.8.0
+## [0.8.0](https://github.com/IBM/ai4rag/releases/tag/v0.8.0)
 
 ### Added
-- `ai4rag.components` package — pipeline step business logic extracted from `pipelines-components`, usable standalone or within KFP wrappers
+- `ai4rag.components` package — pipeline step business logic consolidated from `pipelines-components`, usable standalone or within KFP wrappers
     - `components.data`: `discover_documents()`, `extract_text()`, `index_documents()`, `load_test_data()`
     - `components.optimization`: `prepare_search_space_report()`, `run_rag_optimization()`, `detect_benchmark_language()`
     - Shared utilities: `create_s3_client()`, `create_ogx_client()`, `load_docling_documents()`
@@ -21,12 +21,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `generate_notebook_from_template()` for notebook rendering from templates
     - Bundled notebook and script templates as package data
 - `ai4rag.utils.compat.ensure_sqlite3()` — centralized pysqlite3 patch for RHEL 9 / older sqlite
-- `boto3` added as a core dependency for S3-compatible storage access
-- Optional dependency extra: `ai4rag[components]` (multiprocessing support for text extraction)
+- `boto3` and `multiprocess` added as core dependencies
+- `docling` promoted from dev-only to core dependency
 - Pipeline Components user guide and API reference documentation
 
 ### Changed
-- `components/assets_generator/__init__.py` now exports public API symbols (`Notebook`, `NotebookCell`, `build_leaderboard_html`, etc.)
+- **Breaking:** Event handler `PatternPayload` schema restructured — `pattern_name` → `name`, `execution_time` → `duration_seconds`, `vector_store` → `vector_store_binding`, `datasource_type` → `provider_id`, `collection_name` → `vector_store_id`
+- **Breaking:** Removed `schema_version` and `producer` fields from `PatternPayload`
+- **Breaking:** Removed `distance_metric` from `EmbeddingSettings` and indexing params
+- `VectorStoreSettings` and `EmbeddingSettings` TypedDicts now use `total=False` for optional fields
+- `ogx-client` dependency updated from `~=1.0.0` to `~=1.1.0`
+- `docling-core` dependency updated from `~=2.74.1` to `~=2.84.0`
+- Hybrid search payload now conditionally includes `ranker_k` (only for `rrf` strategy) and `ranker_alpha` (only for `weighted` strategy)
+- Vector store provider type is now resolved dynamically from the OGX server when available
+- `max_combinations` from search space now included in pattern creation payload
+
+### Removed
+- `ai4rag.search_space.src.models` module (`FoundationModels` and `EmbeddingModels` enum classes) — model IDs are now plain strings throughout the codebase
+- `EmbeddingModels.get_distance_metric()` utility — distance metric is no longer tracked
 
 ---
 
