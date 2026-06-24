@@ -66,7 +66,9 @@ def build_pattern_json(
         }
     else:
         pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
-            "weights": {"vector": 1.0, "keyword": 0.0}
+            # simulate semantic-only search
+            "ranker": "weighted",
+            "alpha": 1.0,
         }
 
     return pattern
