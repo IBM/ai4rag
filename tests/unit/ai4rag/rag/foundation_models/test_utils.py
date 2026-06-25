@@ -53,7 +53,7 @@ class TestValidatePromptTemplatesPlaceholders:
         with pytest.raises(ValueError) as exc_info:
             _validate_prompt_templates_placeholders(template, "context_template_text")
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected exactly one" in str(exc_info.value)
+        assert "expected 1 but got 0" in str(exc_info.value)
 
     def test_context_template_with_doc_number(self):
         """Test that context template may include optional doc_number placeholder."""
@@ -124,7 +124,7 @@ class TestValidatePromptTemplatesPlaceholders:
         with pytest.raises(ValueError) as exc_info:
             _validate_prompt_templates_placeholders(template, "context_template_text")
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected exactly one" in str(exc_info.value)
+        assert "expected 1 but got 2" in str(exc_info.value)
 
     def test_user_message_duplicate_placeholder(self):
         """Test that user message with duplicate placeholder raises ValueError."""
@@ -230,7 +230,7 @@ class TestRAGPromptTemplateString:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             validator.validate(None, template)
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected exactly one" in str(exc_info.value)
+        assert "expected 1 but got 0" in str(exc_info.value)
 
     def test_context_template_with_doc_number(self):
         """Test that context template may include optional doc_number placeholder."""
@@ -310,7 +310,7 @@ class TestRAGPromptTemplateString:
         with pytest.raises(ConstraintsValidationError) as exc_info:
             validator.validate(None, template)
         assert "Incorrect number of placeholders" in str(exc_info.value)
-        assert "expected exactly one" in str(exc_info.value)
+        assert "expected 1 but got 2" in str(exc_info.value)
 
     def test_user_message_duplicate_placeholder(self):
         """Test that user message with duplicate placeholder raises ConstraintsValidationError."""
