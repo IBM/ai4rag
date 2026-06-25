@@ -4,7 +4,6 @@
 # -----------------------------------------------------------------------------
 def build_pattern_json(
     pattern: dict,
-    detected_language: dict | None = None,
 ) -> dict:
     """Update pattern information with detected language and responses template.
 
@@ -13,17 +12,12 @@ def build_pattern_json(
     pattern : dict
         A single evaluation result object carrying ``indexing_params``,
         ``rag_params``, ``pattern_name``, ``collection``, etc.
-    detected_language : dict | None, default=None
-        Language detection result (``{"code": "...", "name": "..."}``).
 
     Returns
     -------
     dict
         Pattern definition suitable for JSON serialisation.
     """
-    if detected_language:
-        pattern["settings"]["generation"]["detected_language"] = detected_language
-
     pattern["settings"]["responses_template"] = {
         "model": pattern["settings"]["generation"]["model_id"],
         "stream": False,
