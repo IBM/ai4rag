@@ -10,6 +10,7 @@ from docling_core.types.doc import DoclingDocument
 from ai4rag.rag.chunking.base_chunker import BaseChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
+
 from ..embedding.base_model import BaseEmbeddingModel
 from ..foundation_models.base_model import BaseFoundationModel
 from .base_template import BaseRAGTemplate, RAGTemplateError
