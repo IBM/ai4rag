@@ -20,6 +20,7 @@ class MockedFoundationModel(BaseFoundationModel[None, dict[str, Any] | None]):
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language_autodetect: bool = False,
     ):
         super().__init__(
             client=client,
@@ -28,6 +29,7 @@ class MockedFoundationModel(BaseFoundationModel[None, dict[str, Any] | None]):
             system_message_text=system_message_text,
             user_message_text=user_message_text,
             context_template_text=context_template_text,
+            language_autodetect=language_autodetect,
         )
 
     def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:

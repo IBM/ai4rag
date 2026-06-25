@@ -97,19 +97,6 @@ class TestBuildPatternJson:
         result = build_pattern_json(pattern)
         assert result is pattern
 
-    def test_no_detected_language_by_default(self):
-        """When detected_language is None, no detected_language key appears in generation."""
-        pattern = _make_pattern()
-        build_pattern_json(pattern)
-        assert "detected_language" not in pattern["settings"]["generation"]
-
-    def test_detected_language_injected(self):
-        """Non-English language detection must inject detected_language into generation."""
-        pattern = _make_pattern()
-        lang = {"code": "de", "name": "German"}
-        build_pattern_json(pattern, detected_language=lang)
-        assert pattern["settings"]["generation"]["detected_language"] == lang
-
     def test_hybrid_rrf_ranking_options(self):
         """Hybrid search with RRF ranker must set ranker and impact_factor in ranking_options."""
         pattern = _make_pattern()

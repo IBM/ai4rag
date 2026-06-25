@@ -3,10 +3,9 @@ name: Deploy Documentation
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch to build docs from'
+      tag:
+        description: 'Git tag to build docs from (e.g. v0.8.1)'
         required: true
-        default: 'main'
         type: string
 
 permissions:
@@ -20,9 +19,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.inputs.branch || github.ref }}
-          fetch-depth: 0  # Fetch all history for git-revision-date-localized plugin
-          token: ${{ secrets.GITHUB_TOKEN }}  # Use GITHUB_TOKEN for authentication
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -32,21 +30,8 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra docs
 
-      - name: Extract version
-        id: version
-        run: |
-          VERSION=$(uv run python -c "import ai4rag; print(ai4rag.__version__)")
-          # Strip 'v' prefix if present
-          VERSION=${VERSION#v}
-          echo "docs_version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Configure Git for mike
+      - name: Deploy documentation
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Deploy documentation (manual trigger)
-        if: github.event_name == 'workflow_dispatch'
-        run: |
-          uv run mike deploy --push ${{ steps.version.outputs.docs_version }}
+          uv run mkdocs gh-deploy --force
