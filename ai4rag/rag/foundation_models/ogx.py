@@ -32,6 +32,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language_autodetect: bool = False,
     ):
 
         super().__init__(
@@ -41,6 +42,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
             system_message_text=system_message_text,
             user_message_text=user_message_text,
             context_template_text=context_template_text,
+            language_autodetect=language_autodetect,
         )
 
     @property

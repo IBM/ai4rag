@@ -37,13 +37,17 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language_autodetect: bool = False,
     ):
         self.client = client
         self.model_id = model_id
         self.params = params
+        self.language_autodetect = language_autodetect
         self.system_message_text = system_message_text or get_system_message_text(model_name=model_id)
         self.user_message_text = (
-            user_message_text if user_message_text is not None else get_user_message_text(model_name=model_id)
+            user_message_text
+            if user_message_text is not None
+            else get_user_message_text(model_name=model_id, language_autodetect=language_autodetect)
         )
         self.context_template_text = (
             context_template_text

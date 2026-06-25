@@ -54,6 +54,24 @@ class TestFoundationModel:
         assert model.client == mock_client
         assert model.model_id == "test-model-123"
         assert model.params == model_params
+        assert model.language_autodetect is False
+
+    def test_language_autodetect_passed_to_default_user_message(self, mock_client, model_params, mocker):
+        """Test that language_autodetect is forwarded when resolving default user message text."""
+        mock_get_user_message = mocker.patch(
+            "ai4rag.rag.foundation_models.base_model.get_user_message_text",
+            return_value="Question: {question}\nReferences: {reference_documents}",
+        )
+        ConcreteFoundationModel(
+            client=mock_client,
+            model_id="meta-llama/llama-3-1-8b-instruct",
+            params=model_params,
+            language_autodetect=True,
+        )
+        mock_get_user_message.assert_called_once_with(
+            model_name="meta-llama/llama-3-1-8b-instruct",
+            language_autodetect=True,
+        )
 
     def test_repr(self, foundation_model):
         """Test __repr__ returns model_id."""
