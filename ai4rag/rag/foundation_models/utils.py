@@ -7,7 +7,6 @@ from typing import Literal, TypeVar
 
 from ai4rag.search_space.src.model_props import (
     CONTEXT_TEXT_PLACEHOLDER,
-    DOCUMENT_NUMBER_PLACEHOLDER,
     QUESTION_PLACEHOLDER,
     REFERENCE_DOCUMENTS_PLACEHOLDER,
 )
@@ -30,12 +29,11 @@ class RAGPromptTemplateString(Validator[str]):
         super().__init__()
         self.template_name = template_name
 
-        if template_name == "context_template_text":
-            self._required_placeholders: tuple[str, ...] = (CONTEXT_TEXT_PLACEHOLDER,)
-            self._optional_placeholders: tuple[str, ...] = (DOCUMENT_NUMBER_PLACEHOLDER,)
-        else:
-            self._required_placeholders = (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
-            self._optional_placeholders = ()
+        self._required_placeholders: tuple[str, ...] = (
+            (CONTEXT_TEXT_PLACEHOLDER,)
+            if template_name == "context_template_text"
+            else (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
+        )
 
     def validate(self, _: object, value: T) -> T:
         """
@@ -65,20 +63,18 @@ class RAGPromptTemplateString(Validator[str]):
             raise TypeError(f"Expected {value!r} to be a str or None.")
 
         placeholders_count = 0
-        allowed = self._required_placeholders + self._optional_placeholders
 
         for _, field_name, _, _ in Formatter().parse(value):
             if field_name is None:
                 # when there is text NOT followed by a placeholder template
                 continue
-            if field_name not in allowed:
+            if field_name not in self._required_placeholders:
                 raise ConstraintsValidationError(
                     f"Custom {field_name.split('_')[0]} template text got unexpected placeholder `{field_name}`, "
-                    f"valid placeholders are `{allowed}`."
+                    f"valid placeholders are `{self._required_placeholders}`."
                 )
 
-            if field_name in self._required_placeholders:
-                placeholders_count += 1
+            placeholders_count += 1
 
         if placeholders_count != len(self._required_placeholders):
             raise ConstraintsValidationError(
@@ -118,28 +114,24 @@ def _validate_prompt_templates_placeholders(
     """
     if template_name == "context_template_text":
         required_placeholders = (CONTEXT_TEXT_PLACEHOLDER,)
-        optional_placeholders = (DOCUMENT_NUMBER_PLACEHOLDER,)
     elif template_name == "user_message_text":
         required_placeholders = (QUESTION_PLACEHOLDER, REFERENCE_DOCUMENTS_PLACEHOLDER)
-        optional_placeholders = ()
     else:
         raise ValueError(f"Cannot validate presence of expected template placeholders on field: {template_name}")
 
     placeholders_count = 0
-    allowed = required_placeholders + optional_placeholders
 
     for _, field_name, _, _ in Formatter().parse(template_str):
         if field_name is None:
             # when there is text NOT followed by a placeholder template
             continue
-        if field_name not in allowed:
+        if field_name not in required_placeholders:
             raise ValueError(
                 f"Custom {field_name.split('_')[0]} template text got unexpected placeholder `{field_name}`, "
-                f"valid placeholders are `{allowed}`."
+                f"valid placeholders are `{required_placeholders}`."
             )
 
-        if field_name in required_placeholders:
-            placeholders_count += 1
+        placeholders_count += 1
 
     if placeholders_count != len(required_placeholders):
         raise ValueError(
