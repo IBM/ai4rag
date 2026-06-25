@@ -34,6 +34,7 @@ def simple_report() -> SearchSpaceReport:
             "foundation_model": ["model-a"],
             "embedding_model": ["emb-a"],
         },
+        detected_language={"code": "ja", "name": "Japanese"},
     )
 
 
@@ -92,6 +93,31 @@ class TestSearchSpaceReportSaveYaml:
         assert out_file.exists()
         data = yml.safe_load(out_file.read_text())
         assert isinstance(data, dict)
+
+    def test_save_yaml_includes_detected_language(self, simple_report, tmp_path: Path):
+        """When detected_language is set, it must appear in the YAML output."""
+        import yaml as yml
+
+        out_file = tmp_path / "report.yaml"
+        simple_report.save_yaml(out_file)
+
+        data = yml.safe_load(out_file.read_text())
+        assert data["detected_language"] == {"code": "ja", "name": "Japanese"}
+
+    def test_save_yaml_omits_language_when_none(self, tmp_path: Path):
+        """When detected_language is None, the key must not appear in output."""
+        import yaml as yml
+
+        report = SearchSpaceReport(
+            search_space={"chunk_size": [256]},
+            selected_models={"foundation_model": []},
+            detected_language=None,
+        )
+        out_file = tmp_path / "report.yaml"
+        report.save_yaml(out_file)
+
+        data = yml.safe_load(out_file.read_text())
+        assert "detected_language" not in data
 
     def test_save_yaml_creates_parent_directories(self, simple_report, tmp_path: Path):
         """save_yaml must create intermediate directories if they do not exist."""
