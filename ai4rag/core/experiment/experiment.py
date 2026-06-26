@@ -337,6 +337,7 @@ class AI4RAGExperiment:
                 "context_template_text": context_template_text,
                 "user_message_text": user_message_text,
                 "system_message_text": system_message_text,
+                "language": foundation_model.language.to_dict()
             },
         }
 

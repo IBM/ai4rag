@@ -11,8 +11,6 @@ from pydantic import BaseModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
 
-# pylint: disable=duplicate-code
-
 
 class OGXModelParameters(BaseModel):
     """Parameters to use for OGXFoundationModel."""
@@ -32,6 +30,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language: str = None
     ):
 
         super().__init__(
@@ -41,6 +40,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
             system_message_text=system_message_text,
             user_message_text=user_message_text,
             context_template_text=context_template_text,
+            language=language,
         )
 
     @property
@@ -58,7 +58,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         else:
             self._params = OGXModelParameters()
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """
         Chat completion for communication with selected foundation model.
 
@@ -72,12 +72,15 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         str
             Chat response from the model.
         """
-        response_chat = self.client.chat.completions.create(
-            model=self.model_id,
-            messages=messages,
-            max_completion_tokens=self.params.max_completion_tokens,
-            temperature=self.params.temperature,
-        )
+
+        chat_params = {
+            "max_completion_tokens": self.params.max_completion_tokens,
+            "temperature": self.params.temperature,
+        }
+
+        updated_params = chat_params | kwargs
+
+        response_chat = self.client.chat.completions.create(model=self.model_id, messages=messages, **updated_params)
         response_choices = response_chat.choices
 
         return response_choices

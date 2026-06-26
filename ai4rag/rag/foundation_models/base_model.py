@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Generic, TypedDict, TypeVar
 
-from ai4rag.rag.foundation_models.utils import RAGPromptTemplateString
+from ai4rag.rag.foundation_models.utils import validate_prompt_templates_placeholders
 from ai4rag.search_space.src.model_props import (
     get_context_template_text,
     get_system_message_text,
@@ -23,11 +24,17 @@ class MessageTyped(TypedDict):
     content: str
 
 
+@dataclass
+class Language:
+    code: str
+    name: str
+
+    def to_dict(self) -> dict:
+        return {"code": self.code, "name": self.name}
+
+
 class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT], ABC):
     """Interface definition for the foundation model used for `ai4rag`."""
-
-    user_message_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="user_message_text")
-    context_template_text: RAGPromptTemplateString = RAGPromptTemplateString(template_name="context_template_text")
 
     def __init__(
         self,
@@ -37,19 +44,16 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language: str = None,
     ):
+        language = language or Language(code="", name="auto")
         self.client = client
         self.model_id = model_id
         self.params = params
         self.system_message_text = system_message_text or get_system_message_text(model_name=model_id)
-        self.user_message_text = (
-            user_message_text if user_message_text is not None else get_user_message_text(model_name=model_id)
-        )
-        self.context_template_text = (
-            context_template_text
-            if context_template_text is not None
-            else get_context_template_text(model_name=model_id)
-        )
+        self.user_message_text = user_message_text or get_user_message_text(model_name=model_id, language=language.name)
+        self.context_template_text = context_template_text or get_context_template_text(model_name=model_id)
+        self.language = language
 
     def __repr__(self) -> str:
         return self.model_id
@@ -71,6 +75,35 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
             return NotImplemented
         return self.model_id < other.model_id
 
+    @property
+    def user_message_text(self):
+        return self._user_message_text
+
+    @property
+    def language(self):
+        return self._language
+
+    @language.setter
+    def language(self, value: Language):
+        self._language = value
+        self.user_message_text = get_user_message_text(model_name=self.model_id, language=value.name)
+
+    @user_message_text.setter
+    def user_message_text(self, value: str):
+        self._user_message_text = validate_prompt_templates_placeholders(
+            template_str=value, template_name="user_message_text"
+        )
+
+    @property
+    def context_template_text(self):
+        return self._context_template_text
+
+    @context_template_text.setter
+    def context_template_text(self, value: str):
+        self._context_template_text = validate_prompt_templates_placeholders(
+            template_str=value, template_name="context_template_text"
+        )
+
     @abstractmethod
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """Chat with the model base on the client capabilities."""
