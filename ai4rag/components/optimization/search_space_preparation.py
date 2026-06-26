@@ -112,6 +112,9 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     top_k_embedding: int = _DEFAULT_TOP_K_EMBEDDING,
     sample_size: int = _DEFAULT_SAMPLE_SIZE,
     random_seed: int = _DEFAULT_SEED,
+    chunking_methods: list[str] | None = None,
+    contextual_enrichment_enabled: bool | None = None,
+    max_threads: int = 10,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
@@ -146,6 +149,20 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         Number of benchmark records sampled for model pre-selection.
     random_seed
         Seed for reproducible sampling.
+    chunking_methods
+        When provided, constrains the ``chunking_method`` dimension of the
+        search space to only these methods (e.g. ``["recursive"]`` or
+        ``["hybrid"]``).  ``None`` uses the platform defaults (both
+        ``"recursive"`` and ``"hybrid"``).
+    contextual_enrichment_enabled
+        Whether LLM contextual enrichment should be applied at index
+        time.  Stored as metadata in the report for downstream
+        consumption.  ``None`` omits it from the report.
+    max_threads
+        Maximum number of concurrent threads used when querying the
+        RAG service during benchmark evaluation.  Lower values reduce
+        per-request concurrency (useful when each request carries more
+        retrieved context).  Defaults to ``10``.
 
     Returns
     -------
@@ -165,6 +182,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
+    _validate_chunking_methods(chunking_methods)
 
     # Build payload and create search space via OGX
     payload: dict[str, list[dict[str, str]]] = {}
@@ -191,6 +209,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
             embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
             metric=metric,
+            max_threads=max_threads,
         )
         mps.evaluate_patterns()
         selected = mps.select_models(
@@ -215,6 +234,14 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     }
     verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
+
+    if chunking_methods is not None:
+        allowed = set(chunking_methods)
+        verbose_repr["chunking_method"] = [m for m in verbose_repr["chunking_method"] if m in allowed]
+        _logger.info("Chunking methods constrained to: %s", verbose_repr["chunking_method"])
+
+    if contextual_enrichment_enabled is not None:
+        _logger.info("Contextual enrichment enabled: %s", contextual_enrichment_enabled)
 
     return SearchSpaceReport(
         search_space=verbose_repr,

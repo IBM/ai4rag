@@ -12,6 +12,7 @@ import pytest
 from ai4rag.components.optimization.search_space_preparation import (
     SUPPORTED_METRICS,
     SearchSpaceReport,
+    _validate_chunking_methods,
     _validate_model_list,
     prepare_search_space_report,
 )
@@ -170,3 +171,130 @@ class TestPrepareSearchSpaceReportValidation:
                 ogx_client=mock_ogx_client,
                 embedding_models="not-a-list",  # type: ignore[arg-type]
             )
+
+    def test_invalid_chunking_methods_raises_type_error(self, mock_ogx_client):
+        """A non-list value for chunking_methods must raise TypeError."""
+        with pytest.raises(TypeError, match="must be a list"):
+            prepare_search_space_report(
+                test_data_path="dummy.json",
+                extracted_text_path="dummy_dir",
+                ogx_client=mock_ogx_client,
+                chunking_methods="recursive",  # type: ignore[arg-type]
+            )
+
+    def test_empty_chunking_methods_raises_value_error(self, mock_ogx_client):
+        """An empty list for chunking_methods must raise ValueError."""
+        with pytest.raises(ValueError, match="must not be empty"):
+            prepare_search_space_report(
+                test_data_path="dummy.json",
+                extracted_text_path="dummy_dir",
+                ogx_client=mock_ogx_client,
+                chunking_methods=[],
+            )
+
+
+# ---------------------------------------------------------------------------
+# _validate_chunking_methods
+# ---------------------------------------------------------------------------
+
+
+class TestValidateChunkingMethods:
+    """Tests for the ``_validate_chunking_methods`` helper."""
+
+    def test_none_is_valid(self):
+        """None means 'use defaults' and must not raise."""
+        _validate_chunking_methods(None)
+
+    def test_valid_list_passes(self):
+        """A list of non-empty strings must be accepted."""
+        _validate_chunking_methods(["recursive", "hybrid"])
+
+    def test_single_element_passes(self):
+        """A single-element list must be accepted."""
+        _validate_chunking_methods(["recursive"])
+
+    def test_non_list_raises_type_error(self):
+        """A non-list value must raise TypeError."""
+        with pytest.raises(TypeError, match="must be a list"):
+            _validate_chunking_methods("recursive")  # type: ignore[arg-type]
+
+    def test_empty_list_raises_value_error(self):
+        """An empty list must raise ValueError."""
+        with pytest.raises(ValueError, match="must not be empty"):
+            _validate_chunking_methods([])
+
+    def test_empty_string_raises_type_error(self):
+        """An empty string element must raise TypeError."""
+        with pytest.raises(TypeError, match=r"chunking_methods\[0\] must be a non-empty string"):
+            _validate_chunking_methods([""])
+
+    def test_non_string_raises_type_error(self):
+        """A non-string element must raise TypeError."""
+        with pytest.raises(TypeError, match=r"chunking_methods\[1\] must be a non-empty string"):
+            _validate_chunking_methods(["recursive", 42])  # type: ignore[list-item]
+
+
+# ---------------------------------------------------------------------------
+# SearchSpaceReport — contextual_enrichment_enabled
+# ---------------------------------------------------------------------------
+
+
+class TestSearchSpaceReportContextualEnrichment:
+    """Tests for contextual_enrichment_enabled in SearchSpaceReport."""
+
+    def test_contextual_enrichment_in_yaml_when_true(self, tmp_path: Path):
+        """When contextual_enrichment_enabled is True, it must appear in YAML."""
+        import yaml as yml
+
+        report = SearchSpaceReport(
+            search_space={"chunk_size": [256]},
+            selected_models={"foundation_model": []},
+            detected_language=None,
+            contextual_enrichment_enabled=True,
+        )
+        out_file = tmp_path / "report.yaml"
+        report.save_yaml(out_file)
+
+        data = yml.safe_load(out_file.read_text())
+        assert data["contextual_enrichment_enabled"] is True
+
+    def test_contextual_enrichment_in_yaml_when_false(self, tmp_path: Path):
+        """When contextual_enrichment_enabled is False, it must appear in YAML."""
+        import yaml as yml
+
+        report = SearchSpaceReport(
+            search_space={"chunk_size": [256]},
+            selected_models={"foundation_model": []},
+            detected_language=None,
+            contextual_enrichment_enabled=False,
+        )
+        out_file = tmp_path / "report.yaml"
+        report.save_yaml(out_file)
+
+        data = yml.safe_load(out_file.read_text())
+        assert data["contextual_enrichment_enabled"] is False
+
+    def test_contextual_enrichment_absent_when_none(self, tmp_path: Path):
+        """When contextual_enrichment_enabled is None, the key must not appear."""
+        import yaml as yml
+
+        report = SearchSpaceReport(
+            search_space={"chunk_size": [256]},
+            selected_models={"foundation_model": []},
+            detected_language=None,
+            contextual_enrichment_enabled=None,
+        )
+        out_file = tmp_path / "report.yaml"
+        report.save_yaml(out_file)
+
+        data = yml.safe_load(out_file.read_text())
+        assert "contextual_enrichment_enabled" not in data
+
+    def test_default_is_none(self):
+        """Default value for contextual_enrichment_enabled should be None."""
+        report = SearchSpaceReport(
+            search_space={},
+            selected_models={},
+            detected_language=None,
+        )
+        assert report.contextual_enrichment_enabled is None

@@ -161,6 +161,7 @@ class AI4RAGExperiment:
         )
         self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
+        self.max_threads: int = kwargs.pop("max_threads", 10)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -442,8 +443,7 @@ class AI4RAGExperiment:
         )
 
         inference_response = query_rag(
-            rag=rag_pattern,
-            questions=list(self.benchmark_data.questions),
+            rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.max_threads
         )
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,
