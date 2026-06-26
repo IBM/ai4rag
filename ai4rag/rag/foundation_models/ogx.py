@@ -30,7 +30,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
-        language: str = None
+        language: str = None,
     ):
 
         super().__init__(

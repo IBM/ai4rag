@@ -53,7 +53,7 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         self.system_message_text = system_message_text or get_system_message_text(model_name=model_id)
         self.user_message_text = user_message_text or get_user_message_text(model_name=model_id, language=language.name)
         self.context_template_text = context_template_text or get_context_template_text(model_name=model_id)
-        self.language = language
+        self._language = language
 
     def __repr__(self) -> str:
         return self.model_id

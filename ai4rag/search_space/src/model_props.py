@@ -28,9 +28,7 @@ _LANGUAGE_AUTODETECT_PROMPT = (
 )
 
 
-_LANGUAGE_INSTRUCTION = (
-    "You MUST respond in {lang_name}."
-)
+_LANGUAGE_INSTRUCTION = "You MUST respond in {lang_name}."
 
 
 _RAG_GROUNDING_INSTRUCTION = (
@@ -272,6 +270,8 @@ def get_user_message_text(model_name: str, language: str = "auto") -> str:
     else:
         language_instruction = _LANGUAGE_INSTRUCTION.format(lang_name=language)
 
-    user_message_text = user_message_text.format(**{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER: language_instruction})
+    user_message_text = user_message_text.replace(
+        f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}", language_instruction
+    )
 
     return user_message_text

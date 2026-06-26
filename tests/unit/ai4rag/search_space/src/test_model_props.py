@@ -48,32 +48,24 @@ def test_system_message_includes_rag_prefix(model_name: str):
     assert "ONLY the provided documents" in system_message
 
 
-@pytest.mark.parametrize(
-    "model_name",
-    [
-        "meta-llama/llama-3-1-8b-instruct",
-        "ibm/granite-3-8b-instruct",
-        "mistralai/mistral-large",
-        "openai/gpt-oss-120b",
-        "unknown-model",
-    ],
-)
-def test_context_template_numbers_documents(model_name: str):
-    context_template = get_context_template_text(model_name)
+def test_context_template_numbers_documents():
+    context_template = get_context_template_text()
     assert f"{{{DOCUMENT_NUMBER_PLACEHOLDER}}}" in context_template
     assert "{document}" in context_template
 
 
-def test_language_autodetect_defaults_to_english_only():
+def test_language_auto_uses_autodetect_prompt():
+    """Default language='auto' embeds the autodetect instruction."""
     user_message = get_user_message_text("meta-llama/llama-3-1-8b-instruct")
-    assert "You MUST write your entire answer in English only" in user_message
-    assert "Do NOT use any other language" in user_message
-
-
-def test_language_autodetect_enabled_uses_strong_question_language_instruction():
-    user_message = get_user_message_text("meta-llama/llama-3-1-8b-instruct", language_autodetect=True)
     assert "You MUST write your entire answer in the same language as the question" in user_message
     assert "Do NOT respond in any other language" in user_message
+
+
+def test_explicit_language_embeds_instruction():
+    """Passing an explicit language name produces a 'MUST respond in <lang>' instruction."""
+    user_message = get_user_message_text("meta-llama/llama-3-1-8b-instruct", language="Japanese")
+    assert "You MUST respond in Japanese." in user_message
+    assert "same language as the question" not in user_message
 
 
 @pytest.mark.parametrize(

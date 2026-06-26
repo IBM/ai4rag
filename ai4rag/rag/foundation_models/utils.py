@@ -12,6 +12,7 @@ from ai4rag.search_space.src.model_props import (
     REFERENCE_DOCUMENTS_PLACEHOLDER,
 )
 
+
 def validate_prompt_templates_placeholders(
     template_str: str,
     template_name: Literal["context_template_text", "user_message_text"],
