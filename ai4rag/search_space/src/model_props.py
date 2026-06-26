@@ -181,7 +181,7 @@ _model_name_to_user_message_text = {
 }
 
 
-def get_context_template_text(**kwargs) -> str:
+def get_context_template_text() -> str:
     """
     Get a model-specific context template text.
 

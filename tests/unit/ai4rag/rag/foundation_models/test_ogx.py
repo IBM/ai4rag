@@ -254,7 +254,7 @@ class TestOGXFoundationModel:
             context_template_text=None,
             system_message_text=valid_system_message,
         )
-        mock_get_context_template.assert_called_once_with(model_name="granite-13b")
+        mock_get_context_template.assert_called_once_with()
         assert "Default" in model.context_template_text
 
     def test_system_message_text_assignment(self, mock_ogx_client, valid_user_message_template, valid_context_template):

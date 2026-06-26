@@ -26,10 +26,13 @@ class MessageTyped(TypedDict):
 
 @dataclass
 class Language:
+    """Settings for multilingual handling."""
+
     code: str
     name: str
 
     def to_dict(self) -> dict:
+        """Save language settings as a dict."""
         return {"code": self.code, "name": self.name}
 
 
@@ -52,7 +55,7 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         self.params = params
         self.system_message_text = system_message_text or get_system_message_text(model_name=model_id)
         self.user_message_text = user_message_text or get_user_message_text(model_name=model_id, language=language.name)
-        self.context_template_text = context_template_text or get_context_template_text(model_name=model_id)
+        self.context_template_text = context_template_text or get_context_template_text()
         self._language = language
 
     def __repr__(self) -> str:
@@ -76,30 +79,36 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         return self.model_id < other.model_id
 
     @property
-    def user_message_text(self):
-        return self._user_message_text
-
-    @property
     def language(self):
+        """Get language settings."""
         return self._language
 
     @language.setter
     def language(self, value: Language):
+        """Set language settings and update user_message_text with new language."""
         self._language = value
         self.user_message_text = get_user_message_text(model_name=self.model_id, language=value.name)
 
+    @property
+    def user_message_text(self):
+        """Get user_message_text."""
+        return self._user_message_text
+
     @user_message_text.setter
     def user_message_text(self, value: str):
+        """Set user_message_text and validate template."""
         self._user_message_text = validate_prompt_templates_placeholders(
             template_str=value, template_name="user_message_text"
         )
 
     @property
     def context_template_text(self):
+        """Get context_template_text."""
         return self._context_template_text
 
     @context_template_text.setter
     def context_template_text(self, value: str):
+        """Set context_template_text and validate template."""
         self._context_template_text = validate_prompt_templates_placeholders(
             template_str=value, template_name="context_template_text"
         )
