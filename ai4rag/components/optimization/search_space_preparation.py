@@ -2,13 +2,13 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import json
 import logging
 from dataclasses import dataclass, fields, is_dataclass
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml as yml
 from ogx_client import OgxClient
 
 from ai4rag import handler
@@ -31,33 +31,42 @@ _DEFAULT_SAMPLE_SIZE = 5
 _DEFAULT_SEED = 17
 
 
-def _represent_model_instance(dumper: yml.Dumper, model: BaseFoundationModel | BaseEmbeddingModel) -> yml.Node:
-    """Instruct :mod:`yaml` on how to serialize model instances under a ``!Model`` tag.
+def _serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
+    """Convert a model instance to a plain dictionary with all its settings.
 
-    The resulting YAML mapping contains the model identifier as key with its
-    parameters as value, plus a ``type_`` discriminator (``"embedding"`` or
-    ``"generation"``).
+    Captures model identifier, type discriminator, inference parameters,
+    and — for foundation models — the detected language.
     """
-    type_ = "embedding" if isinstance(model, BaseEmbeddingModel) else "generation"
+    is_embedding = isinstance(model, BaseEmbeddingModel)
 
     params = model.params
     if is_dataclass(params):
-        params = {
-            field.name: getattr(model.params, field.name)
-            for field in fields(model.params)
-            if getattr(model.params, field.name)
+        params_dict = {
+            field.name: getattr(params, field.name)
+            for field in fields(params)
+            if getattr(params, field.name) is not None
         }
     elif hasattr(params, "model_dump"):
-        params = params.model_dump(exclude_unset=True)
+        params_dict = params.model_dump()
     elif hasattr(params, "dict"):
-        params = params.dict(exclude_unset=True)
+        params_dict = params.dict()
+    else:
+        params_dict = {}
 
-    return dumper.represent_mapping("!Model", {model.model_id: params or {}, "type_": type_})
+    result: dict[str, Any] = {
+        "model_id": model.model_id,
+        "type": "embedding" if is_embedding else "generation",
+        "params": params_dict,
+    }
 
+    if not is_embedding:
+        if hasattr(model, "language") and model.language is not None:
+            result["language"] = model.language.to_dict()
+        result["system_message_text"] = model.system_message_text
+        result["user_message_text"] = model.user_message_text
+        result["context_template_text"] = model.context_template_text
 
-# Register the multi-representer so SafeDumper can handle any subclass.
-yml.add_multi_representer(BaseFoundationModel, _represent_model_instance, Dumper=yml.SafeDumper)
-yml.add_multi_representer(BaseEmbeddingModel, _represent_model_instance, Dumper=yml.SafeDumper)
+    return result
 
 
 @dataclass
@@ -76,8 +85,8 @@ class SearchSpaceReport:
     search_space: dict[str, Any]
     selected_models: dict[str, list]
 
-    def save_yaml(self, path: str | Path) -> None:
-        """Serialize the report to a YAML file.
+    def save_json(self, path: str | Path) -> None:
+        """Serialize the report to a JSON file.
 
         The file is suitable as input for the RAG optimization step.
 
@@ -86,12 +95,10 @@ class SearchSpaceReport:
         path
             Destination file path.
         """
-        report = dict(self.search_space)
-
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            yml.safe_dump(report, f)
+            json.dump(self.search_space, f, indent=2)
 
 
 def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
@@ -200,13 +207,14 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             "embedding_model": list(em_values),
         }
 
-    # Build verbose representation
+    # Build verbose representation with serialized model dicts
     verbose_repr: dict[str, Any] = {
         k: v.all_values()
         for k, v in search_space._search_space.items()  # pylint: disable=protected-access
         if k not in ("foundation_model", "embedding_model")
     }
-    verbose_repr.update(selected_models)
+    verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
+    verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
 
     return SearchSpaceReport(
         search_space=verbose_repr,

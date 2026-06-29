@@ -136,7 +136,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="",
@@ -149,7 +149,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="   ",
@@ -162,7 +162,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -175,7 +175,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -188,7 +188,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -208,7 +208,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -222,7 +222,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
