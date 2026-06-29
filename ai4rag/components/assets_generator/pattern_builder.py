@@ -253,6 +253,7 @@ def build_responses_system_input(generation: dict) -> str:
 
 def build_pattern_json(
     pattern: dict,
+    detected_language: dict | None = None,
 ) -> dict:
     """Update pattern information with responses template.
 
@@ -261,6 +262,8 @@ def build_pattern_json(
     pattern : dict
         A single evaluation result object carrying ``indexing_params``,
         ``rag_params``, ``pattern_name``, ``collection``, etc.
+    detected_language : dict | None, default=None
+        Language detection result (``{"code": "...", "name": "..."}``).
 
     Returns
     -------
@@ -269,6 +272,8 @@ def build_pattern_json(
     """
     generation = pattern["settings"]["generation"]
     system_input = build_responses_system_input(generation)
+    if detected_language:
+        pattern["settings"]["generation"]["detected_language"] = detected_language
 
     pattern["settings"]["responses_template"] = {
         "model": generation["model_id"],

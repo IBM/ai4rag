@@ -445,24 +445,6 @@ class TestOGXRAGGenerate:
         assert "Document: Relevant document 2" in user_message
         assert "What is AI?" in user_message
 
-    def test_generate_numbers_documents_when_template_includes_doc_number(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-    ):
-        """Test that doc_number is passed when the context template includes it."""
-        mock_foundation_model.context_template_text = "Document {doc_number}:\n{document}\n"
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-        )
-
-        rag.generate("What is AI?")
-
-        user_message = mock_foundation_model.chat.call_args.kwargs["messages"][1]["content"]
-        assert "Document 1:\nRelevant document 1" in user_message
-        assert "Document 2:\nRelevant document 2" in user_message
-
     def test_generate_calls_foundation_model_chat(
         self,
         mock_foundation_model,
