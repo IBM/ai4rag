@@ -105,6 +105,9 @@ def prepare_search_space_with_ogx(
             )
             if lang is not None:
                 fm.language = Language(**lang)
+                logger.info("Model %s: language set to %s (%s).", fm.model_id, lang["name"], lang["code"])
+            else:
+                logger.warning("Model %s: language detection failed, falling back to auto-detect.", fm.model_id)
 
     fms_param = Parameter(name="foundation_model", values=foundation_models)
     ems_param = Parameter(name="embedding_model", values=embedding_models)

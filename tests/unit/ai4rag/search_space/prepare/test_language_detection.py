@@ -115,3 +115,45 @@ class TestDetectLanguageWithLlm:
         result = detect_language_with_llm(sample_questions, mock_generation_model)
 
         assert result == {"code": "fr", "name": "French"}
+
+    def test_extracts_code_at_start_of_verbose_response(self, mock_generation_model, sample_questions):
+        mock_generation_model.chat.return_value[0].message.content = "de (German)"
+
+        result = detect_language_with_llm(sample_questions, mock_generation_model)
+
+        assert result == {"code": "de", "name": "German"}
+
+    def test_extracts_code_in_parentheses(self, mock_generation_model, sample_questions):
+        mock_generation_model.chat.return_value[0].message.content = "German (de)"
+
+        result = detect_language_with_llm(sample_questions, mock_generation_model)
+
+        assert result == {"code": "de", "name": "German"}
+
+    def test_verbose_response_without_extractable_code_returns_none(self, mock_generation_model, sample_questions):
+        mock_generation_model.chat.return_value[0].message.content = "The language is German"
+
+        result = detect_language_with_llm(sample_questions, mock_generation_model)
+
+        assert result is None
+
+    def test_extracts_code_with_region_suffix(self, mock_generation_model, sample_questions):
+        mock_generation_model.chat.return_value[0].message.content = "zh-cn"
+
+        result = detect_language_with_llm(sample_questions, mock_generation_model)
+
+        assert result == {"code": "zh", "name": "Chinese"}
+
+    def test_none_content_returns_none(self, mock_generation_model, sample_questions):
+        mock_generation_model.chat.return_value[0].message.content = None
+
+        result = detect_language_with_llm(sample_questions, mock_generation_model)
+
+        assert result is None
+
+    def test_empty_response_list_returns_none(self, mock_generation_model, sample_questions):
+        mock_generation_model.chat.return_value = []
+
+        result = detect_language_with_llm(sample_questions, mock_generation_model)
+
+        assert result is None

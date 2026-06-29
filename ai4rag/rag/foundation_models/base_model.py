@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Generic, TypedDict, TypeVar
 
+from ai4rag import logger
 from ai4rag.rag.foundation_models.utils import validate_prompt_templates_placeholders
 from ai4rag.search_space.src.model_props import (
     get_context_template_text,
@@ -85,9 +86,10 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
 
     @language.setter
     def language(self, value: Language):
-        """Set language settings and update user_message_text with new language."""
+        """Set language settings and regenerate user_message_text for the new language."""
         self._language = value
         self.user_message_text = get_user_message_text(model_name=self.model_id, language=value.name)
+        logger.info("Model %s: user_message_text regenerated for language '%s'.", self.model_id, value.name)
 
     @property
     def user_message_text(self):
