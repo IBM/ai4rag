@@ -8,7 +8,7 @@ from annotated_types import Ge, Gt, Le
 from ogx_client import OgxClient
 from pydantic import BaseModel
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, Language, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
 
 
@@ -30,7 +30,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
-        language: str = None,
+        language: Language | None = None,
     ):
 
         super().__init__(

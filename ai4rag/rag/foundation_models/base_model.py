@@ -47,7 +47,7 @@ class BaseFoundationModel(Generic[FoundationModelClientT, FoundationModelParamsT
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
-        language: str = None,
+        language: Language | None = None,
     ):
         language = language or Language(code="", name="auto")
         self.client = client

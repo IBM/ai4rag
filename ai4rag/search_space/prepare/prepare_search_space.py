@@ -100,7 +100,7 @@ def prepare_search_space_with_ogx(
     if benchmark_data is not None:
         for fm in foundation_models:
             lang = detect_language_with_llm(
-                questions="\n".join([str(q) for q in benchmark_data["question"][:10]]),
+                questions=[str(q) for q in benchmark_data["question"][:10]],
                 generation_model=fm,
             )
             if lang is not None:
