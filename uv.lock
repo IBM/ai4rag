@@ -93,7 +93,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
     { name = "docling", specifier = "~=2.88.0" },
-    { name = "docling-core", extras = ["chunking", "chunking-openai"], specifier = "~=2.83.0" },
+    { name = "docling-core", extras = ["chunking", "chunking-openai"], specifier = "~=2.83.1" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },

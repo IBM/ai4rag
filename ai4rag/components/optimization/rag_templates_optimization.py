@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import json
 import logging
 import os
 from dataclasses import dataclass
@@ -10,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml as yml
 from ogx_client import OgxClient
 
 from ai4rag import handler
@@ -18,9 +18,8 @@ from ai4rag.components.assets_generator import build_pattern_json, generate_note
 from ai4rag.components.utils.docling_io import load_docling_documents
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -65,9 +64,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
     Orchestrates the end-to-end workflow: load documents, reconstruct the
-    search space from a YAML report, run the experiment, then generate
-    per-pattern outputs (``pattern.json``, notebooks, scripts, evaluation
-    results).
+    search space from a JSON report, run the experiment, then generate
+    per-pattern outputs (``pattern.json``, notebooks, evaluation results).
 
     Parameters
     ----------
@@ -76,7 +74,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     test_data_path
         Path to a benchmark JSON file with questions and expected answers.
     search_space_report_path
-        Path to the YAML report produced by the search-space preparation step.
+        Path to the JSON report produced by the search-space preparation step.
     output_dir
         Root directory where per-pattern output folders are written.
     ogx_client
@@ -124,18 +122,18 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
             f"Select one of {SUPPORTED_OPTIMIZATION_METRICS}."
         )
 
-    _register_model_yaml_constructor(ogx_client)
-
     documents = load_docling_documents(extracted_text_path)
 
     with open(search_space_report_path, "r", encoding="utf-8") as f:
-        search_space_raw = yml.safe_load(f)
+        search_space_raw: dict[str, Any] = json.load(f)
 
-    detected_language: dict[str, str] | None = search_space_raw.pop("detected_language", None)
+    params: list[Parameter] = []
+    for param_name, values in search_space_raw.items():
+        if param_name in ("foundation_model", "embedding_model"):
+            values = [_deserialize_model(m, ogx_client) for m in values]
+        params.append(Parameter(param_name, "C", values=values))
 
-    search_space = AI4RAGSearchSpace(
-        params=[Parameter(param, "C", values=values) for param, values in search_space_raw.items()]
-    )
+    search_space = AI4RAGSearchSpace(params=params)
 
     # --- Configure experiment ---
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
@@ -146,9 +144,6 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     event_handler = KFPEventHandler()
 
     benchmark_data = pd.read_json(Path(test_data_path))
-
-    if detected_language:
-        _inject_language_instructions(search_space, detected_language)
 
     rag_exp = AI4RAGExperiment(
         client=ogx_client,
@@ -179,7 +174,6 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
         pattern_data = build_pattern_json(
             pattern=pattern.get("payload"),
-            detected_language=detected_language,
         )
 
         # Generate notebooks
@@ -216,36 +210,33 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     )
 
 
-def _register_model_yaml_constructor(ogx_client: OgxClient) -> None:
-    """Register a ``!Model`` YAML constructor that deserializes model instances.
-
-    The constructor is bound to the provided *ogx_client* so that
-    deserialized :class:`OGXEmbeddingModel` and :class:`OGXFoundationModel`
-    instances are immediately usable.
+def _deserialize_model(data: dict[str, Any], ogx_client: OgxClient) -> OGXEmbeddingModel | OGXFoundationModel:
+    """Reconstruct a model instance from its serialized dictionary.
 
     Parameters
     ----------
+    data
+        Dictionary produced by :func:`_serialize_model` in the search-space
+        preparation step.
     ogx_client
-        Client passed to reconstructed model instances.
+        Client bound to the reconstructed model instance.
     """
+    model_id = data["model_id"]
+    params = data.get("params", {})
 
-    def construct_model_instance(
-        loader: yml.SafeLoader, node: yml.MappingNode
-    ) -> BaseEmbeddingModel | BaseFoundationModel:
-        mapping = loader.construct_mapping(node, deep=True)
+    if data["type"] == "embedding":
+        return OGXEmbeddingModel(client=ogx_client, model_id=model_id, params=params)
 
-        match mapping:
-            case {"type_": "embedding", **id_to_params}:
-                model_id, params = id_to_params.popitem()
-                return OGXEmbeddingModel(client=ogx_client, model_id=model_id, params=params)
-
-            case {"type_": "generation", **id_to_params}:
-                model_id, params = id_to_params.popitem()
-                return OGXFoundationModel(client=ogx_client, model_id=model_id, params=params)
-            case _:
-                raise ValueError(f"Cannot load the yml-serialized !Model tag: {mapping}")
-
-    yml.add_constructor("!Model", construct_model_instance, Loader=yml.SafeLoader)
+    language = Language(**data["language"]) if data.get("language") else None
+    return OGXFoundationModel(
+        client=ogx_client,
+        model_id=model_id,
+        params=params,
+        language=language,
+        system_message_text=data.get("system_message_text"),
+        user_message_text=data.get("user_message_text"),
+        context_template_text=data.get("context_template_text"),
+    )
 
 
 def _evaluation_result_fallback(eval_data_list: list, evaluation_result: Any) -> list[dict[str, Any]]:
@@ -274,42 +265,6 @@ def _evaluation_result_fallback(eval_data_list: list, evaluation_result: Any) ->
             }
         )
     return out
-
-
-def _inject_language_instructions(
-    search_space: AI4RAGSearchSpace,
-    detected_language: dict[str, str],
-) -> None:
-    """Inject explicit language response instructions into foundation models.
-
-    When a non-English language is detected, each foundation model's system
-    and user messages are augmented with an instruction to respond in that
-    language.
-
-    Parameters
-    ----------
-    search_space
-        The search space whose foundation models will be modified in-place.
-    detected_language
-        Detection result with ``"code"`` and ``"name"`` keys.
-    """
-    lang_code = detected_language.get("code", "")
-    lang_name = detected_language.get("name", "")
-    if not lang_name or lang_code == "en":
-        return
-
-    explicit_instruction = f"You MUST respond in {lang_name}."
-    for fm in search_space["foundation_model"].values:
-        existing_sys = fm.system_message_text
-        existing_usr = str(fm.user_message_text)
-        fm.system_message_text = f"{explicit_instruction} {existing_sys}"
-        fm.user_message_text = f"{existing_usr}{explicit_instruction}"
-
-    _logger.info(
-        "Set explicit language instruction on %d foundation model(s): %s",
-        len(search_space["foundation_model"].values),
-        explicit_instruction,
-    )
 
 
 def _validate_optimization_settings(optimization_settings: dict | None) -> dict:

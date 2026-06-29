@@ -34,7 +34,6 @@ def simple_report() -> SearchSpaceReport:
             "foundation_model": ["model-a"],
             "embedding_model": ["emb-a"],
         },
-        detected_language={"code": "ja", "name": "Japanese"},
     )
 
 
@@ -76,64 +75,39 @@ class TestValidateModelList:
 
 
 # ---------------------------------------------------------------------------
-# SearchSpaceReport.save_yaml
+# SearchSpaceReport.save_json
 # ---------------------------------------------------------------------------
 
 
-class TestSearchSpaceReportSaveYaml:
-    """Tests for YAML serialization of SearchSpaceReport."""
+class TestSearchSpaceReportSaveJson:
+    """Tests for JSON serialization of SearchSpaceReport."""
 
-    def test_save_yaml_creates_file(self, simple_report, tmp_path: Path):
-        """save_yaml must create a readable YAML file at the given path."""
-        import yaml as yml
+    def test_save_json_creates_file(self, simple_report, tmp_path: Path):
+        """save_json must create a readable JSON file at the given path."""
+        import json
 
-        out_file = tmp_path / "report.yaml"
-        simple_report.save_yaml(out_file)
+        out_file = tmp_path / "report.json"
+        simple_report.save_json(out_file)
 
         assert out_file.exists()
-        data = yml.safe_load(out_file.read_text())
+        data = json.loads(out_file.read_text())
         assert isinstance(data, dict)
 
-    def test_save_yaml_includes_detected_language(self, simple_report, tmp_path: Path):
-        """When detected_language is set, it must appear in the YAML output."""
-        import yaml as yml
-
-        out_file = tmp_path / "report.yaml"
-        simple_report.save_yaml(out_file)
-
-        data = yml.safe_load(out_file.read_text())
-        assert data["detected_language"] == {"code": "ja", "name": "Japanese"}
-
-    def test_save_yaml_omits_language_when_none(self, tmp_path: Path):
-        """When detected_language is None, the key must not appear in output."""
-        import yaml as yml
-
-        report = SearchSpaceReport(
-            search_space={"chunk_size": [256]},
-            selected_models={"foundation_model": []},
-            detected_language=None,
-        )
-        out_file = tmp_path / "report.yaml"
-        report.save_yaml(out_file)
-
-        data = yml.safe_load(out_file.read_text())
-        assert "detected_language" not in data
-
-    def test_save_yaml_creates_parent_directories(self, simple_report, tmp_path: Path):
-        """save_yaml must create intermediate directories if they do not exist."""
-        out_file = tmp_path / "nested" / "dir" / "report.yaml"
-        simple_report.save_yaml(out_file)
+    def test_save_json_creates_parent_directories(self, simple_report, tmp_path: Path):
+        """save_json must create intermediate directories if they do not exist."""
+        out_file = tmp_path / "nested" / "dir" / "report.json"
+        simple_report.save_json(out_file)
 
         assert out_file.exists()
 
-    def test_save_yaml_preserves_search_space_keys(self, simple_report, tmp_path: Path):
-        """All top-level search_space keys must appear in the serialized YAML."""
-        import yaml as yml
+    def test_save_json_preserves_search_space_keys(self, simple_report, tmp_path: Path):
+        """All top-level search_space keys must appear in the serialized JSON."""
+        import json
 
-        out_file = tmp_path / "report.yaml"
-        simple_report.save_yaml(out_file)
+        out_file = tmp_path / "report.json"
+        simple_report.save_json(out_file)
 
-        data = yml.safe_load(out_file.read_text())
+        data = json.loads(out_file.read_text())
         assert "foundation_model" in data
         assert "embedding_model" in data
         assert "chunk_size" in data

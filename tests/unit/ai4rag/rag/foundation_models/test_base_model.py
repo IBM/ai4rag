@@ -7,16 +7,15 @@ from typing import Any
 
 import pytest
 
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, Language, MessageTyped
 
 
 class ConcreteFoundationModel(BaseFoundationModel[Any, dict]):
     """Concrete implementation of BaseFoundationModel for testing purposes."""
 
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """Simple chat implementation for testing."""
 
-        # Create a mock response that mimics the structure of real model responses
         class MockMessage:
             def __init__(self, content: str):
                 self.content = content
@@ -25,7 +24,6 @@ class ConcreteFoundationModel(BaseFoundationModel[Any, dict]):
             def __init__(self, content: str):
                 self.message = MockMessage(content)
 
-        # Simulate processing the messages
         response_content = f"Response to {len(messages)} messages"
         return [MockChoice(response_content)]
 
@@ -54,6 +52,40 @@ class TestFoundationModel:
         assert model.client == mock_client
         assert model.model_id == "test-model-123"
         assert model.params == model_params
+        assert isinstance(model.language, Language)
+        assert model.language.name == "auto"
+
+    def test_language_passed_to_default_user_message(self, mock_client, model_params, mocker):
+        """Test that language is forwarded when resolving default user message text."""
+        mock_get_user_message = mocker.patch(
+            "ai4rag.rag.foundation_models.base_model.get_user_message_text",
+            return_value="Question: {question}\nReferences: {reference_documents}",
+        )
+        lang = Language(code="ja", name="Japanese")
+        ConcreteFoundationModel(
+            client=mock_client,
+            model_id="meta-llama/llama-3-1-8b-instruct",
+            params=model_params,
+            language=lang,
+        )
+        mock_get_user_message.assert_called_with(
+            model_name="meta-llama/llama-3-1-8b-instruct",
+            language="Japanese",
+        )
+
+    def test_language_setter_regenerates_user_message(self, mock_client, model_params):
+        """Test that setting language updates the user_message_text."""
+        model = ConcreteFoundationModel(client=mock_client, model_id="test-model-123", params=model_params)
+        original_user_message = model.user_message_text
+        model.language = Language(code="de", name="German")
+        assert model.language.name == "German"
+        assert model.user_message_text != original_user_message
+        assert "You MUST respond in German." in model.user_message_text
+
+    def test_language_to_dict(self):
+        """Test Language.to_dict serialization."""
+        lang = Language(code="ja", name="Japanese")
+        assert lang.to_dict() == {"code": "ja", "name": "Japanese"}
 
     def test_repr(self, foundation_model):
         """Test __repr__ returns model_id."""
