@@ -235,6 +235,49 @@ class TestValidateChunkingMethods:
 
 
 # ---------------------------------------------------------------------------
+# prepare_search_space_report — unsupported chunking_methods
+# ---------------------------------------------------------------------------
+
+
+class TestUnsupportedChunkingMethods:
+    """Test that providing chunking methods not in the search space raises."""
+
+    def test_unsupported_method_raises_value_error(self, mock_ogx_client):
+        """A chunking method absent from the search space must raise ValueError."""
+        from unittest.mock import patch
+
+        from ai4rag.components.optimization import search_space_preparation as mod
+
+        search_space_items = {
+            "chunking_method": MagicMock(values=["recursive", "hybrid"], all_values=MagicMock(return_value=["recursive", "hybrid"])),
+            "chunk_size": MagicMock(values=[256], all_values=MagicMock(return_value=[256])),
+            "foundation_model": MagicMock(values=[MagicMock()]),
+            "embedding_model": MagicMock(values=[MagicMock()]),
+        }
+        fake_search_space = MagicMock()
+        fake_search_space._search_space = search_space_items
+        fake_search_space.__getitem__ = lambda self, key: search_space_items[key]
+
+        fake_benchmark_df = MagicMock(spec=mod.pd.DataFrame)
+        fake_benchmark_df.__len__ = lambda self: 1
+
+        with (
+            patch.object(mod, "prepare_search_space_with_ogx", return_value=fake_search_space),
+            patch.object(mod.pd, "read_json", return_value=fake_benchmark_df),
+            patch.object(mod, "_detect_benchmark_language", return_value=None),
+            patch.object(mod, "load_docling_documents", return_value=[]),
+            patch.object(mod, "BenchmarkData"),
+        ):
+            with pytest.raises(ValueError, match="Unsupported chunking methods"):
+                prepare_search_space_report(
+                    test_data_path="dummy.json",
+                    extracted_text_path="dummy_dir",
+                    ogx_client=mock_ogx_client,
+                    chunking_methods=["semantic"],
+                )
+
+
+# ---------------------------------------------------------------------------
 # SearchSpaceReport — contextual_enrichment_enabled
 # ---------------------------------------------------------------------------
 

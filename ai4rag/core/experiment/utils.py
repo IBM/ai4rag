@@ -74,7 +74,7 @@ class RAGRetrievalParamsType(TypedDict):
     ranker_alpha: int | float
 
 
-def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads) -> list[dict[str, Any]]:
+def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int) -> list[dict[str, Any]]:
     """
     Function to perform parallel queries on RAG inference service.
 

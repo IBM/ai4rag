@@ -236,8 +236,14 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
 
     if chunking_methods is not None:
-        allowed = set(chunking_methods)
-        verbose_repr["chunking_method"] = [m for m in verbose_repr["chunking_method"] if m in allowed]
+        available = set(verbose_repr["chunking_method"])
+        unsupported = [m for m in chunking_methods if m not in available]
+        if unsupported:
+            raise ValueError(
+                f"Unsupported chunking methods: {unsupported!r}. "
+                f"Available methods: {sorted(available)!r}."
+            )
+        verbose_repr["chunking_method"] = chunking_methods
         _logger.info("Chunking methods constrained to: %s", verbose_repr["chunking_method"])
 
     if contextual_enrichment_enabled is not None:
