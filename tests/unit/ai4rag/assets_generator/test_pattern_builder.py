@@ -9,6 +9,12 @@ import copy
 import pytest
 
 from ai4rag.components.assets_generator import build_pattern_json
+from ai4rag.components.assets_generator.pattern_builder import (
+    _is_placeholder_only_export,
+    _normalize_answer_scaffold,
+    build_responses_system_input,
+)
+from ai4rag.search_space.src.model_props import get_system_message_text, get_user_message_text
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -58,6 +64,22 @@ def _make_pattern(**overrides) -> dict:
     return base
 
 
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", True),
+        ("   ", True),
+        ("{reference_documents}", True),
+        ("{reference_documents}\n{question}", True),
+        ("foo {reference_documents}", False),
+        ("You are a helpful assistant.", False),
+    ],
+)
+def test_is_placeholder_only_export(text: str, expected: bool):
+    """Placeholder-only export text must trigger the empty-input fallback path."""
+    assert _is_placeholder_only_export(text) == expected
+
+
 # ---------------------------------------------------------------------------
 # build_pattern_json -- responses_template generation
 # ---------------------------------------------------------------------------
@@ -72,12 +94,15 @@ class TestBuildPatternJson:
         result = build_pattern_json(pattern)
 
         rt = result["settings"]["responses_template"]
+        generation = result["settings"]["generation"]
+        expected_system = build_responses_system_input(generation)
+
         assert rt["model"] == "ibm/granite-3-8b-instruct"
         assert rt["stream"] is False
         assert rt["store"] is False
         assert rt["input"] == [
             {
-                "content": [{"text": "Answer based on context only.", "type": "input_text"}],
+                "content": [{"text": expected_system, "type": "input_text"}],
                 "role": "system",
             },
             {"content": [{"text": "<user_query_placeholder>", "type": "input_text"}], "role": "user"},
@@ -121,6 +146,7 @@ class TestBuildPatternJson:
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "rrf", "impact_factor": 60}
+        assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_hybrid_weighted_ranking_options(self):
         """Hybrid search with weighted ranker must set ranker and alpha in ranking_options."""
@@ -133,15 +159,305 @@ class TestBuildPatternJson:
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "weighted", "alpha": 0.7}
+        assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_simple_retrieval_default_ranking_options(self):
-        """Simple retrieval must have default weights in ranking_options."""
+        """Vector-only search simulates semantic retrieval via weighted ranker alpha=1.0."""
         pattern = _make_pattern()
         build_pattern_json(pattern)
 
         ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "weighted", "alpha": 1.0}
         assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
+
+    def test_hybrid_weighted_alpha_one_uses_default_ranking(self):
+        """Hybrid weighted with alpha=1.0 uses the default semantic-only simulation branch."""
+        pattern = _make_pattern()
+        pattern["settings"]["retrieval"]["search_mode"] = "hybrid"
+        pattern["settings"]["retrieval"]["ranker_strategy"] = "weighted"
+        pattern["settings"]["retrieval"]["ranker_alpha"] = 1.0
+
+        build_pattern_json(pattern)
+
+        ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
+        assert ro == {"ranker": "weighted", "alpha": 1.0}
+
+    def test_export_system_input_merges_non_redundant_user_rules(self):
+        """Legacy user supplements merge; redundant grounding and citations are omitted."""
+        pattern = _make_pattern()
+        pattern["settings"]["generation"][
+            "system_message_text"
+        ] = "You are a retrieval-augmented assistant. Answer using ONLY the provided documents."
+        pattern["settings"]["generation"]["user_message_text"] = (
+            "Answer ONLY using information from the documents below. "
+            "Do not use outside knowledge.\n"
+            "You MUST cite sources using [1], [2], etc.\n\n"
+            "Documents:\n{reference_documents}\n\n"
+            "Question: {question}\n\n"
+            "Answer (max 150 words, with citations):\n"
+            "You MUST write your entire answer in English only."
+        )
+
+        build_pattern_json(pattern)
+
+        system_text = pattern["settings"]["responses_template"]["input"][0]["content"][0]["text"]
+        assert "retrieval-augmented assistant" in system_text
+        assert "retrieved via file search" not in system_text
+        assert "provided documents" not in system_text.lower()
+        assert "Answer ONLY using information from the documents below" not in system_text
+        assert "must cite sources" not in system_text.lower()
+        assert "file citations" not in system_text.lower()
+        assert "max 150 words" in system_text
+        assert "with citations" not in system_text.lower()
+        assert "English only" in system_text
+        assert "{reference_documents}" not in system_text
+        assert "{question}" not in system_text
+
+    def test_export_system_input_skips_duplicate_citation_and_keeps_answer_scaffold(self):
+        """Citation lines are stripped; answer scaffold and language policy still merge."""
+        pattern = _make_pattern()
+        pattern["settings"]["generation"][
+            "system_message_text"
+        ] = "You are a retrieval-augmented assistant. You MUST cite sources using [1], [2]."
+        pattern["settings"]["generation"]["user_message_text"] = (
+            "You MUST cite sources using [1], [2], etc.\n\n"
+            "Documents:\n{reference_documents}\n\n"
+            "Question: {question}\n\n"
+            "Answer (max 150 words, with citations):\n"
+            "You MUST write your entire answer in English only."
+        )
+
+        build_pattern_json(pattern)
+
+        system_text = pattern["settings"]["responses_template"]["input"][0]["content"][0]["text"]
+        assert "must cite sources" not in system_text.lower()
+        assert "max 150 words" in system_text
+        assert "English only" in system_text
+
+    def test_build_responses_system_input_legacy_user_prefix(self):
+        """Legacy grounding and citation lines are omitted; persona supplements are kept."""
+        generation = {
+            "system_message_text": "Short system prefix.",
+            "user_message_text": (
+                "Answer ONLY using information from the documents below.\n"
+                "You MUST cite sources using [1], [2].\n\n"
+                "Context: {reference_documents}\n\n"
+                "Question: {question}\n"
+            ),
+        }
+        system_input = build_responses_system_input(generation)
+        assert system_input == "Short system prefix."
+        assert "retrieved via file search" not in system_input
+        assert "must cite sources" not in system_input.lower()
+        assert "documents below" not in system_input
+
+    def test_build_pattern_json_uses_export_parity_system_input(self):
+        """build_pattern_json must use build_responses_system_input(), not raw system text."""
+        model_id = "ibm/granite-3-8b-instruct"
+        expected = build_responses_system_input(
+            {
+                "system_message_text": get_system_message_text(model_id),
+                "user_message_text": get_user_message_text(model_id, language_autodetect=False),
+            }
+        )
+
+        pattern = _make_pattern()
+        pattern["settings"]["generation"]["model_id"] = model_id
+        pattern["settings"]["generation"]["system_message_text"] = get_system_message_text(model_id)
+        pattern["settings"]["generation"]["user_message_text"] = get_user_message_text(
+            model_id, language_autodetect=False
+        )
+
+        build_pattern_json(pattern)
+
+        actual = pattern["settings"]["responses_template"]["input"][0]["content"][0]["text"]
+        assert actual == expected
+        assert actual != pattern["settings"]["generation"]["system_message_text"]
+        assert "Granite Chat" in actual
+        assert "Retrieval Augmented Generation" in actual
+        assert "i.e.," in actual
+        assert "English only" in actual
+
+    @pytest.mark.parametrize(
+        "model_id",
+        [
+            "unknown-model",
+            "ibm/granite-3-8b-instruct",
+            "meta-llama/llama-3-1-8b-instruct",
+            "mistralai/mistral-large",
+            "openai/gpt-oss-120b",
+        ],
+    )
+    def test_export_omits_ogx_duplicative_prompt_text(self, model_id: str):
+        """Export must not duplicate citation/retrieval text that OGX injects at file_search runtime."""
+        generation = {
+            "system_message_text": get_system_message_text(model_id),
+            "user_message_text": get_user_message_text(model_id, language_autodetect=False),
+        }
+        system_text = build_responses_system_input(generation)
+
+        assert "[1], [2]" not in system_text
+        assert "must cite sources" not in system_text.lower()
+        assert "file citations" not in system_text.lower()
+        assert "documents below" not in system_text
+        assert "retrieved via file search" not in system_text
+        assert "retrieved to help answer" not in system_text.lower()
+        assert "<|file-id|>" not in system_text
+        assert "cite sources immediately" not in system_text.lower()
+        assert "supporting information only" not in system_text.lower()
+        assert "{reference_documents}" not in system_text
+        assert "{question}" not in system_text
+        assert "[End]" not in system_text
+
+    def test_export_omits_ogx_config_yaml_instruction_text(self):
+        """Export must not contain verbatim OGX annotation/context template phrases."""
+        generation = {
+            "system_message_text": (
+                "You are a retrieval-augmented assistant. "
+                "Cite sources immediately at the end of sentences before punctuation."
+            ),
+            "user_message_text": (
+                "The above results were retrieved to help answer the user's query. "
+                "Use them as supporting information only in answering this query.\n"
+                "Documents:\n{reference_documents}\n\n"
+                "Question: {question}\n"
+            ),
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a retrieval-augmented assistant."
+
+    @pytest.mark.parametrize(
+        ("model_id", "expected_fragment"),
+        [
+            ("meta-llama/llama-3-1-8b-instruct", "150 words"),
+            ("mistralai/mistral-large", "titles of documents"),
+            ("openai/gpt-oss-120b", "Answer Length: concise"),
+        ],
+    )
+    def test_export_merges_family_specific_user_rules(self, model_id: str, expected_fragment: str):
+        """Each model family must preserve user-only rules in exported system input."""
+        generation = {
+            "system_message_text": get_system_message_text(model_id),
+            "user_message_text": get_user_message_text(model_id, language_autodetect=False),
+        }
+        system_text = build_responses_system_input(generation)
+        assert expected_fragment in system_text
+
+    def test_build_responses_system_input_handles_empty_inputs(self):
+        """When both system and user are empty or contain only placeholders, return fallback."""
+        # Case 1: Completely empty
+        generation = {
+            "system_message_text": "",
+            "user_message_text": "",
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+        # Case 2: Only placeholders in user template
+        generation = {
+            "system_message_text": "",
+            "user_message_text": "{reference_documents}\n{question}",
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+        # Case 4: Unresolved question slot only (cookbook-style minimal user template)
+        generation = {
+            "system_message_text": "",
+            "user_message_text": "{question}",
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+        # Case 3: Only OGX-duplicative content that gets stripped
+        generation = {
+            "system_message_text": "Answer using ONLY the provided documents.",
+            "user_message_text": (
+                "Answer ONLY using information from the documents below.\n"
+                "You MUST cite sources using [1], [2].\n"
+                "{reference_documents}\n{question}"
+            ),
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+    def test_strip_ogx_runtime_partial_sentence_removal(self):
+        """OGX sentences in a multi-sentence system prompt are removed; others are kept."""
+        generation = {
+            "system_message_text": (
+                "You are an expert assistant. " "Answer using ONLY the provided documents. " "Be concise."
+            ),
+            "user_message_text": "",
+        }
+        result = build_responses_system_input(generation)
+        assert "You are an expert assistant" in result
+        assert "Be concise" in result
+        assert "provided documents" not in result.lower()
+
+    def test_user_grounding_merges_when_system_is_persona_only(self):
+        """Persona-only system must not suppress non-OGX user supplements (e.g. RAG block)."""
+        generation = {
+            "system_message_text": "You are a retrieval-augmented assistant. Use your best judgment.",
+            "user_message_text": (
+                "You are a specialized Retrieval Augmented Generation (RAG) assistant. "
+                "Prioritize correctness and ensure your response is grounded in the documents.\n"
+                "{reference_documents}\n{question}"
+            ),
+        }
+        result = build_responses_system_input(generation)
+        assert "retrieval-augmented assistant" in result
+        assert "specialized Retrieval Augmented Generation" in result
+
+    def test_extract_static_user_pure_text_no_slots(self):
+        """Pure static user text without slots is merged into export."""
+        generation = {
+            "system_message_text": "Short system.",
+            "user_message_text": "Always respond in a formal tone.",
+        }
+        result = build_responses_system_input(generation)
+        assert result == "Short system.\n\nAlways respond in a formal tone."
+
+    def test_normalize_answer_scaffold_strips_with_citations(self):
+        """Answer scaffolds must not retain citation hints owned by OGX."""
+        assert _normalize_answer_scaffold("Answer (max 150 words, with citations):") == "Answer (max 150 words):"
+
+    def test_build_pattern_json_requires_generation_model_id(self):
+        """Malformed generation payloads must raise KeyError for required fields."""
+        pattern = _make_pattern()
+        del pattern["settings"]["generation"]["model_id"]
+        with pytest.raises(KeyError):
+            build_pattern_json(pattern)
+
+    def test_system_grounding_detection_requires_explicit_policy(self):
+        """Grounding detection must require explicit 'ONLY' constraint, not just persona."""
+        generation_persona_only = {
+            "system_message_text": "You are a retrieval-augmented assistant. Use your best judgment.",
+            "user_message_text": "Answer ONLY using information from the documents below.\n{reference_documents}\n{question}",
+        }
+        result_persona = build_responses_system_input(generation_persona_only)
+        # Persona-only system should NOT trigger grounding suppression
+        assert "retrieval-augmented assistant" in result_persona
+        assert "use your best judgment" in result_persona.lower()
+
+        generation_explicit = {
+            "system_message_text": "Answer using ONLY the provided documents.",
+            "user_message_text": "Answer ONLY using information from the documents below.\n{reference_documents}\n{question}",
+        }
+        result_explicit = build_responses_system_input(generation_explicit)
+        # Explicit grounding system SHOULD suppress redundant user grounding
+        # Both prompts are OGX-duplicative, so fallback is used
+        assert result_explicit == "You are a helpful assistant."
+
+    def test_system_grounding_detection_uses_grounding_prefixes(self):
+        """Grounding detection must cover all ``_GROUNDING_PREFIXES`` entries."""
+        generation = {
+            "system_message_text": "Answer ONLY using information from documents retrieved via file search.",
+            "user_message_text": (
+                "Answer ONLY using information from the documents below.\n{reference_documents}\n{question}"
+            ),
+        }
+        result = build_responses_system_input(generation)
+        assert result == "You are a helpful assistant."
 
     def test_preserves_existing_pattern_fields(self):
         """Existing pattern fields (name, chunking, embedding, etc.) must not be altered."""
