@@ -87,7 +87,7 @@ _USER_GROUNDING_SKIP_PREFIXES = (
     "Do not use outside knowledge",
     "If the documents do not contain the answer",
 )
-_USER_RAG_SCAFFOLD_PREFIXES = (
+_USER_RAG_GROUNDING_PREFIXES = (
     "You are a specialized Retrieval Augmented Generation",
     "Prioritize correctness and ensure your response is grounded",
 )
@@ -126,15 +126,11 @@ def _is_citation_related_line(line: str) -> bool:
     if not stripped:
         return False
     lower = stripped.lower()
-    if any(stripped.startswith(prefix) for prefix in _OGX_DUPLICATIVE_LINE_PREFIXES if "cite" in prefix.lower()):
+    if any(stripped.startswith(prefix) for prefix in _CITATION_PREFIXES):
         return True
     if any(fragment.lower() in lower for fragment in _HPO_CITATION_FRAGMENTS):
         return True
-    if "[1], [2]" in stripped:
-        return True
-    if "document numbers for every factual claim" in lower:
-        return True
-    return False
+    return any(sub.lower() in lower for sub in _CITATION_SUBSTRINGS)
 
 
 def _filter_ogx_duplicative_sentences(line: str) -> str:
@@ -201,7 +197,13 @@ def _strip_ogx_runtime_instructions(text: str) -> str:
 
 
 def _join_answer_scaffold_blocks(lines: list[str]) -> str:
-    """Group lines into blocks separated when an answer-scaffold line starts."""
+    """Group lines into paragraph blocks, starting a new block when an answer-scaffold line appears.
+
+    Scaffold lines are specifically in the form ``Answer (...)`` — e.g.
+    ``"Answer (max 150 words):"`` — as produced by HPO prompt templates.
+    Other leading text such as ``"Answer:"`` or ``"Response:"`` does NOT
+    trigger a new block.
+    """
     if not lines:
         return ""
 
@@ -218,15 +220,12 @@ def _join_answer_scaffold_blocks(lines: list[str]) -> str:
     return "\n\n".join(blocks)
 
 
-def _should_skip_redundant_user_line(stripped: str, system_has_grounding: bool, system_has_citation: bool) -> bool:
+def _should_skip_redundant_user_line(stripped: str, system_has_grounding: bool) -> bool:
     """Return whether a user-template line duplicates system policy for export."""
     if _is_citation_related_line(stripped):
         return True
-    if system_has_citation and stripped.startswith("You MUST cite sources"):
-        return True
-    # Check both grounding prefixes and RAG scaffold prefixes (non-OGX user supplements)
     return system_has_grounding and any(
-        stripped.startswith(prefix) for prefix in _GROUNDING_PREFIXES + _USER_RAG_SCAFFOLD_PREFIXES
+        stripped.startswith(prefix) for prefix in _GROUNDING_PREFIXES + _USER_RAG_GROUNDING_PREFIXES
     )
 
 
@@ -296,17 +295,13 @@ def _extract_static_user_without_reference_slot(text: str) -> str:
 def _system_has_grounding_policy(system: str) -> bool:
     """Return whether the system prompt already states an explicit document-only grounding rule.
 
-    Matches only explicit "answer ONLY using" / "answer using ONLY" instructions.
+    Uses the same prefix list as sentence-level filtering so that adding a new
+    OGX phrase to ``_GROUNDING_PREFIXES`` automatically covers system detection too.
     Does NOT match descriptive personas like "retrieval-augmented assistant" without
-    an explicit grounding constraint — those are system role definitions, not
-    retrieval policies that would make user grounding instructions redundant.
+    an explicit grounding constraint.
     """
     normalized = system.lower()
-    return (
-        "answer using only the provided documents" in normalized
-        or "answer only using information from the documents" in normalized
-        or "answer only using information from documents" in normalized
-    )
+    return any(prefix.lower() in normalized for prefix in _GROUNDING_PREFIXES)
 
 
 def _filter_static_user_for_responses(system: str, static_user: str) -> str:
@@ -320,12 +315,11 @@ def _filter_static_user_for_responses(system: str, static_user: str) -> str:
         return ""
 
     system_has_grounding = _system_has_grounding_policy(system)
-    system_has_citation = "MUST cite sources" in system
 
     filtered_lines: list[str] = []
     for line in static_user.splitlines():
         stripped = line.strip()
-        if not stripped or _should_skip_redundant_user_line(stripped, system_has_grounding, system_has_citation):
+        if not stripped or _should_skip_redundant_user_line(stripped, system_has_grounding):
             continue
         filtered_lines.append(stripped)
 

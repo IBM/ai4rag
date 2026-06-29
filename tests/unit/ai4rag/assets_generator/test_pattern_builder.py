@@ -10,6 +10,7 @@ import pytest
 
 from ai4rag.components.assets_generator import build_pattern_json
 from ai4rag.components.assets_generator.pattern_builder import (
+    _is_placeholder_only_export,
     _normalize_answer_scaffold,
     build_responses_system_input,
 )
@@ -61,6 +62,22 @@ def _make_pattern(**overrides) -> dict:
             target = target[k]
         target[keys[-1]] = value
     return base
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("", True),
+        ("   ", True),
+        ("{reference_documents}", True),
+        ("{reference_documents}\n{question}", True),
+        ("foo {reference_documents}", False),
+        ("You are a helpful assistant.", False),
+    ],
+)
+def test_is_placeholder_only_export(text: str, expected: bool):
+    """Placeholder-only export text must trigger the empty-input fallback path."""
+    assert _is_placeholder_only_export(text) == expected
 
 
 # ---------------------------------------------------------------------------
@@ -411,15 +428,6 @@ class TestBuildPatternJson:
         with pytest.raises(KeyError):
             build_pattern_json(pattern)
 
-    def test_empty_system_and_user_returns_fallback(self):
-        """Both empty system and user prompts must trigger fallback assistant text."""
-        generation = {
-            "system_message_text": "",
-            "user_message_text": "",
-        }
-        result = build_responses_system_input(generation)
-        assert result == "You are a helpful assistant."
-
     def test_system_grounding_detection_requires_explicit_policy(self):
         """Grounding detection must require explicit 'ONLY' constraint, not just persona."""
         generation_persona_only = {
@@ -439,6 +447,17 @@ class TestBuildPatternJson:
         # Explicit grounding system SHOULD suppress redundant user grounding
         # Both prompts are OGX-duplicative, so fallback is used
         assert result_explicit == "You are a helpful assistant."
+
+    def test_system_grounding_detection_uses_grounding_prefixes(self):
+        """Grounding detection must cover all ``_GROUNDING_PREFIXES`` entries."""
+        generation = {
+            "system_message_text": "Answer ONLY using information from documents retrieved via file search.",
+            "user_message_text": (
+                "Answer ONLY using information from the documents below.\n{reference_documents}\n{question}"
+            ),
+        }
+        result = build_responses_system_input(generation)
+        assert result == "You are a helpful assistant."
 
     def test_preserves_existing_pattern_fields(self):
         """Existing pattern fields (name, chunking, embedding, etc.) must not be altered."""
