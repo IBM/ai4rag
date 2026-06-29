@@ -52,6 +52,21 @@ _SYSTEM_GROUNDING_PHRASES = (
     "Answer using ONLY the provided documents.",
     "Answer using ONLY information from documents retrieved via file search.",
 )
+_GROUNDING_DUPLICATE_PREFIXES = (
+    "Answer ONLY using information from the documents",
+    "Do not use outside knowledge",
+    "If the documents do not contain the answer",
+    "You are a specialized Retrieval Augmented Generation",
+    "Prioritize correctness and ensure your response is grounded",
+)
+_USER_GROUNDING_SKIP_PREFIXES = (
+    _HPO_GROUNDING_PREFIX,
+    "Do not use outside knowledge",
+    "If the documents do not contain the answer",
+)
+_DOCUMENT_LABELS = ("Documents:", "Context:", "[Document]")
+_QUESTION_PREFIXES = ("Question:", "Q:", "[conversation]:")
+_LEGACY_DOCUMENT_MARKERS = ("Documents:\n", "Context:\n", "[Document]\n")
 
 
 def _sentence_is_ogx_duplicative(sentence: str) -> bool:
@@ -162,6 +177,96 @@ def _strip_citation_instructions(text: str) -> str:
     return _strip_ogx_runtime_instructions(text)
 
 
+def _join_answer_scaffold_blocks(lines: list[str]) -> str:
+    """Group lines into blocks separated when an answer-scaffold line starts."""
+    if not lines:
+        return ""
+
+    blocks: list[str] = []
+    current_block: list[str] = []
+    for line in lines:
+        if line.startswith("Answer (") and current_block:
+            blocks.append("\n".join(current_block))
+            current_block = [line]
+        else:
+            current_block.append(line)
+    if current_block:
+        blocks.append("\n".join(current_block))
+    return "\n\n".join(blocks)
+
+
+def _should_skip_redundant_user_line(stripped: str, system_has_grounding: bool, system_has_citation: bool) -> bool:
+    """Return whether a user-template line duplicates system policy for export."""
+    if _is_citation_related_line(stripped):
+        return True
+    if system_has_citation and stripped.startswith("You MUST cite sources"):
+        return True
+    return system_has_grounding and any(stripped.startswith(prefix) for prefix in _GROUNDING_DUPLICATE_PREFIXES)
+
+
+def _should_skip_user_export_line(stripped: str) -> bool:
+    """Return whether a merged user line is OGX-owned and must not be exported."""
+    if any(stripped.startswith(prefix) for prefix in _USER_GROUNDING_SKIP_PREFIXES):
+        return True
+    return _is_citation_related_line(stripped)
+
+
+def _strip_document_slot_prefix(prefix: str) -> str:
+    """Remove structural labels that wrap the reference-documents slot."""
+    for label in _DOCUMENT_LABELS:
+        if prefix == label:
+            return ""
+        if prefix.endswith(label):
+            return prefix[: -len(label)].strip()
+    return prefix
+
+
+def _extract_static_suffix_line(stripped: str) -> str | None:
+    """Return static instruction text from one post-documents template line."""
+    if not stripped or stripped == ":" or stripped in _DOCUMENT_SLOT_MARKERS:
+        return None
+    if "{question}" in stripped:
+        without_question = stripped.replace("{question}", "").strip()
+        for question_prefix in _QUESTION_PREFIXES:
+            if without_question.startswith(question_prefix):
+                without_question = without_question[len(question_prefix) :].strip()
+        without_question = without_question.lstrip(":.").strip()
+        return without_question or None
+    if stripped.startswith(_QUESTION_PREFIXES):
+        return None
+    if "{multilingual_support}" in stripped:
+        return None
+    return stripped
+
+
+def _extract_static_user_from_reference_slot(text: str) -> str:
+    """Extract static instructions from a template that contains ``{reference_documents}``."""
+    before, after = text.split("{reference_documents}", 1)
+    parts: list[str] = []
+    prefix = _strip_document_slot_prefix(before.strip())
+    if prefix:
+        parts.append(prefix)
+
+    suffix_lines = [
+        line_text
+        for line_text in (_extract_static_suffix_line(line.strip()) for line in after.splitlines())
+        if line_text
+    ]
+    if suffix_lines:
+        parts.append("\n".join(suffix_lines))
+    return "\n\n".join(parts).strip()
+
+
+def _extract_static_user_without_reference_slot(text: str) -> str:
+    """Extract static instructions from legacy templates without an explicit doc slot."""
+    doc_idx = len(text)
+    for marker in _LEGACY_DOCUMENT_MARKERS:
+        idx = text.find(marker)
+        if idx != -1:
+            doc_idx = min(doc_idx, idx)
+    return text[:doc_idx].strip()
+
+
 def _system_has_grounding_policy(system: str) -> bool:
     """Return whether the system prompt already states a document-only grounding policy."""
     normalized = system.lower()
@@ -187,38 +292,11 @@ def _filter_static_user_for_responses(system: str, static_user: str) -> str:
     filtered_lines: list[str] = []
     for line in static_user.splitlines():
         stripped = line.strip()
-        if not stripped:
-            continue
-        if _is_citation_related_line(stripped):
-            continue
-        if system_has_grounding and stripped.startswith("Answer ONLY using information from the documents"):
-            continue
-        if system_has_grounding and stripped.startswith("Do not use outside knowledge"):
-            continue
-        if system_has_grounding and stripped.startswith("If the documents do not contain the answer"):
-            continue
-        if system_has_citation and stripped.startswith("You MUST cite sources"):
-            continue
-        if system_has_grounding and stripped.startswith("You are a specialized Retrieval Augmented Generation"):
-            continue
-        if system_has_grounding and stripped.startswith("Prioritize correctness and ensure your response is grounded"):
+        if not stripped or _should_skip_redundant_user_line(stripped, system_has_grounding, system_has_citation):
             continue
         filtered_lines.append(stripped)
 
-    if not filtered_lines:
-        return ""
-
-    blocks: list[str] = []
-    current_block: list[str] = []
-    for line in filtered_lines:
-        if line.startswith("Answer (") and current_block:
-            blocks.append("\n".join(current_block))
-            current_block = [line]
-        else:
-            current_block.append(line)
-    if current_block:
-        blocks.append("\n".join(current_block))
-    return "\n\n".join(blocks)
+    return _join_answer_scaffold_blocks(filtered_lines)
 
 
 def _adapt_system_for_responses_export(system: str) -> str:
@@ -234,34 +312,13 @@ def _adapt_static_user_for_responses_export(static_user: str) -> str:
     adapted_lines: list[str] = []
     for line in static_user.splitlines():
         stripped = line.strip()
-        if not stripped:
-            continue
-        if stripped.startswith(_HPO_GROUNDING_PREFIX):
-            continue
-        if stripped.startswith("Do not use outside knowledge"):
-            continue
-        if stripped.startswith("If the documents do not contain the answer"):
-            continue
-        if _is_citation_related_line(stripped):
+        if not stripped or _should_skip_user_export_line(stripped):
             continue
         cleaned = _strip_ogx_runtime_instructions(stripped)
         if cleaned:
             adapted_lines.append(cleaned)
 
-    if not adapted_lines:
-        return ""
-
-    blocks: list[str] = []
-    current_block: list[str] = []
-    for line in adapted_lines:
-        if line.startswith("Answer (") and current_block:
-            blocks.append("\n".join(current_block))
-            current_block = [line]
-        else:
-            current_block.append(line)
-    if current_block:
-        blocks.append("\n".join(current_block))
-    return "\n\n".join(blocks)
+    return _join_answer_scaffold_blocks(adapted_lines)
 
 
 def _extract_static_user_instructions(user_message_text: str) -> str:
@@ -274,51 +331,11 @@ def _extract_static_user_instructions(user_message_text: str) -> str:
         return ""
 
     text = str(user_message_text).strip()
-    parts: list[str] = []
-
     if "{reference_documents}" in text:
-        before, after = text.split("{reference_documents}", 1)
-        prefix = before.strip()
-        for label in ("Documents:", "Context:", "[Document]"):
-            if prefix == label:
-                prefix = ""
-            elif prefix.endswith(label):
-                prefix = prefix[: -len(label)].strip()
-        if prefix:
-            parts.append(prefix)
+        return _extract_static_user_from_reference_slot(text)
 
-        suffix_lines: list[str] = []
-        for line in after.splitlines():
-            stripped = line.strip()
-            if not stripped or stripped == ":" or stripped in _DOCUMENT_SLOT_MARKERS:
-                continue
-            if "{question}" in stripped:
-                without_question = stripped.replace("{question}", "").strip()
-                for question_prefix in ("Question:", "Q:", "[conversation]:"):
-                    if without_question.startswith(question_prefix):
-                        without_question = without_question[len(question_prefix) :].strip()
-                without_question = without_question.lstrip(":.").strip()
-                if without_question:
-                    suffix_lines.append(without_question)
-                continue
-            if stripped.startswith("Question:") or stripped.startswith("Q:"):
-                continue
-            if "{multilingual_support}" in stripped:
-                continue
-            suffix_lines.append(stripped)
-        if suffix_lines:
-            parts.append("\n".join(suffix_lines))
-    else:
-        doc_idx = len(text)
-        for marker in ("Documents:\n", "Context:\n", "[Document]\n"):
-            idx = text.find(marker)
-            if idx != -1:
-                doc_idx = min(doc_idx, idx)
-        prefix = text[:doc_idx].strip()
-        if prefix:
-            parts.append(prefix)
-
-    return "\n\n".join(parts).strip()
+    prefix = _extract_static_user_without_reference_slot(text)
+    return prefix
 
 
 def build_responses_system_input(generation: dict) -> str:
