@@ -2,25 +2,56 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+"""Map HPO Chat Completions prompts to exported Responses ``input[system]`` text.
+
+OGX-owned phrases are defined below and must stay aligned with
+``benchmarking/rag/config.yaml`` (``file_search_params``, ``context_prompt_params``,
+``annotation_prompt_params``). If OGX injection strings change, update the lists here.
+"""
+
+import re
 
 _USER_QUERY_PLACEHOLDER = "<user_query_placeholder>"
 _EMPTY_SYSTEM_FALLBACK = "You are a helpful assistant."
 _EXPORT_SLOT_MARKERS = ("{reference_documents}", "{question}", "{multilingual_support}")
 
-# Structural markers wrapping the document slot — not instruction text for export.
+# Suffix lines after ``{reference_documents}``: drop structural wrappers (e.g. ``[End]``).
 _DOCUMENT_SLOT_MARKERS = frozenset({"[Document]", "[End]", "Documents:", "Context:"})
 
-_HPO_GROUNDING_PREFIX = "Answer ONLY using information from the documents below"
+# ============================================================================
+# OGX Runtime Injection Strings
+# ============================================================================
+# These phrases are injected by OGX at file_search runtime via
+# benchmarking/rag/config.yaml (file_search_params, context_prompt_params,
+# annotation_prompt_params). HPO export must NOT duplicate them in
+# responses_template.input[system].
+#
+# If OGX changes injection strings in config.yaml, update these lists.
+# ============================================================================
+
+# Citation-related phrases
+_CITATION_PREFIXES = (
+    "You MUST cite sources",
+    "Cite sources immediately",
+)
+_CITATION_SUBSTRINGS = (
+    "[1], [2]",
+    "<|file-id|>",
+    "cite as <|",
+    "file citations",
+    "document numbers for every factual claim",
+)
 _HPO_CITATION_INSTRUCTION = (
     "You MUST cite sources using [1], [2], etc. matching the document numbers for every factual claim."
 )
+_HPO_CITATION_FRAGMENTS = (
+    _HPO_CITATION_INSTRUCTION,
+    "You MUST cite sources using [1], [2], etc.",
+    "You MUST cite sources using [1], [2].",
+)
 
-# Phrases injected by OGX at file_search runtime (benchmarking/rag/config.yaml:
-# file_search_params, context_prompt_params, annotation_prompt_params). Export must
-# not repeat or substitute equivalent wording in responses_template.input[system].
-_OGX_DUPLICATIVE_LINE_PREFIXES = (
-    "You MUST cite sources",
-    "Cite sources immediately",
+# Grounding/retrieval-related phrases
+_GROUNDING_PREFIXES = (
     "Answer ONLY using information from the documents",
     "Answer ONLY using information from documents retrieved",
     "Answer using ONLY the provided documents",
@@ -28,6 +59,20 @@ _OGX_DUPLICATIVE_LINE_PREFIXES = (
     "Do not use outside knowledge",
     "If the retrieved documents do not contain",
     "If the documents do not contain",
+)
+_GROUNDING_SUBSTRINGS = (
+    "documents below",
+    "retrieved via file search",
+    "retrieved to help answer the user",
+    "supporting information only in answering",
+)
+_SYSTEM_GROUNDING_PHRASES = (
+    "Answer using ONLY the provided documents.",
+    "Answer using ONLY information from documents retrieved via file search.",
+)
+
+# File search tool markers
+_FILE_SEARCH_MARKERS = (
     "file_search tool found",
     "BEGIN of file_search tool results",
     "END of file_search tool results",
@@ -35,40 +80,33 @@ _OGX_DUPLICATIVE_LINE_PREFIXES = (
     "Use them as supporting information only",
     "Do not add extra punctuation. Use only the file IDs",
 )
-_OGX_DUPLICATIVE_SUBSTRINGS = (
-    "[1], [2]",
-    "<|file-id|>",
-    "cite as <|",
-    "documents below",
-    "retrieved via file search",
-    "file citations",
-    "retrieved to help answer the user",
-    "supporting information only in answering",
-)
-_HPO_CITATION_FRAGMENTS = (
-    _HPO_CITATION_INSTRUCTION,
-    "You MUST cite sources using [1], [2], etc.",
-    "You MUST cite sources using [1], [2].",
-)
-_SYSTEM_GROUNDING_PHRASES = (
-    "Answer using ONLY the provided documents.",
-    "Answer using ONLY information from documents retrieved via file search.",
-)
-_GROUNDING_DUPLICATE_PREFIXES = (
-    "Answer ONLY using information from the documents",
+
+# User template duplicate detection (pass 1 filtering)
+_USER_GROUNDING_SKIP_PREFIXES = (
+    "Answer ONLY using information from the documents below",
     "Do not use outside knowledge",
     "If the documents do not contain the answer",
+)
+_USER_RAG_SCAFFOLD_PREFIXES = (
     "You are a specialized Retrieval Augmented Generation",
     "Prioritize correctness and ensure your response is grounded",
 )
-_USER_GROUNDING_SKIP_PREFIXES = (
-    _HPO_GROUNDING_PREFIX,
-    "Do not use outside knowledge",
-    "If the documents do not contain the answer",
-)
+
+# Document and question slot markers
 _DOCUMENT_LABELS = ("Documents:", "Context:", "[Document]")
 _QUESTION_PREFIXES = ("Question:", "Q:", "[conversation]:")
 _LEGACY_DOCUMENT_MARKERS = ("Documents:\n", "Context:\n", "[Document]\n")
+
+# Combined line prefixes for sentence-level filtering
+_OGX_DUPLICATIVE_LINE_PREFIXES = _CITATION_PREFIXES + _GROUNDING_PREFIXES + _FILE_SEARCH_MARKERS
+
+# Combined substrings for partial-match filtering
+_OGX_DUPLICATIVE_SUBSTRINGS = _CITATION_SUBSTRINGS + _GROUNDING_SUBSTRINGS
+
+
+def _collapse_whitespace(text: str) -> str:
+    """Collapse repeated interior spaces after phrase removal."""
+    return re.sub(r" +", " ", text).strip()
 
 
 def _sentence_is_ogx_duplicative(sentence: str) -> bool:
@@ -122,18 +160,10 @@ def _filter_ogx_duplicative_sentences(line: str) -> str:
     return result
 
 
-def _line_is_ogx_duplicative(line: str) -> bool:
-    """Return whether a line duplicates OGX file_search runtime prompt injection."""
-    stripped = line.strip()
-    if not stripped:
-        return False
-    filtered = _filter_ogx_duplicative_sentences(stripped)
-    return not filtered
-
-
 def _normalize_answer_scaffold(line: str) -> str:
     """Drop citation hints from answer scaffolds; OGX owns citation via annotations."""
-    return line.replace(", with citations", "").replace("with citations", "").replace("  ", " ").strip()
+    normalized = line.replace(", with citations", "").replace("with citations", "")
+    return _collapse_whitespace(normalized)
 
 
 def _strip_ogx_runtime_instructions(text: str) -> str:
@@ -143,6 +173,7 @@ def _strip_ogx_runtime_instructions(text: str) -> str:
 
     for phrase in _SYSTEM_GROUNDING_PHRASES:
         text = text.replace(phrase, "").replace(phrase.rstrip("."), "")
+    text = _collapse_whitespace(text)
 
     lines: list[str] = []
     for line in text.splitlines():
@@ -151,7 +182,7 @@ def _strip_ogx_runtime_instructions(text: str) -> str:
             if lines and lines[-1] != "":
                 lines.append("")
             continue
-        if _line_is_ogx_duplicative(stripped) or _is_citation_related_line(stripped):
+        if _is_citation_related_line(stripped):
             continue
 
         cleaned = _filter_ogx_duplicative_sentences(stripped)
@@ -160,23 +191,13 @@ def _strip_ogx_runtime_instructions(text: str) -> str:
                 cleaned = cleaned.replace(fragment, "").strip()
                 break
         cleaned = _normalize_answer_scaffold(cleaned)
-        if cleaned and not _line_is_ogx_duplicative(cleaned):
+        if cleaned:
             lines.append(cleaned)
 
     result = "\n".join(lines)
     while "\n\n\n" in result:
         result = result.replace("\n\n\n", "\n\n")
     return result.strip()
-
-
-def _is_citation_line(line: str) -> bool:
-    """Return whether a line is an HPO citation instruction."""
-    return _line_is_ogx_duplicative(line) and "cite" in line.lower()
-
-
-def _strip_citation_instructions(text: str) -> str:
-    """Remove citation instructions from export text (OGX annotation_prompt_params)."""
-    return _strip_ogx_runtime_instructions(text)
 
 
 def _join_answer_scaffold_blocks(lines: list[str]) -> str:
@@ -203,7 +224,10 @@ def _should_skip_redundant_user_line(stripped: str, system_has_grounding: bool, 
         return True
     if system_has_citation and stripped.startswith("You MUST cite sources"):
         return True
-    return system_has_grounding and any(stripped.startswith(prefix) for prefix in _GROUNDING_DUPLICATE_PREFIXES)
+    # Check both grounding prefixes and RAG scaffold prefixes (non-OGX user supplements)
+    return system_has_grounding and any(
+        stripped.startswith(prefix) for prefix in _GROUNDING_PREFIXES + _USER_RAG_SCAFFOLD_PREFIXES
+    )
 
 
 def _should_skip_user_export_line(stripped: str) -> bool:
@@ -270,20 +294,27 @@ def _extract_static_user_without_reference_slot(text: str) -> str:
 
 
 def _system_has_grounding_policy(system: str) -> bool:
-    """Return whether the system prompt already states a document-only grounding policy."""
+    """Return whether the system prompt already states an explicit document-only grounding rule.
+
+    Matches only explicit "answer ONLY using" / "answer using ONLY" instructions.
+    Does NOT match descriptive personas like "retrieval-augmented assistant" without
+    an explicit grounding constraint — those are system role definitions, not
+    retrieval policies that would make user grounding instructions redundant.
+    """
     normalized = system.lower()
-    return "answer using only the provided documents" in normalized or "retrieval-augmented assistant" in normalized
+    return (
+        "answer using only the provided documents" in normalized
+        or "answer only using information from the documents" in normalized
+        or "answer only using information from documents" in normalized
+    )
 
 
 def _filter_static_user_for_responses(system: str, static_user: str) -> str:
     """Drop user-template lines that duplicate system policy for Responses export.
 
-    HPO user templates combine static rules with ``{reference_documents}`` and
-    ``{question}`` slots. After stripping those slots, some rule lines overlap
-    with ``system_message_text`` (PR #75 ``_RAG_SYSTEM_PREFIX`` and family
-    personas). Responses receives documents via ``file_search`` and the
-    question via ``input[role=user]``, so only non-redundant supplements belong
-    in ``input[role=system]``.
+    Pass 1 of 2: compare against ``original_system`` (author intent before OGX
+    stripping). Removes user lines that repeat grounding or citation policy already
+    present in the HPO system prompt.
     """
     if not static_user.strip():
         return ""
@@ -307,7 +338,10 @@ def _adapt_system_for_responses_export(system: str) -> str:
 
 
 def _adapt_static_user_for_responses_export(static_user: str) -> str:
-    """Drop merged user supplements that OGX injects at file_search runtime."""
+    """Drop merged user supplements that OGX injects at file_search runtime.
+
+    Pass 2 of 2: strip OGX-runtime phrases from user lines that survived pass 1.
+    """
     if not static_user.strip():
         return ""
 
@@ -360,22 +394,22 @@ def build_responses_system_input(generation: dict) -> str:
     presentation, and citation instructions owned by OGX ``config.yaml`` are
     stripped rather than rephrased into the exported system input.
     """
-    system = _adapt_system_for_responses_export((generation.get("system_message_text") or "").strip())
+    original_system = (generation.get("system_message_text") or "").strip()
+    exported_system = _adapt_system_for_responses_export(original_system)
     user_template = generation.get("user_message_text") or ""
-    raw_system = (generation.get("system_message_text") or "").strip()
 
+    # Pass 1: dedupe vs original_system; pass 2: strip OGX-owned user supplements.
     static_user = _adapt_static_user_for_responses_export(
         _filter_static_user_for_responses(
-            raw_system,
+            original_system,
             _extract_static_user_instructions(user_template),
         ),
     )
 
-    # Merge system and static user, handling empty cases
-    if system and static_user:
-        result = f"{system}\n\n{static_user}"
+    if exported_system and static_user:
+        result = f"{exported_system}\n\n{static_user}"
     else:
-        result = system or static_user
+        result = exported_system or static_user
 
     # Fallback for completely empty patterns (rare edge case)
     if not result or not result.strip() or _is_placeholder_only_export(result):
@@ -398,6 +432,12 @@ def build_pattern_json(
     detected_language : dict | None, default=None
         Language detection result (``{"code": "...", "name": "..."}``) stored
         on ``generation`` before building the Responses export.
+
+    Notes
+    -----
+    ``pattern["settings"]["generation"]`` must include ``model_id``,
+    ``temperature``, ``max_completion_tokens``, ``system_message_text``, and
+    ``user_message_text`` (as produced by the experiment payload).
 
     Returns
     -------
@@ -446,6 +486,7 @@ def build_pattern_json(
             "impact_factor": ranker_k,
         }
     elif search_mode == "hybrid" and ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
+        # ``ranker_alpha == 1.0`` intentionally falls through to ``else`` (semantic-only default).
         pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
             "ranker": "weighted",
             "alpha": ranker_alpha,
