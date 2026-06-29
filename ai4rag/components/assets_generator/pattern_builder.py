@@ -116,12 +116,7 @@ def _line_is_ogx_duplicative(line: str) -> bool:
 
 def _normalize_answer_scaffold(line: str) -> str:
     """Drop citation hints from answer scaffolds; OGX owns citation via annotations."""
-    return (
-        line.replace(", with citations", "")
-        .replace("with citations", "")
-        .replace("  ", " ")
-        .strip()
-    )
+    return line.replace(", with citations", "").replace("with citations", "").replace("  ", " ").strip()
 
 
 def _strip_ogx_runtime_instructions(text: str) -> str:
@@ -170,10 +165,7 @@ def _strip_citation_instructions(text: str) -> str:
 def _system_has_grounding_policy(system: str) -> bool:
     """Return whether the system prompt already states a document-only grounding policy."""
     normalized = system.lower()
-    return (
-        "answer using only the provided documents" in normalized
-        or "retrieval-augmented assistant" in normalized
-    )
+    return "answer using only the provided documents" in normalized or "retrieval-augmented assistant" in normalized
 
 
 def _filter_static_user_for_responses(system: str, static_user: str) -> str:
