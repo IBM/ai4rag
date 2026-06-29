@@ -306,6 +306,44 @@ class TestBuildPatternJson:
         system_text = build_responses_system_input(generation)
         assert expected_fragment in system_text
 
+    def test_build_responses_system_input_handles_empty_inputs(self):
+        """When both system and user are empty or contain only placeholders, return fallback."""
+        # Case 1: Completely empty
+        generation = {
+            "system_message_text": "",
+            "user_message_text": "",
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+        # Case 2: Only placeholders in user template
+        generation = {
+            "system_message_text": "",
+            "user_message_text": "{reference_documents}\n{question}",
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+        # Case 4: Unresolved question slot only (cookbook-style minimal user template)
+        generation = {
+            "system_message_text": "",
+            "user_message_text": "{question}",
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
+        # Case 3: Only OGX-duplicative content that gets stripped
+        generation = {
+            "system_message_text": "Answer using ONLY the provided documents.",
+            "user_message_text": (
+                "Answer ONLY using information from the documents below.\n"
+                "You MUST cite sources using [1], [2].\n"
+                "{reference_documents}\n{question}"
+            ),
+        }
+        system_text = build_responses_system_input(generation)
+        assert system_text == "You are a helpful assistant."
+
     def test_preserves_existing_pattern_fields(self):
         """Existing pattern fields (name, chunking, embedding, etc.) must not be altered."""
         pattern = _make_pattern()

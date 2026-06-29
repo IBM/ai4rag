@@ -4,6 +4,8 @@
 # -----------------------------------------------------------------------------
 
 _USER_QUERY_PLACEHOLDER = "<user_query_placeholder>"
+_EMPTY_SYSTEM_FALLBACK = "You are a helpful assistant."
+_EXPORT_SLOT_MARKERS = ("{reference_documents}", "{question}", "{multilingual_support}")
 
 # Structural markers wrapping the document slot — not instruction text for export.
 _DOCUMENT_SLOT_MARKERS = frozenset({"[Document]", "[End]", "Documents:", "Context:"})
@@ -338,6 +340,16 @@ def _extract_static_user_instructions(user_message_text: str) -> str:
     return prefix
 
 
+def _is_placeholder_only_export(text: str) -> bool:
+    """Return whether export text contains only unresolved HPO template slots."""
+    cleaned = text.strip()
+    if not cleaned:
+        return True
+    for marker in _EXPORT_SLOT_MARKERS:
+        cleaned = cleaned.replace(marker, "")
+    return not cleaned.strip()
+
+
 def build_responses_system_input(generation: dict) -> str:
     """Build Responses API system input aligned with HPO chat/completion prompts.
 
@@ -358,11 +370,18 @@ def build_responses_system_input(generation: dict) -> str:
             _extract_static_user_instructions(user_template),
         ),
     )
-    if not static_user:
-        return system
-    if not system:
-        return static_user
-    return f"{system}\n\n{static_user}"
+
+    # Merge system and static user, handling empty cases
+    if system and static_user:
+        result = f"{system}\n\n{static_user}"
+    else:
+        result = system or static_user
+
+    # Fallback for completely empty patterns (rare edge case)
+    if not result or not result.strip() or _is_placeholder_only_export(result):
+        return _EMPTY_SYSTEM_FALLBACK
+
+    return result
 
 
 def build_pattern_json(
