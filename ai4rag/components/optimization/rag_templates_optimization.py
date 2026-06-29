@@ -131,6 +131,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     with open(search_space_report_path, "r", encoding="utf-8") as f:
         search_space_raw = yml.safe_load(f)
 
+    detected_language: dict[str, str] | None = search_space_raw.pop("detected_language", None)
+
     search_space = AI4RAGSearchSpace(
         params=[Parameter(param, "C", values=values) for param, values in search_space_raw.items()]
     )
@@ -144,6 +146,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     event_handler = KFPEventHandler()
 
     benchmark_data = pd.read_json(Path(test_data_path))
+
+    if detected_language:
+        _inject_language_instructions(search_space, detected_language)
 
     rag_exp = AI4RAGExperiment(
         client=ogx_client,
@@ -174,6 +179,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
         pattern_data = build_pattern_json(
             pattern=pattern.get("payload"),
+            detected_language=detected_language,
         )
 
         # Generate notebooks
@@ -268,6 +274,42 @@ def _evaluation_result_fallback(eval_data_list: list, evaluation_result: Any) ->
             }
         )
     return out
+
+
+def _inject_language_instructions(
+    search_space: AI4RAGSearchSpace,
+    detected_language: dict[str, str],
+) -> None:
+    """Inject explicit language response instructions into foundation models.
+
+    When a non-English language is detected, each foundation model's system
+    and user messages are augmented with an instruction to respond in that
+    language.
+
+    Parameters
+    ----------
+    search_space
+        The search space whose foundation models will be modified in-place.
+    detected_language
+        Detection result with ``"code"`` and ``"name"`` keys.
+    """
+    lang_code = detected_language.get("code", "")
+    lang_name = detected_language.get("name", "")
+    if not lang_name or lang_code == "en":
+        return
+
+    explicit_instruction = f"You MUST respond in {lang_name}."
+    for fm in search_space["foundation_model"].values:
+        existing_sys = fm.system_message_text
+        existing_usr = str(fm.user_message_text)
+        fm.system_message_text = f"{explicit_instruction} {existing_sys}"
+        fm.user_message_text = f"{existing_usr}{explicit_instruction}"
+
+    _logger.info(
+        "Set explicit language instruction on %d foundation model(s): %s",
+        len(search_space["foundation_model"].values),
+        explicit_instruction,
+    )
 
 
 def _validate_optimization_settings(optimization_settings: dict | None) -> dict:

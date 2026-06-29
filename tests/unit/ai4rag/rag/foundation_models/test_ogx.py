@@ -223,7 +223,7 @@ class TestOGXFoundationModel:
             context_template_text=valid_context_template,
             system_message_text=valid_system_message,
         )
-        mock_get_user_message.assert_called_once_with(model_name="llama-3-70b", language_autodetect=False)
+        mock_get_user_message.assert_called_once_with(model_name="llama-3-70b")
         assert "Default user message" in model.user_message_text
 
     def test_context_template_text_custom(self, mock_ogx_client, valid_user_message_template, valid_system_message):
