@@ -249,7 +249,9 @@ class TestUnsupportedChunkingMethods:
         from ai4rag.components.optimization import search_space_preparation as mod
 
         search_space_items = {
-            "chunking_method": MagicMock(values=["recursive", "hybrid"], all_values=MagicMock(return_value=["recursive", "hybrid"])),
+            "chunking_method": MagicMock(
+                values=["recursive", "hybrid"], all_values=MagicMock(return_value=["recursive", "hybrid"])
+            ),
             "chunk_size": MagicMock(values=[256], all_values=MagicMock(return_value=[256])),
             "foundation_model": MagicMock(values=[MagicMock()]),
             "embedding_model": MagicMock(values=[MagicMock()]),
@@ -275,69 +277,3 @@ class TestUnsupportedChunkingMethods:
                     ogx_client=mock_ogx_client,
                     chunking_methods=["semantic"],
                 )
-
-
-# ---------------------------------------------------------------------------
-# SearchSpaceReport — contextual_enrichment_enabled
-# ---------------------------------------------------------------------------
-
-
-class TestSearchSpaceReportContextualEnrichment:
-    """Tests for contextual_enrichment_enabled in SearchSpaceReport."""
-
-    def test_contextual_enrichment_in_yaml_when_true(self, tmp_path: Path):
-        """When contextual_enrichment_enabled is True, it must appear in YAML."""
-        import yaml as yml
-
-        report = SearchSpaceReport(
-            search_space={"chunk_size": [256]},
-            selected_models={"foundation_model": []},
-            detected_language=None,
-            contextual_enrichment_enabled=True,
-        )
-        out_file = tmp_path / "report.yaml"
-        report.save_yaml(out_file)
-
-        data = yml.safe_load(out_file.read_text())
-        assert data["contextual_enrichment_enabled"] is True
-
-    def test_contextual_enrichment_in_yaml_when_false(self, tmp_path: Path):
-        """When contextual_enrichment_enabled is False, it must appear in YAML."""
-        import yaml as yml
-
-        report = SearchSpaceReport(
-            search_space={"chunk_size": [256]},
-            selected_models={"foundation_model": []},
-            detected_language=None,
-            contextual_enrichment_enabled=False,
-        )
-        out_file = tmp_path / "report.yaml"
-        report.save_yaml(out_file)
-
-        data = yml.safe_load(out_file.read_text())
-        assert data["contextual_enrichment_enabled"] is False
-
-    def test_contextual_enrichment_absent_when_none(self, tmp_path: Path):
-        """When contextual_enrichment_enabled is None, the key must not appear."""
-        import yaml as yml
-
-        report = SearchSpaceReport(
-            search_space={"chunk_size": [256]},
-            selected_models={"foundation_model": []},
-            detected_language=None,
-            contextual_enrichment_enabled=None,
-        )
-        out_file = tmp_path / "report.yaml"
-        report.save_yaml(out_file)
-
-        data = yml.safe_load(out_file.read_text())
-        assert "contextual_enrichment_enabled" not in data
-
-    def test_default_is_none(self):
-        """Default value for contextual_enrichment_enabled should be None."""
-        report = SearchSpaceReport(
-            search_space={},
-            selected_models={},
-            detected_language=None,
-        )
-        assert report.contextual_enrichment_enabled is None

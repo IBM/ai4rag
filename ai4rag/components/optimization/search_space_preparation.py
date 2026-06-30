@@ -113,8 +113,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     sample_size: int = _DEFAULT_SAMPLE_SIZE,
     random_seed: int = _DEFAULT_SEED,
     chunking_methods: list[str] | None = None,
-    contextual_enrichment_enabled: bool | None = None,
-    max_threads: int = 10,
+    inference_max_threads: int = 10,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
@@ -154,11 +153,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         search space to only these methods (e.g. ``["recursive"]`` or
         ``["hybrid"]``).  ``None`` uses the platform defaults (both
         ``"recursive"`` and ``"hybrid"``).
-    contextual_enrichment_enabled
-        Whether LLM contextual enrichment should be applied at index
-        time.  Stored as metadata in the report for downstream
-        consumption.  ``None`` omits it from the report.
-    max_threads
+    inference_max_threads
         Maximum number of concurrent threads used when querying the
         RAG service during benchmark evaluation.  Lower values reduce
         per-request concurrency (useful when each request carries more
@@ -209,7 +204,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
             embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
             metric=metric,
-            max_threads=max_threads,
+            max_threads=inference_max_threads,
         )
         mps.evaluate_patterns()
         selected = mps.select_models(
@@ -240,14 +235,10 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         unsupported = [m for m in chunking_methods if m not in available]
         if unsupported:
             raise ValueError(
-                f"Unsupported chunking methods: {unsupported!r}. "
-                f"Available methods: {sorted(available)!r}."
+                f"Unsupported chunking methods: {unsupported!r}. " f"Available methods: {sorted(available)!r}."
             )
         verbose_repr["chunking_method"] = chunking_methods
         _logger.info("Chunking methods constrained to: %s", verbose_repr["chunking_method"])
-
-    if contextual_enrichment_enabled is not None:
-        _logger.info("Contextual enrichment enabled: %s", contextual_enrichment_enabled)
 
     return SearchSpaceReport(
         search_space=verbose_repr,
