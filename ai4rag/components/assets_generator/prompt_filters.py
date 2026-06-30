@@ -255,6 +255,5 @@ def strip_ogx_runtime_instructions(text: str) -> str:
             lines.append(cleaned)
 
     result = "\n".join(lines)
-    while "\n\n\n" in result:
-        result = result.replace("\n\n\n", "\n\n")
+    result = re.sub(r"\n{3,}", "\n\n", result)
     return result.strip()

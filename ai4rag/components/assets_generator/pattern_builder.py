@@ -4,6 +4,8 @@
 # -----------------------------------------------------------------------------
 """Build Responses API pattern definitions from HPO experiment results."""
 
+import re
+
 from ai4rag.components.assets_generator.prompt_filters import (
     GROUNDING_PREFIXES,
     USER_GROUNDING_SKIP_PREFIXES,
@@ -22,7 +24,6 @@ _DOCUMENT_SLOT_MARKERS = frozenset({"[Document]", "[End]", "Documents:", "Contex
 # Document and question slot markers
 _DOCUMENT_LABELS = ("Documents:", "Context:", "[Document]")
 _QUESTION_PREFIXES = ("Question:", "Q:", "[conversation]:")
-_LEGACY_DOCUMENT_MARKERS = ("Documents:\n", "Context:\n", "[Document]\n")
 
 
 def _join_answer_scaffold_blocks(lines: list[str]) -> str:
@@ -111,16 +112,6 @@ def _extract_static_user_from_reference_slot(text: str) -> str:
     return "\n\n".join(parts).strip()
 
 
-def _extract_static_user_without_reference_slot(text: str) -> str:
-    """Extract static instructions from legacy templates without an explicit doc slot."""
-    doc_idx = len(text)
-    for marker in _LEGACY_DOCUMENT_MARKERS:
-        idx = text.find(marker)
-        if idx != -1:
-            doc_idx = min(doc_idx, idx)
-    return text[:doc_idx].strip()
-
-
 def _system_has_grounding_policy(system: str) -> bool:
     """Return whether the system prompt already states an explicit document-only grounding rule.
 
@@ -128,9 +119,11 @@ def _system_has_grounding_policy(system: str) -> bool:
     OGX phrase to ``GROUNDING_PREFIXES`` automatically covers system detection too.
     Does NOT match descriptive personas like "retrieval-augmented assistant" without
     an explicit grounding constraint.
+
+    Checks at sentence granularity to avoid false positives from embedded substrings.
     """
-    normalized = system.lower()
-    return any(prefix.lower() in normalized for prefix in GROUNDING_PREFIXES)
+    sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", system)]
+    return any(any(sent.lower().startswith(p.lower()) for p in GROUNDING_PREFIXES) for sent in sentences)
 
 
 def _filter_static_user_for_responses(system: str, static_user: str) -> str:
@@ -185,16 +178,17 @@ def _extract_static_user_instructions(user_message_text: str) -> str:
 
     Strips runtime slots (retrieved documents, question) that Responses API
     supplies via ``file_search`` and the user ``input`` message respectively.
+
+    All current templates use {reference_documents} placeholder format.
     """
     if not user_message_text:
         return ""
 
     text = str(user_message_text).strip()
-    if "{reference_documents}" in text:
-        return _extract_static_user_from_reference_slot(text)
+    if "{reference_documents}" not in text:
+        return ""
 
-    prefix = _extract_static_user_without_reference_slot(text)
-    return prefix
+    return _extract_static_user_from_reference_slot(text)
 
 
 def _is_placeholder_only_export(text: str) -> bool:
@@ -266,7 +260,7 @@ def build_pattern_json(
     generation = pattern["settings"]["generation"]
     system_input = build_responses_system_input(generation)
 
-    pattern["settings"]["responses_template"] = {
+    responses_template = {
         "model": generation["model_id"],
         "stream": False,
         "store": False,
@@ -277,8 +271,6 @@ def build_pattern_json(
             },
             {"content": [{"text": _USER_QUERY_PLACEHOLDER, "type": "input_text"}], "role": "user"},
         ],
-        "max_output_tokens": generation["max_completion_tokens"],
-        "temperature": generation["temperature"],
         "tool_choice": {"mode": "required", "tools": [{}], "type": "file_search"},
         "tools": [
             {
@@ -289,6 +281,14 @@ def build_pattern_json(
         ],
         "include": ["file_search_call.results"],
     }
+
+    # Only include temperature and max_output_tokens if they are not None
+    if generation.get("temperature") is not None:
+        responses_template["temperature"] = generation["temperature"]
+    if generation.get("max_completion_tokens") is not None:
+        responses_template["max_output_tokens"] = generation["max_completion_tokens"]
+
+    pattern["settings"]["responses_template"] = responses_template
 
     retrieval_settings = pattern["settings"]["retrieval"]
     search_mode = retrieval_settings.get("search_mode")

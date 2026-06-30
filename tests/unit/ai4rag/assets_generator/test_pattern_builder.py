@@ -221,7 +221,7 @@ class TestBuildPatternJson:
         assert "max 150 words" in system_text
         assert "English only" in system_text
 
-    def test_build_responses_system_input_legacy_user_prefix(self):
+    def test_build_responses_system_input_strips_ogx_prefix(self):
         """Legacy grounding and citation lines are omitted; persona supplements are kept."""
         generation = {
             "system_message_text": "Short system prefix.",
@@ -251,9 +251,7 @@ class TestBuildPatternJson:
         pattern = _make_pattern()
         pattern["settings"]["generation"]["model_id"] = model_id
         pattern["settings"]["generation"]["system_message_text"] = get_system_message_text(model_id)
-        pattern["settings"]["generation"]["user_message_text"] = get_user_message_text(
-            model_id, language="English"
-        )
+        pattern["settings"]["generation"]["user_message_text"] = get_user_message_text(model_id, language="English")
 
         build_pattern_json(pattern)
 
@@ -399,13 +397,14 @@ class TestBuildPatternJson:
         assert "specialized Retrieval Augmented Generation" in result
 
     def test_extract_static_user_pure_text_no_slots(self):
-        """Pure static user text without slots is merged into export."""
+        """Templates without {reference_documents} are invalid and return empty user text."""
         generation = {
             "system_message_text": "Short system.",
             "user_message_text": "Always respond in a formal tone.",
         }
         result = build_responses_system_input(generation)
-        assert result == "Short system.\n\nAlways respond in a formal tone."
+        # Invalid template (no {reference_documents}) → system only
+        assert result == "Short system."
 
     def test_normalize_answer_scaffold_strips_with_citations(self):
         """Answer scaffolds must not retain citation hints owned by OGX."""
@@ -459,3 +458,38 @@ class TestBuildPatternJson:
 
         assert pattern["name"] == original_name
         assert pattern["settings"]["chunking"] == original_chunking
+
+    def test_omits_temperature_when_none(self):
+        """Temperature field must be omitted when None to avoid sending null to API."""
+        pattern = _make_pattern()
+        pattern["settings"]["generation"]["temperature"] = None
+
+        build_pattern_json(pattern)
+
+        assert "temperature" not in pattern["settings"]["responses_template"]
+        # max_output_tokens should still be present
+        assert "max_output_tokens" in pattern["settings"]["responses_template"]
+
+    def test_omits_max_output_tokens_when_none(self):
+        """max_output_tokens field must be omitted when None to avoid sending null to API."""
+        pattern = _make_pattern()
+        pattern["settings"]["generation"]["max_completion_tokens"] = None
+
+        build_pattern_json(pattern)
+
+        assert "max_output_tokens" not in pattern["settings"]["responses_template"]
+        # temperature should still be present
+        assert "temperature" in pattern["settings"]["responses_template"]
+
+    def test_system_grounding_detection_no_false_positive_on_embedded_substring(self):
+        """Grounding detection must not match embedded substrings, only sentence prefixes."""
+        generation = {
+            "system_message_text": "Use only relevant information. All documents do not contain PII.",
+            "user_message_text": "Answer ONLY using information from the documents below.\n{reference_documents}\n{question}",
+        }
+        result = build_responses_system_input(generation)
+
+        # "documents do not contain" is in _GROUNDING_PREFIXES but appears mid-sentence
+        # Should NOT suppress user grounding since system doesn't start with a grounding prefix
+        assert "Use only relevant information" in result
+        assert "All documents do not contain PII" in result
