@@ -437,7 +437,6 @@ def build_pattern_json(
     generation = pattern["settings"]["generation"]
     system_input = build_responses_system_input(generation)
 
-
     pattern["settings"]["responses_template"] = {
         "model": generation["model_id"],
         "stream": False,
