@@ -2,14 +2,15 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Map HPO Chat Completions prompts to exported Responses ``input[system]`` text.
+"""Build Responses API pattern definitions from HPO experiment results."""
 
-OGX-owned phrases are defined below and must stay aligned with
-``benchmarking/rag/config.yaml`` (``file_search_params``, ``context_prompt_params``,
-``annotation_prompt_params``). If OGX injection strings change, update the lists here.
-"""
-
-import re
+from ai4rag.components.assets_generator.prompt_filters import (
+    GROUNDING_PREFIXES,
+    USER_GROUNDING_SKIP_PREFIXES,
+    USER_RAG_GROUNDING_PREFIXES,
+    is_citation_related_line,
+    strip_ogx_runtime_instructions,
+)
 
 _USER_QUERY_PLACEHOLDER = "<user_query_placeholder>"
 _EMPTY_SYSTEM_FALLBACK = "You are a helpful assistant."
@@ -18,182 +19,10 @@ _EXPORT_SLOT_MARKERS = ("{reference_documents}", "{question}", "{multilingual_su
 # Suffix lines after ``{reference_documents}``: drop structural wrappers (e.g. ``[End]``).
 _DOCUMENT_SLOT_MARKERS = frozenset({"[Document]", "[End]", "Documents:", "Context:"})
 
-# ============================================================================
-# OGX Runtime Injection Strings
-# ============================================================================
-# These phrases are injected by OGX at file_search runtime via
-# benchmarking/rag/config.yaml (file_search_params, context_prompt_params,
-# annotation_prompt_params). HPO export must NOT duplicate them in
-# responses_template.input[system].
-#
-# If OGX changes injection strings in config.yaml, update these lists.
-# ============================================================================
-
-# Citation-related phrases
-_CITATION_PREFIXES = (
-    "You MUST cite sources",
-    "Cite sources immediately",
-)
-_CITATION_SUBSTRINGS = (
-    "[1], [2]",
-    "<|file-id|>",
-    "cite as <|",
-    "file citations",
-    "document numbers for every factual claim",
-)
-_HPO_CITATION_INSTRUCTION = (
-    "You MUST cite sources using [1], [2], etc. matching the document numbers for every factual claim."
-)
-_HPO_CITATION_FRAGMENTS = (
-    _HPO_CITATION_INSTRUCTION,
-    "You MUST cite sources using [1], [2], etc.",
-    "You MUST cite sources using [1], [2].",
-)
-
-# Grounding/retrieval-related phrases
-_GROUNDING_PREFIXES = (
-    "Answer ONLY using information from the documents",
-    "Answer ONLY using information from documents retrieved",
-    "Answer using ONLY the provided documents",
-    "Answer using ONLY information from documents",
-    "Do not use outside knowledge",
-    "If the retrieved documents do not contain",
-    "If the documents do not contain",
-)
-_GROUNDING_SUBSTRINGS = (
-    "documents below",
-    "retrieved via file search",
-    "retrieved to help answer the user",
-    "supporting information only in answering",
-)
-_SYSTEM_GROUNDING_PHRASES = (
-    "Answer using ONLY the provided documents.",
-    "Answer using ONLY information from documents retrieved via file search.",
-)
-
-# File search tool markers
-_FILE_SEARCH_MARKERS = (
-    "file_search tool found",
-    "BEGIN of file_search tool results",
-    "END of file_search tool results",
-    "The above results were retrieved to help answer",
-    "Use them as supporting information only",
-    "Do not add extra punctuation. Use only the file IDs",
-)
-
-# User template duplicate detection (pass 1 filtering)
-_USER_GROUNDING_SKIP_PREFIXES = (
-    "Answer ONLY using information from the documents below",
-    "Do not use outside knowledge",
-    "If the documents do not contain the answer",
-)
-_USER_RAG_GROUNDING_PREFIXES = (
-    "You are a specialized Retrieval Augmented Generation",
-    "Prioritize correctness and ensure your response is grounded",
-)
-
 # Document and question slot markers
 _DOCUMENT_LABELS = ("Documents:", "Context:", "[Document]")
 _QUESTION_PREFIXES = ("Question:", "Q:", "[conversation]:")
 _LEGACY_DOCUMENT_MARKERS = ("Documents:\n", "Context:\n", "[Document]\n")
-
-# Combined line prefixes for sentence-level filtering
-_OGX_DUPLICATIVE_LINE_PREFIXES = _CITATION_PREFIXES + _GROUNDING_PREFIXES + _FILE_SEARCH_MARKERS
-
-# Combined substrings for partial-match filtering
-_OGX_DUPLICATIVE_SUBSTRINGS = _CITATION_SUBSTRINGS + _GROUNDING_SUBSTRINGS
-
-
-def _collapse_whitespace(text: str) -> str:
-    """Collapse repeated interior spaces after phrase removal."""
-    return re.sub(r" +", " ", text).strip()
-
-
-def _sentence_is_ogx_duplicative(sentence: str) -> bool:
-    """Return whether a sentence duplicates OGX file_search runtime injection."""
-    stripped = sentence.strip().rstrip(".")
-    if not stripped:
-        return True
-    if any(stripped.startswith(prefix.rstrip(".")) for prefix in _OGX_DUPLICATIVE_LINE_PREFIXES):
-        return True
-    normalized = stripped.lower()
-    return any(fragment.lower() in normalized for fragment in _OGX_DUPLICATIVE_SUBSTRINGS)
-
-
-def _is_citation_related_line(line: str) -> bool:
-    """Return whether an entire line should be dropped as citation guidance."""
-    stripped = line.strip()
-    if not stripped:
-        return False
-    lower = stripped.lower()
-    if any(stripped.startswith(prefix) for prefix in _CITATION_PREFIXES):
-        return True
-    if any(fragment.lower() in lower for fragment in _HPO_CITATION_FRAGMENTS):
-        return True
-    return any(sub.lower() in lower for sub in _CITATION_SUBSTRINGS)
-
-
-def _filter_ogx_duplicative_sentences(line: str) -> str:
-    """Remove OGX-duplicative sentences while keeping persona or policy sentences."""
-    stripped = line.strip()
-    if not stripped or _is_citation_related_line(stripped):
-        return ""
-
-    # Split on ". " only — avoids breaking abbreviations such as "i.e.,"
-    parts = [part.strip() for part in stripped.split(". ") if part.strip()]
-    if len(parts) <= 1:
-        if _sentence_is_ogx_duplicative(stripped.rstrip(".")):
-            return ""
-        return stripped
-
-    kept = [part.rstrip(".") for part in parts if not _sentence_is_ogx_duplicative(part.rstrip("."))]
-    if not kept:
-        return ""
-
-    result = ". ".join(kept)
-    if stripped.endswith("."):
-        result += "."
-    return result
-
-
-def _normalize_answer_scaffold(line: str) -> str:
-    """Drop citation hints from answer scaffolds; OGX owns citation via annotations."""
-    normalized = line.replace(", with citations", "").replace("with citations", "")
-    return _collapse_whitespace(normalized)
-
-
-def _strip_ogx_runtime_instructions(text: str) -> str:
-    """Remove text that OGX injects via file_search config at inference time."""
-    if not text.strip():
-        return ""
-
-    for phrase in _SYSTEM_GROUNDING_PHRASES:
-        text = text.replace(phrase, "").replace(phrase.rstrip("."), "")
-    text = _collapse_whitespace(text)
-
-    lines: list[str] = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped:
-            if lines and lines[-1] != "":
-                lines.append("")
-            continue
-        if _is_citation_related_line(stripped):
-            continue
-
-        cleaned = _filter_ogx_duplicative_sentences(stripped)
-        for fragment in _HPO_CITATION_FRAGMENTS:
-            if fragment in cleaned:
-                cleaned = cleaned.replace(fragment, "").strip()
-                break
-        cleaned = _normalize_answer_scaffold(cleaned)
-        if cleaned:
-            lines.append(cleaned)
-
-    result = "\n".join(lines)
-    while "\n\n\n" in result:
-        result = result.replace("\n\n\n", "\n\n")
-    return result.strip()
 
 
 def _join_answer_scaffold_blocks(lines: list[str]) -> str:
@@ -222,18 +51,18 @@ def _join_answer_scaffold_blocks(lines: list[str]) -> str:
 
 def _should_skip_redundant_user_line(stripped: str, system_has_grounding: bool) -> bool:
     """Return whether a user-template line duplicates system policy for export."""
-    if _is_citation_related_line(stripped):
+    if is_citation_related_line(stripped):
         return True
     return system_has_grounding and any(
-        stripped.startswith(prefix) for prefix in _GROUNDING_PREFIXES + _USER_RAG_GROUNDING_PREFIXES
+        stripped.startswith(prefix) for prefix in GROUNDING_PREFIXES + USER_RAG_GROUNDING_PREFIXES
     )
 
 
 def _should_skip_user_export_line(stripped: str) -> bool:
     """Return whether a merged user line is OGX-owned and must not be exported."""
-    if any(stripped.startswith(prefix) for prefix in _USER_GROUNDING_SKIP_PREFIXES):
+    if any(stripped.startswith(prefix) for prefix in USER_GROUNDING_SKIP_PREFIXES):
         return True
-    return _is_citation_related_line(stripped)
+    return is_citation_related_line(stripped)
 
 
 def _strip_document_slot_prefix(prefix: str) -> str:
@@ -296,12 +125,12 @@ def _system_has_grounding_policy(system: str) -> bool:
     """Return whether the system prompt already states an explicit document-only grounding rule.
 
     Uses the same prefix list as sentence-level filtering so that adding a new
-    OGX phrase to ``_GROUNDING_PREFIXES`` automatically covers system detection too.
+    OGX phrase to ``GROUNDING_PREFIXES`` automatically covers system detection too.
     Does NOT match descriptive personas like "retrieval-augmented assistant" without
     an explicit grounding constraint.
     """
     normalized = system.lower()
-    return any(prefix.lower() in normalized for prefix in _GROUNDING_PREFIXES)
+    return any(prefix.lower() in normalized for prefix in GROUNDING_PREFIXES)
 
 
 def _filter_static_user_for_responses(system: str, static_user: str) -> str:
@@ -328,7 +157,7 @@ def _filter_static_user_for_responses(system: str, static_user: str) -> str:
 
 def _adapt_system_for_responses_export(system: str) -> str:
     """Drop OGX-runtime retrieval/citation text from the HPO system prompt."""
-    return _strip_ogx_runtime_instructions(system)
+    return strip_ogx_runtime_instructions(system)
 
 
 def _adapt_static_user_for_responses_export(static_user: str) -> str:
@@ -344,7 +173,7 @@ def _adapt_static_user_for_responses_export(static_user: str) -> str:
         stripped = line.strip()
         if not stripped or _should_skip_user_export_line(stripped):
             continue
-        cleaned = _strip_ogx_runtime_instructions(stripped)
+        cleaned = strip_ogx_runtime_instructions(stripped)
         if cleaned:
             adapted_lines.append(cleaned)
 

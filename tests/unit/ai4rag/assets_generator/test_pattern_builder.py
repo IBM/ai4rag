@@ -11,9 +11,9 @@ import pytest
 from ai4rag.components.assets_generator import build_pattern_json
 from ai4rag.components.assets_generator.pattern_builder import (
     _is_placeholder_only_export,
-    _normalize_answer_scaffold,
     build_responses_system_input,
 )
+from ai4rag.components.assets_generator.prompt_filters import normalize_answer_scaffold
 from ai4rag.search_space.src.model_props import get_system_message_text, get_user_message_text
 
 # ---------------------------------------------------------------------------
@@ -409,7 +409,7 @@ class TestBuildPatternJson:
 
     def test_normalize_answer_scaffold_strips_with_citations(self):
         """Answer scaffolds must not retain citation hints owned by OGX."""
-        assert _normalize_answer_scaffold("Answer (max 150 words, with citations):") == "Answer (max 150 words):"
+        assert normalize_answer_scaffold("Answer (max 150 words, with citations):") == "Answer (max 150 words):"
 
     def test_build_pattern_json_requires_generation_model_id(self):
         """Malformed generation payloads must raise KeyError for required fields."""
