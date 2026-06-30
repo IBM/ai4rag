@@ -12,12 +12,9 @@ from ai4rag.components.optimization.rag_templates_optimization import (
     DEFAULT_MAX_RAG_PATTERNS,
     MIN_MAX_RAG_PATTERNS_RANGE,
     SUPPORTED_OPTIMIZATION_METRICS,
-    _inject_language_instructions,
     _validate_optimization_settings,
     run_rag_optimization,
 )
-from ai4rag.search_space.src.parameter import Parameter
-from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -28,15 +25,6 @@ from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 def mock_ogx_client() -> MagicMock:
     """Return a bare MagicMock standing in for OgxClient."""
     return MagicMock()
-
-
-@pytest.fixture()
-def foundation_model_stub() -> MagicMock:
-    """Return a MagicMock that acts as a foundation model with message attributes."""
-    fm = MagicMock()
-    fm.system_message_text = "You are a helpful assistant."
-    fm.user_message_text = "Answer: {question}"
-    return fm
 
 
 # ---------------------------------------------------------------------------
@@ -131,99 +119,6 @@ class TestValidateOptimizationSettings:
 
 
 # ---------------------------------------------------------------------------
-# _inject_language_instructions
-# ---------------------------------------------------------------------------
-
-
-class TestInjectLanguageInstructions:
-    """Tests for injecting language-specific instructions into foundation models."""
-
-    @staticmethod
-    def _make_search_space(foundation_models: list) -> AI4RAGSearchSpace:
-        """Build a minimal AI4RAGSearchSpace with required parameters."""
-        dummy_embedding = MagicMock()
-        dummy_embedding.context_length = 8192
-        return AI4RAGSearchSpace(
-            params=[
-                Parameter("foundation_model", "C", values=foundation_models),
-                Parameter("embedding_model", "C", values=[dummy_embedding]),
-            ]
-        )
-
-    def test_injects_language_into_system_message(self, foundation_model_stub):
-        """The system message must be prefixed with the language instruction."""
-        search_space = self._make_search_space([foundation_model_stub])
-
-        _inject_language_instructions(search_space, {"code": "ja", "name": "Japanese"})
-
-        fm = search_space["foundation_model"].values[0]
-        assert fm.system_message_text.startswith("You MUST respond in Japanese.")
-
-    def test_injects_language_into_user_message(self, foundation_model_stub):
-        """The user message must be appended with the language instruction."""
-        search_space = self._make_search_space([foundation_model_stub])
-
-        _inject_language_instructions(search_space, {"code": "ja", "name": "Japanese"})
-
-        fm = search_space["foundation_model"].values[0]
-        assert fm.user_message_text.endswith("You MUST respond in Japanese.")
-
-    def test_english_code_skips_injection(self, foundation_model_stub):
-        """English language detection must not modify the messages."""
-        original_sys = foundation_model_stub.system_message_text
-        original_usr = foundation_model_stub.user_message_text
-
-        search_space = self._make_search_space([foundation_model_stub])
-
-        _inject_language_instructions(search_space, {"code": "en", "name": "English"})
-
-        fm = search_space["foundation_model"].values[0]
-        assert fm.system_message_text == original_sys
-        assert fm.user_message_text == original_usr
-
-    def test_empty_name_skips_injection(self, foundation_model_stub):
-        """An empty language name must not inject any instruction."""
-        original_sys = foundation_model_stub.system_message_text
-
-        search_space = self._make_search_space([foundation_model_stub])
-
-        _inject_language_instructions(search_space, {"code": "ja", "name": ""})
-
-        fm = search_space["foundation_model"].values[0]
-        assert fm.system_message_text == original_sys
-
-    def test_multiple_foundation_models(self):
-        """All foundation models in the search space must be updated."""
-        fm1 = MagicMock()
-        fm1.system_message_text = "sys1"
-        fm1.user_message_text = "usr1"
-
-        fm2 = MagicMock()
-        fm2.system_message_text = "sys2"
-        fm2.user_message_text = "usr2"
-
-        search_space = self._make_search_space([fm1, fm2])
-
-        _inject_language_instructions(search_space, {"code": "ko", "name": "Korean"})
-
-        for fm in search_space["foundation_model"].values:
-            assert "You MUST respond in Korean." in fm.system_message_text
-            assert "You MUST respond in Korean." in fm.user_message_text
-
-    def test_none_system_message_gets_instruction_prepended(self):
-        """A model with None system_message_text must still get the language instruction."""
-        fm = MagicMock()
-        fm.system_message_text = None
-        fm.user_message_text = None
-
-        search_space = self._make_search_space([fm])
-
-        _inject_language_instructions(search_space, {"code": "de", "name": "German"})
-
-        assert fm.system_message_text.startswith("You MUST respond in German.")
-
-
-# ---------------------------------------------------------------------------
 # run_rag_optimization -- input validation only
 # ---------------------------------------------------------------------------
 
@@ -241,7 +136,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="",
@@ -254,7 +149,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="   ",
@@ -267,7 +162,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -280,7 +175,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -293,7 +188,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -313,7 +208,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",
@@ -327,7 +222,7 @@ class TestRunRagOptimizationValidation:
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
-                search_space_report_path="dummy.yaml",
+                search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
                 vector_io_provider_id="provider-1",

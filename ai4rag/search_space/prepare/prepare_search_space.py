@@ -4,10 +4,13 @@
 # -----------------------------------------------------------------------------
 from typing import Any
 
+import pandas as pd
 from ogx_client import OgxClient
 
 from ai4rag import logger
+from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
+from ai4rag.search_space.prepare.language_detection import detect_language_with_llm
 from ai4rag.search_space.prepare.ogx_utils import (
     _get_default_ogx_models,
     _validate_availability_and_create_models,
@@ -23,6 +26,7 @@ def prepare_search_space_with_ogx(
     payload: dict[str, Any],
     client: OgxClient,
     vector_store_type: str = "ogx",
+    benchmark_data: pd.DataFrame | None = None,
 ) -> AI4RAGSearchSpace:
     """
     Prepare AutoRAGSearchSpace.
@@ -39,6 +43,10 @@ def prepare_search_space_with_ogx(
         Type of vector store. Supported values: ``"ogx"`` and ``"chroma"``.
         When ``"chroma"``, hybrid search parameters are excluded from the
         default search space since ChromaDB does not support hybrid search.
+
+    benchmark_data : pd.DataFrame | None, default=None
+        Benchmark data used for language detection.
+        If not given, models with use automatic language detection per session.
 
     Returns
     -------
@@ -88,6 +96,18 @@ def prepare_search_space_with_ogx(
             models_type="embedding",
             client=client,
         )
+
+    if benchmark_data is not None:
+        for fm in foundation_models:
+            lang = detect_language_with_llm(
+                questions=[str(q) for q in benchmark_data["question"][:10]],
+                generation_model=fm,
+            )
+            if lang is not None:
+                fm.language = Language(**lang)
+                logger.info("Model %s: language set to %s (%s).", fm.model_id, lang["name"], lang["code"])
+            else:
+                logger.warning("Model %s: language detection failed, falling back to auto-detect.", fm.model_id)
 
     fms_param = Parameter(name="foundation_model", values=foundation_models)
     ems_param = Parameter(name="embedding_model", values=embedding_models)
