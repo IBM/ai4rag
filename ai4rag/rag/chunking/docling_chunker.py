@@ -100,7 +100,7 @@ class DoclingChunker(BaseChunker):
                 }
 
                 if chunk.meta.headings:
-                    metadata["headings"] = chunk.meta.headings
+                    metadata["headings"] = " > ".join(chunk.meta.headings)
 
                 all_chunks.append(AI4RAGChunk(text=text, metadata=metadata))
 
