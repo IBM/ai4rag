@@ -41,7 +41,7 @@ class TestQueryRag:
         mock_logger = mocker.patch("ai4rag.core.experiment.utils.logger")
 
         questions = ["What is AI?"]
-        responses = query_rag(mock_rag, questions)
+        responses = query_rag(mock_rag, questions, max_threads=10)
 
         assert len(responses) == 1
         assert responses[0]["question"] == "What is AI?"
@@ -51,7 +51,7 @@ class TestQueryRag:
     def test_query_rag_multiple_questions(self, mock_rag):
         """Test query_rag with multiple questions."""
         questions = ["What is AI?", "What is ML?", "What is DL?"]
-        responses = query_rag(mock_rag, questions)
+        responses = query_rag(mock_rag, questions, max_threads=10)
 
         assert len(responses) == 3
         assert all("question" in r for r in responses)
@@ -69,7 +69,7 @@ class TestQueryRag:
         mock_logger = mocker.patch("ai4rag.core.experiment.utils.logger")
 
         questions = ["Test question"]
-        query_rag(mock_rag, questions)
+        query_rag(mock_rag, questions, max_threads=10)
 
         assert mock_logger.debug.call_count == 2  # Start and finish messages
         log_calls = [call[0][0] for call in mock_logger.debug.call_args_list]
@@ -85,14 +85,14 @@ class TestQueryRag:
         questions = ["Test question"]
 
         with pytest.raises(GenerationError) as exc_info:
-            query_rag(mock_rag, questions)
+            query_rag(mock_rag, questions, max_threads=10)
 
         assert "test-model" in str(exc_info.value)
 
     def test_query_rag_empty_questions_list(self, mock_rag):
         """Test query_rag with empty questions list."""
         questions = []
-        responses = query_rag(mock_rag, questions)
+        responses = query_rag(mock_rag, questions, max_threads=10)
 
         assert responses == []
 

@@ -68,6 +68,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     error_tolerance: float | None = None,
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
+    do_table_structure: bool = False,
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -104,6 +105,11 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     docling_artifacts_path
         Path to pre-downloaded Docling model artifacts for offline use.
         Falls back to ``DOCLING_ARTIFACTS_PATH`` environment variable.
+    do_table_structure
+        Whether Docling should run TableFormer to reconstruct table
+        rows and columns from detected PDF layout.  ``False`` (default)
+        disables table structure parsing; ``True`` enables it to achieve
+        increased accuracy of extracted data.
 
     Returns
     -------
@@ -129,6 +135,8 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
     artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
 
+    _logger.info("Docling table structure parsing: %s", do_table_structure)
+
     documents = sorted(documents, key=lambda d: d.get("size_bytes", 0), reverse=True)
 
     effective_workers = _effective_worker_count(max_extraction_workers)
@@ -148,6 +156,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         mp_context.Pool(
             processes=effective_workers,
             initializer=_text_extraction_pool_initializer,
+            initargs=(do_table_structure,),
         ) as process_pool,
     ):
         download_start = time.perf_counter()
@@ -335,7 +344,7 @@ def _resolve_artifacts_path(explicit: str | None) -> Path | None:
     return p
 
 
-def _build_docling_format_options() -> dict:
+def _build_docling_format_options(do_table_structure: bool = False) -> dict:
     """Build Docling pipeline format options for each supported input format."""
     ap = _resolve_artifacts_path(None)
     accel = AcceleratorOptions(device="cpu", num_threads=2)
@@ -343,7 +352,7 @@ def _build_docling_format_options() -> dict:
     pdf_pipeline_options = ThreadedPdfPipelineOptions(
         artifacts_path=ap,
         do_ocr=False,
-        do_table_structure=True,
+        do_table_structure=do_table_structure,
         accelerator_options=accel,
     )
     paginated_pipeline_options = PaginatedPipelineOptions(
@@ -361,7 +370,7 @@ def _build_docling_format_options() -> dict:
     }
 
 
-def _text_extraction_pool_initializer() -> None:
+def _text_extraction_pool_initializer(do_table_structure: bool = False) -> None:
     """Pool initializer that creates a ``DocumentConverter`` per worker process."""
     os.environ["TQDM_DISABLE"] = "1"
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -383,7 +392,7 @@ def _text_extraction_pool_initializer() -> None:
 
     mod = sys.modules[__name__]
     # pylint: disable=protected-access
-    mod._mp_worker_converter = DocumentConverter(format_options=_build_docling_format_options())
+    mod._mp_worker_converter = DocumentConverter(format_options=_build_docling_format_options(do_table_structure))
     worker_log.debug(
         "Worker pid=%s: DocumentConverter ready (%.1fs)",
         worker_pid,

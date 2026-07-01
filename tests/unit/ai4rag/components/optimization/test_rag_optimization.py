@@ -229,3 +229,35 @@ class TestRunRagOptimizationValidation:
                 test_data_key="bench.json",
                 optimization_settings={"max_number_of_rag_patterns": 50},
             )
+
+
+# ---------------------------------------------------------------------------
+# run_rag_optimization -- max_threads parameter
+# ---------------------------------------------------------------------------
+
+
+class TestRunRagOptimizationMaxThreads:
+    """Tests for the max_threads parameter on run_rag_optimization."""
+
+    def test_max_threads_has_default_of_ten(self):
+        """The max_threads parameter must have a default value of 10."""
+        import inspect
+
+        sig = inspect.signature(run_rag_optimization)
+        param = sig.parameters["max_threads"]
+        assert param.default == 10
+
+    def test_max_threads_is_accepted(self, mock_ogx_client):
+        """Passing max_threads alongside an invalid input must still raise
+        the expected validation error (not a TypeError from an unknown param)."""
+        with pytest.raises(ValueError, match="non-empty string"):
+            run_rag_optimization(
+                extracted_text_path="dummy",
+                test_data_path="dummy.json",
+                search_space_report_path="dummy.yaml",
+                output_dir="out",
+                ogx_client=mock_ogx_client,
+                vector_io_provider_id="",
+                test_data_key="bench.json",
+                max_threads=4,
+            )
