@@ -20,6 +20,8 @@ If OGX updates their injection strings, update the constants below.
 
 import re
 
+from ai4rag.search_space.src.model_props import _RAG_CITATION_INSTRUCTION
+
 # ============================================================================
 # OGX Runtime Injection Strings
 # ============================================================================
@@ -40,16 +42,16 @@ CITATION_SUBSTRINGS = (
     "file citations",
     "document numbers for every factual claim",
 )
-HPO_CITATION_INSTRUCTION = (
-    "You MUST cite sources using [1], [2], etc. matching the document numbers for every factual claim."
-)
+# HPO citation fragments for filtering (uses _RAG_CITATION_INSTRUCTION from model_props)
 HPO_CITATION_FRAGMENTS = (
-    HPO_CITATION_INSTRUCTION,
+    _RAG_CITATION_INSTRUCTION,
     "You MUST cite sources using [1], [2], etc.",
     "You MUST cite sources using [1], [2].",
 )
 
 # Grounding/retrieval-related phrases
+# Used in: sentence-level filtering (sentence_is_ogx_duplicative) and
+# system grounding detection (_system_has_grounding_policy in pattern_builder.py)
 GROUNDING_PREFIXES = (
     "Answer ONLY using information from the documents",
     "Answer ONLY using information from documents retrieved",
@@ -59,18 +61,21 @@ GROUNDING_PREFIXES = (
     "If the retrieved documents do not contain",
     "If the documents do not contain",
 )
+# Used in: substring matching within sentences for partial phrase detection
 GROUNDING_SUBSTRINGS = (
     "documents below",
     "retrieved via file search",
     "retrieved to help answer the user",
     "supporting information only in answering",
 )
+# Used in: whole-phrase removal from system prompts (strip_ogx_runtime_instructions)
 SYSTEM_GROUNDING_PHRASES = (
     "Answer using ONLY the provided documents.",
     "Answer using ONLY information from documents retrieved via file search.",
 )
 
 # File search tool markers
+# Used in: detecting OGX tool result wrappers in sentence-level filtering
 FILE_SEARCH_MARKERS = (
     "file_search tool found",
     "BEGIN of file_search tool results",
@@ -80,12 +85,16 @@ FILE_SEARCH_MARKERS = (
     "Do not add extra punctuation. Use only the file IDs",
 )
 
-# User template duplicate detection (pass 1 filtering)
+# User template duplicate detection
+# Used in: Pass 2 filtering (_should_skip_user_export_line in pattern_builder.py)
+# OGX-owned lines that must never be exported regardless of system prompt content
 USER_GROUNDING_SKIP_PREFIXES = (
     "Answer ONLY using information from the documents below",
     "Do not use outside knowledge",
     "If the documents do not contain the answer",
 )
+# Used in: Pass 1 filtering (_should_skip_redundant_user_line in pattern_builder.py)
+# Only suppressed when system prompt already has grounding policy to avoid duplication
 USER_RAG_GROUNDING_PREFIXES = (
     "You are a specialized Retrieval Augmented Generation",
     "Prioritize correctness and ensure your response is grounded",
@@ -209,7 +218,7 @@ def normalize_answer_scaffold(line: str) -> str:
     str
         Line with ", with citations" and "with citations" removed, whitespace normalized.
     """
-    normalized = line.replace(", with citations", "").replace("with citations", "")
+    normalized = re.sub(r",?\s*with citations,?\s*", "", line)
     return collapse_whitespace(normalized)
 
 

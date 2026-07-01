@@ -271,7 +271,7 @@ def build_pattern_json(
             },
             {"content": [{"text": _USER_QUERY_PLACEHOLDER, "type": "input_text"}], "role": "user"},
         ],
-        "tool_choice": {"mode": "required", "tools": [{}], "type": "file_search"},
+        "tool_choice": {"type": "file_search"},
         "tools": [
             {
                 "type": "file_search",

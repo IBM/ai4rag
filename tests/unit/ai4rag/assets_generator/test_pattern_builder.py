@@ -109,7 +109,7 @@ class TestBuildPatternJson:
         ]
         assert rt["max_output_tokens"] == 1024
         assert rt["temperature"] == 0.7
-        assert rt["tool_choice"] == {"mode": "required", "tools": [{}], "type": "file_search"}
+        assert rt["tool_choice"] == {"type": "file_search"}
         assert len(rt["tools"]) == 1
         assert rt["tools"][0]["type"] == "file_search"
         assert "test_collection_001" in rt["tools"][0]["vector_store_ids"]
