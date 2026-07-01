@@ -250,10 +250,9 @@ class TestGAMOptimizer:
         # ceil((6 - 4) / 2) = ceil(1) = 1
         assert iterations_limit == 1
 
-    def test_evaluate_initial_random_nodes(self, mock_search_space, optimizer_settings, mocker):
+    def test_evaluate_initial_random_nodes(self, mock_search_space, optimizer_settings):
         """Test the evaluate_initial_random_nodes method."""
         objective_func = MagicMock(side_effect=[0.3, 0.7, 0.5])
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -272,7 +271,7 @@ class TestGAMOptimizer:
         for evaluation in optimizer.evaluations:
             assert "score" in evaluation
 
-    def test_evaluate_initial_random_nodes_with_failures(self, mock_search_space, optimizer_settings, mocker):
+    def test_evaluate_initial_random_nodes_with_failures(self, mock_search_space, optimizer_settings):
         """Test evaluate_initial_random_nodes skips failed iterations (score=None) when counting successes."""
         # First fails (returns None), second succeeds, third fails (returns None), fourth succeeds, fifth succeeds
         objective_func = MagicMock(
@@ -284,7 +283,6 @@ class TestGAMOptimizer:
                 0.3,
             ]
         )
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -302,12 +300,11 @@ class TestGAMOptimizer:
         failed_evals = [e for e in optimizer.evaluations if e["score"] is None]
         assert len(failed_evals) == 2
 
-    def test_evaluate_initial_random_nodes_stops_at_max_iterations(self, mock_search_space, mocker):
+    def test_evaluate_initial_random_nodes_stops_at_max_iterations(self, mock_search_space):
         """Test that evaluate_initial_random_nodes stops at max_iterations."""
         settings = GAMOptSettings(max_evals=4, n_random_nodes=10)
         # All fail
         objective_func = MagicMock(side_effect=[FailedIterationError("Failed")] * 10)
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -341,7 +338,7 @@ class TestGAMOptimizer:
         assert "param1" in column_names
         assert "param2" in column_names
 
-    def test_prepare_encoder_called_only_once(self, mock_search_space, optimizer_settings, mocker):
+    def test_prepare_encoder_called_only_once(self, mock_search_space, optimizer_settings):
         """Test that _prepare_encoder only prepares encoders once."""
         objective_func = MagicMock(return_value=0.5)
 
@@ -371,8 +368,6 @@ class TestGAMOptimizer:
         mock_gam_class.return_value = mock_gam_instance
 
         objective_func = MagicMock(side_effect=[0.3, 0.5, 0.9])  # 2 initial + 1 from iteration
-
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -407,7 +402,6 @@ class TestGAMOptimizer:
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
         objective_func = MagicMock(side_effect=[0.3, 0.5, 0.8, 0.6, 0.4])
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -422,12 +416,11 @@ class TestGAMOptimizer:
         assert result["score"] == 0.8
         assert len(optimizer.evaluations) == 5
 
-    def test_search_all_iterations_failed(self, mock_search_space, mocker):
+    def test_search_all_iterations_failed(self, mock_search_space):
         """Test search when all iterations fail."""
         settings = GAMOptSettings(max_evals=3, n_random_nodes=3)
 
         objective_func = MagicMock(side_effect=[FailedIterationError("Failed")] * 10)
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -465,7 +458,6 @@ class TestGAMOptimizer:
                 0.6,  # GAM iteration 2
             ]
         )
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -489,7 +481,6 @@ class TestGAMOptimizer:
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
         objective_func = MagicMock(side_effect=[0.3, 0.5, 0.8, 0.6])  # 2 initial + 2 from iteration
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -522,7 +513,6 @@ class TestGAMOptimizer:
                 0.6,  # extra for _run_iteration
             ]
         )
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -609,14 +599,13 @@ class TestGAMOptimizerKnownObservations:
         # Evaluations should still be the 3 known ones
         assert len(optimizer.evaluations) == 3
 
-    def test_known_observations_partial_random_phase(self, mock_search_space, mocker):
+    def test_known_observations_partial_random_phase(self, mock_search_space):
         """When known observations < n_random_nodes, only the gap is filled."""
         known = [
             {"param1": "a", "param2": 1, "score": 0.3},
         ]
         settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
         objective_func = MagicMock(side_effect=[0.5, 0.8])
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -631,14 +620,13 @@ class TestGAMOptimizerKnownObservations:
         assert objective_func.call_count == 2
         assert len(optimizer.evaluations) == 3
 
-    def test_known_observations_excludes_already_evaluated(self, mock_search_space, mocker):
+    def test_known_observations_excludes_already_evaluated(self, mock_search_space):
         """Known observation combinations are excluded from random phase candidates."""
         known = [
             {"param1": "a", "param2": 1, "score": 0.3},
         ]
         settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
         objective_func = MagicMock(side_effect=[0.5, 0.8])
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -668,7 +656,7 @@ class TestGAMOptimizerKnownObservations:
                 known_observations=known,
             )
 
-    def test_known_observations_with_none_scores(self, mock_search_space, mocker):
+    def test_known_observations_with_none_scores(self, mock_search_space):
         """Known observations with None scores don't count as successful."""
         known = [
             {"param1": "a", "param2": 1, "score": None},
@@ -676,7 +664,6 @@ class TestGAMOptimizerKnownObservations:
         ]
         settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
         objective_func = MagicMock(side_effect=[0.5, 0.8])
-        mocker.patch("ai4rag.core.hpo.gam_opt.random.shuffle")
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
@@ -847,3 +834,51 @@ class TestGAMOptimizerDeterminism:
 
         # Should evaluate different combinations or different order
         assert evals1 != evals2
+
+    def test_gam_full_search_deterministic_with_same_random_state(self, mock_search_space, mocker):
+        """Test that full GAMOptimizer.search() produces identical evaluation order with same random_state."""
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=2, evals_per_trial=1, random_state=42)
+
+        # Mock LinearGAM to return deterministic predictions
+        mock_gam = MagicMock()
+        mock_gam.predict.side_effect = [
+            np.array([0.6, 0.7, 0.5, 0.4]),  # First iteration: 4 remaining
+            np.array([0.65, 0.55, 0.45]),  # Second iteration: 3 remaining
+            np.array([0.62, 0.58]),  # Third iteration: 2 remaining
+            np.array([0.60]),  # Fourth iteration: 1 remaining
+        ]
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        def deterministic_objective(params):
+            return params["param2"] / 10.0
+
+        # First run
+        optimizer1 = GAMOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        result1 = optimizer1.search()
+        evals1 = [(e["param1"], e["param2"]) for e in optimizer1.evaluations]
+
+        # Reset mock
+        mock_gam.predict.side_effect = [
+            np.array([0.6, 0.7, 0.5, 0.4]),
+            np.array([0.65, 0.55, 0.45]),
+            np.array([0.62, 0.58]),
+            np.array([0.60]),
+        ]
+
+        # Second run with same random_state
+        optimizer2 = GAMOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        result2 = optimizer2.search()
+        evals2 = [(e["param1"], e["param2"]) for e in optimizer2.evaluations]
+
+        # Should evaluate same combinations in same order (full search, not just initial phase)
+        assert evals1 == evals2
+        assert result1 == result2
+        assert len(evals1) == 6

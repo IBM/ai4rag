@@ -35,6 +35,13 @@ class TestRandomOptSettings:
 
         assert settings_dict == {"max_evals": 25, "random_state": 64}
 
+    def test_random_opt_settings_to_dict_custom_random_state(self):
+        """Test to_dict includes custom random_state value."""
+        settings = RandomOptSettings(max_evals=25, random_state=42)
+        settings_dict = settings.to_dict()
+
+        assert settings_dict == {"max_evals": 25, "random_state": 42}
+
 
 class TestRandomOptimizer:
     """Test the RandomOptimizer class."""
@@ -72,13 +79,10 @@ class TestRandomOptimizer:
         assert optimizer.settings == optimizer_settings
         assert optimizer._evaluated_combinations == []
 
-    def test_search_successful_evaluations(self, mock_search_space, optimizer_settings, mocker):
+    def test_search_successful_evaluations(self, mock_search_space, optimizer_settings):
         """Test the search method with successful evaluations."""
         # Mock the objective function to return different scores
         objective_func = MagicMock(side_effect=[0.3, 0.7, 0.5])
-
-        # Mock random.shuffle to make the test deterministic
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -94,7 +98,7 @@ class TestRandomOptimizer:
         assert result["score"] == 0.7
         assert len(optimizer._evaluated_combinations) == 3
 
-    def test_search_with_some_failed_iterations(self, mock_search_space, mocker):
+    def test_search_with_some_failed_iterations(self, mock_search_space):
         """Test search when some iterations fail but some succeed."""
         settings = RandomOptSettings(max_evals=4)
 
@@ -102,8 +106,6 @@ class TestRandomOptimizer:
         objective_func = MagicMock(
             side_effect=[0.3, FailedIterationError("Failed"), 0.8, FailedIterationError("Failed")]
         )
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -117,7 +119,7 @@ class TestRandomOptimizer:
         assert result["score"] == 0.8
         assert len(optimizer._evaluated_combinations) == 4
 
-    def test_search_all_iterations_failed(self, mock_search_space, optimizer_settings, mocker):
+    def test_search_all_iterations_failed(self, mock_search_space, optimizer_settings):
         """Test search when all iterations fail."""
         # All evaluations fail
         objective_func = MagicMock(
@@ -127,8 +129,6 @@ class TestRandomOptimizer:
                 FailedIterationError("Failed 3"),
             ]
         )
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -192,12 +192,10 @@ class TestRandomOptimizer:
         # Verify shuffle was called on the RNG instance
         optimizer._rng.shuffle.assert_called_once()
 
-    def test_search_respects_max_evals(self, mock_search_space, mocker):
+    def test_search_respects_max_evals(self, mock_search_space):
         """Test that search respects the max_evals setting."""
         settings = RandomOptSettings(max_evals=2)
         objective_func = MagicMock(return_value=0.5)
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -211,13 +209,11 @@ class TestRandomOptimizer:
         assert objective_func.call_count == 2
         assert len(optimizer._evaluated_combinations) == 2
 
-    def test_search_returns_highest_score(self, mock_search_space, mocker):
+    def test_search_returns_highest_score(self, mock_search_space):
         """Test that search returns the configuration with the highest score."""
         settings = RandomOptSettings(max_evals=5)
         # Return different scores, highest should be 0.95
         objective_func = MagicMock(side_effect=[0.3, 0.95, 0.5, 0.2, 0.7])
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -231,11 +227,9 @@ class TestRandomOptimizer:
         assert result["param1"] == 2
         assert result["param2"] == "b"
 
-    def test_evaluated_combinations_stores_all_evaluations(self, mock_search_space, optimizer_settings, mocker):
+    def test_evaluated_combinations_stores_all_evaluations(self, mock_search_space, optimizer_settings):
         """Test that _evaluated_combinations stores all evaluated parameters."""
         objective_func = MagicMock(side_effect=[0.3, 0.7, 0.5])
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -252,7 +246,7 @@ class TestRandomOptimizer:
             assert "param2" in evaluation
             assert "score" in evaluation
 
-    def test_search_filters_out_none_scores(self, mock_search_space, mocker):
+    def test_search_filters_out_none_scores(self, mock_search_space):
         """Test that search correctly filters out evaluations with None scores."""
         settings = RandomOptSettings(max_evals=4)
         # Mix of successful and failed evaluations
@@ -264,8 +258,6 @@ class TestRandomOptimizer:
                 FailedIterationError("Failed"),
             ]
         )
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,

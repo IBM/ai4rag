@@ -15,9 +15,17 @@ __all__ = ["RandomOptimizer", "RandomOptSettings", "FailedIterationError"]
 
 @dataclass
 class RandomOptSettings(OptimizerSettings):
-    """Settings for random optimizer."""
+    """Settings for random optimizer.
 
-    random_state: int = 64
+    Parameters
+    ----------
+    max_evals : int
+        Maximum number of configurations to evaluate.
+    random_state : int, default=64
+        Inherited from OptimizerSettings. Controls shuffle order of
+        search space combinations. Does NOT control LLM generation
+        stochasticity or benchmark sampling randomness.
+    """
 
 
 class RandomOptimizer(BaseOptimizer):
