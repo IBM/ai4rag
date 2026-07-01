@@ -17,6 +17,8 @@ __all__ = ["RandomOptimizer", "RandomOptSettings", "FailedIterationError"]
 class RandomOptSettings(OptimizerSettings):
     """Settings for random optimizer."""
 
+    random_state: int = 64
+
 
 class RandomOptimizer(BaseOptimizer):
     """Optimizer running random search on the given search space."""
@@ -26,6 +28,7 @@ class RandomOptimizer(BaseOptimizer):
     ):
         super().__init__(objective_function, search_space, settings)
         self._evaluated_combinations = []
+        self._rng = random.Random(self.settings.random_state)
 
     def search(self) -> dict[str, Any]:
         """
@@ -42,8 +45,8 @@ class RandomOptimizer(BaseOptimizer):
         OptimizationError
             When there were no successful evaluations for given constraints.
         """
-        combinations = self._search_space.combinations
-        random.shuffle(combinations)
+        combinations = list(self._search_space.combinations)
+        self._rng.shuffle(combinations)
 
         for idx in range(self.settings.max_evals):
             score = self._objective_function(combinations[idx])

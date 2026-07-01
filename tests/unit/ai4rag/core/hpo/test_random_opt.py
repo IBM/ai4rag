@@ -33,7 +33,7 @@ class TestRandomOptSettings:
         settings = RandomOptSettings(max_evals=25)
         settings_dict = settings.to_dict()
 
-        assert settings_dict == {"max_evals": 25}
+        assert settings_dict == {"max_evals": 25, "random_state": 64}
 
 
 class TestRandomOptimizer:
@@ -174,10 +174,9 @@ class TestRandomOptimizer:
         assert result is None
         objective_func.assert_called_once_with(params)
 
-    def test_search_shuffles_combinations(self, mock_search_space, optimizer_settings, mocker):
+    def test_search_shuffles_combinations(self, mock_search_space, optimizer_settings):
         """Test that search shuffles combinations before evaluation."""
         objective_func = MagicMock(return_value=0.5)
-        mock_shuffle = mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -185,10 +184,13 @@ class TestRandomOptimizer:
             settings=optimizer_settings,
         )
 
+        # Mock the optimizer's RNG instance
+        optimizer._rng.shuffle = MagicMock()
+
         optimizer.search()
 
-        # Verify shuffle was called
-        mock_shuffle.assert_called_once()
+        # Verify shuffle was called on the RNG instance
+        optimizer._rng.shuffle.assert_called_once()
 
     def test_search_respects_max_evals(self, mock_search_space, mocker):
         """Test that search respects the max_evals setting."""
@@ -277,3 +279,76 @@ class TestRandomOptimizer:
         assert result["score"] == 0.8
         # But _evaluated_combinations should include all attempts
         assert len(optimizer._evaluated_combinations) == 4
+
+
+class TestRandomOptimizerDeterminism:
+    """Test deterministic behavior with random_state."""
+
+    @pytest.fixture
+    def mock_search_space(self):
+        """Create a mock search space with predefined combinations."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"param1": 1, "param2": "a"},
+            {"param1": 2, "param2": "b"},
+            {"param1": 3, "param2": "c"},
+            {"param1": 4, "param2": "d"},
+            {"param1": 5, "param2": "e"},
+        ]
+        return mock_space
+
+    def test_random_optimizer_deterministic_with_same_random_state(self, mock_search_space):
+        """Test that RandomOptimizer produces identical evaluation order with same random_state."""
+        settings = RandomOptSettings(max_evals=3, random_state=42)
+
+        def deterministic_objective(params):
+            return params["param1"] / 10.0
+
+        # First run
+        optimizer1 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        result1 = optimizer1.search()
+        evals1 = [e["param1"] for e in optimizer1._evaluated_combinations]
+
+        # Second run with same random_state
+        optimizer2 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        result2 = optimizer2.search()
+        evals2 = [e["param1"] for e in optimizer2._evaluated_combinations]
+
+        # Should evaluate same combinations in same order
+        assert evals1 == evals2
+        assert result1 == result2
+
+    def test_random_optimizer_different_with_different_random_state(self, mock_search_space):
+        """Test that RandomOptimizer produces different evaluation order with different random_state."""
+
+        def deterministic_objective(params):
+            return params["param1"] / 10.0
+
+        # First run with random_state=42
+        optimizer1 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=RandomOptSettings(max_evals=3, random_state=42),
+        )
+        optimizer1.search()
+        evals1 = [e["param1"] for e in optimizer1._evaluated_combinations]
+
+        # Second run with random_state=99
+        optimizer2 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=RandomOptSettings(max_evals=3, random_state=99),
+        )
+        optimizer2.search()
+        evals2 = [e["param1"] for e in optimizer2._evaluated_combinations]
+
+        # Should evaluate different combinations or different order
+        assert evals1 != evals2

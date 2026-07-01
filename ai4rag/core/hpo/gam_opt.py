@@ -75,6 +75,7 @@ class GAMOptimizer(BaseOptimizer):
         self.evaluations = []
         self._evaluated_combinations = []
         self._encoders_with_columns: list[tuple[str, LabelEncoder]] = []
+        self._rng = random.Random(self.settings.random_state)
 
         if known_observations:
             self._load_known_observations(known_observations)
@@ -193,7 +194,7 @@ class GAMOptimizer(BaseOptimizer):
             return
 
         combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
-        random.shuffle(combinations_local)
+        self._rng.shuffle(combinations_local)
 
         gen = (x for x in combinations_local)
 

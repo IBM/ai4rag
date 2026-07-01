@@ -771,3 +771,79 @@ class TestGAMOptimizerKnownObservations:
         # Mutating optimizer's evaluations should not affect the original
         optimizer.evaluations[0]["score"] = 999
         assert known[0]["score"] == 0.3
+
+
+class TestGAMOptimizerDeterminism:
+    """Test deterministic behavior with random_state."""
+
+    @pytest.fixture
+    def mock_search_space(self):
+        """Create a mock search space with predefined combinations."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"param1": "a", "param2": 1},
+            {"param1": "b", "param2": 2},
+            {"param1": "c", "param2": 3},
+            {"param1": "d", "param2": 4},
+            {"param1": "e", "param2": 5},
+            {"param1": "f", "param2": 6},
+        ]
+        mock_space.max_combinations = 6
+        return mock_space
+
+    def test_gam_optimizer_deterministic_with_same_random_state(self, mock_search_space):
+        """Test that GAMOptimizer produces identical evaluation order with same random_state."""
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=42)
+
+        # Mock objective to return deterministic scores based on param2 value
+        def deterministic_objective(params):
+            return params["param2"] / 10.0
+
+        # First run
+        optimizer1 = GAMOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        optimizer1.evaluate_initial_random_nodes()
+        evals1 = [e["param1"] for e in optimizer1.evaluations]
+
+        # Second run with same random_state
+        optimizer2 = GAMOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        optimizer2.evaluate_initial_random_nodes()
+        evals2 = [e["param1"] for e in optimizer2.evaluations]
+
+        # Should evaluate same combinations in same order
+        assert evals1 == evals2
+        assert len(evals1) == 3
+
+    def test_gam_optimizer_different_with_different_random_state(self, mock_search_space):
+        """Test that GAMOptimizer produces different evaluation order with different random_state."""
+
+        def deterministic_objective(params):
+            return params["param2"] / 10.0
+
+        # First run with random_state=42
+        optimizer1 = GAMOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=42),
+        )
+        optimizer1.evaluate_initial_random_nodes()
+        evals1 = [e["param1"] for e in optimizer1.evaluations]
+
+        # Second run with random_state=99
+        optimizer2 = GAMOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=99),
+        )
+        optimizer2.evaluate_initial_random_nodes()
+        evals2 = [e["param1"] for e in optimizer2.evaluations]
+
+        # Should evaluate different combinations or different order
+        assert evals1 != evals2
