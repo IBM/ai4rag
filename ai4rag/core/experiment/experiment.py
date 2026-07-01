@@ -117,7 +117,7 @@ class AI4RAGExperiment:
     n_mps_embedding_models : int, default=2
         Amount of embedding models to be further used in experiment post pre-selection.
 
-    inference_max_threads: int, default=10
+    inference_max_threads : int, default=10
         Defines the number of threads to use during generation model inference.
 
     Attributes
@@ -164,7 +164,7 @@ class AI4RAGExperiment:
         )
         self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
-        self.inference_max_threads: int = kwargs.pop("max_threads", 10)
+        self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)

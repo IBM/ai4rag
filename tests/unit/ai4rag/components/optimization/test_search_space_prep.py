@@ -266,7 +266,6 @@ class TestUnsupportedChunkingMethods:
         with (
             patch.object(mod, "prepare_search_space_with_ogx", return_value=fake_search_space),
             patch.object(mod.pd, "read_json", return_value=fake_benchmark_df),
-            patch.object(mod, "_detect_benchmark_language", return_value=None),
             patch.object(mod, "load_docling_documents", return_value=[]),
             patch.object(mod, "BenchmarkData"),
         ):

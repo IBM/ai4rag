@@ -255,3 +255,16 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
     for i, m in enumerate(models):
         if not m:
             raise TypeError(f"{name}[{i}] must be a non-empty string.")
+
+
+def _validate_chunking_methods(methods: list[str] | None) -> None:
+    """Validate that chunking methods, if provided, are non-empty strings."""
+    if methods is None:
+        return
+    if not isinstance(methods, list):
+        raise TypeError("chunking_methods must be a list.")
+    if not methods:
+        raise ValueError("chunking_methods must not be empty when provided.")
+    for i, m in enumerate(methods):
+        if not isinstance(m, str) or not m.strip():
+            raise TypeError(f"chunking_methods[{i}] must be a non-empty string.")
