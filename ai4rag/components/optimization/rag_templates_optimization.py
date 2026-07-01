@@ -60,6 +60,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     test_data_key: str = "",
     input_data_key: str = "",
     optimization_settings: dict | None = None,
+    max_threads: int = 10,
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -90,6 +91,11 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     optimization_settings
         Optional dictionary with ``"metric"`` and/or
         ``"max_number_of_rag_patterns"`` overrides.
+    max_threads
+        Maximum number of concurrent threads used when querying the
+        RAG service during benchmark evaluation.  Lower values reduce
+        per-request concurrency (useful when each request carries more
+        retrieved context).  Defaults to ``10``.
 
     Returns
     -------
@@ -155,6 +161,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         documents=documents,
         optimization_metric=optimization_metric,
         ogx_vector_io_provider_id=vector_io_provider_id,
+        max_threads=max_threads,
     )
 
     # --- Run the optimization loop ---

@@ -86,9 +86,8 @@ def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10)
     questions : list[str]
         Questions used for AI Service (RAG).
 
-    max_threads : int, default=10
-        Limit of the concurrent workers querying the AI service. Value of 10
-        is chosen based on the client's inference endpoint settings.
+    max_threads : int
+        Limit of the concurrent workers querying the AI service.
 
     Returns
     -------

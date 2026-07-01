@@ -112,6 +112,8 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     top_k_embedding: int = _DEFAULT_TOP_K_EMBEDDING,
     sample_size: int = _DEFAULT_SAMPLE_SIZE,
     random_seed: int = _DEFAULT_SEED,
+    chunking_methods: list[str] | None = None,
+    inference_max_threads: int = 10,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
@@ -146,6 +148,16 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         Number of benchmark records sampled for model pre-selection.
     random_seed
         Seed for reproducible sampling.
+    chunking_methods
+        When provided, constrains the ``chunking_method`` dimension of the
+        search space to only these methods (e.g. ``["recursive"]`` or
+        ``["hybrid"]``).  ``None`` uses the platform defaults (both
+        ``"recursive"`` and ``"hybrid"``).
+    inference_max_threads
+        Maximum number of concurrent threads used when querying the
+        RAG service during benchmark evaluation.  Lower values reduce
+        per-request concurrency (useful when each request carries more
+        retrieved context).  Defaults to ``10``.
 
     Returns
     -------
@@ -165,6 +177,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
+    _validate_chunking_methods(chunking_methods)
 
     # Build payload and create search space via OGX
     payload: dict[str, list[dict[str, str]]] = {}
@@ -191,6 +204,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
             embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
             metric=metric,
+            max_threads=inference_max_threads,
         )
         mps.evaluate_patterns()
         selected = mps.select_models(
@@ -216,6 +230,16 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
 
+    if chunking_methods is not None:
+        available = set(verbose_repr["chunking_method"])
+        unsupported = [m for m in chunking_methods if m not in available]
+        if unsupported:
+            raise ValueError(
+                f"Unsupported chunking methods: {unsupported!r}. " f"Available methods: {sorted(available)!r}."
+            )
+        verbose_repr["chunking_method"] = chunking_methods
+        _logger.info("Chunking methods constrained to: %s", verbose_repr["chunking_method"])
+
     return SearchSpaceReport(
         search_space=verbose_repr,
         selected_models=selected_models,
@@ -231,3 +255,16 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
     for i, m in enumerate(models):
         if not m:
             raise TypeError(f"{name}[{i}] must be a non-empty string.")
+
+
+def _validate_chunking_methods(methods: list[str] | None) -> None:
+    """Validate that chunking methods, if provided, are non-empty strings."""
+    if methods is None:
+        return
+    if not isinstance(methods, list):
+        raise TypeError("chunking_methods must be a list.")
+    if not methods:
+        raise ValueError("chunking_methods must not be empty when provided.")
+    for i, m in enumerate(methods):
+        if not isinstance(m, str) or not m.strip():
+            raise TypeError(f"chunking_methods[{i}] must be a non-empty string.")
