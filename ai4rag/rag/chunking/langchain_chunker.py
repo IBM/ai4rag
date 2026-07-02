@@ -3,12 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import hashlib
+import math
 from typing import Any, Iterable, Literal, Sequence
 
-import tiktoken
 from docling_core.types.doc import DoclingDocument
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
+
+from ai4rag.utils.constants import TokenEstimation
 
 from .base_chunker import BaseChunker
 from .chunk import AI4RAGChunk
@@ -17,15 +19,13 @@ __all__ = [
     "LangChainChunker",
 ]
 
-_DEFAULT_TIKTOKEN_MODEL = "text-embedding-3-small"
-
 
 class LangChainChunker(BaseChunker):
     """
     Wrapper for LangChain TextSplitter operating on ``DoclingDocument`` input.
 
     Converts each ``DoclingDocument`` to markdown internally, applies
-    token-based splitting via tiktoken, and returns ``AI4RAGChunk`` objects.
+    token-based splitting (4 chars = 1 token), and returns ``AI4RAGChunk`` objects.
 
     Parameters
     ----------
@@ -57,7 +57,6 @@ class LangChainChunker(BaseChunker):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.separators = kwargs.pop("separators", ["\n\n", r"(?<=\. )", "\n", " ", ""])
-        self._encoding = tiktoken.encoding_for_model(_DEFAULT_TIKTOKEN_MODEL)
         self._text_splitter = self._get_text_splitter()
 
     def __eq__(self, other: object) -> bool:
@@ -75,7 +74,7 @@ class LangChainChunker(BaseChunker):
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,
                     separators=self.separators,
-                    length_function=lambda text: len(self._encoding.encode(text)),
+                    length_function=lambda text: math.ceil(len(text) / TokenEstimation.CHARS_PER_TOKEN),
                     add_start_index=True,
                 )
 

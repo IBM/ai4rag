@@ -830,14 +830,14 @@ class LangChainChunker(BaseChunker):
 
 **Chunking Method:**
 
-Currently supports `"recursive"`. Converts each `DoclingDocument` to markdown internally, then applies token-based splitting via tiktoken:
+Currently supports `"recursive"`. Converts each `DoclingDocument` to markdown internally, then applies token-based splitting using a character approximation (4 chars = 1 token):
 
 ```python
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=chunk_size,
     chunk_overlap=chunk_overlap,
     separators=["\n\n", r"(?<=\. )", "\n", " ", ""],
-    length_function=lambda text: len(encoding.encode(text)),  # tiktoken-based
+    length_function=lambda text: math.ceil(len(text) / 4),  # char-based approximation
     add_start_index=True,
 )
 ```

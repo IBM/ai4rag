@@ -8,12 +8,12 @@ import pytest
 from ogx_client import BadRequestError
 
 from ai4rag.rag.embedding.ogx import (
-    _CHARS_PER_TOKEN,
     _TRUNCATION_MARGINS,
     MIN_CONTEXT_LENGTH,
     OGXEmbeddingModel,
     OGXEmbeddingParams,
 )
+from ai4rag.utils.constants import TokenEstimation
 
 
 def _make_bad_request_error():
@@ -346,7 +346,7 @@ class TestEmbeddingTruncationFallback:
     def test_first_truncation_margin_truncates_oversized(self, model, mocker):
         """5% truncation clips oversized texts to the expected character limit."""
         ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        oversized_text = "x" * (self.CONTEXT_LENGTH * _CHARS_PER_TOKEN + 500)
+        oversized_text = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
 
         model.client.embeddings.create.side_effect = [
             _make_bad_request_error(),
@@ -357,13 +357,13 @@ class TestEmbeddingTruncationFallback:
 
         assert len(result) == 1
         retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
-        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[0]) * _CHARS_PER_TOKEN)
+        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[0]) * TokenEstimation.CHARS_PER_TOKEN)
         assert len(retry_input[0]) == expected_max
 
     def test_second_truncation_margin_succeeds(self, model, mocker):
         """When 5% truncation also fails, 10% truncation is attempted as a batch."""
         ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        oversized_text = "x" * (self.CONTEXT_LENGTH * _CHARS_PER_TOKEN + 500)
+        oversized_text = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
 
         model.client.embeddings.create.side_effect = [
             _make_bad_request_error(),  # original batch fails
@@ -376,7 +376,7 @@ class TestEmbeddingTruncationFallback:
         assert len(result) == 1
         assert model.client.embeddings.create.call_count == 3
         retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
-        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[1]) * _CHARS_PER_TOKEN)
+        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[1]) * TokenEstimation.CHARS_PER_TOKEN)
         assert len(retry_input[0]) == expected_max
 
     def test_all_truncations_fail_raises(self, model):
@@ -419,7 +419,7 @@ class TestEmbeddingTruncationFallback:
     def test_embed_query_fallback(self, model, mocker):
         """embed_query also benefits from the truncation fallback."""
         ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        oversized_query = "x" * (self.CONTEXT_LENGTH * _CHARS_PER_TOKEN + 500)
+        oversized_query = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
 
         model.client.embeddings.create.side_effect = [
             _make_bad_request_error(),  # original fails

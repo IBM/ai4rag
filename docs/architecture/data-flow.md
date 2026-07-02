@@ -66,7 +66,7 @@ Documents are provided as `list[DoclingDocument]` (from the `docling-core` libra
 
 ### Chunking
 
-The configured chunker (`DoclingChunker` or `LangChainChunker`) splits `DoclingDocument` objects into `AI4RAGChunk` instances. Both chunkers use tiktoken for token counting.
+The configured chunker (`DoclingChunker` or `LangChainChunker`) splits `DoclingDocument` objects into `AI4RAGChunk` instances. Both chunkers use a character-based token approximation (4 characters = 1 token) for token counting.
 
 **DoclingChunker** (structure-aware): Operates directly on the document structure, preserving headings and tables. Does not support overlap.
 
