@@ -3,9 +3,26 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+import httpx
 import pytest
+from ogx_client import BadRequestError
 
-from ai4rag.rag.embedding.ogx import MIN_CONTEXT_LENGTH, OGXEmbeddingModel, OGXEmbeddingParams
+from ai4rag.rag.embedding.ogx import (
+    _CHARS_PER_TOKEN,
+    _TRUNCATION_MARGINS,
+    MIN_CONTEXT_LENGTH,
+    OGXEmbeddingModel,
+    OGXEmbeddingParams,
+)
+
+
+def _make_bad_request_error():
+    """Create a BadRequestError for testing."""
+    return BadRequestError(
+        message="Input too long",
+        response=httpx.Response(status_code=400, request=httpx.Request("POST", "http://test")),
+        body=None,
+    )
 
 
 def _make_mock_ogx_embedding_response(mocker, embeddings):
@@ -271,3 +288,130 @@ class TestOGXEmbeddingModel:
 
         assert repr(model) == "all-MiniLM-L6-v2"
         assert str(model) == "all-MiniLM-L6-v2"
+
+
+class TestEmbeddingTruncationFallback:
+    """Test suite for the progressive truncation fallback in _embed_text."""
+
+    CONTEXT_LENGTH = 1024
+
+    @pytest.fixture
+    def model(self, mocker):
+        mock_client = mocker.MagicMock()
+        return OGXEmbeddingModel(
+            client=mock_client,
+            model_id="test-model",
+            params=OGXEmbeddingParams(embedding_dimension=3, context_length=self.CONTEXT_LENGTH),
+        )
+
+    def test_batch_success_no_fallback(self, model, mocker):
+        """When the batch call succeeds, no fallback is triggered."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        model.client.embeddings.create.return_value = ok_response
+
+        result = model.embed_documents(["short text", "another"])
+
+        assert len(result) == 2
+        assert model.client.embeddings.create.call_count == 1
+
+    def test_first_truncation_retries_entire_batch(self, model, mocker):
+        """When batch fails, the entire batch is retried with 5% truncation."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+
+        model.client.embeddings.create.side_effect = [
+            _make_bad_request_error(),  # original batch fails
+            ok_response,  # 5% truncated batch succeeds
+        ]
+
+        result = model.embed_documents(["text1", "text2"])
+
+        assert len(result) == 2
+        assert model.client.embeddings.create.call_count == 2
+
+    def test_first_truncation_margin_truncates_oversized(self, model, mocker):
+        """5% truncation clips oversized texts to the expected character limit."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        oversized_text = "x" * (self.CONTEXT_LENGTH * _CHARS_PER_TOKEN + 500)
+
+        model.client.embeddings.create.side_effect = [
+            _make_bad_request_error(),
+            ok_response,
+        ]
+
+        result = model.embed_documents([oversized_text])
+
+        assert len(result) == 1
+        retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
+        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[0]) * _CHARS_PER_TOKEN)
+        assert len(retry_input[0]) == expected_max
+
+    def test_second_truncation_margin_succeeds(self, model, mocker):
+        """When 5% truncation also fails, 10% truncation is attempted as a batch."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        oversized_text = "x" * (self.CONTEXT_LENGTH * _CHARS_PER_TOKEN + 500)
+
+        model.client.embeddings.create.side_effect = [
+            _make_bad_request_error(),  # original batch fails
+            _make_bad_request_error(),  # 5% truncated batch fails
+            ok_response,  # 10% truncated batch succeeds
+        ]
+
+        result = model.embed_documents([oversized_text])
+
+        assert len(result) == 1
+        assert model.client.embeddings.create.call_count == 3
+        retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
+        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[1]) * _CHARS_PER_TOKEN)
+        assert len(retry_input[0]) == expected_max
+
+    def test_all_truncations_fail_raises(self, model):
+        """When all truncation attempts fail, BadRequestError is re-raised."""
+        model.client.embeddings.create.side_effect = _make_bad_request_error()
+
+        with pytest.raises(BadRequestError):
+            model.embed_documents(["x" * 100_000])
+
+    def test_short_texts_unchanged_after_truncation(self, model, mocker):
+        """Short texts are not affected by the truncation slice."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        short_text = "short"
+
+        model.client.embeddings.create.side_effect = [
+            _make_bad_request_error(),
+            ok_response,
+        ]
+
+        result = model.embed_documents([short_text, short_text])
+
+        assert len(result) == 2
+        retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
+        assert retry_input[0] == short_text
+        assert retry_input[1] == short_text
+
+    def test_truncation_preserves_document_order(self, model, mocker):
+        """Embeddings maintain 1:1 correspondence with input texts after fallback."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+
+        model.client.embeddings.create.side_effect = [
+            _make_bad_request_error(),
+            ok_response,
+        ]
+
+        result = model.embed_documents(["a", "b", "c"])
+
+        assert result == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+
+    def test_embed_query_fallback(self, model, mocker):
+        """embed_query also benefits from the truncation fallback."""
+        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        oversized_query = "x" * (self.CONTEXT_LENGTH * _CHARS_PER_TOKEN + 500)
+
+        model.client.embeddings.create.side_effect = [
+            _make_bad_request_error(),  # original fails
+            _make_bad_request_error(),  # 5% truncation fails
+            ok_response,  # 10% truncation succeeds
+        ]
+
+        result = model.embed_query(oversized_query)
+
+        assert result == [0.1, 0.2, 0.3]
