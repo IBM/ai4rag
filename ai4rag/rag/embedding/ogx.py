@@ -127,7 +127,9 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
 
         return [
             data.embedding
-            for data in self.client.embeddings.create(input=text_input, model=self.model_id).data
+            for data in self.client.embeddings.create(
+                input=text_input, model=self.model_id, extra_body={"truncate_prompt_tokens": -1}
+            ).data
             if not isinstance(data.embedding, str)
         ]
 
