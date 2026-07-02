@@ -116,6 +116,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     random_seed: int = _DEFAULT_SEED,
     chunking_methods: list[str] | None = None,
     inference_max_threads: int = 10,
+    **kwargs: Any,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
@@ -181,6 +182,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     _validate_model_list(generation_models, "generation_models")
     _validate_chunking_methods(chunking_methods)
 
+    preset = kwargs.get("preset", None)
     # Build payload and create search space via OGX
     payload: dict[str, list[dict[str, str]]] = {}
     if generation_models:
@@ -195,16 +197,15 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 
     search_space = prepare_search_space_with_ogx(payload, client=ogx_client, benchmark_data=benchmark_df)
 
-    # this is equivalent of `preset="speed"`. I check it like this not to add another arg to already big func signature
     # this is a tmp approach -- optimal solution is to change the `prepare_search_space_with_ogx`
     # func to accept different params than models only
     # but this will take more time which currently we do not have
-    if inference_max_threads == 4:
+    if preset == "speed":
         speed_parameters = [
             search_space["foundation_model"],
             search_space["embedding_model"],
             Parameter("chunk_size", "C", values=[128, 256]),
-            Parameter("chunking_method", "C", values=["recursive"]),
+            Parameter("chunking_method", "C", values=chunking_methods),
         ]
         # recreate the search space with constrained chunk_sizes and models
         # validated by all of the checks in `prepare_search_space_with_ogx` func

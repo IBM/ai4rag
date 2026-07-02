@@ -240,10 +240,10 @@ class TestValidateChunkingMethods:
 
 
 class TestSpeedPresetSearchSpace:
-    """Test that inference_max_threads=4 triggers the speed preset path."""
+    """Test that preset='speed' constrains the search space."""
 
     def test_speed_preset_constrains_chunk_sizes(self, mock_ogx_client):
-        """When inference_max_threads=4, the report must contain only chunk_size [128, 256]."""
+        """When preset='speed', the report must contain only chunk_size [128, 256]."""
         from unittest.mock import patch
 
         from ai4rag.components.optimization import search_space_preparation as mod
@@ -281,7 +281,7 @@ class TestSpeedPresetSearchSpace:
                 test_data_path="dummy.json",
                 extracted_text_path="dummy_dir",
                 ogx_client=mock_ogx_client,
-                inference_max_threads=4,
+                preset="speed",
             )
 
         assert report.search_space["chunk_size"] == [128, 256]
