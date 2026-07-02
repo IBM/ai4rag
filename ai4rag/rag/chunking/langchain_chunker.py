@@ -10,8 +10,9 @@ from docling_core.types.doc import DoclingDocument
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter, TextSplitter
 
+from ai4rag.utils.constants import TokenEstimation
+
 from .base_chunker import BaseChunker
-from .char_approx_tokenizer import _CHARS_PER_TOKEN
 from .chunk import AI4RAGChunk
 
 __all__ = [
@@ -73,7 +74,7 @@ class LangChainChunker(BaseChunker):
                     chunk_size=self.chunk_size,
                     chunk_overlap=self.chunk_overlap,
                     separators=self.separators,
-                    length_function=lambda text: math.ceil(len(text) / _CHARS_PER_TOKEN),
+                    length_function=lambda text: math.ceil(len(text) / TokenEstimation.CHARS_PER_TOKEN),
                     add_start_index=True,
                 )
 

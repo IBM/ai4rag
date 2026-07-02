@@ -9,9 +9,9 @@ from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 from langchain_core.documents import Document
 
-from ai4rag.rag.chunking.char_approx_tokenizer import _CHARS_PER_TOKEN
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
+from ai4rag.utils.constants import TokenEstimation
 
 
 def _make_docling_doc(name: str, text: str) -> DoclingDocument:
@@ -105,7 +105,7 @@ class TestLangChainChunkerSplitDocuments:
         chunker = LangChainChunker(chunk_size=10, chunk_overlap=2)
         chunks = chunker.split_documents(sample_documents)
         for chunk in chunks:
-            assert math.ceil(len(chunk.text) / _CHARS_PER_TOKEN) <= 10
+            assert math.ceil(len(chunk.text) / TokenEstimation.CHARS_PER_TOKEN) <= 10
 
     def test_split_multiple_documents(self, chunker_small):
         docs = [

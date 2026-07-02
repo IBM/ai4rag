@@ -11,6 +11,7 @@ __all__ = [
     "ExperimentStep",
     "RetrievalConstraints",
     "ChatGenerationConstants",
+    "TokenEstimation",
 ]
 
 
@@ -110,6 +111,12 @@ class ChunkingConstraints(metaclass=ConstantMeta):
     MIN_CHUNK_OVERLAP = 0
     MAX_CHUNK_OVERLAP = 256
     METHODS = ["recursive", "hybrid"]
+
+
+class TokenEstimation(metaclass=ConstantMeta):
+    """Character-based token estimation constant shared by chunkers and embedding models."""
+
+    CHARS_PER_TOKEN = 4
 
 
 class RetrievalConstraints(metaclass=ConstantMeta):

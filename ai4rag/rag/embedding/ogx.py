@@ -8,6 +8,7 @@ from typing import Optional
 from ogx_client import BadRequestError, OgxClient
 
 from ai4rag import logger
+from ai4rag.utils.constants import TokenEstimation
 
 from .base_model import BaseEmbeddingModel
 
@@ -15,7 +16,6 @@ __all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 
 MIN_CONTEXT_LENGTH = 700
-_CHARS_PER_TOKEN = 3
 _TRUNCATION_MARGINS = (0.05, 0.10)
 
 
@@ -148,7 +148,7 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
     def _truncate_text(self, text: str, margin: float) -> str:
         """Truncate text to fit within the model's context length.
 
-        Uses a character-based token estimate (``_CHARS_PER_TOKEN`` chars per
+        Uses a character-based token estimate (``CHARS_PER_TOKEN`` chars per
         token) and reduces the allowed length by the given margin.
 
         Parameters
@@ -163,7 +163,7 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         str
             Truncated text, or the original if it already fits.
         """
-        max_chars = int(self._params.context_length * (1 - margin) * _CHARS_PER_TOKEN)
+        max_chars = int(self._params.context_length * (1 - margin) * TokenEstimation.CHARS_PER_TOKEN)
         return text[:max_chars]
 
     def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:

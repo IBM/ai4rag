@@ -6,16 +6,16 @@ import math
 
 from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
 
-__all__ = ["CharApproxTokenizer"]
+from ai4rag.utils.constants import TokenEstimation
 
-_CHARS_PER_TOKEN = 4
+__all__ = ["CharApproxTokenizer"]
 
 
 class CharApproxTokenizer(BaseTokenizer):
     """
     Lightweight tokenizer that approximates token count as ``ceil(len(text) / 4)``.
 
-    Providing a consistent, model-agnostic token estimate suitable for
+    It provides a consistent, model-agnostic token estimate suitable for
     chunk-size budgeting.
     """
 
@@ -23,7 +23,7 @@ class CharApproxTokenizer(BaseTokenizer):
 
     def count_tokens(self, text: str) -> int:
         """Approximate token count: 4 characters per token, rounded up."""
-        return math.ceil(len(text) / _CHARS_PER_TOKEN)
+        return math.ceil(len(text) / TokenEstimation.CHARS_PER_TOKEN)
 
     def get_max_tokens(self) -> int:
         """Return the configured maximum token budget."""
