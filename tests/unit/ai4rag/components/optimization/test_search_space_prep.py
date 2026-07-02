@@ -239,6 +239,54 @@ class TestValidateChunkingMethods:
 # ---------------------------------------------------------------------------
 
 
+class TestSpeedPresetSearchSpace:
+    """Test that inference_max_threads=4 triggers the speed preset path."""
+
+    def test_speed_preset_constrains_chunk_sizes(self, mock_ogx_client):
+        """When inference_max_threads=4, the report must contain only chunk_size [128, 256]."""
+        from unittest.mock import patch
+
+        from ai4rag.components.optimization import search_space_preparation as mod
+        from ai4rag.search_space.src.parameter import Parameter
+
+        fake_fm = MagicMock()
+        fake_fm.model_id = "fm-a"
+
+        fake_em = MagicMock()
+        fake_em.model_id = "em-a"
+        # Required by _rule_chunk_size_within_embedding_context_length
+        # which compares chunk_size against embedding context_length.
+        fake_em.params.context_length = 8192
+
+        search_space_items = {
+            "chunking_method": Parameter(name="chunking_method", values=["recursive", "hybrid"]),
+            "chunk_size": Parameter(name="chunk_size", values=[512, 1024, 2048]),
+            "foundation_model": Parameter(name="foundation_model", values=[fake_fm]),
+            "embedding_model": Parameter(name="embedding_model", values=[fake_em]),
+        }
+        fake_search_space = MagicMock()
+        fake_search_space._search_space = search_space_items
+        fake_search_space.__getitem__ = lambda self, key: search_space_items[key]
+
+        fake_benchmark_df = MagicMock(spec=mod.pd.DataFrame)
+        fake_benchmark_df.__len__ = lambda self: 1
+
+        with (
+            patch.object(mod, "prepare_search_space_with_ogx", return_value=fake_search_space),
+            patch.object(mod.pd, "read_json", return_value=fake_benchmark_df),
+            patch.object(mod, "load_docling_documents", return_value=[]),
+            patch.object(mod, "BenchmarkData"),
+        ):
+            report = prepare_search_space_report(
+                test_data_path="dummy.json",
+                extracted_text_path="dummy_dir",
+                ogx_client=mock_ogx_client,
+                inference_max_threads=4,
+            )
+
+        assert report.search_space["chunk_size"] == [128, 256]
+
+
 class TestUnsupportedChunkingMethods:
     """Test that providing chunking methods not in the search space raises."""
 

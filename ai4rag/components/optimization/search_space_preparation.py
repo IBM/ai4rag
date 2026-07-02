@@ -18,6 +18,8 @@ from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
+from ai4rag.search_space.src.parameter import Parameter
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
@@ -192,6 +194,19 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     documents = load_docling_documents(extracted_text_path)
 
     search_space = prepare_search_space_with_ogx(payload, client=ogx_client, benchmark_data=benchmark_df)
+
+    # this is equivalent of `preset="speed"`. I check it like this not to add another argument to already big func signature
+    # this is a tmp approach -- optimal solution is to change the `prepare_search_space_with_ogx` func to accept different params than models only
+    # but this will take more time which currently we do not have
+    if inference_max_threads == 4:
+        speed_parameters = [
+            search_space._search_space["foundation_model"],
+            search_space._search_space["embedding_model"],
+            Parameter("chunk_size", "C", values=[128, 256]),
+            Parameter("chunking_method", "C", values=["recursive"]),
+        ]
+        # recreate the search space with constrained chunk_sizes and models validated by all of the checks in `prepare_search_space_with_ogx` func
+        search_space = AI4RAGSearchSpace(params=speed_parameters)
 
     # Run model pre-selection when the number of models exceeds the caps
     fm_values = search_space["foundation_model"].values
