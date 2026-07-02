@@ -15,7 +15,7 @@ __all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 
 MIN_CONTEXT_LENGTH = 700
-_CHARS_PER_TOKEN = 5
+_CHARS_PER_TOKEN = 3
 _TRUNCATION_MARGINS = (0.05, 0.10)
 
 
@@ -93,6 +93,11 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         remaining interval is smaller than 256 tokens, keeping the number
         of API calls to roughly 5.
 
+        Calls the embedding API directly with ``truncate_prompt_tokens``
+        set to ``None`` so that oversized probes are rejected by the
+        server rather than silently truncated (the server may default
+        to ``-1`` which auto-truncates to ``max_model_len``).
+
         Raises
         ------
         RuntimeError
@@ -103,7 +108,11 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             mid = (lo + hi) // 2
             probe_text = "word " * mid
             try:
-                self._embed_text(text_input=probe_text)
+                self.client.embeddings.create(
+                    input=probe_text,
+                    model=self.model_id,
+                    extra_body={"truncate_prompt_tokens": None},
+                )
                 best = mid
                 lo = mid + 1
             except Exception:  # pylint: disable=broad-exception-caught
@@ -177,7 +186,8 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         Raises
         ------
         BadRequestError
-            When all truncation attempts fail.
+            When all truncation attempts fail (the original error is
+            re-raised).
         """
         try:
             return self._call_embedding_api(text_input)

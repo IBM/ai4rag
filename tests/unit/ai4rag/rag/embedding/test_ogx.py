@@ -161,6 +161,21 @@ class TestOGXEmbeddingModel:
         with pytest.raises(RuntimeError, match="Failed to auto-detect 'context_length'"):
             OGXEmbeddingModel(client=mock_client, model_id="test-model", params=None)
 
+    def test_detect_context_length_disables_server_truncation(self, mocker):
+        """Test that context_length probes send truncate_prompt_tokens=None to override server defaults."""
+        mock_client = mocker.MagicMock()
+        response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        mock_client.embeddings.create.return_value = response
+
+        OGXEmbeddingModel(client=mock_client, model_id="test-model", params=OGXEmbeddingParams(embedding_dimension=384))
+
+        probe_calls = [
+            call
+            for call in mock_client.embeddings.create.call_args_list
+            if call.kwargs.get("extra_body") == {"truncate_prompt_tokens": None}
+        ]
+        assert len(probe_calls) > 0, "Detection probes must explicitly disable server-side truncation"
+
     def test_detect_context_length_skipped_when_explicit(self, mock_ogx_client):
         """Test that context_length detection is skipped when explicitly provided."""
         params = OGXEmbeddingParams(embedding_dimension=384, context_length=1024)
