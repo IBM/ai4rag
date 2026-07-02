@@ -11,6 +11,7 @@ import pytest
 
 from ai4rag.components.data.text_extraction import (
     ExtractionResult,
+    _build_docling_format_options,
     _effective_worker_count,
     _raise_if_threshold_exceeded,
     _resolve_artifacts_path,
@@ -339,3 +340,36 @@ class TestRaiseIfThresholdExceeded:
 
         with pytest.raises(RuntimeError, match="Showing 10 of 15 error"):
             _raise_if_threshold_exceeded(error_details=errors, total_docs=20, tolerance=None)
+
+
+# ---------------------------------------------------------------------------
+# _build_docling_format_options — do_table_structure parameter
+# ---------------------------------------------------------------------------
+
+
+class TestBuildDoclingFormatOptions:
+    """Tests for the ``do_table_structure`` parameter in ``_build_docling_format_options``."""
+
+    def test_default_disables_table_structure(self):
+        """Default call should produce PDF options with ``do_table_structure=False``."""
+        from docling.datamodel.base_models import InputFormat
+
+        options = _build_docling_format_options()
+        pdf_option = options[InputFormat.PDF]
+        assert pdf_option.pipeline_options.do_table_structure is False
+
+    def test_do_table_structure_true(self):
+        """Explicit ``True`` should enable table structure parsing."""
+        from docling.datamodel.base_models import InputFormat
+
+        options = _build_docling_format_options(do_table_structure=True)
+        pdf_option = options[InputFormat.PDF]
+        assert pdf_option.pipeline_options.do_table_structure is True
+
+    def test_do_table_structure_false(self):
+        """Explicit ``False`` should disable table structure parsing."""
+        from docling.datamodel.base_models import InputFormat
+
+        options = _build_docling_format_options(do_table_structure=False)
+        pdf_option = options[InputFormat.PDF]
+        assert pdf_option.pipeline_options.do_table_structure is False

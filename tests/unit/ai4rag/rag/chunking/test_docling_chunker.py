@@ -78,20 +78,24 @@ class TestDoclingChunkerSplitDocuments:
         heading_chunks = [c for c in chunks if c.metadata.get("headings")]
         assert len(heading_chunks) > 0
         for chunk in heading_chunks:
-            assert chunk.metadata["headings"][0] in chunk.text
+            # headings is now a string like "Introduction > Section 1"
+            first_heading = chunk.metadata["headings"].split(" > ")[0]
+            assert first_heading in chunk.text
 
     def test_contextualize_false_excludes_headings(self, doc_with_sections):
         chunker = DoclingChunker(contextualize=False)
         chunks = chunker.split_documents([doc_with_sections])
         heading_chunks = [c for c in chunks if c.metadata.get("headings")]
         for chunk in heading_chunks:
-            heading = chunk.metadata["headings"][0]
-            assert not chunk.text.startswith(heading)
+            # headings is now a string like "Introduction > Section 1"
+            first_heading = chunk.metadata["headings"].split(" > ")[0]
+            assert not chunk.text.startswith(first_heading)
 
     def test_headings_in_metadata(self, chunker, doc_with_sections):
         chunks = chunker.split_documents([doc_with_sections])
         heading_chunks = [c for c in chunks if c.metadata.get("headings")]
-        heading_values = [c.metadata["headings"][0] for c in heading_chunks]
+        # headings is now a string like "Introduction" or "Introduction > Section 1"
+        heading_values = [c.metadata["headings"].split(" > ")[0] for c in heading_chunks]
         assert "Introduction" in heading_values
         assert "Methods" in heading_values
         assert "Results" in heading_values

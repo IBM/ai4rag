@@ -117,6 +117,9 @@ class AI4RAGExperiment:
     n_mps_embedding_models : int, default=2
         Amount of embedding models to be further used in experiment post pre-selection.
 
+    inference_max_threads : int, default=10
+        Defines the number of threads to use during generation model inference.
+
     Attributes
     ----------
     results : ExperimentResults
@@ -161,6 +164,7 @@ class AI4RAGExperiment:
         )
         self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
+        self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -334,6 +338,8 @@ class AI4RAGExperiment:
             "retrieval": retrieval_params,
             "generation": {
                 "model_id": foundation_model.model_id,
+                "temperature": foundation_model.params.temperature,
+                "max_completion_tokens": foundation_model.params.max_completion_tokens,
                 "context_template_text": context_template_text,
                 "user_message_text": user_message_text,
                 "system_message_text": system_message_text,
@@ -442,8 +448,7 @@ class AI4RAGExperiment:
         )
 
         inference_response = query_rag(
-            rag=rag_pattern,
-            questions=list(self.benchmark_data.questions),
+            rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
         )
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,

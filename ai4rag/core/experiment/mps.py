@@ -114,7 +114,7 @@ class ModelsPreSelector:
         self.embedding_models = embedding_models
         self.metric = metric
 
-        self.evaluator: BaseEvaluator = kwargs.get("evaluator", UnitxtEvaluator())
+        self.evaluator: BaseEvaluator = kwargs.pop("evaluator", UnitxtEvaluator())
         self.retrieval_params = {
             "number_of_chunks": kwargs.get(AI4RAGParamNames.NUMBER_OF_CHUNKS, 3),
             "method": kwargs.get(AI4RAGParamNames.RETRIEVAL_METHOD, "simple"),
@@ -127,6 +127,7 @@ class ModelsPreSelector:
         }
         self.evaluation_results: list[MPSEvaluationResultsTyped] = []
         self._exception_handler = ExperimentExceptionHandler()
+        self.max_threads = kwargs.pop("max_threads", 10)
 
     def evaluate_patterns(self):
         """
@@ -289,8 +290,7 @@ class ModelsPreSelector:
         rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
 
         inference_response = query_rag(
-            rag=rag,
-            questions=list(self.benchmark_data.questions),
+            rag=rag, questions=list(self.benchmark_data.questions), max_threads=self.max_threads
         )
 
         result_scores = self._evaluate_response(inference_response=inference_response)

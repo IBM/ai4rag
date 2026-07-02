@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -33,7 +33,14 @@ class TestRandomOptSettings:
         settings = RandomOptSettings(max_evals=25)
         settings_dict = settings.to_dict()
 
-        assert settings_dict == {"max_evals": 25}
+        assert settings_dict == {"max_evals": 25, "random_state": 64}
+
+    def test_random_opt_settings_to_dict_custom_random_state(self):
+        """Test to_dict includes custom random_state value."""
+        settings = RandomOptSettings(max_evals=25, random_state=42)
+        settings_dict = settings.to_dict()
+
+        assert settings_dict == {"max_evals": 25, "random_state": 42}
 
 
 class TestRandomOptimizer:
@@ -72,13 +79,10 @@ class TestRandomOptimizer:
         assert optimizer.settings == optimizer_settings
         assert optimizer._evaluated_combinations == []
 
-    def test_search_successful_evaluations(self, mock_search_space, optimizer_settings, mocker):
+    def test_search_successful_evaluations(self, mock_search_space, optimizer_settings):
         """Test the search method with successful evaluations."""
         # Mock the objective function to return different scores
         objective_func = MagicMock(side_effect=[0.3, 0.7, 0.5])
-
-        # Mock random.shuffle to make the test deterministic
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -94,7 +98,7 @@ class TestRandomOptimizer:
         assert result["score"] == 0.7
         assert len(optimizer._evaluated_combinations) == 3
 
-    def test_search_with_some_failed_iterations(self, mock_search_space, mocker):
+    def test_search_with_some_failed_iterations(self, mock_search_space):
         """Test search when some iterations fail but some succeed."""
         settings = RandomOptSettings(max_evals=4)
 
@@ -102,8 +106,6 @@ class TestRandomOptimizer:
         objective_func = MagicMock(
             side_effect=[0.3, FailedIterationError("Failed"), 0.8, FailedIterationError("Failed")]
         )
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -117,7 +119,7 @@ class TestRandomOptimizer:
         assert result["score"] == 0.8
         assert len(optimizer._evaluated_combinations) == 4
 
-    def test_search_all_iterations_failed(self, mock_search_space, optimizer_settings, mocker):
+    def test_search_all_iterations_failed(self, mock_search_space, optimizer_settings):
         """Test search when all iterations fail."""
         # All evaluations fail
         objective_func = MagicMock(
@@ -127,8 +129,6 @@ class TestRandomOptimizer:
                 FailedIterationError("Failed 3"),
             ]
         )
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -174,10 +174,11 @@ class TestRandomOptimizer:
         assert result is None
         objective_func.assert_called_once_with(params)
 
-    def test_search_shuffles_combinations(self, mock_search_space, optimizer_settings, mocker):
+    @patch("ai4rag.core.hpo.random_opt.random.Random")
+    def test_search_shuffles_combinations(self, mock_random_cls, mock_search_space, optimizer_settings):
         """Test that search shuffles combinations before evaluation."""
         objective_func = MagicMock(return_value=0.5)
-        mock_shuffle = mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
+        mock_rng = mock_random_cls.return_value
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -187,15 +188,13 @@ class TestRandomOptimizer:
 
         optimizer.search()
 
-        # Verify shuffle was called
-        mock_shuffle.assert_called_once()
+        mock_random_cls.assert_called_once_with(optimizer_settings.random_state)
+        mock_rng.shuffle.assert_called_once()
 
-    def test_search_respects_max_evals(self, mock_search_space, mocker):
+    def test_search_respects_max_evals(self, mock_search_space):
         """Test that search respects the max_evals setting."""
         settings = RandomOptSettings(max_evals=2)
         objective_func = MagicMock(return_value=0.5)
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -209,13 +208,11 @@ class TestRandomOptimizer:
         assert objective_func.call_count == 2
         assert len(optimizer._evaluated_combinations) == 2
 
-    def test_search_returns_highest_score(self, mock_search_space, mocker):
+    def test_search_returns_highest_score(self, mock_search_space):
         """Test that search returns the configuration with the highest score."""
         settings = RandomOptSettings(max_evals=5)
         # Return different scores, highest should be 0.95
         objective_func = MagicMock(side_effect=[0.3, 0.95, 0.5, 0.2, 0.7])
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -229,11 +226,9 @@ class TestRandomOptimizer:
         assert result["param1"] == 2
         assert result["param2"] == "b"
 
-    def test_evaluated_combinations_stores_all_evaluations(self, mock_search_space, optimizer_settings, mocker):
+    def test_evaluated_combinations_stores_all_evaluations(self, mock_search_space, optimizer_settings):
         """Test that _evaluated_combinations stores all evaluated parameters."""
         objective_func = MagicMock(side_effect=[0.3, 0.7, 0.5])
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -250,7 +245,7 @@ class TestRandomOptimizer:
             assert "param2" in evaluation
             assert "score" in evaluation
 
-    def test_search_filters_out_none_scores(self, mock_search_space, mocker):
+    def test_search_filters_out_none_scores(self, mock_search_space):
         """Test that search correctly filters out evaluations with None scores."""
         settings = RandomOptSettings(max_evals=4)
         # Mix of successful and failed evaluations
@@ -262,8 +257,6 @@ class TestRandomOptimizer:
                 FailedIterationError("Failed"),
             ]
         )
-
-        mocker.patch("ai4rag.core.hpo.random_opt.random.shuffle")
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -277,3 +270,76 @@ class TestRandomOptimizer:
         assert result["score"] == 0.8
         # But _evaluated_combinations should include all attempts
         assert len(optimizer._evaluated_combinations) == 4
+
+
+class TestRandomOptimizerDeterminism:
+    """Test deterministic behavior with random_state."""
+
+    @pytest.fixture
+    def mock_search_space(self):
+        """Create a mock search space with predefined combinations."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"param1": 1, "param2": "a"},
+            {"param1": 2, "param2": "b"},
+            {"param1": 3, "param2": "c"},
+            {"param1": 4, "param2": "d"},
+            {"param1": 5, "param2": "e"},
+        ]
+        return mock_space
+
+    def test_random_optimizer_deterministic_with_same_random_state(self, mock_search_space):
+        """Test that RandomOptimizer produces identical evaluation order with same random_state."""
+        settings = RandomOptSettings(max_evals=3, random_state=42)
+
+        def deterministic_objective(params):
+            return params["param1"] / 10.0
+
+        # First run
+        optimizer1 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        result1 = optimizer1.search()
+        evals1 = [e["param1"] for e in optimizer1._evaluated_combinations]
+
+        # Second run with same random_state
+        optimizer2 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        result2 = optimizer2.search()
+        evals2 = [e["param1"] for e in optimizer2._evaluated_combinations]
+
+        # Should evaluate same combinations in same order
+        assert evals1 == evals2
+        assert result1 == result2
+
+    def test_random_optimizer_different_with_different_random_state(self, mock_search_space):
+        """Test that RandomOptimizer produces different evaluation order with different random_state."""
+
+        def deterministic_objective(params):
+            return params["param1"] / 10.0
+
+        # First run with random_state=42
+        optimizer1 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=RandomOptSettings(max_evals=3, random_state=42),
+        )
+        optimizer1.search()
+        evals1 = [e["param1"] for e in optimizer1._evaluated_combinations]
+
+        # Second run with random_state=99
+        optimizer2 = RandomOptimizer(
+            objective_function=deterministic_objective,
+            search_space=mock_search_space,
+            settings=RandomOptSettings(max_evals=3, random_state=99),
+        )
+        optimizer2.search()
+        evals2 = [e["param1"] for e in optimizer2._evaluated_combinations]
+
+        # Should evaluate different combinations or different order
+        assert evals1 != evals2

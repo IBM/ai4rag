@@ -59,7 +59,7 @@ class TestOptimizerSettings:
         settings = OptimizerSettings(max_evals=20)
         settings_dict = settings.to_dict()
 
-        assert settings_dict == {"max_evals": 20}
+        assert settings_dict == {"max_evals": 20, "random_state": 64}
         assert isinstance(settings_dict, dict)
 
 
