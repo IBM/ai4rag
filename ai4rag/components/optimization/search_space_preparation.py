@@ -195,17 +195,19 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 
     search_space = prepare_search_space_with_ogx(payload, client=ogx_client, benchmark_data=benchmark_df)
 
-    # this is equivalent of `preset="speed"`. I check it like this not to add another argument to already big func signature
-    # this is a tmp approach -- optimal solution is to change the `prepare_search_space_with_ogx` func to accept different params than models only
+    # this is equivalent of `preset="speed"`. I check it like this not to add another arg to already big func signature
+    # this is a tmp approach -- optimal solution is to change the `prepare_search_space_with_ogx`
+    # func to accept different params than models only
     # but this will take more time which currently we do not have
     if inference_max_threads == 4:
         speed_parameters = [
-            search_space._search_space["foundation_model"],
-            search_space._search_space["embedding_model"],
+            search_space["foundation_model"],
+            search_space["embedding_model"],
             Parameter("chunk_size", "C", values=[128, 256]),
             Parameter("chunking_method", "C", values=["recursive"]),
         ]
-        # recreate the search space with constrained chunk_sizes and models validated by all of the checks in `prepare_search_space_with_ogx` func
+        # recreate the search space with constrained chunk_sizes and models
+        # validated by all of the checks in `prepare_search_space_with_ogx` func
         search_space = AI4RAGSearchSpace(params=speed_parameters)
 
     # Run model pre-selection when the number of models exceeds the caps
