@@ -278,8 +278,7 @@ def _validate_chunking_methods(methods: list[str] | None) -> None:
     unsupported = [m for m in methods if m not in ChunkingConstraints.METHODS]
     if unsupported:
         raise ValueError(
-            f"Unsupported chunking methods: {unsupported!r}. "
-            f"Supported methods: {ChunkingConstraints.METHODS!r}."
+            f"Unsupported chunking methods: {unsupported!r}. " f"Supported methods: {ChunkingConstraints.METHODS!r}."
         )
 
 

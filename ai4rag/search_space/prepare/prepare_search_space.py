@@ -254,9 +254,7 @@ def prepare_search_space_custom(
             Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(validated_payload.chunking_methods))
         )
     if validated_payload.chunk_sizes is not None:
-        extra_params.append(
-            Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(validated_payload.chunk_sizes))
-        )
+        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(validated_payload.chunk_sizes)))
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],
