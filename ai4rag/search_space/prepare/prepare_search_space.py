@@ -167,8 +167,7 @@ def prepare_search_space_with_ogx(
 
     validated_payload = AI4RAGConstraints(**payload)
 
-    _CHUNKING_FIELDS = ("chunking_methods", "chunk_sizes")
-    skipped = [f for f in _CHUNKING_FIELDS if getattr(validated_payload, f) is not None]
+    skipped = [f for f in ("chunking_methods", "chunk_sizes") if getattr(validated_payload, f) is not None]
     if skipped:
         logger.warning(
             "Fields %s are not used by prepare_search_space_with_ogx and will be skipped. "

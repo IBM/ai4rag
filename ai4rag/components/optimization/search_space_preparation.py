@@ -293,7 +293,7 @@ def _validate_chunk_sizes(chunk_sizes: list[int] | None) -> None:
     for i, s in enumerate(chunk_sizes):
         if not isinstance(s, int) or s <= 0:
             raise TypeError(f"chunk_sizes[{i}] must be a positive integer.")
-        if not (ChunkingConstraints.MIN_CHUNK_SIZE <= s <= ChunkingConstraints.MAX_CHUNK_SIZE):
+        if not ChunkingConstraints.MIN_CHUNK_SIZE <= s <= ChunkingConstraints.MAX_CHUNK_SIZE:
             raise ValueError(
                 f"chunk_sizes[{i}]={s} is out of range "
                 f"[{ChunkingConstraints.MIN_CHUNK_SIZE}, {ChunkingConstraints.MAX_CHUNK_SIZE}]."
