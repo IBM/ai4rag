@@ -26,11 +26,23 @@ class GAMOptSettings(OptimizerSettings):
     Settings for the GAMOptimizer. For the detailed description
     of parameters for Generalized Additive Models, please see pygam
     documentation.
+
+    Parameters
+    ----------
+    max_evals : int
+        Maximum number of evaluations performed during optimization process.
+    n_random_nodes : int, default=4
+        Number of random configurations to evaluate before starting GAM iterations.
+    evals_per_trial : int, default=1
+        Number of configurations to evaluate per GAM iteration.
+    random_state : int, default=64
+        Inherited from OptimizerSettings. Controls shuffle order of initial
+        random exploration phase. Does NOT control GAM model randomness
+        (GAM training is deterministic).
     """
 
     n_random_nodes: int = 4
     evals_per_trial: int = 1
-    random_state: int = 64
 
 
 class GAMOptimizer(BaseOptimizer):
@@ -193,7 +205,7 @@ class GAMOptimizer(BaseOptimizer):
             return
 
         combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
-        random.shuffle(combinations_local)
+        random.Random(self.settings.random_state).shuffle(combinations_local)
 
         gen = (x for x in combinations_local)
 

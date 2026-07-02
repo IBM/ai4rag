@@ -15,7 +15,16 @@ __all__ = ["RandomOptimizer", "RandomOptSettings", "FailedIterationError"]
 
 @dataclass
 class RandomOptSettings(OptimizerSettings):
-    """Settings for random optimizer."""
+    """Settings for random optimizer.
+
+    Parameters
+    ----------
+    max_evals : int
+        Maximum number of configurations to evaluate.
+    random_state : int, default=64
+        Inherited from OptimizerSettings. Controls shuffle order of
+        search space combinations.
+    """
 
 
 class RandomOptimizer(BaseOptimizer):
@@ -42,8 +51,8 @@ class RandomOptimizer(BaseOptimizer):
         OptimizationError
             When there were no successful evaluations for given constraints.
         """
-        combinations = self._search_space.combinations
-        random.shuffle(combinations)
+        combinations = list(self._search_space.combinations)
+        random.Random(self.settings.random_state).shuffle(combinations)
 
         for idx in range(self.settings.max_evals):
             score = self._objective_function(combinations[idx])

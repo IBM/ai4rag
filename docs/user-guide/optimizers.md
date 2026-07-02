@@ -266,7 +266,8 @@ No model training, no prediction - just random sampling.
 from ai4rag.core.hpo.random_opt import RandomOptSettings
 
 optimizer_settings = RandomOptSettings(
-    max_evals=10  # Only required parameter
+    max_evals=10,       # Number of configurations to evaluate (required)
+    random_state=64     # Random seed for reproducibility (default: 64)
 )
 ```
 
