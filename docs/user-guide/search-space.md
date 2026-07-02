@@ -370,7 +370,7 @@ context_length = 8192
 # Check: 1024 <= 8192 * 0.9 = 7372.8 ✓
 ```
 
-**Why**: If chunks exceed the embedding model's context window, embedding generation will fail or be truncated. The 10% margin accounts for tokenizer divergence between the chunker's tiktoken encoder and the embedding model's native tokenizer.
+**Why**: If chunks exceed the embedding model's context window, embedding generation will fail or be truncated. The 10% margin accounts for the approximation in the chunker's character-based token estimator (4 chars = 1 token).
 
 **Example**:
 

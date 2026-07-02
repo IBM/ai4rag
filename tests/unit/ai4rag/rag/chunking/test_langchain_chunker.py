@@ -2,14 +2,16 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import math
+
 import pytest
-import tiktoken
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 from langchain_core.documents import Document
 
+from ai4rag.rag.chunking.char_approx_tokenizer import _CHARS_PER_TOKEN
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.chunking.langchain_chunker import _DEFAULT_TIKTOKEN_MODEL, LangChainChunker
+from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 
 
 def _make_docling_doc(name: str, text: str) -> DoclingDocument:
@@ -100,11 +102,10 @@ class TestLangChainChunkerSplitDocuments:
         assert chunks == []
 
     def test_split_respects_chunk_size(self, sample_documents):
-        encoding = tiktoken.encoding_for_model(_DEFAULT_TIKTOKEN_MODEL)
         chunker = LangChainChunker(chunk_size=10, chunk_overlap=2)
         chunks = chunker.split_documents(sample_documents)
         for chunk in chunks:
-            assert len(encoding.encode(chunk.text)) <= 10
+            assert math.ceil(len(chunk.text) / _CHARS_PER_TOKEN) <= 10
 
     def test_split_multiple_documents(self, chunker_small):
         docs = [

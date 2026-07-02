@@ -5,18 +5,15 @@
 import hashlib
 from typing import Any, Sequence
 
-import tiktoken
 from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
 from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
-from docling_core.transforms.chunker.tokenizer.openai import OpenAITokenizer
 from docling_core.types.doc import DoclingDocument
 
 from .base_chunker import BaseChunker
+from .char_approx_tokenizer import CharApproxTokenizer
 from .chunk import AI4RAGChunk
 
 __all__ = ["DoclingChunker"]
-
-_DEFAULT_TIKTOKEN_MODEL = "text-embedding-3-small"
 
 
 class DoclingChunker(BaseChunker):
@@ -39,8 +36,8 @@ class DoclingChunker(BaseChunker):
 
     tokenizer : BaseTokenizer | None, default=None
         Tokenizer for token counting and split-point decisions.
-        When ``None``, defaults to OpenAI tiktoken (``cl100k_base``,
-        zero model downloads).
+        When ``None``, defaults to ``CharApproxTokenizer`` which
+        estimates tokens as ``ceil(len(text) / 4)``.
 
     merge_peers : bool, default=True
         Merge adjacent undersized chunks that share the same heading
@@ -59,8 +56,7 @@ class DoclingChunker(BaseChunker):
         self.merge_peers = merge_peers
 
         if tokenizer is None:
-            encoding = tiktoken.encoding_for_model(_DEFAULT_TIKTOKEN_MODEL)
-            tokenizer = OpenAITokenizer(tokenizer=encoding, max_tokens=max_tokens)
+            tokenizer = CharApproxTokenizer(max_tokens=max_tokens)
 
         self._tokenizer = tokenizer
         self._chunker = HybridChunker(

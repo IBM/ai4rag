@@ -92,8 +92,8 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
 
     Both chunkers (``LangChainChunker`` and ``DoclingChunker``) express
     ``chunk_size`` in tokens, so the comparison is direct.  A 10 % safety
-    margin is applied to account for tokenizer divergence between the
-    chunker's tiktoken encoder and the embedding model's native tokenizer.
+    margin is applied to account for the approximation in the chunker's
+    character-based token estimator (4 chars = 1 token).
 
     Parameters
     ----------
