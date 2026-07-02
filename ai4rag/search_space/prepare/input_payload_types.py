@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from typing import Annotated, Optional
 
-from annotated_types import MinLen
+from annotated_types import Gt, MinLen
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -36,3 +36,5 @@ class AI4RAGConstraints(BaseModel):
 
     embedding_models: Optional[Annotated[list[AI4RAGEmbeddingModel], MinLen(1)]] = None
     foundation_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None
+    chunking_methods: Optional[Annotated[list[Annotated[str, MinLen(1)]], MinLen(1)]] = None
+    chunk_sizes: Optional[Annotated[list[Annotated[int, Gt(0)]], MinLen(1)]] = None

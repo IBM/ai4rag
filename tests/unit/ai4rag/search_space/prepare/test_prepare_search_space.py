@@ -10,7 +10,7 @@ import pytest
 from ogx_client import OgxClient
 from pydantic import ValidationError
 
-from ai4rag.search_space.prepare import prepare_search_space_with_ogx
+from ai4rag.search_space.prepare import prepare_search_space_custom, prepare_search_space_with_ogx
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
@@ -401,3 +401,87 @@ class TestPrepareSearchSpaceWithOgx:
 
         fm_ids = [m.model_id for m in result["foundation_model"].values]
         assert fm_ids == ["llm-ok"]
+
+
+class TestPrepareSearchSpaceCustom:
+    """Test prepare_search_space_custom function."""
+
+    def _setup_mock_client(self, mocker):
+        mock_client = MagicMock(spec=OgxClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "default-llm"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
+
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=True)
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=True)
+
+        return mock_client
+
+    def test_no_extra_params_behaves_like_with_ogx(self, mocker):
+        """Without chunking_methods or chunk_sizes the result matches prepare_search_space_with_ogx."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_custom({}, mock_client)
+
+        param_names = [p.name for p in result.params]
+        assert "foundation_model" in param_names
+        assert "embedding_model" in param_names
+        assert "chunking_method" in param_names
+        assert "chunk_size" in param_names
+
+    def test_custom_chunking_methods_override_defaults(self, mocker):
+        """chunking_methods in payload overrides the default chunking_method dimension."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_custom({"chunking_methods": ["recursive"]}, mock_client)
+
+        assert result["chunking_method"].values == ("recursive",)
+
+    def test_custom_chunk_sizes_override_defaults(self, mocker):
+        """chunk_sizes in payload overrides the default chunk_size dimension."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_custom({"chunk_sizes": [256, 512]}, mock_client)
+
+        assert set(result["chunk_size"].values) == {256, 512}
+
+    def test_both_custom_params_applied_together(self, mocker):
+        """Both chunking_methods and chunk_sizes in payload can be set simultaneously."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_custom(
+            {"chunking_methods": ["hybrid"], "chunk_sizes": [1024]},
+            mock_client,
+        )
+
+        assert result["chunking_method"].values == ("hybrid",)
+        assert result["chunk_size"].values == (1024,)
+
+    def test_non_ogx_client_raises_error(self):
+        """Non-OgxClient raises SearchSpaceValueError."""
+        with pytest.raises(SearchSpaceValueError, match="Unrecognized client type"):
+            prepare_search_space_custom({}, MagicMock(spec=object))
+
+    def test_invalid_payload_raises_validation_error(self, mocker):
+        """Invalid payload fields raise a pydantic ValidationError."""
+        mock_client = self._setup_mock_client(mocker)
+        with pytest.raises(ValidationError):
+            prepare_search_space_custom({"invalid_field": "value"}, mock_client)
+
+    def test_chroma_vector_store_excludes_hybrid_params(self, mocker):
+        """chroma vector_store_type excludes ranker parameters."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_custom({}, mock_client, vector_store_type="chroma")
+
+        param_names = [p.name for p in result.params]
+        assert "ranker_strategy" not in param_names
+        assert "ranker_k" not in param_names
+        assert "ranker_alpha" not in param_names
