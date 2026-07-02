@@ -5,7 +5,9 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ogx_client import OgxClient
+from ogx_client import BadRequestError, OgxClient
+
+from ai4rag import logger
 
 from .base_model import BaseEmbeddingModel
 
@@ -13,6 +15,8 @@ __all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 
 MIN_CONTEXT_LENGTH = 700
+_CHARS_PER_TOKEN = 3
+_TRUNCATION_MARGINS = (0.05, 0.10)
 
 
 @dataclass
@@ -89,6 +93,11 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         remaining interval is smaller than 256 tokens, keeping the number
         of API calls to roughly 5.
 
+        Calls the embedding API directly with ``truncate_prompt_tokens``
+        set to ``None`` so that oversized probes are rejected by the
+        server rather than silently truncated (the server may default
+        to ``-1`` which auto-truncates to ``max_model_len``).
+
         Raises
         ------
         RuntimeError
@@ -99,7 +108,11 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             mid = (lo + hi) // 2
             probe_text = "word " * mid
             try:
-                self._embed_text(text_input=probe_text)
+                self.client.embeddings.create(
+                    input=probe_text,
+                    model=self.model_id,
+                    extra_body={"truncate_prompt_tokens": None},
+                )
                 best = mid
                 lo = mid + 1
             except Exception:  # pylint: disable=broad-exception-caught
@@ -111,25 +124,86 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             "Provide 'context_length' explicitly or ensure the embedding service is reachable."
         )
 
-    def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:
-        """Embeds documents.
+    def _call_embedding_api(self, text_input: list[str] | str) -> list[list[float]]:
+        """Send a raw embedding request to the OGX server.
 
         Parameters
         ----------
         text_input : list[str] | str
-            List of text-like chunks or single text-like chunk.
+            Single text or a list of texts to embed.
 
         Returns
         -------
         list[list[float]]
-            Embeddings made from the list of texts or a single text.
+            Embedding vectors corresponding to the input texts.
         """
-
         return [
             data.embedding
-            for data in self.client.embeddings.create(input=text_input, model=self.model_id).data
+            for data in self.client.embeddings.create(
+                input=text_input, model=self.model_id, extra_body={"truncate_prompt_tokens": -1}
+            ).data
             if not isinstance(data.embedding, str)
         ]
+
+    def _truncate_text(self, text: str, margin: float) -> str:
+        """Truncate text to fit within the model's context length.
+
+        Uses a character-based token estimate (``_CHARS_PER_TOKEN`` chars per
+        token) and reduces the allowed length by the given margin.
+
+        Parameters
+        ----------
+        text : str
+            Text to truncate.
+        margin : float
+            Fraction of context length to cut (e.g. 0.05 for 5%).
+
+        Returns
+        -------
+        str
+            Truncated text, or the original if it already fits.
+        """
+        max_chars = int(self._params.context_length * (1 - margin) * _CHARS_PER_TOKEN)
+        return text[:max_chars]
+
+    def _embed_text(self, text_input: list[str] | str) -> list[list[float]]:
+        """Embed text with automatic batch-level truncation fallback.
+
+        Attempts the batch call as-is first. On ``BadRequestError``, retries
+        the entire batch with progressively stronger truncation margins
+        (5%, then 10%). If all attempts fail, the last error is re-raised.
+
+        Parameters
+        ----------
+        text_input : list[str] | str
+            Single text or a list of texts to embed.
+
+        Returns
+        -------
+        list[list[float]]
+            Embedding vectors corresponding to the input texts.
+
+        Raises
+        ------
+        BadRequestError
+            When all truncation attempts fail (the original error is
+            re-raised).
+        """
+        try:
+            return self._call_embedding_api(text_input)
+        except BadRequestError:
+            texts = [text_input] if isinstance(text_input, str) else text_input
+            for margin in _TRUNCATION_MARGINS:
+                truncated = [self._truncate_text(t, margin) for t in texts]
+                try:
+                    return self._call_embedding_api(truncated)
+                except BadRequestError:
+                    logger.warning(
+                        "Batch embedding failed after truncating %.0f%% of context length. Model: %s.",
+                        margin * 100,
+                        self.model_id,
+                    )
+            raise
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         """Embeds given list of strings.
