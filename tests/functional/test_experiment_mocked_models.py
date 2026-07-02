@@ -17,7 +17,8 @@ With 4 foundation models and 3 embedding models:
 
 import pandas as pd
 import pytest
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.labels import DocItemLabel
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
@@ -54,7 +55,7 @@ def embedding_models():
 
 @pytest.fixture(scope="module")
 def documents():
-    """5 documents with enough content to be split into multiple chunks at chunk_size=512."""
+    """5 DoclingDocuments with enough content to be split into multiple chunks at chunk_size=512."""
     paragraph = (
         "This document covers topic {topic}. "
         "The concept of {topic} is central to understanding the broader subject. "
@@ -65,13 +66,12 @@ def documents():
     )
     long_content = (paragraph * 8).strip()
 
-    return [
-        Document(
-            page_content=long_content.format(topic=f"topic_{i}"),
-            metadata={"document_id": f"doc_{i}"},
-        )
-        for i in range(5)
-    ]
+    docs = []
+    for i in range(5):
+        doc = DoclingDocument(name=f"doc_{i}")
+        doc.add_text(label=DocItemLabel.PARAGRAPH, text=long_content.format(topic=f"topic_{i}"))
+        docs.append(doc)
+    return docs
 
 
 @pytest.fixture(scope="module")

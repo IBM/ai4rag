@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import math
+from collections.abc import Callable
 
 from docling_core.transforms.chunker.tokenizer.base import BaseTokenizer
 
@@ -29,6 +30,6 @@ class CharApproxTokenizer(BaseTokenizer):
         """Return the configured maximum token budget."""
         return self.max_tokens
 
-    def get_tokenizer(self) -> None:
-        """No underlying tokenizer object — returns ``None``."""
-        return None
+    def get_tokenizer(self) -> Callable[[str], int]:
+        """Return a token-counting callable for use by downstream splitters."""
+        return self.count_tokens

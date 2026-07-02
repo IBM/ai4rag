@@ -2,25 +2,37 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from dataclasses import dataclass
 from random import random, seed
 from typing import Any
 
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.utils.constants import ChatGenerationConstants
 
 seed(42)
 
 
-class MockedFoundationModel(BaseFoundationModel[None, dict[str, Any] | None]):
+@dataclass
+class MockedModelParameters:
+    temperature: float = ChatGenerationConstants.TEMPERATURE
+    max_completion_tokens: int = ChatGenerationConstants.MAX_COMPLETION_TOKENS
+
+
+class MockedFoundationModel(BaseFoundationModel[None, MockedModelParameters]):
     def __init__(
         self,
         model_id: str,
-        params: dict[str, Any] | None = None,
+        params: dict[str, Any] | MockedModelParameters | None = None,
         client: None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
     ):
+        if params is None:
+            params = MockedModelParameters()
+        elif isinstance(params, dict):
+            params = MockedModelParameters(**params)
         super().__init__(
             client=client,
             model_id=model_id,
