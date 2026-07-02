@@ -143,7 +143,7 @@ class TestExperimentOgxMilvus:
             optimizer_settings=optimizer_settings,
             event_handler=_make_event_handler("ogx_milvus_ogx_models"),
             vector_store_type="ogx",
-            ogx_vector_io_provider_id="milvus-lite",
+            ogx_vector_io_provider_id="milvus-remote",
         )
 
         experiment.search(skip_mps=True)
