@@ -32,8 +32,6 @@ class OptimizerSettings:
         Seed for random number generator controlling exploration order.
         Use the same seed across runs to get deterministic evaluation
         sequences (given deterministic objective function scores).
-        Does NOT control: LLM temperature, benchmark sampling, or other
-        non-optimizer randomness.
 
     Methods
     -------

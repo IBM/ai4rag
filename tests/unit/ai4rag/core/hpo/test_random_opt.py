@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -174,9 +174,11 @@ class TestRandomOptimizer:
         assert result is None
         objective_func.assert_called_once_with(params)
 
-    def test_search_shuffles_combinations(self, mock_search_space, optimizer_settings):
+    @patch("ai4rag.core.hpo.random_opt.random.Random")
+    def test_search_shuffles_combinations(self, mock_random_cls, mock_search_space, optimizer_settings):
         """Test that search shuffles combinations before evaluation."""
         objective_func = MagicMock(return_value=0.5)
+        mock_rng = mock_random_cls.return_value
 
         optimizer = RandomOptimizer(
             objective_function=objective_func,
@@ -184,13 +186,10 @@ class TestRandomOptimizer:
             settings=optimizer_settings,
         )
 
-        # Mock the optimizer's RNG instance
-        optimizer._rng.shuffle = MagicMock()
-
         optimizer.search()
 
-        # Verify shuffle was called on the RNG instance
-        optimizer._rng.shuffle.assert_called_once()
+        mock_random_cls.assert_called_once_with(optimizer_settings.random_state)
+        mock_rng.shuffle.assert_called_once()
 
     def test_search_respects_max_evals(self, mock_search_space):
         """Test that search respects the max_evals setting."""

@@ -23,8 +23,7 @@ class RandomOptSettings(OptimizerSettings):
         Maximum number of configurations to evaluate.
     random_state : int, default=64
         Inherited from OptimizerSettings. Controls shuffle order of
-        search space combinations. Does NOT control LLM generation
-        stochasticity or benchmark sampling randomness.
+        search space combinations.
     """
 
 
@@ -36,7 +35,6 @@ class RandomOptimizer(BaseOptimizer):
     ):
         super().__init__(objective_function, search_space, settings)
         self._evaluated_combinations = []
-        self._rng = random.Random(self.settings.random_state)
 
     def search(self) -> dict[str, Any]:
         """
@@ -54,7 +52,7 @@ class RandomOptimizer(BaseOptimizer):
             When there were no successful evaluations for given constraints.
         """
         combinations = list(self._search_space.combinations)
-        self._rng.shuffle(combinations)
+        random.Random(self.settings.random_state).shuffle(combinations)
 
         for idx in range(self.settings.max_evals):
             score = self._objective_function(combinations[idx])
