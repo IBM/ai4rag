@@ -18,7 +18,6 @@ from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_custom
-from ai4rag.utils.constants import ChunkingConstraints
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
@@ -209,6 +208,11 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         client=ogx_client,
         benchmark_data=benchmark_df,
     )
+    _logger.info(
+        "Search space chunking_method=%s chunk_size=%s",
+        list(search_space["chunking_method"].values),
+        list(search_space["chunk_size"].values),
+    )
 
     # Run model pre-selection when the number of models exceeds the caps
     fm_values = search_space["foundation_model"].values
@@ -265,6 +269,8 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
 
 
 def _validate_chunking_methods(methods: list[str] | None) -> None:
+    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and
+    #       supported-methods check is covered by prepare_search_space_custom.
     """Validate that chunking methods, if provided, are non-empty strings and supported."""
     if methods is None:
         return
@@ -275,14 +281,11 @@ def _validate_chunking_methods(methods: list[str] | None) -> None:
     for i, m in enumerate(methods):
         if not isinstance(m, str) or not m.strip():
             raise TypeError(f"chunking_methods[{i}] must be a non-empty string.")
-    unsupported = [m for m in methods if m not in ChunkingConstraints.METHODS]
-    if unsupported:
-        raise ValueError(
-            f"Unsupported chunking methods: {unsupported!r}. " f"Supported methods: {ChunkingConstraints.METHODS!r}."
-        )
 
 
 def _validate_chunk_sizes(chunk_sizes: list[int] | None) -> None:
+    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and
+    #       bounds check is covered by prepare_search_space_custom.
     """Validate that chunk sizes, if provided, are integers within ChunkingConstraints bounds."""
     if chunk_sizes is None:
         return
@@ -291,10 +294,5 @@ def _validate_chunk_sizes(chunk_sizes: list[int] | None) -> None:
     if not chunk_sizes:
         raise ValueError("chunk_sizes must not be empty when provided.")
     for i, s in enumerate(chunk_sizes):
-        if not isinstance(s, int) or s <= 0:
+        if isinstance(s, bool) or not isinstance(s, int) or s <= 0:
             raise TypeError(f"chunk_sizes[{i}] must be a positive integer.")
-        if not ChunkingConstraints.MIN_CHUNK_SIZE <= s <= ChunkingConstraints.MAX_CHUNK_SIZE:
-            raise ValueError(
-                f"chunk_sizes[{i}]={s} is out of range "
-                f"[{ChunkingConstraints.MIN_CHUNK_SIZE}, {ChunkingConstraints.MAX_CHUNK_SIZE}]."
-            )

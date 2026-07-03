@@ -236,28 +236,6 @@ class TestValidateChunkingMethods:
 
 
 # ---------------------------------------------------------------------------
-# prepare_search_space_report — unsupported chunking_methods
-# ---------------------------------------------------------------------------
-
-
-class TestUnsupportedChunkingMethods:
-    """Test that providing chunking methods not in the search space raises."""
-
-    def test_unsupported_method_raises_value_error(self, mock_ogx_client):
-        """A chunking method not in ChunkingConstraints.METHODS must raise ValueError.
-
-        Validation is now performed eagerly before any I/O so no mocking is needed.
-        """
-        with pytest.raises(ValueError, match="Unsupported chunking methods"):
-            prepare_search_space_report(
-                test_data_path="dummy.json",
-                extracted_text_path="dummy_dir",
-                ogx_client=mock_ogx_client,
-                chunking_methods=["semantic"],
-            )
-
-
-# ---------------------------------------------------------------------------
 # _validate_chunk_sizes
 # ---------------------------------------------------------------------------
 
@@ -302,27 +280,10 @@ class TestValidateChunkSizes:
         with pytest.raises(TypeError, match=r"chunk_sizes\[0\] must be a positive integer"):
             _validate_chunk_sizes([512.0])  # type: ignore[list-item]
 
-    def test_below_min_raises_value_error(self):
-        """A size below ChunkingConstraints.MIN_CHUNK_SIZE must raise ValueError."""
-        from ai4rag.utils.constants import ChunkingConstraints
-
-        below_min = ChunkingConstraints.MIN_CHUNK_SIZE - 1
-        with pytest.raises(ValueError, match="out of range"):
-            _validate_chunk_sizes([below_min])
-
-    def test_above_max_raises_value_error(self):
-        """A size above ChunkingConstraints.MAX_CHUNK_SIZE must raise ValueError."""
-        from ai4rag.utils.constants import ChunkingConstraints
-
-        above_max = ChunkingConstraints.MAX_CHUNK_SIZE + 1
-        with pytest.raises(ValueError, match="out of range"):
-            _validate_chunk_sizes([above_max])
-
-    def test_boundary_values_pass(self):
-        """MIN_CHUNK_SIZE and MAX_CHUNK_SIZE themselves must be accepted."""
-        from ai4rag.utils.constants import ChunkingConstraints
-
-        _validate_chunk_sizes([ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE])
+    def test_bool_raises_type_error(self):
+        """A bool value must raise TypeError even though bool is a subclass of int."""
+        with pytest.raises(TypeError, match=r"chunk_sizes\[0\] must be a positive integer"):
+            _validate_chunk_sizes([True])
 
 
 # ---------------------------------------------------------------------------

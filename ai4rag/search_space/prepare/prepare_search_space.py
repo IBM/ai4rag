@@ -18,7 +18,7 @@ from ai4rag.search_space.prepare.ogx_utils import (
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import AI4RAGParamNames
+from ai4rag.utils.constants import AI4RAGParamNames, ChunkingConstraints
 
 __all__ = ["prepare_search_space_with_ogx", "prepare_search_space_custom"]
 
@@ -120,8 +120,8 @@ def _build_model_params(foundation_models: list, embedding_models: list) -> tupl
     tuple[Parameter, Parameter]
         ``(fms_param, ems_param)`` ready for inclusion in a search space.
     """
-    fms_param = Parameter(name="foundation_model", values=foundation_models)
-    ems_param = Parameter(name="embedding_model", values=embedding_models)
+    fms_param = Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models)
+    ems_param = Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models)
     logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])
     logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])
     return fms_param, ems_param
@@ -169,10 +169,9 @@ def prepare_search_space_with_ogx(
 
     skipped = [f for f in ("chunking_methods", "chunk_sizes") if getattr(validated_payload, f) is not None]
     if skipped:
-        logger.warning(
-            "Fields %s are not used by prepare_search_space_with_ogx and will be skipped. "
-            "Use prepare_search_space_custom to apply chunking constraints.",
-            skipped,
+        raise SearchSpaceValueError(
+            f"Fields {skipped} are not supported by prepare_search_space_with_ogx. "
+            "Use prepare_search_space_custom to apply chunking constraints."
         )
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
@@ -240,6 +239,25 @@ def prepare_search_space_custom(
     logger.info("Preparing custom search space based on provided constraints: %s.", payload)
 
     validated_payload = AI4RAGConstraints(**payload)
+
+    if validated_payload.chunking_methods is not None:
+        unsupported = [m for m in validated_payload.chunking_methods if m not in ChunkingConstraints.METHODS]
+        if unsupported:
+            raise SearchSpaceValueError(
+                f"Unsupported chunking methods: {unsupported!r}. "
+                f"Supported methods: {ChunkingConstraints.METHODS!r}."
+            )
+
+    if validated_payload.chunk_sizes is not None:
+        for i, s in enumerate(validated_payload.chunk_sizes):
+            if isinstance(s, bool):
+                raise SearchSpaceValueError(f"chunk_sizes[{i}] must be a positive integer, got bool.")
+            if not ChunkingConstraints.MIN_CHUNK_SIZE <= s <= ChunkingConstraints.MAX_CHUNK_SIZE:
+                raise SearchSpaceValueError(
+                    f"chunk_sizes[{i}]={s} is out of range "
+                    f"[{ChunkingConstraints.MIN_CHUNK_SIZE}, {ChunkingConstraints.MAX_CHUNK_SIZE}]."
+                )
+
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
 
     if benchmark_data is not None:

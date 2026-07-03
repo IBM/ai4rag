@@ -402,6 +402,20 @@ class TestPrepareSearchSpaceWithOgx:
         fm_ids = [m.model_id for m in result["foundation_model"].values]
         assert fm_ids == ["llm-ok"]
 
+    def test_chunking_fields_in_payload_raise_error(self):
+        """chunking_methods or chunk_sizes in payload must raise SearchSpaceValueError."""
+        mock_client = MagicMock(spec=OgxClient)
+
+        with pytest.raises(SearchSpaceValueError, match="not supported by prepare_search_space_with_ogx"):
+            prepare_search_space_with_ogx({"chunking_methods": ["recursive"]}, mock_client)
+
+    def test_chunk_sizes_in_payload_raise_error(self):
+        """chunk_sizes in payload must raise SearchSpaceValueError."""
+        mock_client = MagicMock(spec=OgxClient)
+
+        with pytest.raises(SearchSpaceValueError, match="not supported by prepare_search_space_with_ogx"):
+            prepare_search_space_with_ogx({"chunk_sizes": [512]}, mock_client)
+
 
 class TestPrepareSearchSpaceCustom:
     """Test prepare_search_space_custom function."""
@@ -485,3 +499,35 @@ class TestPrepareSearchSpaceCustom:
         assert "ranker_strategy" not in param_names
         assert "ranker_k" not in param_names
         assert "ranker_alpha" not in param_names
+
+    def test_unsupported_chunking_method_raises_error(self, mocker):
+        """An unsupported chunking method raises SearchSpaceValueError before any I/O."""
+        mock_client = self._setup_mock_client(mocker)
+
+        with pytest.raises(SearchSpaceValueError, match="Unsupported chunking methods"):
+            prepare_search_space_custom({"chunking_methods": ["semantic"]}, mock_client)
+
+    def test_chunk_size_below_min_raises_error(self, mocker):
+        """A chunk size below MIN_CHUNK_SIZE raises SearchSpaceValueError before any I/O."""
+        mock_client = self._setup_mock_client(mocker)
+
+        with pytest.raises(SearchSpaceValueError, match="out of range"):
+            prepare_search_space_custom({"chunk_sizes": [1]}, mock_client)
+
+    def test_chunk_size_above_max_raises_error(self, mocker):
+        """A chunk size above MAX_CHUNK_SIZE raises SearchSpaceValueError before any I/O."""
+        mock_client = self._setup_mock_client(mocker)
+
+        with pytest.raises(SearchSpaceValueError, match="out of range"):
+            prepare_search_space_custom({"chunk_sizes": [99999]}, mock_client)
+
+    def test_bool_chunk_size_raises_error(self, mocker):
+        """A bool value in chunk_sizes raises SearchSpaceValueError.
+
+        Pydantic coerces True→1 before our validator runs, so the error is
+        "out of range" (1 < MIN_CHUNK_SIZE) rather than "must be a positive integer".
+        """
+        mock_client = self._setup_mock_client(mocker)
+
+        with pytest.raises(SearchSpaceValueError, match="out of range"):
+            prepare_search_space_custom({"chunk_sizes": [True]}, mock_client)
