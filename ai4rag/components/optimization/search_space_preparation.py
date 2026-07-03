@@ -173,19 +173,23 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     Raises
     ------
     ValueError
-        If *metric* is not one of the supported values, or if
-        *chunking_methods* or *chunk_sizes* contain unsupported entries.
+        If *metric* is not one of the supported values.
     TypeError
-        If *embedding_models*, *generation_models*, *chunking_methods*, or
-        *chunk_sizes* contain invalid entries.
+        If *embedding_models* or *generation_models* contain invalid entries.
+    pydantic.ValidationError
+        If *chunking_methods* or *chunk_sizes* fail structural validation
+        (wrong type, empty list, or invalid element types).
+    SearchSpaceValueError
+        If *chunking_methods* contains values not in
+        :attr:`~ai4rag.utils.constants.ChunkingConstraints.METHODS`, or
+        *chunk_sizes* contains values outside
+        ``[ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE]``.
     """
     if metric not in SUPPORTED_METRICS:
         raise ValueError(f"Metric {metric!r} is not supported. Supported metrics are {list(SUPPORTED_METRICS)}.")
 
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
-    _validate_chunking_methods(chunking_methods)
-    _validate_chunk_sizes(chunk_sizes)
 
     # Build payload and create search space via OGX
     payload: dict[str, Any] = {}
@@ -268,31 +272,3 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
             raise TypeError(f"{name}[{i}] must be a non-empty string.")
 
 
-def _validate_chunking_methods(methods: list[str] | None) -> None:
-    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and  # pylint: disable=fixme
-    #       supported-methods check is covered by prepare_search_space_custom.
-    """Validate that chunking methods, if provided, are non-empty strings and supported."""
-    if methods is None:
-        return
-    if not isinstance(methods, list):
-        raise TypeError("chunking_methods must be a list.")
-    if not methods:
-        raise ValueError("chunking_methods must not be empty when provided.")
-    for i, m in enumerate(methods):
-        if not isinstance(m, str) or not m.strip():
-            raise TypeError(f"chunking_methods[{i}] must be a non-empty string.")
-
-
-def _validate_chunk_sizes(chunk_sizes: list[int] | None) -> None:
-    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and  # pylint: disable=fixme
-    #       bounds check is covered by prepare_search_space_custom.
-    """Validate that chunk sizes, if provided, are integers within ChunkingConstraints bounds."""
-    if chunk_sizes is None:
-        return
-    if not isinstance(chunk_sizes, list):
-        raise TypeError("chunk_sizes must be a list.")
-    if not chunk_sizes:
-        raise ValueError("chunk_sizes must not be empty when provided.")
-    for i, s in enumerate(chunk_sizes):
-        if isinstance(s, bool) or not isinstance(s, int) or s <= 0:
-            raise TypeError(f"chunk_sizes[{i}] must be a positive integer.")
