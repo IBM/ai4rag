@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import json
 import re
 
 from ai4rag import logger
@@ -202,9 +203,8 @@ def detect_language_with_llm(
 ) -> dict[str, str] | None:
     """Detect the dominant language from sample questions using an LLM.
 
-    Sends a small sample of questions to a generation model registered in OGX
-    and asks it to return the ISO 639-1 code.  Models listed in
-    *allowed_generation_models* are preferred when available.
+    Sends a small sample of questions to a generation model and uses
+    JSON-schema structured output to obtain a single ISO 639-1 code.
 
     Parameters
     ----------
@@ -217,8 +217,8 @@ def detect_language_with_llm(
     Returns
     -------
     dict[str, str] | None
-        A dictionary with ``code`` and ``name`` keys when a non-English
-        language is detected, or ``None`` for English / on failure.
+        ``{"code": "<iso-639-1>", "name": "<language>"}`` on success,
+        or ``None`` on failure.
     """
     sample_text = "\n".join(f"- {q}" for q in questions[:5])
 
@@ -229,8 +229,8 @@ def detect_language_with_llm(
                     "role": "system",
                     "content": (
                         "You are a language detection assistant. "
-                        "Given text samples, respond with ONLY the ISO 639-1 language code. "
-                        "Nothing else — just the code."
+                        "Given text samples, respond with the ISO 639-1 language code "
+                        "of the dominant language."
                     ),
                 },
                 {
@@ -238,34 +238,42 @@ def detect_language_with_llm(
                     "content": f"What language are these questions written in?\n{sample_text}",
                 },
             ],
-            max_completion_tokens=10,
+            max_completion_tokens=15,
             temperature=0.0,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "language_detection",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "ISO 639-1 language code",
+                            },
+                        },
+                        "required": ["code"],
+                        "additionalProperties": False,
+                    },
+                    "strict": True,
+                },
+            },
         )
         raw_content = response[0].message.content
         if not raw_content or not isinstance(raw_content, str):
             raise ValueError(f"Invalid response content: {type(raw_content)}")
 
-        cleaned = raw_content.strip().lower().replace('"', "").replace("'", "")
-        if not cleaned:
-            raise ValueError("Empty response after cleanup")
+        detected_code = json.loads(raw_content)["code"].strip().lower()
+        if not re.fullmatch(r"[a-z]{2}(?:-[a-z]{2,4})?", detected_code):
+            raise ValueError(f"Malformed language code: {detected_code!r}")
 
-        code_pattern = r"[a-z]{2}(?:-[a-z]{2,4})?"
-        # Try targeted patterns to avoid matching English stop words (e.g. "is", "it", "no")
-        match = (
-            re.match(rf"^({code_pattern})\s*$", cleaned)  # code only
-            or re.match(rf"^({code_pattern})\s", cleaned)  # code at start, then more text
-            or re.search(rf"\(({code_pattern})\)", cleaned)  # code in parentheses
-        )
-        if not match:
-            raise ValueError(f"No ISO 639-1 code found in response: {cleaned[:50]}")
-
-        detected_code = match.group(1).split("-")[0]
-        name = LANGUAGE_MAP.get(match.group(1)) or LANGUAGE_MAP.get(detected_code)
+        base_code = detected_code.split("-")[0]
+        name = LANGUAGE_MAP.get(detected_code) or LANGUAGE_MAP.get(base_code)
         if not name:
-            raise ValueError(f"Unsupported language code '{detected_code}' from response: {cleaned[:50]}")
+            raise ValueError(f"Unsupported language code: {detected_code!r}")
 
-        logger.info("Language detected via LLM: %s (%s)", detected_code, name)
-        return {"code": detected_code, "name": name}
+        logger.info("Language detected via LLM: %s (%s)", base_code, name)
+        return {"code": base_code, "name": name}
 
     except Exception as exc:
         logger.warning("LLM language detection failed: %s", exc)
