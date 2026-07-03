@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.1](https://github.com/IBM/ai4rag/releases/tag/v0.9.1)
+
+### Fixed
+- LLM-based language detection now uses JSON-schema structured output (`response_format`) instead of fragile regex extraction, ensuring reliable ISO 639-1 code parsing from model responses
+
+---
+
 ## [0.9.0](https://github.com/IBM/ai4rag/releases/tag/v0.9.0)
 
 ### Added
