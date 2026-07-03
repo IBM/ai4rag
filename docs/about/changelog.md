@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.0](https://github.com/IBM/ai4rag/releases/tag/v0.9.0)
+
+### Added
+- Multilingual support — `Language` dataclass and `language` parameter on `BaseFoundationModel` for language-aware prompt template generation
+- `ai4rag.search_space.prepare.language_detection` module for LLM-based benchmark language detection with ISO 639-1 mapping
+- `CharApproxTokenizer` — lightweight, model-agnostic tokenizer approximating token count via character ratio, replacing the `tiktoken` dependency
+- `ai4rag.components.assets_generator.prompt_filters` module for filtering OGX runtime injection duplicates from HPO prompt templates during Responses API export
+- Progressive chunk truncation in `OGXEmbeddingModel` — oversized chunks are truncated before embedding instead of failing
+- `max_threads` parameter on `run_rag_optimization()` for controlling concurrent benchmark evaluation threads
+
+### Changed
+- **Breaking:** `BaseFoundationModel` constructor accepts a `language` parameter; `user_message_text` and `context_template_text` are now validated properties instead of `RAGPromptTemplateString` descriptors
+- **Breaking:** `BaseFoundationModel.chat()` signature now accepts `**kwargs`
+- **Breaking:** Search space report format changed from YAML to JSON — `search_space_preparation` and `rag_templates_optimization` no longer use `pyyaml`
+- **Breaking:** `OGXEmbeddingModel._embed_text()` renamed to `_call_embedding_api()`
+- Replaced `tiktoken` dependency with character-based token approximation across all chunkers
+- Upgraded `docling` dependency to `2.107.0` and adapted to new API
+- Prompt template system refactored — `RAGPromptTemplateString` descriptor replaced with setter-based validation via `validate_prompt_templates_placeholders()`
+- Responses API payload aligned with previous chat/completion format
+- Component functions (`text_extraction`, `search_space_preparation`, `rag_templates_optimization`) made more customizable with additional parameters
+- Removed `mike` dependency and documentation versioning from CI/CD
+
+### Fixed
+- Chunks exceeding embedding model context length now truncated with progressive margins instead of causing API failures
+- `random_state` parameter properly wired through `BaseOptimizer` to `GAMOptimizer` and `RandomOptimizer` for deterministic optimization runs
+- Removed unnecessary `docling` install cell from indexing notebook template
+
+### Removed
+- `tiktoken` dependency — replaced by `CharApproxTokenizer`
+- `RAGPromptTemplateString` descriptor class from `ai4rag.rag.foundation_models.utils`
+- YAML serialization support for model instances in search space reports
+
+---
+
 ## [0.8.1](https://github.com/IBM/ai4rag/releases/tag/v0.8.1)
 
 ### Changed

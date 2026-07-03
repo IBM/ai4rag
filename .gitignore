@@ -66,7 +66,11 @@ tmp/
 .DS_Store
 
 # AI code tools
-.claude
+.claude/*
+!.claude/commands/
+.claude/commands/*
+!.claude/commands/update-docs.md
+!.claude/commands/generate-release.md
 .cursor
 CLAUDE.md
 
