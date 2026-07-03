@@ -270,5 +270,3 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
     for i, m in enumerate(models):
         if not m:
             raise TypeError(f"{name}[{i}] must be a non-empty string.")
-
-
