@@ -269,7 +269,7 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
 
 
 def _validate_chunking_methods(methods: list[str] | None) -> None:
-    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and
+    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and  # pylint: disable=fixme
     #       supported-methods check is covered by prepare_search_space_custom.
     """Validate that chunking methods, if provided, are non-empty strings and supported."""
     if methods is None:
@@ -284,7 +284,7 @@ def _validate_chunking_methods(methods: list[str] | None) -> None:
 
 
 def _validate_chunk_sizes(chunk_sizes: list[int] | None) -> None:
-    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and
+    # TODO: remove — structural validation is now covered by AI4RAGConstraints (pydantic) and  # pylint: disable=fixme
     #       bounds check is covered by prepare_search_space_custom.
     """Validate that chunk sizes, if provided, are integers within ChunkingConstraints bounds."""
     if chunk_sizes is None:
