@@ -13,16 +13,17 @@ classDiagram
         +client: ClientT
         +model_id: str
         +params: ParamsT
+        +language: Language
         +system_message_text: str
         +user_message_text: str
         +context_template_text: str
-        +chat(messages)* list
+        +chat(messages, **kwargs)* list
     }
 
     class OGXFoundationModel {
         +client: OgxClient
         +params: OGXModelParameters
-        +chat(messages) list
+        +chat(messages, **kwargs) list
     }
 
     class BaseEmbeddingModel {
@@ -147,8 +148,13 @@ class BaseFoundationModel(Generic[ClientT, ParamsT], ABC):
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language: Language | None = None,
     ):
 ```
+
+**Language-Aware Prompt Generation:**
+
+The optional `language` parameter accepts a `Language` dataclass (with `code` and `name` fields) and controls language-aware prompt template generation. When set, `user_message_text` is regenerated to include language-specific instructions. Defaults to `Language(code="", name="auto")`.
 
 **Configurable Prompt Templates:**
 
@@ -201,11 +207,15 @@ foundation_model = OGXFoundationModel(
 )
 ```
 
+**Prompt Template Validation:**
+
+The `user_message_text` and `context_template_text` attributes are validated properties that check for required placeholders (`{question}`, `{reference_documents}` in user message; `{document}` in context template) on assignment. Invalid templates raise a `ValueError`.
+
 **Interface Method:**
 
 ```python
 @abstractmethod
-def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
     """Chat with the model based on the client capabilities."""
 ```
 
@@ -231,6 +241,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, OGXModelParameters]):
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
+        language: Language | None = None,
     ):
 ```
 
@@ -246,7 +257,7 @@ class OGXModelParameters:
 **Chat Implementation:**
 
 ```python
-def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
     response = self.client.chat.completions.create(
         model=self.model_id,
         messages=messages,
@@ -336,6 +347,10 @@ class OGXEmbeddingParams:
 **Auto-Detection:**
 
 When `embedding_dimension` or `context_length` not provided, the model auto-detects them on first use:
+
+**Chunk Truncation:**
+
+When a chunk exceeds the embedding model's context length, `OGXEmbeddingModel` automatically truncates it using a progressive margin strategy (5%, then 10%) before retrying. This prevents embedding failures for oversized chunks while preserving as much content as possible.
 
 **Embedding Dimension Detection:**
 
@@ -1229,7 +1244,7 @@ All RAG components are designed for extensibility:
 
 ```python
 class CustomFoundationModel(BaseFoundationModel[MyClient, MyParams]):
-    def chat(self, messages: list[MessageTyped]) -> list[MessageTyped]:
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         # Your implementation
         pass
 ```
