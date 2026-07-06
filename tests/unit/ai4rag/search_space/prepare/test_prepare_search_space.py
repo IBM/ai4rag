@@ -135,36 +135,10 @@ class TestPrepareSearchSpaceWithOgx:
         assert len(embedding_param.values) == 1
         assert embedding_param.values[0].model_id == "custom-embedding"
 
-    def test_invalid_payload_raises_validation_error(self, mocker):
+    def test_invalid_payload_raises_validation_error(self):
         """Test that invalid payload raises validation error."""
-        mock_client = MagicMock(spec=OgxClient)
-
-        # Mock model list
-        mock_llm = Mock()
-        mock_llm.id = "default-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
-
-        mock_embedding = Mock()
-        mock_embedding.id = "default-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
-
-        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
-
-        # Mock validation functions to always return True
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
-        )
-
-        # Invalid payload with unrecognized parameter
-        payload = {"invalid_parameter": "value"}
-
         with pytest.raises(ValidationError, match="Unknown validation error|invalid_parameter"):
-            prepare_search_space_with_ogx(payload, mock_client)
+            prepare_search_space_with_ogx({"invalid_parameter": "value"}, MagicMock())
 
     def test_non_ogx_client_raises_error(self):
         """Test that non-OgxClient raises error."""
@@ -243,37 +217,6 @@ class TestPrepareSearchSpaceWithOgx:
         search_mode_param = result["search_mode"]
         assert "vector" in search_mode_param.values
         assert "hybrid" in search_mode_param.values
-
-    def test_default_vector_store_type_is_ogx(self, mocker):
-        """Test that default vector_store_type is ogx (includes hybrid params by default)."""
-        mock_client = MagicMock(spec=OgxClient)
-
-        mock_llm = Mock()
-        mock_llm.id = "default-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
-
-        mock_embedding = Mock()
-        mock_embedding.id = "default-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
-
-        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
-
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
-        )
-
-        result = prepare_search_space_with_ogx({}, mock_client)
-
-        param_names = [p.name for p in result.params]
-        assert "search_mode" in param_names
-        assert "ranker_strategy" in param_names
-        assert "ranker_k" in param_names
-        assert "ranker_alpha" in param_names
 
     def test_user_specifies_not_responding_foundation_model(self, mocker):
         """Error when user requests a foundation model that is registered but not responding."""
@@ -401,3 +344,97 @@ class TestPrepareSearchSpaceWithOgx:
 
         fm_ids = [m.model_id for m in result["foundation_model"].values]
         assert fm_ids == ["llm-ok"]
+
+    def _setup_mock_client(self, mocker):
+        mock_client = MagicMock(spec=OgxClient)
+
+        mock_llm = Mock()
+        mock_llm.id = "default-llm"
+        mock_llm.custom_metadata = {"model_type": "llm"}
+
+        mock_embedding = Mock()
+        mock_embedding.id = "default-embedding"
+        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
+
+        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
+
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_foundation_model", return_value=True)
+        mocker.patch("ai4rag.search_space.prepare.ogx_utils._validate_embedding_model", return_value=True)
+
+        return mock_client
+
+    def test_no_chunking_params_returns_default_chunking_dimensions(self, mocker):
+        """Without chunking overrides the result includes default chunking_method and chunk_size dimensions."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({}, mock_client)
+
+        param_names = [p.name for p in result.params]
+        assert "foundation_model" in param_names
+        assert "embedding_model" in param_names
+        assert "chunking_method" in param_names
+        assert "chunk_size" in param_names
+
+    def test_custom_chunking_methods_override_defaults(self, mocker):
+        """chunking_methods in payload overrides the default chunking_method dimension."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({"chunking_methods": ["recursive"]}, mock_client)
+
+        assert result["chunking_method"].values == ("recursive",)
+
+    def test_custom_chunk_sizes_override_defaults(self, mocker):
+        """chunk_sizes in payload overrides the default chunk_size dimension."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({"chunk_sizes": [256, 512]}, mock_client)
+
+        assert set(result["chunk_size"].values) == {256, 512}
+
+    def test_both_chunking_params_applied_together(self, mocker):
+        """Both chunking_methods and chunk_sizes in payload can be set simultaneously."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx(
+            {"chunking_methods": ["hybrid"], "chunk_sizes": [1024]},
+            mock_client,
+        )
+
+        assert result["chunking_method"].values == ("hybrid",)
+        assert result["chunk_size"].values == (1024,)
+
+    def test_duplicate_chunking_methods_are_deduplicated(self, mocker):
+        """Duplicate chunking_methods are silently deduplicated, preserving order."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({"chunking_methods": ["recursive", "recursive"]}, mock_client)
+
+        assert result["chunking_method"].values == ("recursive",)
+
+    def test_duplicate_chunk_sizes_are_deduplicated(self, mocker):
+        """Duplicate chunk_sizes are silently deduplicated, preserving order."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({"chunk_sizes": [128, 129, 128]}, mock_client)
+
+        assert result["chunk_size"].values == (128, 129)
+
+    def test_unsupported_chunking_method_raises_error(self):
+        """An unsupported chunking method raises ValidationError before any I/O."""
+        with pytest.raises(ValidationError, match="Unsupported chunking methods"):
+            prepare_search_space_with_ogx({"chunking_methods": ["semantic"]}, MagicMock())
+
+    def test_chunk_size_below_min_raises_error(self):
+        """A chunk size below MIN_CHUNK_SIZE raises ValidationError before any I/O."""
+        with pytest.raises(ValidationError):
+            prepare_search_space_with_ogx({"chunk_sizes": [1]}, MagicMock())
+
+    def test_chunk_size_above_max_raises_error(self):
+        """A chunk size above MAX_CHUNK_SIZE raises ValidationError before any I/O."""
+        with pytest.raises(ValidationError):
+            prepare_search_space_with_ogx({"chunk_sizes": [99999]}, MagicMock())
+
+    def test_bool_chunk_size_raises_error(self):
+        """A bool value in chunk_sizes raises ValidationError before any I/O."""
+        with pytest.raises(ValidationError, match="must be a positive integer"):
+            prepare_search_space_with_ogx({"chunk_sizes": [True]}, MagicMock())

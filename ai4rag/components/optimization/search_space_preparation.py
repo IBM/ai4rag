@@ -113,6 +113,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     sample_size: int = _DEFAULT_SAMPLE_SIZE,
     random_seed: int = _DEFAULT_SEED,
     chunking_methods: list[str] | None = None,
+    chunk_sizes: list[int] | None = None,
     inference_max_threads: int = 10,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
@@ -153,6 +154,10 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         search space to only these methods (e.g. ``["recursive"]`` or
         ``["hybrid"]``).  ``None`` uses the platform defaults (both
         ``"recursive"`` and ``"hybrid"``).
+    chunk_sizes
+        When provided, constrains the ``chunk_size`` dimension of the
+        search space to only these sizes (e.g. ``[256, 512]``).  ``None``
+        uses the platform defaults.
     inference_max_threads
         Maximum number of concurrent threads used when querying the
         RAG service during benchmark evaluation.  Lower values reduce
@@ -171,27 +176,47 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         If *metric* is not one of the supported values.
     TypeError
         If *embedding_models* or *generation_models* contain invalid entries.
+    pydantic.ValidationError
+        If *chunking_methods* or *chunk_sizes* fail structural validation
+        (wrong type, empty list, or invalid element types).
+    SearchSpaceValueError
+        If *chunking_methods* contains values not in
+        :attr:`~ai4rag.utils.constants.ChunkingConstraints.METHODS`, or
+        *chunk_sizes* contains values outside
+        ``[ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE]``.
     """
     if metric not in SUPPORTED_METRICS:
         raise ValueError(f"Metric {metric!r} is not supported. Supported metrics are {list(SUPPORTED_METRICS)}.")
 
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
-    _validate_chunking_methods(chunking_methods)
 
     # Build payload and create search space via OGX
-    payload: dict[str, list[dict[str, str]]] = {}
+    payload: dict[str, Any] = {}
     if generation_models:
         payload["foundation_models"] = [{"model_id": gm} for gm in generation_models]
     if embedding_models:
         payload["embedding_models"] = [{"model_id": em} for em in embedding_models]
+    if chunking_methods is not None:
+        payload["chunking_methods"] = chunking_methods
+    if chunk_sizes is not None:
+        payload["chunk_sizes"] = chunk_sizes
 
     # Load benchmark data and documents
     benchmark_df = pd.read_json(Path(test_data_path))
     benchmark_data = BenchmarkData(benchmark_df)
     documents = load_docling_documents(extracted_text_path)
 
-    search_space = prepare_search_space_with_ogx(payload, client=ogx_client, benchmark_data=benchmark_df)
+    search_space = prepare_search_space_with_ogx(
+        payload,
+        client=ogx_client,
+        benchmark_data=benchmark_df,
+    )
+    _logger.info(
+        "Search space chunking_method=%s chunk_size=%s",
+        list(search_space["chunking_method"].values),
+        list(search_space["chunk_size"].values),
+    )
 
     # Run model pre-selection when the number of models exceeds the caps
     fm_values = search_space["foundation_model"].values
@@ -230,16 +255,6 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
 
-    if chunking_methods is not None:
-        available = set(verbose_repr["chunking_method"])
-        unsupported = [m for m in chunking_methods if m not in available]
-        if unsupported:
-            raise ValueError(
-                f"Unsupported chunking methods: {unsupported!r}. " f"Available methods: {sorted(available)!r}."
-            )
-        verbose_repr["chunking_method"] = chunking_methods
-        _logger.info("Chunking methods constrained to: %s", verbose_repr["chunking_method"])
-
     return SearchSpaceReport(
         search_space=verbose_repr,
         selected_models=selected_models,
@@ -255,16 +270,3 @@ def _validate_model_list(models: list[str] | None, name: str) -> None:
     for i, m in enumerate(models):
         if not m:
             raise TypeError(f"{name}[{i}] must be a non-empty string.")
-
-
-def _validate_chunking_methods(methods: list[str] | None) -> None:
-    """Validate that chunking methods, if provided, are non-empty strings."""
-    if methods is None:
-        return
-    if not isinstance(methods, list):
-        raise TypeError("chunking_methods must be a list.")
-    if not methods:
-        raise ValueError("chunking_methods must not be empty when provided.")
-    for i, m in enumerate(methods):
-        if not isinstance(m, str) or not m.strip():
-            raise TypeError(f"chunking_methods[{i}] must be a non-empty string.")

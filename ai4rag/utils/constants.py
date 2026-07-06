@@ -106,7 +106,7 @@ class ChatGenerationConstants(metaclass=ConstantMeta):
 class ChunkingConstraints(metaclass=ConstantMeta):
     """Constants used to define chunking constraints on what below parameters can be."""
 
-    MIN_CHUNK_SIZE = 512
+    MIN_CHUNK_SIZE = 128
     MAX_CHUNK_SIZE = 2048
     MIN_CHUNK_OVERLAP = 0
     MAX_CHUNK_OVERLAP = 256
