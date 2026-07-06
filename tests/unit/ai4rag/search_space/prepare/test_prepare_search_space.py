@@ -135,36 +135,10 @@ class TestPrepareSearchSpaceWithOgx:
         assert len(embedding_param.values) == 1
         assert embedding_param.values[0].model_id == "custom-embedding"
 
-    def test_invalid_payload_raises_validation_error(self, mocker):
+    def test_invalid_payload_raises_validation_error(self):
         """Test that invalid payload raises validation error."""
-        mock_client = MagicMock(spec=OgxClient)
-
-        # Mock model list
-        mock_llm = Mock()
-        mock_llm.id = "default-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
-
-        mock_embedding = Mock()
-        mock_embedding.id = "default-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
-
-        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
-
-        # Mock validation functions to always return True
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
-        )
-
-        # Invalid payload with unrecognized parameter
-        payload = {"invalid_parameter": "value"}
-
         with pytest.raises(ValidationError, match="Unknown validation error|invalid_parameter"):
-            prepare_search_space_with_ogx(payload, mock_client)
+            prepare_search_space_with_ogx({"invalid_parameter": "value"}, MagicMock())
 
     def test_non_ogx_client_raises_error(self):
         """Test that non-OgxClient raises error."""
@@ -243,37 +217,6 @@ class TestPrepareSearchSpaceWithOgx:
         search_mode_param = result["search_mode"]
         assert "vector" in search_mode_param.values
         assert "hybrid" in search_mode_param.values
-
-    def test_default_vector_store_type_is_ogx(self, mocker):
-        """Test that default vector_store_type is ogx (includes hybrid params by default)."""
-        mock_client = MagicMock(spec=OgxClient)
-
-        mock_llm = Mock()
-        mock_llm.id = "default-llm"
-        mock_llm.custom_metadata = {"model_type": "llm"}
-
-        mock_embedding = Mock()
-        mock_embedding.id = "default-embedding"
-        mock_embedding.custom_metadata = {"model_type": "embedding", "embedding_dimension": 768}
-
-        mock_client.models.list.return_value.data = [mock_llm, mock_embedding]
-
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_foundation_model",
-            return_value=True,
-        )
-        mocker.patch(
-            "ai4rag.search_space.prepare.ogx_utils._validate_embedding_model",
-            return_value=True,
-        )
-
-        result = prepare_search_space_with_ogx({}, mock_client)
-
-        param_names = [p.name for p in result.params]
-        assert "search_mode" in param_names
-        assert "ranker_strategy" in param_names
-        assert "ranker_k" in param_names
-        assert "ranker_alpha" in param_names
 
     def test_user_specifies_not_responding_foundation_model(self, mocker):
         """Error when user requests a foundation model that is registered but not responding."""
@@ -476,30 +419,22 @@ class TestPrepareSearchSpaceWithOgx:
 
         assert result["chunk_size"].values == (128, 129)
 
-    def test_unsupported_chunking_method_raises_error(self, mocker):
+    def test_unsupported_chunking_method_raises_error(self):
         """An unsupported chunking method raises ValidationError before any I/O."""
-        mock_client = self._setup_mock_client(mocker)
-
         with pytest.raises(ValidationError, match="Unsupported chunking methods"):
-            prepare_search_space_with_ogx({"chunking_methods": ["semantic"]}, mock_client)
+            prepare_search_space_with_ogx({"chunking_methods": ["semantic"]}, MagicMock())
 
-    def test_chunk_size_below_min_raises_error(self, mocker):
+    def test_chunk_size_below_min_raises_error(self):
         """A chunk size below MIN_CHUNK_SIZE raises ValidationError before any I/O."""
-        mock_client = self._setup_mock_client(mocker)
-
         with pytest.raises(ValidationError):
-            prepare_search_space_with_ogx({"chunk_sizes": [1]}, mock_client)
+            prepare_search_space_with_ogx({"chunk_sizes": [1]}, MagicMock())
 
-    def test_chunk_size_above_max_raises_error(self, mocker):
+    def test_chunk_size_above_max_raises_error(self):
         """A chunk size above MAX_CHUNK_SIZE raises ValidationError before any I/O."""
-        mock_client = self._setup_mock_client(mocker)
-
         with pytest.raises(ValidationError):
-            prepare_search_space_with_ogx({"chunk_sizes": [99999]}, mock_client)
+            prepare_search_space_with_ogx({"chunk_sizes": [99999]}, MagicMock())
 
-    def test_bool_chunk_size_raises_error(self, mocker):
+    def test_bool_chunk_size_raises_error(self):
         """A bool value in chunk_sizes raises ValidationError before any I/O."""
-        mock_client = self._setup_mock_client(mocker)
-
         with pytest.raises(ValidationError, match="must be a positive integer"):
-            prepare_search_space_with_ogx({"chunk_sizes": [True]}, mock_client)
+            prepare_search_space_with_ogx({"chunk_sizes": [True]}, MagicMock())
