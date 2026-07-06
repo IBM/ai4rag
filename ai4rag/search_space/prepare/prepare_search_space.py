@@ -18,7 +18,7 @@ from ai4rag.search_space.prepare.ogx_utils import (
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import AI4RAGParamNames, ChunkingConstraints
+from ai4rag.utils.constants import AI4RAGParamNames
 
 __all__ = ["prepare_search_space_with_ogx"]
 
@@ -174,32 +174,16 @@ def prepare_search_space_with_ogx(
 
     Raises
     ------
-    SearchSpaceValueError
+    pydantic.ValidationError
         Raised when payload contains a non-recognized parameter name,
-        when client is not an OgxClient, when chunking_methods contains
-        unsupported values, or when chunk_sizes are out of range.
+        when chunking_methods contains unsupported values, or when
+        chunk_sizes are out of range or contain bool values.
+    SearchSpaceValueError
+        Raised when client is not an OgxClient.
     """
     logger.info("Preparing search space based on provided constraints: %s.", payload)
 
     validated_payload = AI4RAGConstraints(**payload)
-
-    if validated_payload.chunking_methods is not None:
-        unsupported = [m for m in validated_payload.chunking_methods if m not in ChunkingConstraints.METHODS]
-        if unsupported:
-            raise SearchSpaceValueError(
-                f"Unsupported chunking methods: {unsupported!r}. "
-                f"Supported methods: {ChunkingConstraints.METHODS!r}."
-            )
-
-    if validated_payload.chunk_sizes is not None:
-        for i, s in enumerate(validated_payload.chunk_sizes):
-            if isinstance(s, bool):
-                raise SearchSpaceValueError(f"chunk_sizes[{i}] must be a positive integer, got bool.")
-            if not ChunkingConstraints.MIN_CHUNK_SIZE <= s <= ChunkingConstraints.MAX_CHUNK_SIZE:
-                raise SearchSpaceValueError(
-                    f"chunk_sizes[{i}]={s} is out of range "
-                    f"[{ChunkingConstraints.MIN_CHUNK_SIZE}, {ChunkingConstraints.MAX_CHUNK_SIZE}]."
-                )
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
 

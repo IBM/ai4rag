@@ -477,33 +477,29 @@ class TestPrepareSearchSpaceWithOgx:
         assert result["chunk_size"].values == (128, 129)
 
     def test_unsupported_chunking_method_raises_error(self, mocker):
-        """An unsupported chunking method raises SearchSpaceValueError before any I/O."""
+        """An unsupported chunking method raises ValidationError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
-        with pytest.raises(SearchSpaceValueError, match="Unsupported chunking methods"):
+        with pytest.raises(ValidationError, match="Unsupported chunking methods"):
             prepare_search_space_with_ogx({"chunking_methods": ["semantic"]}, mock_client)
 
     def test_chunk_size_below_min_raises_error(self, mocker):
-        """A chunk size below MIN_CHUNK_SIZE raises SearchSpaceValueError before any I/O."""
+        """A chunk size below MIN_CHUNK_SIZE raises ValidationError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
-        with pytest.raises(SearchSpaceValueError, match="out of range"):
+        with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_sizes": [1]}, mock_client)
 
     def test_chunk_size_above_max_raises_error(self, mocker):
-        """A chunk size above MAX_CHUNK_SIZE raises SearchSpaceValueError before any I/O."""
+        """A chunk size above MAX_CHUNK_SIZE raises ValidationError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
-        with pytest.raises(SearchSpaceValueError, match="out of range"):
+        with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_sizes": [99999]}, mock_client)
 
     def test_bool_chunk_size_raises_error(self, mocker):
-        """A bool value in chunk_sizes raises SearchSpaceValueError.
-
-        Pydantic coerces True→1 before our validator runs, so the error is
-        "out of range" (1 < MIN_CHUNK_SIZE) rather than "must be a positive integer".
-        """
+        """A bool value in chunk_sizes raises ValidationError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
-        with pytest.raises(SearchSpaceValueError, match="out of range"):
+        with pytest.raises(ValidationError, match="must be a positive integer"):
             prepare_search_space_with_ogx({"chunk_sizes": [True]}, mock_client)
