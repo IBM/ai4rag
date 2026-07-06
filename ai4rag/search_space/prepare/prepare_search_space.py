@@ -104,28 +104,6 @@ def _apply_language_detection(foundation_models: list, benchmark_data: pd.DataFr
             logger.warning("Model %s: language detection failed, falling back to auto-detect.", fm.model_id)
 
 
-def _build_model_params(foundation_models: list, embedding_models: list) -> tuple[Parameter, Parameter]:
-    """Create Parameter objects for model lists and log selections.
-
-    Parameters
-    ----------
-    foundation_models : list
-        Foundation model instances to wrap in a Parameter.
-    embedding_models : list
-        Embedding model instances to wrap in a Parameter.
-
-    Returns
-    -------
-    tuple[Parameter, Parameter]
-        (fms_param, ems_param) ready for inclusion in a search space.
-    """
-    fms_param = Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models)
-    ems_param = Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models)
-    logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])
-    logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])
-    return fms_param, ems_param
-
-
 def prepare_search_space_with_ogx(
     payload: dict[str, Any],
     client: OgxClient,
@@ -190,7 +168,10 @@ def prepare_search_space_with_ogx(
     if benchmark_data is not None:
         _apply_language_detection(foundation_models, benchmark_data)
 
-    fms_param, ems_param = _build_model_params(foundation_models, embedding_models)
+    fms_param = Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models)
+    ems_param = Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models)
+    logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])
+    logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])
 
     extra_params: list[Parameter] = []
     if validated_payload.chunking_methods is not None:
