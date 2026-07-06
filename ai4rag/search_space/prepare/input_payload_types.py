@@ -52,9 +52,16 @@ class AI4RAGConstraints(BaseModel):
                     raise ValueError(f"chunk_sizes[{i}] must be a positive integer, got bool.")
         return v
 
+    @field_validator("chunk_sizes", mode="after")
+    @classmethod
+    def _deduplicate_chunk_sizes(cls, v):
+        if v is not None:
+            return list(dict.fromkeys(v))
+        return v
+
     @field_validator("chunking_methods", mode="after")
     @classmethod
-    def _validate_chunking_methods(cls, v):
+    def _validate_and_deduplicate_chunking_methods(cls, v):
         if v is not None:
             unsupported = [m for m in v if m not in ChunkingConstraints.METHODS]
             if unsupported:
@@ -62,4 +69,6 @@ class AI4RAGConstraints(BaseModel):
                     f"Unsupported chunking methods: {unsupported!r}. "
                     f"Supported methods: {ChunkingConstraints.METHODS!r}."
                 )
+            # use dict.fromkeys to deduplicate chunking_methods
+            return list(dict.fromkeys(v))
         return v

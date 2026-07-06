@@ -163,6 +163,15 @@ def prepare_search_space_with_ogx(
 
     validated_payload = AI4RAGConstraints(**payload)
 
+    if validated_payload.chunking_methods is not None and len(validated_payload.chunking_methods) < len(
+        payload.get("chunking_methods", [])
+    ):
+        logger.warning("Duplicate chunking_methods removed: %s.", payload["chunking_methods"])
+    if validated_payload.chunk_sizes is not None and len(validated_payload.chunk_sizes) < len(
+        payload.get("chunk_sizes", [])
+    ):
+        logger.warning("Duplicate chunk_sizes removed: %s.", payload["chunk_sizes"])
+
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
 
     if benchmark_data is not None:
@@ -175,15 +184,11 @@ def prepare_search_space_with_ogx(
 
     extra_params: list[Parameter] = []
     if validated_payload.chunking_methods is not None:
-        deduped_methods = list(dict.fromkeys(validated_payload.chunking_methods))
-        if len(deduped_methods) < len(validated_payload.chunking_methods):
-            logger.warning("Duplicate chunking_methods detected and removed: %s.", validated_payload.chunking_methods)
-        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(deduped_methods)))
+        extra_params.append(
+            Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(validated_payload.chunking_methods))
+        )
     if validated_payload.chunk_sizes is not None:
-        deduped_sizes = list(dict.fromkeys(validated_payload.chunk_sizes))
-        if len(deduped_sizes) < len(validated_payload.chunk_sizes):
-            logger.warning("Duplicate chunk_sizes detected and removed: %s.", validated_payload.chunk_sizes)
-        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(deduped_sizes)))
+        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(validated_payload.chunk_sizes)))
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],
