@@ -20,7 +20,7 @@ from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames, ChunkingConstraints
 
-__all__ = ["prepare_search_space_with_ogx", "prepare_search_space_custom"]
+__all__ = ["prepare_search_space_with_ogx"]
 
 
 def _resolve_models_from_payload(
@@ -133,88 +133,31 @@ def prepare_search_space_with_ogx(
     vector_store_type: str = "ogx",
     benchmark_data: pd.DataFrame | None = None,
 ) -> AI4RAGSearchSpace:
-    """
-    Prepare AutoRAGSearchSpace.
+    """Prepare an :class:`AI4RAGSearchSpace` using OGX for model validation.
+
+    Foundation and embedding models are discovered and validated via the OGX
+    platform.  Chunking parameters (``chunking_methods``, ``chunk_sizes``) are
+    validated locally against :class:`~ai4rag.utils.constants.ChunkingConstraints`
+    and, when provided, override the platform defaults for those dimensions.
 
     Parameters
     ----------
     payload : dict[str, Any]
-        A mapping between parameter name and its associated values.
+        A mapping of constraint names to their values.  Supported keys:
 
-    client : OgxClient
-        Client instance for listing and validating available models.
-
-    vector_store_type : str, default="ogx"
-        Type of vector store. Supported values: ``"ogx"`` and ``"chroma"``.
-        When ``"chroma"``, hybrid search parameters are excluded from the
-        default search space since ChromaDB does not support hybrid search.
-
-    benchmark_data : pd.DataFrame | None, default=None
-        Benchmark data used for language detection.
-        If not given, models with use automatic language detection per session.
-
-    Returns
-    -------
-    AI4RAGSearchSpace
-        A valid AI4RAGSearchSpace used in RAG optimization process.
-
-    Raises
-    ------
-    SearchSpaceValueError
-        Raised when payload contains non-recognized parameter name.
-    """
-    logger.info("Preparing search space based on provided constraints: %s.", payload)
-
-    validated_payload = AI4RAGConstraints(**payload)
-
-    skipped = [f for f in ("chunking_methods", "chunk_sizes") if getattr(validated_payload, f) is not None]
-    if skipped:
-        raise SearchSpaceValueError(
-            f"Fields {skipped} are not supported by prepare_search_space_with_ogx. "
-            "Use prepare_search_space_custom to apply chunking constraints."
-        )
-
-    foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
-
-    if benchmark_data is not None:
-        _apply_language_detection(foundation_models, benchmark_data)
-
-    fms_param, ems_param = _build_model_params(foundation_models, embedding_models)
-
-    return AI4RAGSearchSpace(
-        params=[fms_param, ems_param],
-        vector_store_type=vector_store_type,
-    )
-
-
-def prepare_search_space_custom(
-    payload: dict[str, Any],
-    client: OgxClient,
-    vector_store_type: str = "ogx",
-    benchmark_data: pd.DataFrame | None = None,
-) -> AI4RAGSearchSpace:
-    """Prepare an :class:`AI4RAGSearchSpace` with optional chunking customization.
-
-    Extends :func:`prepare_search_space_with_ogx` by allowing the caller to
-    override the default ``chunking_method`` and ``chunk_size`` dimensions of
-    the search space via the *payload* dict.  All other parameters and rules
-    remain unchanged.
-
-    Parameters
-    ----------
-    payload : dict[str, Any]
-        A mapping of constraint names to their values.  Supports all keys
-        accepted by :func:`prepare_search_space_with_ogx` plus:
-
+        - ``"foundation_models"`` *(list[dict])* — foundation model identifiers
+          to include; ``None`` uses all OGX defaults.
+        - ``"embedding_models"`` *(list[dict])* — embedding model identifiers
+          to include; ``None`` uses all OGX defaults.
         - ``"chunking_methods"`` *(list[str])* — overrides the default
           ``chunking_method`` dimension (e.g. ``["recursive"]``).
+          ``None`` keeps the platform default.
         - ``"chunk_sizes"`` *(list[int])* — overrides the default
           ``chunk_size`` dimension (e.g. ``[256, 512]``).
-
-        Omitting a key keeps the platform default for that dimension.
+          ``None`` keeps the platform default.
 
     client : OgxClient
-        Client instance for listing and validating available models.
+        Authenticated OGX client used for model discovery and validation.
 
     vector_store_type : str, default="ogx"
         Type of vector store. Supported values: ``"ogx"`` and ``"chroma"``.
@@ -233,10 +176,11 @@ def prepare_search_space_custom(
     Raises
     ------
     SearchSpaceValueError
-        Raised when payload contains a non-recognized parameter name or
-        when *client* is not an :class:`OgxClient`.
+        Raised when payload contains a non-recognized parameter name,
+        when *client* is not an :class:`OgxClient`, when *chunking_methods*
+        contains unsupported values, or when *chunk_sizes* are out of range.
     """
-    logger.info("Preparing custom search space based on provided constraints: %s.", payload)
+    logger.info("Preparing search space based on provided constraints: %s.", payload)
 
     validated_payload = AI4RAGConstraints(**payload)
 
@@ -267,11 +211,15 @@ def prepare_search_space_custom(
 
     extra_params: list[Parameter] = []
     if validated_payload.chunking_methods is not None:
-        extra_params.append(
-            Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(validated_payload.chunking_methods))
-        )
+        deduped_methods = list(dict.fromkeys(validated_payload.chunking_methods))
+        if len(deduped_methods) < len(validated_payload.chunking_methods):
+            logger.warning("Duplicate chunking_methods detected and removed: %s.", validated_payload.chunking_methods)
+        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(deduped_methods)))
     if validated_payload.chunk_sizes is not None:
-        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(validated_payload.chunk_sizes)))
+        deduped_sizes = list(dict.fromkeys(validated_payload.chunk_sizes))
+        if len(deduped_sizes) < len(validated_payload.chunk_sizes):
+            logger.warning("Duplicate chunk_sizes detected and removed: %s.", validated_payload.chunk_sizes)
+        extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(deduped_sizes)))
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],

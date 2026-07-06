@@ -17,7 +17,7 @@ from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
-from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_custom
+from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
@@ -207,7 +207,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     benchmark_data = BenchmarkData(benchmark_df)
     documents = load_docling_documents(extracted_text_path)
 
-    search_space = prepare_search_space_custom(
+    search_space = prepare_search_space_with_ogx(
         payload,
         client=ogx_client,
         benchmark_data=benchmark_df,

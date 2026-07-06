@@ -10,7 +10,7 @@ import pytest
 from ogx_client import OgxClient
 from pydantic import ValidationError
 
-from ai4rag.search_space.prepare import prepare_search_space_custom, prepare_search_space_with_ogx
+from ai4rag.search_space.prepare import prepare_search_space_with_ogx
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
@@ -402,24 +402,6 @@ class TestPrepareSearchSpaceWithOgx:
         fm_ids = [m.model_id for m in result["foundation_model"].values]
         assert fm_ids == ["llm-ok"]
 
-    def test_chunking_fields_in_payload_raise_error(self):
-        """chunking_methods or chunk_sizes in payload must raise SearchSpaceValueError."""
-        mock_client = MagicMock(spec=OgxClient)
-
-        with pytest.raises(SearchSpaceValueError, match="not supported by prepare_search_space_with_ogx"):
-            prepare_search_space_with_ogx({"chunking_methods": ["recursive"]}, mock_client)
-
-    def test_chunk_sizes_in_payload_raise_error(self):
-        """chunk_sizes in payload must raise SearchSpaceValueError."""
-        mock_client = MagicMock(spec=OgxClient)
-
-        with pytest.raises(SearchSpaceValueError, match="not supported by prepare_search_space_with_ogx"):
-            prepare_search_space_with_ogx({"chunk_sizes": [512]}, mock_client)
-
-
-class TestPrepareSearchSpaceCustom:
-    """Test prepare_search_space_custom function."""
-
     def _setup_mock_client(self, mocker):
         mock_client = MagicMock(spec=OgxClient)
 
@@ -438,11 +420,11 @@ class TestPrepareSearchSpaceCustom:
 
         return mock_client
 
-    def test_no_extra_params_behaves_like_with_ogx(self, mocker):
-        """Without chunking_methods or chunk_sizes the result matches prepare_search_space_with_ogx."""
+    def test_no_chunking_params_returns_default_chunking_dimensions(self, mocker):
+        """Without chunking overrides the result includes default chunking_method and chunk_size dimensions."""
         mock_client = self._setup_mock_client(mocker)
 
-        result = prepare_search_space_custom({}, mock_client)
+        result = prepare_search_space_with_ogx({}, mock_client)
 
         param_names = [p.name for p in result.params]
         assert "foundation_model" in param_names
@@ -454,7 +436,7 @@ class TestPrepareSearchSpaceCustom:
         """chunking_methods in payload overrides the default chunking_method dimension."""
         mock_client = self._setup_mock_client(mocker)
 
-        result = prepare_search_space_custom({"chunking_methods": ["recursive"]}, mock_client)
+        result = prepare_search_space_with_ogx({"chunking_methods": ["recursive"]}, mock_client)
 
         assert result["chunking_method"].values == ("recursive",)
 
@@ -462,15 +444,15 @@ class TestPrepareSearchSpaceCustom:
         """chunk_sizes in payload overrides the default chunk_size dimension."""
         mock_client = self._setup_mock_client(mocker)
 
-        result = prepare_search_space_custom({"chunk_sizes": [256, 512]}, mock_client)
+        result = prepare_search_space_with_ogx({"chunk_sizes": [256, 512]}, mock_client)
 
         assert set(result["chunk_size"].values) == {256, 512}
 
-    def test_both_custom_params_applied_together(self, mocker):
+    def test_both_chunking_params_applied_together(self, mocker):
         """Both chunking_methods and chunk_sizes in payload can be set simultaneously."""
         mock_client = self._setup_mock_client(mocker)
 
-        result = prepare_search_space_custom(
+        result = prepare_search_space_with_ogx(
             {"chunking_methods": ["hybrid"], "chunk_sizes": [1024]},
             mock_client,
         )
@@ -478,48 +460,42 @@ class TestPrepareSearchSpaceCustom:
         assert result["chunking_method"].values == ("hybrid",)
         assert result["chunk_size"].values == (1024,)
 
-    def test_non_ogx_client_raises_error(self):
-        """Non-OgxClient raises SearchSpaceValueError."""
-        with pytest.raises(SearchSpaceValueError, match="Unrecognized client type"):
-            prepare_search_space_custom({}, MagicMock(spec=object))
-
-    def test_invalid_payload_raises_validation_error(self, mocker):
-        """Invalid payload fields raise a pydantic ValidationError."""
-        mock_client = self._setup_mock_client(mocker)
-        with pytest.raises(ValidationError):
-            prepare_search_space_custom({"invalid_field": "value"}, mock_client)
-
-    def test_chroma_vector_store_excludes_hybrid_params(self, mocker):
-        """chroma vector_store_type excludes ranker parameters."""
+    def test_duplicate_chunking_methods_are_deduplicated(self, mocker):
+        """Duplicate chunking_methods are silently deduplicated, preserving order."""
         mock_client = self._setup_mock_client(mocker)
 
-        result = prepare_search_space_custom({}, mock_client, vector_store_type="chroma")
+        result = prepare_search_space_with_ogx({"chunking_methods": ["recursive", "recursive"]}, mock_client)
 
-        param_names = [p.name for p in result.params]
-        assert "ranker_strategy" not in param_names
-        assert "ranker_k" not in param_names
-        assert "ranker_alpha" not in param_names
+        assert result["chunking_method"].values == ("recursive",)
+
+    def test_duplicate_chunk_sizes_are_deduplicated(self, mocker):
+        """Duplicate chunk_sizes are silently deduplicated, preserving order."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({"chunk_sizes": [128, 129, 128]}, mock_client)
+
+        assert result["chunk_size"].values == (128, 129)
 
     def test_unsupported_chunking_method_raises_error(self, mocker):
         """An unsupported chunking method raises SearchSpaceValueError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
         with pytest.raises(SearchSpaceValueError, match="Unsupported chunking methods"):
-            prepare_search_space_custom({"chunking_methods": ["semantic"]}, mock_client)
+            prepare_search_space_with_ogx({"chunking_methods": ["semantic"]}, mock_client)
 
     def test_chunk_size_below_min_raises_error(self, mocker):
         """A chunk size below MIN_CHUNK_SIZE raises SearchSpaceValueError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
         with pytest.raises(SearchSpaceValueError, match="out of range"):
-            prepare_search_space_custom({"chunk_sizes": [1]}, mock_client)
+            prepare_search_space_with_ogx({"chunk_sizes": [1]}, mock_client)
 
     def test_chunk_size_above_max_raises_error(self, mocker):
         """A chunk size above MAX_CHUNK_SIZE raises SearchSpaceValueError before any I/O."""
         mock_client = self._setup_mock_client(mocker)
 
         with pytest.raises(SearchSpaceValueError, match="out of range"):
-            prepare_search_space_custom({"chunk_sizes": [99999]}, mock_client)
+            prepare_search_space_with_ogx({"chunk_sizes": [99999]}, mock_client)
 
     def test_bool_chunk_size_raises_error(self, mocker):
         """A bool value in chunk_sizes raises SearchSpaceValueError.
@@ -530,4 +506,4 @@ class TestPrepareSearchSpaceCustom:
         mock_client = self._setup_mock_client(mocker)
 
         with pytest.raises(SearchSpaceValueError, match="out of range"):
-            prepare_search_space_custom({"chunk_sizes": [True]}, mock_client)
+            prepare_search_space_with_ogx({"chunk_sizes": [True]}, mock_client)
