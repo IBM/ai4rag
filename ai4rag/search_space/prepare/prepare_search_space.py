@@ -39,13 +39,12 @@ def _resolve_models_from_payload(
     Returns
     -------
     tuple[list, list]
-        A ``(foundation_models, embedding_models)`` pair of instantiated
-        model objects ready for use in the search space.
+        A (foundation_models, embedding_models) pair of instantiated model objects.
 
     Raises
     ------
     SearchSpaceValueError
-        When *client* is not an :class:`OgxClient` instance.
+        When client is not an OgxClient instance.
     """
     if not isinstance(client, OgxClient):
         raise SearchSpaceValueError(f"Unrecognized client type: '{client.__class__.__name__}'")
@@ -91,7 +90,7 @@ def _apply_language_detection(foundation_models: list, benchmark_data: pd.DataFr
     foundation_models : list
         Foundation model objects to update with detected language.
     benchmark_data : pd.DataFrame
-        Benchmark data whose ``question`` column is sampled for detection.
+        Benchmark data whose "question" column is sampled for detection.
     """
     for fm in foundation_models:
         lang = detect_language_with_llm(
@@ -106,7 +105,7 @@ def _apply_language_detection(foundation_models: list, benchmark_data: pd.DataFr
 
 
 def _build_model_params(foundation_models: list, embedding_models: list) -> tuple[Parameter, Parameter]:
-    """Create :class:`Parameter` objects for model lists and log selections.
+    """Create Parameter objects for model lists and log selections.
 
     Parameters
     ----------
@@ -118,7 +117,7 @@ def _build_model_params(foundation_models: list, embedding_models: list) -> tupl
     Returns
     -------
     tuple[Parameter, Parameter]
-        ``(fms_param, ems_param)`` ready for inclusion in a search space.
+        (fms_param, ems_param) ready for inclusion in a search space.
     """
     fms_param = Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models)
     ems_param = Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models)
@@ -133,35 +132,35 @@ def prepare_search_space_with_ogx(
     vector_store_type: str = "ogx",
     benchmark_data: pd.DataFrame | None = None,
 ) -> AI4RAGSearchSpace:
-    """Prepare an :class:`AI4RAGSearchSpace` using OGX for model validation.
+    """Prepare an AI4RAGSearchSpace using OGX for model validation.
 
     Foundation and embedding models are discovered and validated via the OGX
-    platform.  Chunking parameters (``chunking_methods``, ``chunk_sizes``) are
-    validated locally against :class:`~ai4rag.utils.constants.ChunkingConstraints`
-    and, when provided, override the platform defaults for those dimensions.
+    platform. Chunking parameters (chunking_methods, chunk_sizes) are validated
+    locally against ChunkingConstraints and, when provided, override the platform
+    defaults for those dimensions.
 
     Parameters
     ----------
     payload : dict[str, Any]
-        A mapping of constraint names to their values.  Supported keys:
+        A mapping of constraint names to their values. Supported keys:
 
-        - ``"foundation_models"`` *(list[dict])* — foundation model identifiers
-          to include; ``None`` uses all OGX defaults.
-        - ``"embedding_models"`` *(list[dict])* — embedding model identifiers
-          to include; ``None`` uses all OGX defaults.
-        - ``"chunking_methods"`` *(list[str])* — overrides the default
-          ``chunking_method`` dimension (e.g. ``["recursive"]``).
-          ``None`` keeps the platform default.
-        - ``"chunk_sizes"`` *(list[int])* — overrides the default
-          ``chunk_size`` dimension (e.g. ``[256, 512]``).
-          ``None`` keeps the platform default.
+        - "foundation_models" (list[dict]) — foundation model identifiers
+          to include; None uses all OGX defaults.
+        - "embedding_models" (list[dict]) — embedding model identifiers
+          to include; None uses all OGX defaults.
+        - "chunking_methods" (list[str]) — overrides the default
+          chunking_method dimension (e.g. ["recursive"]).
+          None keeps the platform default.
+        - "chunk_sizes" (list[int]) — overrides the default
+          chunk_size dimension (e.g. [256, 512]).
+          None keeps the platform default.
 
     client : OgxClient
         Authenticated OGX client used for model discovery and validation.
 
     vector_store_type : str, default="ogx"
-        Type of vector store. Supported values: ``"ogx"`` and ``"chroma"``.
-        When ``"chroma"``, hybrid search parameters are excluded from the
+        Type of vector store. Supported values: "ogx" and "chroma".
+        When "chroma", hybrid search parameters are excluded from the
         default search space since ChromaDB does not support hybrid search.
 
     benchmark_data : pd.DataFrame | None, default=None
@@ -177,8 +176,8 @@ def prepare_search_space_with_ogx(
     ------
     SearchSpaceValueError
         Raised when payload contains a non-recognized parameter name,
-        when *client* is not an :class:`OgxClient`, when *chunking_methods*
-        contains unsupported values, or when *chunk_sizes* are out of range.
+        when client is not an OgxClient, when chunking_methods contains
+        unsupported values, or when chunk_sizes are out of range.
     """
     logger.info("Preparing search space based on provided constraints: %s.", payload)
 
