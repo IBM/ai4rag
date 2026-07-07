@@ -260,13 +260,9 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     valid_combinations = search_space.combinations
     if not valid_combinations:
         _logger.warning("No valid combinations remain after applying search space rules.")
-    non_model_keys = [
-        p.name for p in search_space.params
-        if p.name not in ("foundation_model", "embedding_model")
-    ]
+    non_model_keys = [p.name for p in search_space.params if p.name not in ("foundation_model", "embedding_model")]
     verbose_repr: dict[str, Any] = {
-        key: list(dict.fromkeys(combo[key] for combo in valid_combinations))
-        for key in non_model_keys
+        key: list(dict.fromkeys(combo[key] for combo in valid_combinations)) for key in non_model_keys
     }
     verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
