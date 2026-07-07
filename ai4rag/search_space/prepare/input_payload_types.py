@@ -42,6 +42,12 @@ class AI4RAGConstraints(BaseModel):
             MinLen(1),
         ]
     ] = None
+    chunk_overlaps: Optional[
+        Annotated[
+            list[Annotated[int, Ge(ChunkingConstraints.MIN_CHUNK_OVERLAP), Le(ChunkingConstraints.MAX_CHUNK_OVERLAP)]],
+            MinLen(1),
+        ]
+    ] = None
 
     @field_validator("chunk_sizes", mode="before")
     @classmethod
@@ -55,6 +61,22 @@ class AI4RAGConstraints(BaseModel):
     @field_validator("chunk_sizes", mode="after")
     @classmethod
     def _deduplicate_chunk_sizes(cls, v):
+        if v is not None:
+            return list(dict.fromkeys(v))
+        return v
+
+    @field_validator("chunk_overlaps", mode="before")
+    @classmethod
+    def _reject_bool_chunk_overlaps(cls, v):
+        if isinstance(v, list):
+            for i, s in enumerate(v):
+                if isinstance(s, bool):
+                    raise ValueError(f"chunk_overlaps[{i}] must be a non-negative integer, got bool.")
+        return v
+
+    @field_validator("chunk_overlaps", mode="after")
+    @classmethod
+    def _deduplicate_chunk_overlaps(cls, v):
         if v is not None:
             return list(dict.fromkeys(v))
         return v

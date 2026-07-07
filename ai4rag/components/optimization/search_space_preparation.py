@@ -114,6 +114,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     random_seed: int = _DEFAULT_SEED,
     chunking_methods: list[str] | None = None,
     chunk_sizes: list[int] | None = None,
+    chunk_overlaps: list[int] | None = None,
     inference_max_threads: int = 10,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
@@ -158,6 +159,10 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         When provided, constrains the ``chunk_size`` dimension of the
         search space to only these sizes (e.g. ``[256, 512]``).  ``None``
         uses the platform defaults.
+    chunk_overlaps
+        When provided, constrains the ``chunk_overlap`` dimension of the
+        search space to only these values (e.g. ``[0, 128]``).  ``None``
+        uses the platform defaults.
     inference_max_threads
         Maximum number of concurrent threads used when querying the
         RAG service during benchmark evaluation.  Lower values reduce
@@ -177,13 +182,15 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     TypeError
         If *embedding_models* or *generation_models* contain invalid entries.
     pydantic.ValidationError
-        If *chunking_methods* or *chunk_sizes* fail structural validation
-        (wrong type, empty list, or invalid element types).
+        If *chunking_methods*, *chunk_sizes*, or *chunk_overlaps* fail structural
+        validation (wrong type, empty list, or invalid element types).
     SearchSpaceValueError
         If *chunking_methods* contains values not in
         :attr:`~ai4rag.utils.constants.ChunkingConstraints.METHODS`, or
         *chunk_sizes* contains values outside
-        ``[ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE]``.
+        ``[ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE]``,
+        or *chunk_overlaps* contains values outside
+        ``[ChunkingConstraints.MIN_CHUNK_OVERLAP, ChunkingConstraints.MAX_CHUNK_OVERLAP]``.
     """
     if metric not in SUPPORTED_METRICS:
         raise ValueError(f"Metric {metric!r} is not supported. Supported metrics are {list(SUPPORTED_METRICS)}.")
@@ -201,6 +208,8 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         payload["chunking_methods"] = chunking_methods
     if chunk_sizes is not None:
         payload["chunk_sizes"] = chunk_sizes
+    if chunk_overlaps is not None:
+        payload["chunk_overlaps"] = chunk_overlaps
 
     # Load benchmark data and documents
     benchmark_df = pd.read_json(Path(test_data_path))
@@ -213,9 +222,10 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         benchmark_data=benchmark_df,
     )
     _logger.info(
-        "Search space chunking_method=%s chunk_size=%s",
+        "Search space chunking_method=%s chunk_size=%s chunk_overlap=%s",
         list(search_space["chunking_method"].values),
         list(search_space["chunk_size"].values),
+        list(search_space["chunk_overlap"].values),
     )
 
     # Run model pre-selection when the number of models exceeds the caps

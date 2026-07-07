@@ -132,6 +132,9 @@ def prepare_search_space_with_ogx(
         - "chunk_sizes" (list[int]) — overrides the default
           chunk_size dimension (e.g. [256, 512]).
           None keeps the platform default.
+        - "chunk_overlaps" (list[int]) — overrides the default
+          chunk_overlap dimension (e.g. [0, 128]).
+          None keeps the platform default.
 
     client : OgxClient
         Authenticated OGX client used for model discovery and validation.
@@ -155,7 +158,7 @@ def prepare_search_space_with_ogx(
     pydantic.ValidationError
         Raised when payload contains a non-recognized parameter name,
         when chunking_methods contains unsupported values, or when
-        chunk_sizes are out of range or contain bool values.
+        chunk_sizes or chunk_overlaps are out of range or contain bool values.
     SearchSpaceValueError
         Raised when client is not an OgxClient.
     """
@@ -171,6 +174,10 @@ def prepare_search_space_with_ogx(
         payload.get("chunk_sizes", [])
     ):
         logger.warning("Duplicate chunk_sizes removed: %s.", payload["chunk_sizes"])
+    if validated_payload.chunk_overlaps is not None and len(validated_payload.chunk_overlaps) < len(
+        payload.get("chunk_overlaps", [])
+    ):
+        logger.warning("Duplicate chunk_overlaps removed: %s.", payload["chunk_overlaps"])
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
 
@@ -189,6 +196,10 @@ def prepare_search_space_with_ogx(
         )
     if validated_payload.chunk_sizes is not None:
         extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(validated_payload.chunk_sizes)))
+    if validated_payload.chunk_overlaps is not None:
+        extra_params.append(
+            Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=tuple(validated_payload.chunk_overlaps))
+        )
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],
