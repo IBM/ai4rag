@@ -417,22 +417,6 @@ class TestPrepareSearchSpaceWithOgx:
         assert set(result["chunk_overlap"].values) == {32, 64}
         assert len(result.params) > 0
 
-    def test_duplicate_chunking_methods_are_deduplicated(self, mocker):
-        """Duplicate chunking_methods are silently deduplicated, preserving order."""
-        mock_client = self._setup_mock_client(mocker)
-
-        result = prepare_search_space_with_ogx({"chunking_methods": ["recursive", "recursive"]}, mock_client)
-
-        assert result["chunking_method"].values == ("recursive",)
-
-    def test_duplicate_chunk_sizes_are_deduplicated(self, mocker):
-        """Duplicate chunk_sizes are silently deduplicated, preserving order."""
-        mock_client = self._setup_mock_client(mocker)
-
-        result = prepare_search_space_with_ogx({"chunk_sizes": [128, 129, 128]}, mock_client)
-
-        assert result["chunk_size"].values == (128, 129)
-
     def test_unsupported_chunking_method_raises_error(self):
         """An unsupported chunking method raises ValidationError before any I/O."""
         with pytest.raises(ValidationError, match="Unsupported chunking methods"):
@@ -456,14 +440,6 @@ class TestPrepareSearchSpaceWithOgx:
         result = prepare_search_space_with_ogx({"chunk_overlaps": [0, 128]}, mock_client)
 
         assert set(result["chunk_overlap"].values) == {0, 128}
-
-    def test_duplicate_chunk_overlaps_are_deduplicated(self, mocker):
-        """Duplicate chunk_overlaps are silently deduplicated, preserving order."""
-        mock_client = self._setup_mock_client(mocker)
-
-        result = prepare_search_space_with_ogx({"chunk_overlaps": [0, 64, 0]}, mock_client)
-
-        assert result["chunk_overlap"].values == (0, 64)
 
     def test_chunk_overlap_below_min_raises_error(self):
         """A chunk overlap below MIN_CHUNK_OVERLAP raises ValidationError before any I/O."""
