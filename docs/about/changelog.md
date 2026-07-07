@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.2](https://github.com/IBM/ai4rag/releases/tag/v0.9.2)
+
+### Added
+- `chunk_sizes` parameter on `prepare_search_space_report()` for constraining the chunk-size dimension of the search space (e.g. `[256, 512]`)
+
+### Changed
+- Chunking constraint validation (`chunking_methods`, `chunk_sizes`) now happens via Pydantic before any I/O, providing clearer error messages with exact field paths
+- Minimum allowed chunk size lowered from 512 to 128, enabling finer-grained chunking strategies
+- Duplicate values in `chunking_methods` and `chunk_sizes` are now automatically deduplicated
+
+---
+
 ## [0.9.1](https://github.com/IBM/ai4rag/releases/tag/v0.9.1)
 
 ### Fixed
