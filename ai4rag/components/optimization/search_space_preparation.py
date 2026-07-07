@@ -256,11 +256,17 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             "embedding_model": list(em_values),
         }
 
-    # Build verbose representation with serialized model dicts
+    # Build verbose representation from valid (rule-filtered) combinations only
+    valid_combinations = search_space.combinations
+    if not valid_combinations:
+        _logger.warning("No valid combinations remain after applying search space rules.")
+    non_model_keys = [
+        p.name for p in search_space.params
+        if p.name not in ("foundation_model", "embedding_model")
+    ]
     verbose_repr: dict[str, Any] = {
-        k: v.all_values()
-        for k, v in search_space._search_space.items()  # pylint: disable=protected-access
-        if k not in ("foundation_model", "embedding_model")
+        key: list(dict.fromkeys(combo[key] for combo in valid_combinations))
+        for key in non_model_keys
     }
     verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
