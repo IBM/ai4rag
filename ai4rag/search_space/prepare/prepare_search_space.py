@@ -113,9 +113,9 @@ def prepare_search_space_with_ogx(
     """Prepare an AI4RAGSearchSpace using OGX for model validation.
 
     Foundation and embedding models are discovered and validated via the OGX
-    platform. Chunking parameters (chunking_methods, chunk_sizes) are validated
-    locally against ChunkingConstraints and, when provided, override the platform
-    defaults for those dimensions.
+    platform. Chunking parameters (chunking_methods, chunk_sizes, chunk_overlaps)
+    are validated locally against ChunkingConstraints and, when provided, override
+    the platform defaults for those dimensions.
 
     Parameters
     ----------
@@ -158,7 +158,7 @@ def prepare_search_space_with_ogx(
     pydantic.ValidationError
         Raised when payload contains a non-recognized parameter name,
         when chunking_methods contains unsupported values, or when
-        chunk_sizes or chunk_overlaps are out of range or contain bool values.
+        chunk_sizes or chunk_overlaps are out of range.
     SearchSpaceValueError
         Raised when client is not an OgxClient.
     """
