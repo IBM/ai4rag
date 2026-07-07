@@ -448,10 +448,6 @@ class TestPrepareSearchSpaceWithOgx:
         with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_sizes": [99999]}, MagicMock())
 
-    def test_bool_chunk_size_raises_error(self):
-        """A bool value in chunk_sizes raises ValidationError before any I/O."""
-        with pytest.raises(ValidationError, match="must be a positive integer"):
-            prepare_search_space_with_ogx({"chunk_sizes": [True]}, MagicMock())
 
     def test_custom_chunk_overlaps_override_defaults(self, mocker):
         """chunk_overlaps in payload overrides the default chunk_overlap dimension."""
@@ -479,7 +475,3 @@ class TestPrepareSearchSpaceWithOgx:
         with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_overlaps": [99999]}, MagicMock())
 
-    def test_bool_chunk_overlap_raises_error(self):
-        """A bool value in chunk_overlaps raises ValidationError before any I/O."""
-        with pytest.raises(ValidationError, match="must be a non-negative integer"):
-            prepare_search_space_with_ogx({"chunk_overlaps": [True]}, MagicMock())

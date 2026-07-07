@@ -49,29 +49,11 @@ class AI4RAGConstraints(BaseModel):
         ]
     ] = None
 
-    @field_validator("chunk_sizes", mode="before")
-    @classmethod
-    def _reject_bool_chunk_sizes(cls, v):
-        if isinstance(v, list):
-            for i, s in enumerate(v):
-                if isinstance(s, bool):
-                    raise ValueError(f"chunk_sizes[{i}] must be a positive integer, got bool.")
-        return v
-
     @field_validator("chunk_sizes", mode="after")
     @classmethod
     def _deduplicate_chunk_sizes(cls, v):
         if v is not None:
             return list(dict.fromkeys(v))
-        return v
-
-    @field_validator("chunk_overlaps", mode="before")
-    @classmethod
-    def _reject_bool_chunk_overlaps(cls, v):
-        if isinstance(v, list):
-            for i, s in enumerate(v):
-                if isinstance(s, bool):
-                    raise ValueError(f"chunk_overlaps[{i}] must be a non-negative integer, got bool.")
         return v
 
     @field_validator("chunk_overlaps", mode="after")
