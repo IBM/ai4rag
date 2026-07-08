@@ -113,9 +113,9 @@ def prepare_search_space_with_ogx(
     """Prepare an AI4RAGSearchSpace using OGX for model validation.
 
     Foundation and embedding models are discovered and validated via the OGX
-    platform. Chunking parameters (chunking_methods, chunk_sizes) are validated
-    locally against ChunkingConstraints and, when provided, override the platform
-    defaults for those dimensions.
+    platform. Chunking parameters (chunking_methods, chunk_sizes, chunk_overlaps)
+    are validated locally against ChunkingConstraints and, when provided, override
+    the platform defaults for those dimensions.
 
     Parameters
     ----------
@@ -131,6 +131,9 @@ def prepare_search_space_with_ogx(
           None keeps the platform default.
         - "chunk_sizes" (list[int]) — overrides the default
           chunk_size dimension (e.g. [256, 512]).
+          None keeps the platform default.
+        - "chunk_overlaps" (list[int]) — overrides the default
+          chunk_overlap dimension (e.g. [0, 128]).
           None keeps the platform default.
 
     client : OgxClient
@@ -155,22 +158,13 @@ def prepare_search_space_with_ogx(
     pydantic.ValidationError
         Raised when payload contains a non-recognized parameter name,
         when chunking_methods contains unsupported values, or when
-        chunk_sizes are out of range or contain bool values.
+        chunk_sizes or chunk_overlaps are out of range.
     SearchSpaceValueError
         Raised when client is not an OgxClient.
     """
     logger.info("Preparing search space based on provided constraints: %s.", payload)
 
     validated_payload = AI4RAGConstraints(**payload)
-
-    if validated_payload.chunking_methods is not None and len(validated_payload.chunking_methods) < len(
-        payload.get("chunking_methods", [])
-    ):
-        logger.warning("Duplicate chunking_methods removed: %s.", payload["chunking_methods"])
-    if validated_payload.chunk_sizes is not None and len(validated_payload.chunk_sizes) < len(
-        payload.get("chunk_sizes", [])
-    ):
-        logger.warning("Duplicate chunk_sizes removed: %s.", payload["chunk_sizes"])
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
 
@@ -189,6 +183,10 @@ def prepare_search_space_with_ogx(
         )
     if validated_payload.chunk_sizes is not None:
         extra_params.append(Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(validated_payload.chunk_sizes)))
+    if validated_payload.chunk_overlaps is not None:
+        extra_params.append(
+            Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=tuple(validated_payload.chunk_overlaps))
+        )
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],
