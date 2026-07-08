@@ -403,21 +403,19 @@ class TestPrepareSearchSpaceWithOgx:
         assert result["chunking_method"].values == ("hybrid",)
         assert result["chunk_size"].values == (1024,)
 
-    def test_duplicate_chunking_methods_are_deduplicated(self, mocker):
-        """Duplicate chunking_methods are silently deduplicated, preserving order."""
+    def test_all_chunking_params_produce_non_empty_search_space(self, mocker):
+        """chunking_methods, chunk_sizes, and chunk_overlaps together produce a non-empty search space."""
         mock_client = self._setup_mock_client(mocker)
 
-        result = prepare_search_space_with_ogx({"chunking_methods": ["recursive", "recursive"]}, mock_client)
+        result = prepare_search_space_with_ogx(
+            {"chunking_methods": ["recursive"], "chunk_sizes": [128, 256], "chunk_overlaps": [32, 64]},
+            mock_client,
+        )
 
         assert result["chunking_method"].values == ("recursive",)
-
-    def test_duplicate_chunk_sizes_are_deduplicated(self, mocker):
-        """Duplicate chunk_sizes are silently deduplicated, preserving order."""
-        mock_client = self._setup_mock_client(mocker)
-
-        result = prepare_search_space_with_ogx({"chunk_sizes": [128, 129, 128]}, mock_client)
-
-        assert result["chunk_size"].values == (128, 129)
+        assert set(result["chunk_size"].values) == {128, 256}
+        assert set(result["chunk_overlap"].values) == {32, 64}
+        assert len(result.params) > 0
 
     def test_unsupported_chunking_method_raises_error(self):
         """An unsupported chunking method raises ValidationError before any I/O."""
@@ -434,7 +432,22 @@ class TestPrepareSearchSpaceWithOgx:
         with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_sizes": [99999]}, MagicMock())
 
-    def test_bool_chunk_size_raises_error(self):
-        """A bool value in chunk_sizes raises ValidationError before any I/O."""
-        with pytest.raises(ValidationError, match="must be a positive integer"):
-            prepare_search_space_with_ogx({"chunk_sizes": [True]}, MagicMock())
+
+    def test_custom_chunk_overlaps_override_defaults(self, mocker):
+        """chunk_overlaps in payload overrides the default chunk_overlap dimension."""
+        mock_client = self._setup_mock_client(mocker)
+
+        result = prepare_search_space_with_ogx({"chunk_overlaps": [0, 128]}, mock_client)
+
+        assert set(result["chunk_overlap"].values) == {0, 128}
+
+    def test_chunk_overlap_below_min_raises_error(self):
+        """A chunk overlap below MIN_CHUNK_OVERLAP raises ValidationError before any I/O."""
+        with pytest.raises(ValidationError):
+            prepare_search_space_with_ogx({"chunk_overlaps": [-1]}, MagicMock())
+
+    def test_chunk_overlap_above_max_raises_error(self):
+        """A chunk overlap above MAX_CHUNK_OVERLAP raises ValidationError before any I/O."""
+        with pytest.raises(ValidationError):
+            prepare_search_space_with_ogx({"chunk_overlaps": [99999]}, MagicMock())
+

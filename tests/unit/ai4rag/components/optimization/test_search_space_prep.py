@@ -15,6 +15,9 @@ from ai4rag.components.optimization.search_space_preparation import (
     _validate_model_list,
     prepare_search_space_report,
 )
+from ai4rag.search_space.src.parameter import Parameter
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.constants import AI4RAGParamNames
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -170,4 +173,64 @@ class TestPrepareSearchSpaceReportValidation:
                 ogx_client=mock_ogx_client,
                 embedding_models="not-a-list",  # type: ignore[arg-type]
             )
+
+
+# ---------------------------------------------------------------------------
+# Search space filtering
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareSearchSpaceReportFiltering:
+    """Test that rules are applied and the report reflects only valid combinations."""
+
+    def _make_search_space(self, chunking_methods, chunk_sizes) -> AI4RAGSearchSpace:
+        mock_em = MagicMock()
+        mock_em.params.context_length = None  # prevent _rule_chunk_size_within_embedding_context_length from failing
+        return AI4RAGSearchSpace(
+            params=[
+                Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=(MagicMock(),)),
+                Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=(mock_em,)),
+                Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(chunking_methods)),
+                Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=tuple(chunk_sizes)),
+            ]
+        )
+
+    def test_recursive_with_too_small_chunk_sizes_yields_empty_search_space(self, mocker):
+        """chunk_sizes=[128, 256] with recursive and default overlaps (0, 128, 256) produce no valid combinations.
+
+        - overlap=0   is filtered by _rule_chunk_overlap_for_chunking_method (recursive needs overlap > 0)
+        - overlap=128 is filtered by _rule_chunk_size_bigger_than_chunk_overlap (256 > 2*128 is False)
+        - overlap=256 is filtered by _rule_chunk_size_bigger_than_chunk_overlap (256 > 2*256 is False)
+        """
+        search_space = self._make_search_space(["recursive"], [128, 256])
+
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.prepare_search_space_with_ogx",
+            return_value=search_space,
+        )
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.pd.read_json",
+            return_value=MagicMock(),
+        )
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.load_docling_documents",
+            return_value=[],
+        )
+        mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation._serialize_model",
+            return_value={"model_id": "mock"},
+        )
+
+        result = prepare_search_space_report(
+            test_data_path="dummy.json",
+            extracted_text_path="dummy_dir",
+            ogx_client=MagicMock(),
+            chunking_methods=["recursive"],
+            chunk_sizes=[128, 256],
+        )
+
+        assert result.search_space["chunk_size"] == []
+        assert result.search_space["chunk_overlap"] == []
+        assert result.search_space["chunking_method"] == []
 
