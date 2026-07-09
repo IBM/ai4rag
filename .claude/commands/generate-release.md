@@ -35,6 +35,16 @@ Analyse every commit since the latest tag (read relevant changed files if needed
 
 Omit categories that have no entries. Each bullet should be concrete and user-facing (what changed, not the internal implementation detail).
 
+**Every bullet must start with a bold component label** that tells the reader *where* in the project the change lives. Use logical component names (not file paths) — the label should match how a developer thinks about the area. Examples:
+
+- `**Search space preparation** — added chunk_overlaps parameter on prepare_search_space_report()...`
+- `**RAG optimization component** — renamed max_threads to inference_max_threads...`
+- `**Dependencies** — removed the langchain meta-package...`
+- `**Chunker** — DoclingChunker now supports...`
+- `**Vector store** — OGXVectorStore.search() returns...`
+
+If a single change spans multiple components, pick the one most relevant to the user; if genuinely cross-cutting, use a broad label like **Core** or **API**. Use existing labels from prior changelog entries when applicable for consistency. Review older entries in `docs/about/changelog.md` to align with established conventions.
+
 ### 4. Update `docs/about/changelog.md`
 
 Read the existing `docs/about/changelog.md` to understand the format and conventions (Keep a Changelog style, links to GitHub releases). Insert a new section for `RELEASE_VERSION` immediately after the `---` separator that follows the file header (before the current first release entry). Follow the exact same markdown structure used by existing entries:
@@ -43,16 +53,18 @@ Read the existing `docs/about/changelog.md` to understand the format and convent
 ## [X.Y.Z](https://github.com/IBM/ai4rag/releases/tag/vX.Y.Z)
 
 ### Added
-- ...
+- **Component name** — description of what was added...
 
 ### Changed
-- ...
+- **Component name** — description of what changed...
 
 ### Fixed
-- ...
+- **Component name** — description of what was fixed...
 
 ---
 ```
+
+Each bullet follows the pattern: `**Component label** — concise description`. The component label is a logical area name (e.g. "Search space preparation", "RAG optimization component", "Dependencies"), not a file path.
 
 Do not touch the version numbering explanation or the "Release Process" / "Stay Updated" sections at the bottom.
 

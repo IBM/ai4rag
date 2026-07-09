@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.3](https://github.com/IBM/ai4rag/releases/tag/v0.9.3)
+
+### Added
+- **Search space preparation** — `chunk_overlaps` parameter on `prepare_search_space_report()` and `prepare_search_space_with_ogx()` for constraining the chunk-overlap dimension of the search space (e.g. `[0, 128]`), with Pydantic range validation against `ChunkingConstraints` bounds
+
+### Changed
+- **RAG optimization component** — renamed `max_threads` keyword argument to `inference_max_threads` on `run_rag_optimization()` to align with `prepare_search_space_report()` naming
+- **Search space report** — verbose representation in `prepare_search_space_report()` now derives values from valid (rule-filtered) combinations instead of raw parameter lists, ensuring the report reflects only reachable configurations
+- **Search space constraint validation** — removed automatic deduplication of `chunking_methods` and `chunk_sizes` from `AI4RAGConstraints` validators — duplicates are no longer silently collapsed
+- **Dependencies** — removed the `langchain` meta-package; only the needed sub-packages (`langchain-chroma`, `langchain-text-splitters`) are retained
+
+---
+
 ## [0.9.2](https://github.com/IBM/ai4rag/releases/tag/v0.9.2)
 
 ### Added

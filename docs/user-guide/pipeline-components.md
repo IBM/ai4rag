@@ -124,6 +124,7 @@ report = prepare_search_space_report(
     generation_models=["ibm/granite-3.1-8b-instruct"],
     chunking_methods=["recursive"],   # optional: constrain chunking methods
     chunk_sizes=[256, 512, 1024],     # optional: constrain chunk sizes
+    chunk_overlaps=[0, 128],          # optional: constrain chunk overlaps
 )
 report.save_yaml("/tmp/search_space.yaml")
 ```
