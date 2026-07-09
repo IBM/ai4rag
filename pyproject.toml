@@ -34,11 +34,11 @@ dynamic = ["version"]
 
 dependencies = [
     "boto3>=1.28",
-    "multiprocess>=0.70",
     "docling~=2.107.0",
     "docling-core[chunking]~=2.84.0",
     "langchain_chroma~=1.1.0",
     "langchain-text-splitters~=1.1.0",
+    "multiprocess>=0.70",
     "ogx-client~=1.1.0",
     "pandas==2.2.*",
     "pydantic==2.11.*",
