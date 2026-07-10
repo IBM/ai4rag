@@ -20,8 +20,6 @@ If OGX updates their injection strings, update the constants below.
 
 import re
 
-from ai4rag.search_space.src.model_props import _RAG_CITATION_INSTRUCTION
-
 # ============================================================================
 # OGX Runtime Injection Strings
 # ============================================================================
@@ -42,9 +40,9 @@ CITATION_SUBSTRINGS = (
     "file citations",
     "document numbers for every factual claim",
 )
-# HPO citation fragments for filtering (uses _RAG_CITATION_INSTRUCTION from model_props)
+# HPO citation fragments for filtering
 HPO_CITATION_FRAGMENTS = (
-    _RAG_CITATION_INSTRUCTION,
+    "You MUST cite sources using [1], [2], etc. matching the document numbers for every factual claim.",
     "You MUST cite sources using [1], [2], etc.",
     "You MUST cite sources using [1], [2].",
 )
@@ -94,7 +92,9 @@ USER_GROUNDING_SKIP_PREFIXES = (
     "If the documents do not contain the answer",
 )
 # Used in: Pass 1 filtering (_should_skip_redundant_user_line in pattern_builder.py)
-# Only suppressed when system prompt already has grounding policy to avoid duplication
+# Only suppressed when system prompt already has grounding policy to avoid duplication.
+# Note: these prefixes no longer match the built-in default prompts (reverted in fix_prompts_components).
+# They remain as defensive filters for custom HPO configurations that may use these phrasings.
 USER_RAG_GROUNDING_PREFIXES = (
     "You are a specialized Retrieval Augmented Generation",
     "Prioritize correctness and ensure your response is grounded",
