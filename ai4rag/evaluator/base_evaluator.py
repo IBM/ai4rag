@@ -63,20 +63,28 @@ class EvaluationData:
 
 class MetricType(metaclass=ConstantMeta):
     """
-    Holder for metric names.
+    Holder for metric names used in evaluation.
 
-    Attributes
-    ----------
-    ANSWER_CORRECTNESS : str, default="answer_correctness"
-
-    FAITHFULNESS : str, default="faithfulness"
-
-    CONTEXT_CORRECTNESS : str, default="context_correctness"
+    Uses :class:`~ai4rag.utils.constants.ConstantMeta` so values can be
+    iterated and membership-tested without defining a standard ``Enum``.
     """
 
     ANSWER_CORRECTNESS = "answer_correctness"
     FAITHFULNESS = "faithfulness"
     CONTEXT_CORRECTNESS = "context_correctness"
+    ANSWER_RELEVANCE = "answer_relevance"
+    OVERALL_SCORE = "overall_score"
+
+
+SUPPORTED_OPTIMIZATION_METRICS = frozenset(
+    {
+        MetricType.FAITHFULNESS,
+        MetricType.ANSWER_CORRECTNESS,
+        MetricType.CONTEXT_CORRECTNESS,
+        MetricType.ANSWER_RELEVANCE,
+        MetricType.OVERALL_SCORE,
+    }
+)
 
 
 class BaseEvaluator(ABC):

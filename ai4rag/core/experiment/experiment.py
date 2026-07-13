@@ -165,6 +165,7 @@ class AI4RAGExperiment:
         self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
+        self.evaluation_config: list[dict[str, Any]] | dict[str, str] | None = kwargs.pop("evaluation_config", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -203,13 +204,18 @@ class AI4RAGExperiment:
     @optimization_metric.setter
     def optimization_metric(self, val: str) -> None:
         """Validate and set optimization metrics"""
-        if val not in MetricType:
+        if val not in MetricType and not self._is_custom_evaluator_metric(val):
             raise RAGExperimentError(
-                f"Provided optimization metric: '{val}' is not supported. "
-                f"Available metrics: ['answer_correctness', 'faithfulness', 'context_correctness']."
+                f"Provided optimization metric: '{val}' is not supported. " f"Available metrics: {list(MetricType)}."
             )
 
         self._optimization_metric = val
+
+    def _is_custom_evaluator_metric(self, metric_name: str) -> bool:
+        """Check if a metric is supported by a custom evaluator."""
+        if hasattr(self, "evaluator") and hasattr(self.evaluator, "get_supported_metrics"):
+            return metric_name in self.evaluator.get_supported_metrics()
+        return False
 
     @property
     def benchmark_data(self) -> BenchmarkData:
@@ -644,6 +650,8 @@ class AI4RAGExperiment:
             },
             "iteration": len(self.results) + n_known,
         }
+        if self.evaluation_config:
+            payload["evaluation"] = self.evaluation_config
 
         self.event_handler.on_pattern_creation(
             payload=payload,

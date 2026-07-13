@@ -13,6 +13,7 @@ from ai4rag.evaluator.base_evaluator import (
     EvaluationData,
     MetricType,
 )
+from ai4rag.evaluator.score_utils import enrich_with_overall_score
 
 
 class UnitxtEvaluator(BaseEvaluator):
@@ -29,23 +30,16 @@ class UnitxtEvaluator(BaseEvaluator):
         evaluation_data: list[EvaluationData],
         metrics: Sequence[str],
     ) -> dict:
-        """
-        Perform evaluation on the given instances with chosen metric types.
+        """Evaluate responses and add derived ``overall_score`` for Unitxt-only metrics."""
+        result = self.evaluate_metrics_raw(evaluation_data, metrics)
+        return enrich_with_overall_score(result)
 
-        Parameters
-        ----------
-        evaluation_data : list[EvaluationData]
-            Instances that hold data needed for the unitxt algorithms to perform evaluation.
-
-        metrics : Sequence[str]
-            Values describing which specific evaluation metrics should be used
-            withing evaluation process.
-
-        Returns
-        -------
-        dict
-            Dictionary of scores given for each EvaluationData.
-        """
+    def evaluate_metrics_raw(
+        self,
+        evaluation_data: list[EvaluationData],
+        metrics: Sequence[str],
+    ) -> dict:
+        """Evaluate responses without deriving ``overall_score``."""
         evaluation_primitives = [prim.to_dict() for prim in evaluation_data]
         df = pd.DataFrame(evaluation_primitives)
         unitxt_metrics = self.get_metric_types(metric_types=metrics)

@@ -181,3 +181,17 @@ class TestCreateOgxClient:
         mock_logger.warning.assert_called_once()
         warning_msg = mock_logger.warning.call_args[0][0]
         assert "SSL" in warning_msg or "verify=False" in warning_msg
+
+
+class TestOpenaiCompatibleBaseUrl:
+    def test_string_base_url(self):
+        from ai4rag.components.utils.ogx_client import openai_compatible_base_url
+
+        assert openai_compatible_base_url("https://ogx.example.com/") == "https://ogx.example.com/v1"
+
+    def test_url_object_base_url(self):
+        from pydantic import AnyUrl
+
+        from ai4rag.components.utils.ogx_client import openai_compatible_base_url
+
+        assert openai_compatible_base_url(AnyUrl("https://ogx.example.com/")) == "https://ogx.example.com/v1"

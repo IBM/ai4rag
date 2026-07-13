@@ -15,9 +15,15 @@ from ogx_client import OgxClient
 
 from ai4rag import handler
 from ai4rag.components.assets_generator import build_pattern_json, generate_notebook_from_template
+from ai4rag.components.optimization.judge_selection import resolve_judge_model_id
 from ai4rag.components.utils.docling_io import load_docling_documents
+from ai4rag.components.utils.ogx_client import openai_compatible_base_url
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
+from ai4rag.evaluator.base_evaluator import SUPPORTED_OPTIMIZATION_METRICS, MetricType
+from ai4rag.evaluator.hybrid_evaluator import ALL_PATTERN_METRICS, HybridEvaluator
+from ai4rag.evaluator.llmaj_evaluator import LLMaJConfig, LLMaJEvaluator
+from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
@@ -30,8 +36,8 @@ _logger.addHandler(handler)
 
 DEFAULT_MAX_RAG_PATTERNS = 8
 MIN_MAX_RAG_PATTERNS_RANGE = (4, 20)
-DEFAULT_METRIC = "faithfulness"
-SUPPORTED_OPTIMIZATION_METRICS = frozenset({"faithfulness", "answer_correctness", "context_correctness"})
+DEFAULT_METRIC = MetricType.OVERALL_SCORE
+STANDARD_EVALUATION_METRICS = ALL_PATTERN_METRICS
 
 
 @dataclass
@@ -122,10 +128,11 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     settings = _validate_optimization_settings(optimization_settings)
     optimization_metric = settings.get("metric") or DEFAULT_METRIC
+
     if optimization_metric not in SUPPORTED_OPTIMIZATION_METRICS:
         raise ValueError(
             f"Optimization metric {optimization_metric} is not supported. "
-            f"Select one of {SUPPORTED_OPTIMIZATION_METRICS}."
+            f"Select one of {sorted(SUPPORTED_OPTIMIZATION_METRICS)}."
         )
 
     documents = load_docling_documents(extracted_text_path)
@@ -133,13 +140,11 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     with open(search_space_report_path, "r", encoding="utf-8") as f:
         search_space_raw: dict[str, Any] = json.load(f)
 
-    params: list[Parameter] = []
-    for param_name, values in search_space_raw.items():
-        if param_name in ("foundation_model", "embedding_model"):
-            values = [_deserialize_model(m, ogx_client) for m in values]
-        params.append(Parameter(param_name, "C", values=values))
-
-    search_space = AI4RAGSearchSpace(params=params)
+    evaluator_kwargs, evaluation_config = _build_evaluation_setup(
+        search_space_raw=search_space_raw,
+        ogx_client=ogx_client,
+    )
+    search_space = _search_space_from_report(search_space_raw, ogx_client)
 
     # --- Configure experiment ---
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
@@ -162,6 +167,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         optimization_metric=optimization_metric,
         ogx_vector_io_provider_id=vector_io_provider_id,
         inference_max_threads=inference_max_threads,
+        evaluation_config=evaluation_config,
+        **evaluator_kwargs,
     )
 
     # --- Run the optimization loop ---
@@ -199,12 +206,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
             ogx_base_url=ogx_base_url,
         )
 
-        # Attach scores to pattern data and write pattern.json
-
         with (patt_dir / "pattern.json").open("w+", encoding="utf-8") as f:
             json_dump(pattern_data, f, indent=2)
 
-        # Write evaluation results
         evaluation_result_list = pattern.get("evaluation_results", [])
         with (patt_dir / "evaluation_results.json").open("w+", encoding="utf-8") as f:
             json_dump(evaluation_result_list, f, indent=2)
@@ -316,3 +320,58 @@ def _validate_optimization_settings(optimization_settings: dict | None) -> dict:
         )
 
     return optimization_settings
+
+
+def _build_evaluation_setup(
+    *,
+    search_space_raw: dict[str, Any],
+    ogx_client: OgxClient,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Resolve hybrid evaluator configuration from the search-space report."""
+    evaluation_block = search_space_raw.get("evaluation")
+    if not evaluation_block:
+        raise ValueError("Search-space report is missing the evaluation block. Run search-space preparation first.")
+
+    resolved_judge_model_id = resolve_judge_model_id(evaluation_block)
+    config = LLMaJConfig(
+        base_url=openai_compatible_base_url(ogx_client.base_url),
+        api_key=getattr(ogx_client, "api_key", ""),
+        model=resolved_judge_model_id,
+    )
+    evaluator_kwargs = {
+        "evaluator": HybridEvaluator(UnitxtEvaluator(), LLMaJEvaluator(config)),
+        "metrics": STANDARD_EVALUATION_METRICS,
+    }
+
+    if isinstance(evaluation_block, list):
+        evaluation_config = evaluation_block
+    else:
+        evaluation_config = [
+            {
+                "evaluator": evaluation_block.get("evaluator", "judge"),
+                "model_id": resolved_judge_model_id,
+                "metrics": [MetricType.ANSWER_RELEVANCE],
+            },
+            {
+                "evaluator": "unitxt",
+                "metrics": [
+                    MetricType.FAITHFULNESS,
+                    MetricType.ANSWER_CORRECTNESS,
+                    MetricType.CONTEXT_CORRECTNESS,
+                ],
+            },
+        ]
+
+    return evaluator_kwargs, evaluation_config
+
+
+def _search_space_from_report(search_space_raw: dict[str, Any], ogx_client: OgxClient) -> AI4RAGSearchSpace:
+    """Reconstruct :class:`AI4RAGSearchSpace` from a search-space preparation report."""
+    params: list[Parameter] = []
+    for param_name, values in search_space_raw.items():
+        if param_name == "evaluation":
+            continue
+        if param_name in ("foundation_model", "embedding_model"):
+            values = [_deserialize_model(m, ogx_client) for m in values]
+        params.append(Parameter(param_name, "C", values=values))
+    return AI4RAGSearchSpace(params=params)

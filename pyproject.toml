@@ -56,16 +56,21 @@ Documentation = "https://ibm.github.io/ai4rag/"
 
 
 [project.optional-dependencies]
+llm-judge = [
+    "openai~=1.109.1",
+]
+
 dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
     "ai4rag[docs]",
+    "ai4rag[llm-judge]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "ipykernel",
 ]
 
-test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
+test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat", "openai~=1.109.1"]
 
 code_check = ["pylint", "black", "isort"]
 

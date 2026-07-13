@@ -12,9 +12,15 @@ import pandas as pd
 from ogx_client import OgxClient
 
 from ai4rag import handler
+from ai4rag.components.optimization.judge_selection import (
+    JudgeSelectionContext,
+    build_evaluation_block,
+    select_judge_model,
+)
 from ai4rag.components.utils.docling_io import load_docling_documents
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.mps import ModelsPreSelector
+from ai4rag.evaluator.base_evaluator import SUPPORTED_OPTIMIZATION_METRICS, MetricType
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
@@ -22,13 +28,29 @@ from ai4rag.search_space.prepare.prepare_search_space import prepare_search_spac
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
 
-SUPPORTED_METRICS = ("faithfulness", "answer_correctness", "context_correctness")
+SUPPORTED_METRICS = SUPPORTED_OPTIMIZATION_METRICS
+MPS_SELECTION_METRICS = frozenset(
+    {
+        MetricType.FAITHFULNESS,
+        MetricType.ANSWER_CORRECTNESS,
+        MetricType.CONTEXT_CORRECTNESS,
+    }
+)
 
-_DEFAULT_METRIC = "faithfulness"
+_DEFAULT_METRIC = MetricType.FAITHFULNESS
 _DEFAULT_TOP_N_GENERATION = 3
 _DEFAULT_TOP_K_EMBEDDING = 2
 _DEFAULT_SAMPLE_SIZE = 5
 _DEFAULT_SEED = 17
+
+
+def _mps_metric_for(metric: str) -> str:
+    """Map an optimization metric to the Unitxt metric used by MPS."""
+    if metric in MPS_SELECTION_METRICS:
+        return metric
+    if metric in (MetricType.OVERALL_SCORE, MetricType.ANSWER_RELEVANCE):
+        return MetricType.FAITHFULNESS
+    raise ValueError(f"Metric {metric!r} cannot be mapped to an MPS selection metric.")
 
 
 def _serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
@@ -139,9 +161,11 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     generation_models
         Generation model identifiers.  ``None`` uses the server defaults.
     metric
-        Quality metric for intermediate pattern evaluation.  Must be one
-        of ``"faithfulness"``, ``"answer_correctness"``, or
-        ``"context_correctness"``.
+        Optimization metric passed from the pipeline.  Accepts all supported
+        optimization metrics (including ``"overall_score"`` and
+        ``"answer_relevance"``).  Model pre-selection (MPS) uses Unitxt
+        metrics only; ``"overall_score"`` and ``"answer_relevance"`` are
+        mapped to ``"faithfulness"`` for that step.
     top_n_generation
         Maximum number of generation models to retain.
     top_k_embedding
@@ -193,7 +217,15 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         ``[ChunkingConstraints.MIN_CHUNK_OVERLAP, ChunkingConstraints.MAX_CHUNK_OVERLAP]``.
     """
     if metric not in SUPPORTED_METRICS:
-        raise ValueError(f"Metric {metric!r} is not supported. Supported metrics are {list(SUPPORTED_METRICS)}.")
+        raise ValueError(f"Metric {metric!r} is not supported. Supported metrics are {sorted(SUPPORTED_METRICS)}.")
+
+    mps_metric = _mps_metric_for(metric)
+    if mps_metric != metric:
+        _logger.info(
+            "MPS model pre-selection uses %r (optimization metric is %r).",
+            mps_metric,
+            metric,
+        )
 
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
@@ -228,35 +260,83 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         list(search_space["chunk_overlap"].values),
     )
 
-    # Run model pre-selection when the number of models exceeds the caps
+    selected_models = _select_models_with_mps(
+        search_space=search_space,
+        benchmark_data=benchmark_data,
+        documents=documents,
+        top_n_generation=top_n_generation,
+        top_k_embedding=top_k_embedding,
+        sample_size=sample_size,
+        random_seed=random_seed,
+        metric=mps_metric,
+        inference_max_threads=inference_max_threads,
+    )
+
+    verbose_repr = _build_verbose_search_space(
+        search_space=search_space,
+        selected_models=selected_models,
+        benchmark_data=benchmark_data,
+        documents=documents,
+        ogx_client=ogx_client,
+        inference_max_threads=inference_max_threads,
+        chunking_methods=chunking_methods,
+    )
+
+    return SearchSpaceReport(
+        search_space=verbose_repr,
+        selected_models=selected_models,
+    )
+
+
+def _select_models_with_mps(  # pylint: disable=too-many-arguments
+    *,
+    search_space: Any,
+    benchmark_data: BenchmarkData,
+    documents: list,
+    top_n_generation: int,
+    top_k_embedding: int,
+    sample_size: int,
+    random_seed: int,
+    metric: str,
+    inference_max_threads: int,
+) -> dict[str, list]:
+    """Run MPS when model counts exceed caps; otherwise return full model lists."""
     fm_values = search_space["foundation_model"].values
     em_values = search_space["embedding_model"].values
 
-    if len(fm_values) > top_n_generation or len(em_values) > top_k_embedding:
-        mps = ModelsPreSelector(
-            benchmark_data=benchmark_data.get_random_sample(n_records=sample_size, random_seed=random_seed),
-            documents=documents,
-            foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
-            embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
-            metric=metric,
-            max_threads=inference_max_threads,
-        )
-        mps.evaluate_patterns()
-        selected = mps.select_models(
-            n_embedding_models=top_k_embedding,
-            n_foundation_models=top_n_generation,
-        )
-        selected_models = {
-            "foundation_model": selected["foundation_models"],
-            "embedding_model": selected["embedding_models"],
-        }
-    else:
-        selected_models = {
-            "foundation_model": list(fm_values),
-            "embedding_model": list(em_values),
-        }
+    if len(fm_values) <= top_n_generation and len(em_values) <= top_k_embedding:
+        return {"foundation_model": list(fm_values), "embedding_model": list(em_values)}
 
-    # Build verbose representation from valid (rule-filtered) combinations only
+    mps = ModelsPreSelector(
+        benchmark_data=benchmark_data.get_random_sample(n_records=sample_size, random_seed=random_seed),
+        documents=documents,
+        foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
+        embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
+        metric=metric,
+        max_threads=inference_max_threads,
+    )
+    mps.evaluate_patterns()
+    selected = mps.select_models(
+        n_embedding_models=top_k_embedding,
+        n_foundation_models=top_n_generation,
+    )
+    return {
+        "foundation_model": selected["foundation_models"],
+        "embedding_model": selected["embedding_models"],
+    }
+
+
+def _build_verbose_search_space(  # pylint: disable=too-many-arguments
+    *,
+    search_space: Any,
+    selected_models: dict[str, list],
+    benchmark_data: BenchmarkData,
+    documents: list,
+    ogx_client: OgxClient,
+    inference_max_threads: int,
+    chunking_methods: list[str] | None,
+) -> dict[str, Any]:
+    """Build the verbose search-space dict including evaluation metadata."""
     valid_combinations = search_space.combinations
     if not valid_combinations:
         _logger.warning("No valid combinations remain after applying search space rules.")
@@ -267,10 +347,51 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
     verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
 
-    return SearchSpaceReport(
-        search_space=verbose_repr,
+    if chunking_methods is not None:
+        available = set(verbose_repr.get("chunking_method", []))
+        if available:
+            unsupported = [m for m in chunking_methods if m not in available]
+            if unsupported:
+                raise ValueError(
+                    f"Unsupported chunking methods: {unsupported!r}. Available methods: {sorted(available)!r}."
+                )
+            verbose_repr["chunking_method"] = chunking_methods
+            _logger.info("Chunking methods constrained to: %s", verbose_repr["chunking_method"])
+
+    verbose_repr["evaluation"] = _resolve_evaluation_block(
         selected_models=selected_models,
+        benchmark_data=benchmark_data,
+        documents=documents,
+        ogx_client=ogx_client,
+        inference_max_threads=inference_max_threads,
     )
+    return verbose_repr
+
+
+def _resolve_evaluation_block(
+    *,
+    selected_models: dict[str, list],
+    benchmark_data: BenchmarkData,
+    documents: list,
+    ogx_client: OgxClient,
+    inference_max_threads: int,
+) -> list[dict[str, Any]]:
+    """Auto-select a judge model and build the hybrid evaluation artifact."""
+    ogx_api_key = getattr(ogx_client, "api_key", "") or ""
+    resolved_judge_id = select_judge_model(
+        JudgeSelectionContext(
+            generation_models=selected_models["foundation_model"],
+            embedding_models=selected_models["embedding_model"],
+            benchmark_data=benchmark_data,
+            documents=documents,
+            ogx_base_url=ogx_client.base_url,
+            ogx_api_key=ogx_api_key,
+            max_threads=inference_max_threads,
+        )
+    )
+    if not resolved_judge_id:
+        raise ValueError("Failed to resolve judge model during search-space preparation.")
+    return build_evaluation_block(resolved_judge_id)
 
 
 def _validate_model_list(models: list[str] | None, name: str) -> None:

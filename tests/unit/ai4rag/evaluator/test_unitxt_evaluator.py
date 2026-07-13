@@ -429,8 +429,10 @@ class TestUnitxtEvaluatorEvaluateMetrics:
             [MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS],
         )
 
-        assert len(result["scores"]) == 3
-        assert len(result["question_scores"]) == 3
+        assert len(result["scores"]) == 4
+        assert "overall_score" in result["scores"]
+        assert "overall_score" in result["question_scores"]
+        assert len(result["question_scores"]) == 4
 
 
 class TestUnitxtEvaluatorIntegration:
