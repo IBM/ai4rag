@@ -89,11 +89,11 @@ class TestBuildPatternJson:
     """Verify that build_pattern_json populates responses_template correctly."""
 
     def test_adds_responses_template(self):
-        """A responses_template section must be added to settings."""
+        """A responses_template section must be added under inference."""
         pattern = _make_pattern()
         result = build_pattern_json(pattern)
 
-        rt = result["settings"]["responses_template"]
+        rt = result["inference"]["responses_template"]
         generation = result["settings"]["generation"]
         expected_system = build_responses_system_input(generation)
 
@@ -131,9 +131,9 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
+        ro = pattern["inference"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "rrf", "impact_factor": 60}
-        assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
+        assert pattern["inference"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_hybrid_weighted_ranking_options(self):
         """Hybrid search with weighted ranker must set ranker and alpha in ranking_options."""
@@ -144,18 +144,18 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
+        ro = pattern["inference"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "weighted", "alpha": 0.7}
-        assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
+        assert pattern["inference"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_simple_retrieval_default_ranking_options(self):
         """Vector-only search simulates semantic retrieval via weighted ranker alpha=1.0."""
         pattern = _make_pattern()
         build_pattern_json(pattern)
 
-        ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
+        ro = pattern["inference"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "weighted", "alpha": 1.0}
-        assert pattern["settings"]["responses_template"]["tools"][0]["max_num_results"] == 5
+        assert pattern["inference"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_hybrid_weighted_alpha_one_uses_default_ranking(self):
         """Hybrid weighted with alpha=1.0 uses the default semantic-only simulation branch."""
@@ -166,7 +166,7 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        ro = pattern["settings"]["responses_template"]["tools"][0]["ranking_options"]
+        ro = pattern["inference"]["responses_template"]["tools"][0]["ranking_options"]
         assert ro == {"ranker": "weighted", "alpha": 1.0}
 
     def test_export_system_input_merges_non_redundant_user_rules(self):
@@ -187,7 +187,7 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        system_text = pattern["settings"]["responses_template"]["input"][0]["content"][0]["text"]
+        system_text = pattern["inference"]["responses_template"]["input"][0]["content"][0]["text"]
         assert "retrieval-augmented assistant" in system_text
         assert "retrieved via file search" not in system_text
         assert "provided documents" not in system_text.lower()
@@ -216,7 +216,7 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        system_text = pattern["settings"]["responses_template"]["input"][0]["content"][0]["text"]
+        system_text = pattern["inference"]["responses_template"]["input"][0]["content"][0]["text"]
         assert "must cite sources" not in system_text.lower()
         assert "max 150 words" in system_text
         assert "English only" in system_text
@@ -255,7 +255,7 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        actual = pattern["settings"]["responses_template"]["input"][0]["content"][0]["text"]
+        actual = pattern["inference"]["responses_template"]["input"][0]["content"][0]["text"]
         assert actual == expected
         assert actual != pattern["settings"]["generation"]["system_message_text"]
         assert "Granite Chat" in actual
@@ -466,9 +466,9 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        assert "temperature" not in pattern["settings"]["responses_template"]
+        assert "temperature" not in pattern["inference"]["responses_template"]
         # max_output_tokens should still be present
-        assert "max_output_tokens" in pattern["settings"]["responses_template"]
+        assert "max_output_tokens" in pattern["inference"]["responses_template"]
 
     def test_omits_max_output_tokens_when_none(self):
         """max_output_tokens field must be omitted when None to avoid sending null to API."""
@@ -477,9 +477,9 @@ class TestBuildPatternJson:
 
         build_pattern_json(pattern)
 
-        assert "max_output_tokens" not in pattern["settings"]["responses_template"]
+        assert "max_output_tokens" not in pattern["inference"]["responses_template"]
         # temperature should still be present
-        assert "temperature" in pattern["settings"]["responses_template"]
+        assert "temperature" in pattern["inference"]["responses_template"]
 
     def test_system_grounding_detection_no_false_positive_on_embedded_substring(self):
         """Grounding detection must not match embedded substrings, only sentence prefixes."""
@@ -493,3 +493,34 @@ class TestBuildPatternJson:
         # Should NOT suppress user grounding since system doesn't start with a grounding prefix
         assert "Use only relevant information" in result
         assert "All documents do not contain PII" in result
+
+    def test_indexing_pipeline_params_populates_indexing(self):
+        """When indexing_pipeline_params is supplied, pattern["indexing"] is populated."""
+        pattern = _make_pattern()
+        params = {
+            "pipeline_name": "custom_pipeline",
+            "ogx_secret_name": "secret_a",
+            "vector_io_provider_id": "milvus",
+            "input_data_secret_name": "data_secret",
+            "input_data_bucket_name": "bucket_x",
+            "input_data_key": "key_y",
+            "batch_size": 50,
+        }
+        result = build_pattern_json(pattern, indexing_pipeline_params=params)
+
+        spec = result["indexing"]["pipeline_spec"]
+        assert spec["pipeline_name"] == "custom_pipeline"
+        assert spec["parameters"]["ogx_secret_name"] == "secret_a"
+        assert spec["parameters"]["vector_store_id"] == "test_collection_001"
+        assert spec["parameters"]["embedding_model_id"] == "ibm/slate-125m-english-rtrvr"
+        assert spec["parameters"]["chunking_method"] == "recursive"
+        assert spec["parameters"]["chunk_size"] == 512
+        assert spec["parameters"]["chunk_overlap"] == 50
+        assert spec["parameters"]["batch_size"] == 50
+        assert "vector_store_id" in spec["overrides_allowed"]
+
+    def test_indexing_omitted_without_params(self):
+        """Without indexing_pipeline_params, no indexing key is added."""
+        pattern = _make_pattern()
+        result = build_pattern_json(pattern)
+        assert "indexing" not in result

@@ -529,14 +529,36 @@ class TestExperimentResultsCreateEvaluationResultsJson:
             indexing_params={"chunk_size": 512},
             rag_params={"retrieval_method": "simple"},
             scores={
-                "scores": {
-                    "answer_correctness": {"mean": 0.75},
-                    "context_correctness": {"mean": 0.80},
-                },
-                "question_scores": {
-                    "answer_correctness": {"q0": 0.70, "q1": 0.80},
-                    "context_correctness": {"q0": 0.85, "q1": 0.75},
-                },
+                "metrics": [
+                    {
+                        "name": "answer_correctness",
+                        "evaluator": "unitxt",
+                        "description": "",
+                        "scores": {"mean": 0.75, "ci_low": None, "ci_high": None},
+                    },
+                    {
+                        "name": "context_correctness",
+                        "evaluator": "unitxt",
+                        "description": "",
+                        "scores": {"mean": 0.80, "ci_low": None, "ci_high": None},
+                    },
+                ],
+                "question_scores": [
+                    {
+                        "question_id": "q0",
+                        "metrics": [
+                            {"name": "answer_correctness", "evaluator": "unitxt", "value": 0.70},
+                            {"name": "context_correctness", "evaluator": "unitxt", "value": 0.85},
+                        ],
+                    },
+                    {
+                        "question_id": "q1",
+                        "metrics": [
+                            {"name": "answer_correctness", "evaluator": "unitxt", "value": 0.80},
+                            {"name": "context_correctness", "evaluator": "unitxt", "value": 0.75},
+                        ],
+                    },
+                ],
             },
             execution_time=10.0,
             final_score=0.77,
@@ -567,23 +589,31 @@ class TestExperimentResultsCreateEvaluationResultsJson:
         assert first_entry["answer_contexts"][0] == {"text": "Context about AI", "document_id": "doc1"}
         assert first_entry["answer_contexts"][1] == {"text": "More AI context", "document_id": "doc2"}
 
-    def test_create_evaluation_results_json_scores(self, evaluation_data_list, evaluation_result):
-        """Test scores structure in results json."""
+    def test_create_evaluation_results_json_metrics(self, evaluation_data_list, evaluation_result):
+        """Test metrics structure in results json."""
         result = ExperimentResults.create_evaluation_results_json(evaluation_data_list, evaluation_result)
 
-        first_entry = result[0]
-        assert first_entry["scores"]["answer_correctness"] == 0.70
-        assert first_entry["scores"]["context_correctness"] == 0.85
+        q0_metrics = {m["name"]: m for m in result[0]["metrics"]}
+        assert q0_metrics["answer_correctness"] == {"name": "answer_correctness", "evaluator": "unitxt", "score": 0.70}
+        assert q0_metrics["context_correctness"] == {
+            "name": "context_correctness",
+            "evaluator": "unitxt",
+            "score": 0.85,
+        }
 
-        second_entry = result[1]
-        assert second_entry["scores"]["answer_correctness"] == 0.80
-        assert second_entry["scores"]["context_correctness"] == 0.75
+        q1_metrics = {m["name"]: m for m in result[1]["metrics"]}
+        assert q1_metrics["answer_correctness"] == {"name": "answer_correctness", "evaluator": "unitxt", "score": 0.80}
+        assert q1_metrics["context_correctness"] == {
+            "name": "context_correctness",
+            "evaluator": "unitxt",
+            "score": 0.75,
+        }
 
     def test_create_evaluation_results_json_all_fields(self, evaluation_data_list, evaluation_result):
         """Test that all expected fields are present."""
         result = ExperimentResults.create_evaluation_results_json(evaluation_data_list, evaluation_result)
 
-        expected_fields = {"question", "correct_answers", "answer", "answer_contexts", "scores"}
+        expected_fields = {"question", "correct_answers", "answer", "answer_contexts", "metrics"}
         for entry in result:
             assert set(entry.keys()) == expected_fields
 

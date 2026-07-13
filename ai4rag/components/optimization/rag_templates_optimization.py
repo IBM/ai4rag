@@ -67,6 +67,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     input_data_key: str = "",
     optimization_settings: dict | None = None,
     inference_max_threads: int = 10,
+    indexing_pipeline_params: dict | None = None,
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -102,6 +103,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         RAG service during benchmark evaluation.  Lower values reduce
         per-request concurrency (useful when each request carries more
         retrieved context).  Defaults to ``10``.
+    indexing_pipeline_params : dict | None, default=None
+        Parameters required to enhance pattern.json with indexing pipeline
+        settings.
 
     Returns
     -------
@@ -188,6 +192,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
         pattern_data = build_pattern_json(
             pattern=pattern.get("payload"),
+            indexing_pipeline_params=indexing_pipeline_params,
         )
 
         # Generate notebooks
@@ -256,23 +261,25 @@ def _evaluation_result_fallback(eval_data_list: list, evaluation_result: Any) ->
     This is a safety net for older experiment results that may not contain
     per-question score breakdowns.
     """
+    question_scores = (evaluation_result.scores or {}).get("question_scores") or []
+    scores_by_qid = {q["question_id"]: q["metrics"] for q in question_scores if isinstance(q, dict)}
+
     out: list[dict[str, Any]] = []
     for ev in eval_data_list:
         answer_contexts: list[dict[str, str]] = []
         if getattr(ev, "contexts", None) and getattr(ev, "context_ids", None):
             answer_contexts = [{"text": t, "document_id": doc_id} for t, doc_id in zip(ev.contexts, ev.context_ids)]
-        scores: dict[str, float] = {}
-        q_scores = (evaluation_result.scores or {}).get("question_scores") or {}
-        for key in q_scores:
-            if isinstance(q_scores[key], dict) and getattr(ev, "question_id", None) in q_scores[key]:
-                scores[key] = q_scores[key][ev.question_id]
+        qid = getattr(ev, "question_id", None)
+        metrics = [
+            {"name": m["name"], "evaluator": m["evaluator"], "score": m["value"]} for m in scores_by_qid.get(qid, [])
+        ]
         out.append(
             {
                 "question": getattr(ev, "question", ""),
                 "correct_answers": getattr(ev, "ground_truths", None),
                 "answer": getattr(ev, "answer", ""),
                 "answer_contexts": answer_contexts,
-                "scores": scores,
+                "metrics": metrics,
             }
         )
     return out

@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 
 from ai4rag.core.experiment.exception_handler import EvaluationError
-from ai4rag.evaluator.base_evaluator import EvaluationData, MetricType
+from ai4rag.evaluator.base_evaluator import EvaluationData
+from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 
 
@@ -65,18 +66,25 @@ def sample_ci_table() -> pd.DataFrame:
     )
 
 
+@pytest.fixture
+def sample_metric_lookup() -> dict[str, RAGMetric]:
+    """Fixture providing a unitxt-name → RAGMetric lookup for the three standard metrics."""
+    return {
+        UnitxtEvaluator.METRIC_TYPE_MAP[m.name]: m
+        for m in (Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS)
+    }
+
+
 class TestUnitxtEvaluatorMetricMapping:
     """Test suite for UnitxtEvaluator metric type mapping."""
 
     def test_get_metric_types_single_metric(self):
-        """Test get_metric_types with a single metric."""
-        result = UnitxtEvaluator.get_metric_types([MetricType.ANSWER_CORRECTNESS])
+        result = UnitxtEvaluator.get_metric_types([Metrics.ANSWER_CORRECTNESS])
         assert result == ["metrics.rag.external_rag.answer_correctness"]
 
     def test_get_metric_types_multiple_metrics(self):
-        """Test get_metric_types with multiple metrics."""
         result = UnitxtEvaluator.get_metric_types(
-            [MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS]
+            [Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS]
         )
         assert len(result) == 3
         assert "metrics.rag.external_rag.answer_correctness" in result
@@ -84,25 +92,23 @@ class TestUnitxtEvaluatorMetricMapping:
         assert "metrics.rag.external_rag.context_correctness" in result
 
     def test_get_metric_types_empty_list(self):
-        """Test get_metric_types with empty list."""
         result = UnitxtEvaluator.get_metric_types([])
         assert result == []
 
-    def test_get_metric_types_invalid_metric(self):
-        """Test get_metric_types with invalid metric type."""
-        result = UnitxtEvaluator.get_metric_types(["invalid_metric", MetricType.FAITHFULNESS])
-        assert len(result) == 1
+    def test_get_metric_types_unknown_metric_skipped(self):
+        unknown = RAGMetric(name="not_in_map", evaluator="unitxt", description="")
+        result = UnitxtEvaluator.get_metric_types([unknown, Metrics.FAITHFULNESS])
         assert result == ["metrics.rag.external_rag.faithfulness"]
 
-    def test_get_metric_types_all_invalid(self):
-        """Test get_metric_types with all invalid metrics."""
-        result = UnitxtEvaluator.get_metric_types(["invalid1", "invalid2"])
+    def test_get_metric_types_all_unknown(self):
+        unknown = RAGMetric(name="nope", evaluator="unitxt", description="")
+        result = UnitxtEvaluator.get_metric_types([unknown])
         assert result == []
 
     def test_decode_unitxt_metric_single(self):
         """Test decode_unitxt_metric with a single metric."""
         result = UnitxtEvaluator.decode_unitxt_metric(["metrics.rag.external_rag.answer_correctness"])
-        assert result == [MetricType.ANSWER_CORRECTNESS]
+        assert result == [Metrics.ANSWER_CORRECTNESS.name]
 
     def test_decode_unitxt_metric_multiple(self):
         """Test decode_unitxt_metric with multiple metrics."""
@@ -113,9 +119,9 @@ class TestUnitxtEvaluatorMetricMapping:
         ]
         result = UnitxtEvaluator.decode_unitxt_metric(unitxt_metrics)
         assert len(result) == 3
-        assert MetricType.ANSWER_CORRECTNESS in result
-        assert MetricType.FAITHFULNESS in result
-        assert MetricType.CONTEXT_CORRECTNESS in result
+        assert Metrics.ANSWER_CORRECTNESS.name in result
+        assert Metrics.FAITHFULNESS.name in result
+        assert Metrics.CONTEXT_CORRECTNESS.name in result
 
     def test_decode_unitxt_metric_empty_list(self):
         """Test decode_unitxt_metric with empty list."""
@@ -123,42 +129,49 @@ class TestUnitxtEvaluatorMetricMapping:
         assert result == []
 
 
-class TestUnitxtEvaluatorHandleCICalculations:
-    """Test suite for _handle_ci_calculations method."""
+class TestBuildAggregateMetrics:
+    """Test suite for _build_aggregate_metrics method."""
 
-    def test_handle_ci_calculations_basic(self, sample_ci_table):
-        """Test _handle_ci_calculations with basic input."""
+    def test_basic(self, sample_ci_table, sample_metric_lookup):
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_ci_calculations(sample_ci_table)
+        result = evaluator._build_aggregate_metrics(sample_ci_table, sample_metric_lookup)
 
-        assert isinstance(result, dict)
+        assert isinstance(result, list)
         assert len(result) == 3
-        assert MetricType.ANSWER_CORRECTNESS in result
-        assert MetricType.FAITHFULNESS in result
-        assert MetricType.CONTEXT_CORRECTNESS in result
+        names = {entry["name"] for entry in result}
+        assert names == {Metrics.ANSWER_CORRECTNESS.name, Metrics.FAITHFULNESS.name, Metrics.CONTEXT_CORRECTNESS.name}
 
-    def test_handle_ci_calculations_structure(self, sample_ci_table):
-        """Test that _handle_ci_calculations returns correct structure."""
+    def test_structure(self, sample_ci_table, sample_metric_lookup):
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_ci_calculations(sample_ci_table)
+        result = evaluator._build_aggregate_metrics(sample_ci_table, sample_metric_lookup)
 
-        for metric_key in result:
-            assert "mean" in result[metric_key]
-            assert "ci_low" in result[metric_key]
-            assert "ci_high" in result[metric_key]
+        for entry in result:
+            assert "name" in entry
+            assert "evaluator" in entry
+            assert "description" in entry
+            assert "scores" in entry
+            assert "mean" in entry["scores"]
+            assert "ci_low" in entry["scores"]
+            assert "ci_high" in entry["scores"]
 
-    def test_handle_ci_calculations_rounding(self, sample_ci_table):
-        """Test that _handle_ci_calculations rounds values correctly."""
+    def test_evaluator_and_description_populated(self, sample_ci_table, sample_metric_lookup):
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_ci_calculations(sample_ci_table)
+        result = evaluator._build_aggregate_metrics(sample_ci_table, sample_metric_lookup)
 
-        answer_correctness = result[MetricType.ANSWER_CORRECTNESS]
-        assert answer_correctness["mean"] == 0.91
-        assert answer_correctness["ci_low"] == 0.85
-        assert answer_correctness["ci_high"] == 0.97
+        for entry in result:
+            assert entry["evaluator"] == "unitxt"
+            assert isinstance(entry["description"], str)
 
-    def test_handle_ci_calculations_with_nan(self):
-        """Test _handle_ci_calculations with NaN values."""
+    def test_rounding(self, sample_ci_table, sample_metric_lookup):
+        evaluator = UnitxtEvaluator()
+        result = evaluator._build_aggregate_metrics(sample_ci_table, sample_metric_lookup)
+
+        ac = next(e for e in result if e["name"] == Metrics.ANSWER_CORRECTNESS.name)
+        assert ac["scores"]["mean"] == 0.91
+        assert ac["scores"]["ci_low"] == 0.85
+        assert ac["scores"]["ci_high"] == 0.97
+
+    def test_with_nan(self, sample_metric_lookup):
         ci_table = pd.DataFrame(
             {
                 "metrics.rag.external_rag.answer_correctness": {
@@ -175,15 +188,16 @@ class TestUnitxtEvaluatorHandleCICalculations:
         )
 
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_ci_calculations(ci_table)
+        result = evaluator._build_aggregate_metrics(ci_table, sample_metric_lookup)
 
-        assert result[MetricType.ANSWER_CORRECTNESS]["mean"] == 0.91
-        assert result[MetricType.FAITHFULNESS]["mean"] is None
-        assert result[MetricType.FAITHFULNESS]["ci_low"] is None
-        assert result[MetricType.FAITHFULNESS]["ci_high"] is None
+        ac = next(e for e in result if e["name"] == Metrics.ANSWER_CORRECTNESS.name)
+        faith = next(e for e in result if e["name"] == Metrics.FAITHFULNESS.name)
+        assert ac["scores"]["mean"] == 0.91
+        assert faith["scores"]["mean"] is None
+        assert faith["scores"]["ci_low"] is None
+        assert faith["scores"]["ci_high"] is None
 
-    def test_handle_ci_calculations_missing_ci_columns(self):
-        """Test _handle_ci_calculations when CI columns are missing."""
+    def test_missing_ci_columns(self, sample_metric_lookup):
         ci_table = pd.DataFrame(
             {
                 "metrics.rag.external_rag.answer_correctness": {"score": 0.91},
@@ -191,14 +205,14 @@ class TestUnitxtEvaluatorHandleCICalculations:
         )
 
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_ci_calculations(ci_table)
+        result = evaluator._build_aggregate_metrics(ci_table, sample_metric_lookup)
 
-        assert result[MetricType.ANSWER_CORRECTNESS]["mean"] == 0.91
-        assert result[MetricType.ANSWER_CORRECTNESS]["ci_low"] is None
-        assert result[MetricType.ANSWER_CORRECTNESS]["ci_high"] is None
+        ac = result[0]
+        assert ac["scores"]["mean"] == 0.91
+        assert ac["scores"]["ci_low"] is None
+        assert ac["scores"]["ci_high"] is None
 
-    def test_handle_ci_calculations_precision(self):
-        """Test that _handle_ci_calculations rounds to 4 decimal places."""
+    def test_precision(self, sample_metric_lookup):
         ci_table = pd.DataFrame(
             {
                 "metrics.rag.external_rag.answer_correctness": {
@@ -210,49 +224,63 @@ class TestUnitxtEvaluatorHandleCICalculations:
         )
 
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_ci_calculations(ci_table)
+        result = evaluator._build_aggregate_metrics(ci_table, sample_metric_lookup)
 
-        assert result[MetricType.ANSWER_CORRECTNESS]["mean"] == 0.1235
-        assert result[MetricType.ANSWER_CORRECTNESS]["ci_low"] == 0.9877
-        assert result[MetricType.ANSWER_CORRECTNESS]["ci_high"] == 0.5556
+        ac = result[0]
+        assert ac["scores"]["mean"] == 0.1235
+        assert ac["scores"]["ci_low"] == 0.9877
+        assert ac["scores"]["ci_high"] == 0.5556
 
 
-class TestUnitxtEvaluatorHandleQuestionsScores:
-    """Test suite for _handle_questions_scores method."""
+class TestBuildQuestionScores:
+    """Test suite for _build_question_scores method."""
 
-    def test_handle_questions_scores_basic(self, sample_scores_df):
-        """Test _handle_questions_scores with basic input."""
+    def test_basic(self, sample_scores_df, sample_metric_lookup):
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_questions_scores(sample_scores_df)
+        result = evaluator._build_question_scores(sample_scores_df, sample_metric_lookup)
 
-        assert isinstance(result, dict)
-        assert len(result) == 3
-        assert MetricType.ANSWER_CORRECTNESS in result
-        assert MetricType.FAITHFULNESS in result
-        assert MetricType.CONTEXT_CORRECTNESS in result
+        assert isinstance(result, list)
+        assert len(result) == 2
+        question_ids = {entry["question_id"] for entry in result}
+        assert question_ids == {"q1", "q2"}
 
-    def test_handle_questions_scores_structure(self, sample_scores_df):
-        """Test that _handle_questions_scores returns correct structure."""
+    def test_structure(self, sample_scores_df, sample_metric_lookup):
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_questions_scores(sample_scores_df)
+        result = evaluator._build_question_scores(sample_scores_df, sample_metric_lookup)
 
-        for metric_key in result:
-            assert isinstance(result[metric_key], dict)
-            assert "q1" in result[metric_key]
-            assert "q2" in result[metric_key]
+        for entry in result:
+            assert "question_id" in entry
+            assert "metrics" in entry
+            assert isinstance(entry["metrics"], list)
+            for m in entry["metrics"]:
+                assert "name" in m
+                assert "evaluator" in m
+                assert "value" in m
 
-    def test_handle_questions_scores_values(self, sample_scores_df):
-        """Test that _handle_questions_scores returns correct values."""
+    def test_values(self, sample_scores_df, sample_metric_lookup):
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_questions_scores(sample_scores_df)
+        result = evaluator._build_question_scores(sample_scores_df, sample_metric_lookup)
 
-        assert result[MetricType.ANSWER_CORRECTNESS]["q1"] == 0.95
-        assert result[MetricType.ANSWER_CORRECTNESS]["q2"] == 0.87
-        assert result[MetricType.FAITHFULNESS]["q1"] == 0.92
-        assert result[MetricType.FAITHFULNESS]["q2"] == 0.88
+        q1 = next(e for e in result if e["question_id"] == "q1")
+        q2 = next(e for e in result if e["question_id"] == "q2")
 
-    def test_handle_questions_scores_rounding(self):
-        """Test that _handle_questions_scores rounds to 4 decimal places."""
+        q1_metrics = {m["name"]: m["value"] for m in q1["metrics"]}
+        q2_metrics = {m["name"]: m["value"] for m in q2["metrics"]}
+
+        assert q1_metrics[Metrics.ANSWER_CORRECTNESS.name] == 0.95
+        assert q2_metrics[Metrics.ANSWER_CORRECTNESS.name] == 0.87
+        assert q1_metrics[Metrics.FAITHFULNESS.name] == 0.92
+        assert q2_metrics[Metrics.FAITHFULNESS.name] == 0.88
+
+    def test_evaluator_populated(self, sample_scores_df, sample_metric_lookup):
+        evaluator = UnitxtEvaluator()
+        result = evaluator._build_question_scores(sample_scores_df, sample_metric_lookup)
+
+        for entry in result:
+            for m in entry["metrics"]:
+                assert m["evaluator"] == "unitxt"
+
+    def test_rounding(self, sample_metric_lookup):
         scores_df = pd.DataFrame(
             {
                 "question_id": ["q1"],
@@ -261,12 +289,11 @@ class TestUnitxtEvaluatorHandleQuestionsScores:
         )
 
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_questions_scores(scores_df)
+        result = evaluator._build_question_scores(scores_df, sample_metric_lookup)
 
-        assert result[MetricType.ANSWER_CORRECTNESS]["q1"] == 0.1235
+        assert result[0]["metrics"][0]["value"] == 0.1235
 
-    def test_handle_questions_scores_with_empty_strings(self):
-        """Test _handle_questions_scores replaces empty strings with NaN."""
+    def test_with_empty_strings(self, sample_metric_lookup):
         scores_df = pd.DataFrame(
             {
                 "question_id": ["q1", "q2"],
@@ -275,13 +302,14 @@ class TestUnitxtEvaluatorHandleQuestionsScores:
         )
 
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_questions_scores(scores_df)
+        result = evaluator._build_question_scores(scores_df, sample_metric_lookup)
 
-        assert result[MetricType.ANSWER_CORRECTNESS]["q1"] == 0.95
-        assert pd.isna(result[MetricType.ANSWER_CORRECTNESS]["q2"])
+        q1 = next(e for e in result if e["question_id"] == "q1")
+        q2 = next(e for e in result if e["question_id"] == "q2")
+        assert q1["metrics"][0]["value"] == 0.95
+        assert pd.isna(q2["metrics"][0]["value"])
 
-    def test_handle_questions_scores_filters_irrelevant_columns(self):
-        """Test that _handle_questions_scores only includes relevant metrics."""
+    def test_filters_irrelevant_columns(self, sample_metric_lookup):
         scores_df = pd.DataFrame(
             {
                 "question_id": ["q1"],
@@ -292,11 +320,11 @@ class TestUnitxtEvaluatorHandleQuestionsScores:
         )
 
         evaluator = UnitxtEvaluator()
-        result = evaluator._handle_questions_scores(scores_df)
+        result = evaluator._build_question_scores(scores_df, sample_metric_lookup)
 
         assert len(result) == 1
-        assert MetricType.ANSWER_CORRECTNESS in result
-        assert "some_other_column" not in str(result)
+        assert len(result[0]["metrics"]) == 1
+        assert result[0]["metrics"][0]["name"] == Metrics.ANSWER_CORRECTNESS.name
 
 
 class TestUnitxtEvaluatorEvaluateMetrics:
@@ -328,13 +356,13 @@ class TestUnitxtEvaluatorEvaluateMetrics:
         evaluator = UnitxtEvaluator()
         result = evaluator.evaluate_metrics(
             sample_evaluation_data_list,
-            [MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS],
+            [Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS],
         )
 
-        assert "scores" in result
+        assert "metrics" in result
         assert "question_scores" in result
-        assert isinstance(result["scores"], dict)
-        assert isinstance(result["question_scores"], dict)
+        assert isinstance(result["metrics"], list)
+        assert isinstance(result["question_scores"], list)
 
         mock_evaluate.assert_called_once()
         call_args = mock_evaluate.call_args
@@ -353,7 +381,7 @@ class TestUnitxtEvaluatorEvaluateMetrics:
         mock_evaluate.return_value = (mock_scores_df, mock_ci_table)
 
         evaluator = UnitxtEvaluator()
-        evaluator.evaluate_metrics(sample_evaluation_data_list, [MetricType.ANSWER_CORRECTNESS])
+        evaluator.evaluate_metrics(sample_evaluation_data_list, [Metrics.ANSWER_CORRECTNESS])
 
         call_args = mock_evaluate.call_args
         df_arg = call_args[0][0]
@@ -369,7 +397,7 @@ class TestUnitxtEvaluatorEvaluateMetrics:
         evaluator = UnitxtEvaluator()
 
         with pytest.raises(EvaluationError):
-            evaluator.evaluate_metrics(sample_evaluation_data_list, [MetricType.ANSWER_CORRECTNESS])
+            evaluator.evaluate_metrics(sample_evaluation_data_list, [Metrics.ANSWER_CORRECTNESS])
 
     def test_evaluate_metrics_with_single_metric(self, mocker, sample_evaluation_data_list):
         """Test evaluate_metrics with a single metric."""
@@ -389,10 +417,12 @@ class TestUnitxtEvaluatorEvaluateMetrics:
         mock_evaluate.return_value = (mock_scores_df, mock_ci_table)
 
         evaluator = UnitxtEvaluator()
-        result = evaluator.evaluate_metrics(sample_evaluation_data_list, [MetricType.FAITHFULNESS])
+        result = evaluator.evaluate_metrics(sample_evaluation_data_list, [Metrics.FAITHFULNESS])
 
-        assert MetricType.FAITHFULNESS in result["scores"]
-        assert MetricType.FAITHFULNESS in result["question_scores"]
+        names = {m["name"] for m in result["metrics"]}
+        assert Metrics.FAITHFULNESS.name in names
+        q_names = {m["name"] for q in result["question_scores"] for m in q["metrics"]}
+        assert Metrics.FAITHFULNESS.name in q_names
 
     def test_evaluate_metrics_with_all_metrics(self, mocker, sample_evaluation_data_list):
         """Test evaluate_metrics with all three metrics."""
@@ -426,13 +456,11 @@ class TestUnitxtEvaluatorEvaluateMetrics:
         evaluator = UnitxtEvaluator()
         result = evaluator.evaluate_metrics(
             sample_evaluation_data_list,
-            [MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS],
+            [Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS],
         )
 
-        assert len(result["scores"]) == 4
-        assert "overall_score" in result["scores"]
-        assert "overall_score" in result["question_scores"]
-        assert len(result["question_scores"]) == 4
+        assert len(result["metrics"]) == 3
+        assert len(result["question_scores"]) == 2
 
 
 class TestUnitxtEvaluatorIntegration:
@@ -479,12 +507,17 @@ class TestUnitxtEvaluatorIntegration:
         mock_evaluate.return_value = (mock_scores_df, mock_ci_table)
 
         evaluator = UnitxtEvaluator()
-        result = evaluator.evaluate_metrics(evaluation_data, [MetricType.ANSWER_CORRECTNESS])
+        result = evaluator.evaluate_metrics(evaluation_data, [Metrics.ANSWER_CORRECTNESS])
 
-        assert result["scores"][MetricType.ANSWER_CORRECTNESS]["mean"] == 0.98
-        assert result["scores"][MetricType.ANSWER_CORRECTNESS]["ci_low"] == 0.95
-        assert result["scores"][MetricType.ANSWER_CORRECTNESS]["ci_high"] == 1.0
-        assert result["question_scores"][MetricType.ANSWER_CORRECTNESS]["q1"] == 0.98
+        ac_metric = result["metrics"][0]
+        assert ac_metric["name"] == Metrics.ANSWER_CORRECTNESS.name
+        assert ac_metric["scores"]["mean"] == 0.98
+        assert ac_metric["scores"]["ci_low"] == 0.95
+        assert ac_metric["scores"]["ci_high"] == 1.0
+
+        q1 = result["question_scores"][0]
+        assert q1["question_id"] == "q1"
+        assert q1["metrics"][0]["value"] == 0.98
 
 
 class TestUnitxtEvaluatorEdgeCases:
@@ -499,15 +532,18 @@ class TestUnitxtEvaluatorEdgeCases:
         mock_evaluate.return_value = (mock_scores_df, mock_ci_table)
 
         evaluator = UnitxtEvaluator()
-        result = evaluator.evaluate_metrics([], [MetricType.ANSWER_CORRECTNESS])
+        result = evaluator.evaluate_metrics([], [Metrics.ANSWER_CORRECTNESS])
 
-        assert "scores" in result
+        assert "metrics" in result
         assert "question_scores" in result
+        assert result["metrics"] == []
+        assert result["question_scores"] == []
 
-    def test_metric_name_case_sensitivity(self):
-        """Test that metric names are case-sensitive."""
-        evaluator = UnitxtEvaluator()
-        result = evaluator.get_metric_types(["ANSWER_CORRECTNESS", "answer_correctness"])
+    def test_name_case_sensitivity(self):
+        """Test that metric names are case-sensitive in METRIC_TYPE_MAP lookup."""
+        upper = RAGMetric(name="ANSWER_CORRECTNESS", evaluator="unitxt", description="")
+        lower = Metrics.ANSWER_CORRECTNESS
+        result = UnitxtEvaluator.get_metric_types([upper, lower])
         assert result == ["metrics.rag.external_rag.answer_correctness"]
 
     def test_decode_with_invalid_unitxt_metric(self):

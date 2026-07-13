@@ -17,6 +17,7 @@ from ai4rag.core.experiment.mps import (
     ModelsPreSelector,
     PreSelectorError,
 )
+from ai4rag.evaluator.metric import Metrics
 
 
 @pytest.fixture
@@ -72,15 +73,22 @@ def pre_selector_evaluation_results(embedding_models, foundation_models) -> list
                 {
                     "embedding_model": em,
                     "foundation_model": fm,
-                    "scores": {"answer_correctness": {"mean": score}},
-                    "question_scores": {
-                        "answer_correctness": {
-                            "q0": score,
-                            "q1": score,
-                            "q2": score,
-                            "q3": score,
-                            "q4": score,
-                        }
+                    "evaluation": {
+                        "metrics": [
+                            {
+                                "name": "answer_correctness",
+                                "evaluator": "unitxt",
+                                "description": "",
+                                "scores": {"mean": score, "ci_low": None, "ci_high": None},
+                            },
+                        ],
+                        "question_scores": [
+                            {
+                                "question_id": f"q{i}",
+                                "metrics": [{"name": "answer_correctness", "evaluator": "unitxt", "value": score}],
+                            }
+                            for i in range(5)
+                        ],
                     },
                 }
             )
@@ -100,7 +108,7 @@ def pre_selector(
         benchmark_data=benchmark_data,
         foundation_models=foundation_models,
         embedding_models=embedding_models,
-        metric="answer_correctness",
+        metric=Metrics.ANSWER_CORRECTNESS,
     )
     pre_selector.evaluation_results = pre_selector_evaluation_results
 
@@ -125,7 +133,7 @@ def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, f
         documents=documents,
         foundation_models=foundation_models,
         embedding_models=embedding_models,
-        metric="answer_correctness",
+        metric=Metrics.ANSWER_CORRECTNESS,
     )
 
     return selector
@@ -139,7 +147,7 @@ class TestModelsPreSelectorInit:
             documents=documents,
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric="answer_correctness",
+            metric=Metrics.ANSWER_CORRECTNESS,
         )
 
         assert selector.retrieval_params["search_mode"] == "vector"
@@ -151,7 +159,7 @@ class TestModelsPreSelectorInit:
             documents=documents,
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric="answer_correctness",
+            metric=Metrics.ANSWER_CORRECTNESS,
             search_mode="hybrid",
         )
 
@@ -166,7 +174,7 @@ class TestModelsPreSelectorInit:
             documents=documents,
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric="answer_correctness",
+            metric=Metrics.ANSWER_CORRECTNESS,
             retrieval_method="window",
         )
 

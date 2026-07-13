@@ -9,126 +9,155 @@ from unitxt.eval_utils import evaluate
 
 from ai4rag.core.experiment.exception_handler import EvaluationError
 from ai4rag.evaluator.base_evaluator import (
+    AggregateMetric,
     BaseEvaluator,
+    ConfidenceInterval,
     EvaluationData,
-    MetricType,
+    EvaluationMetricsResult,
+    QuestionMetric,
+    QuestionScore,
 )
-from ai4rag.evaluator.score_utils import enrich_with_overall_score
+from ai4rag.evaluator.metric import Metrics, RAGMetric
 
 
 class UnitxtEvaluator(BaseEvaluator):
     """Unitxt wrapper making evaluation of the RAG's usage."""
 
-    METRIC_TYPE_MAP = {
-        MetricType.ANSWER_CORRECTNESS: "metrics.rag.external_rag.answer_correctness",
-        MetricType.FAITHFULNESS: "metrics.rag.external_rag.faithfulness",
-        MetricType.CONTEXT_CORRECTNESS: "metrics.rag.external_rag.context_correctness",
+    METRIC_TYPE_MAP: dict[str, str] = {
+        Metrics.ANSWER_CORRECTNESS.name: "metrics.rag.external_rag.answer_correctness",
+        Metrics.FAITHFULNESS.name: "metrics.rag.external_rag.faithfulness",
+        Metrics.CONTEXT_CORRECTNESS.name: "metrics.rag.external_rag.context_correctness",
     }
 
     def evaluate_metrics(
         self,
         evaluation_data: list[EvaluationData],
-        metrics: Sequence[str],
-    ) -> dict:
-        """Evaluate responses and add derived ``overall_score`` for Unitxt-only metrics."""
-        result = self.evaluate_metrics_raw(evaluation_data, metrics)
-        return enrich_with_overall_score(result)
+        metrics: Sequence[RAGMetric],
+    ) -> EvaluationMetricsResult:
+        """
+        Perform evaluation on the given instances with chosen metric types.
 
-    def evaluate_metrics_raw(
-        self,
-        evaluation_data: list[EvaluationData],
-        metrics: Sequence[str],
-    ) -> dict:
-        """Evaluate responses without deriving ``overall_score``."""
+        Parameters
+        ----------
+        evaluation_data : list[EvaluationData]
+            Instances that hold data needed for the unitxt algorithms to perform evaluation.
+
+        metrics : Sequence[RAGMetric]
+            Metric definitions to evaluate.
+
+        Returns
+        -------
+        EvaluationMetricsResult
+            Aggregate metrics with confidence intervals and per-question scores.
+        """
         evaluation_primitives = [prim.to_dict() for prim in evaluation_data]
         df = pd.DataFrame(evaluation_primitives)
-        unitxt_metrics = self.get_metric_types(metric_types=metrics)
+
+        metric_lookup = {self.METRIC_TYPE_MAP[m.name]: m for m in metrics if m.name in self.METRIC_TYPE_MAP}
+        unitxt_metrics = list(metric_lookup)
+
         try:
             scores_df, ci_table = evaluate(df, metric_names=unitxt_metrics, compute_conf_intervals=True)
 
-            returned_ci = self._handle_ci_calculations(ci_table=ci_table)
-            question_scores = self._handle_questions_scores(scores_df=scores_df)
+            aggregate_metrics = self._build_aggregate_metrics(ci_table=ci_table, metric_lookup=metric_lookup)
+            question_scores = self._build_question_scores(scores_df=scores_df, metric_lookup=metric_lookup)
 
-            return {"scores": returned_ci, "question_scores": question_scores}
+            return {"metrics": aggregate_metrics, "question_scores": question_scores}
 
         except Exception as exc:
             raise EvaluationError(exc) from exc
 
-    def _handle_questions_scores(self, scores_df: pd.DataFrame) -> dict:
+    @staticmethod
+    def _build_question_scores(scores_df: pd.DataFrame, metric_lookup: dict[str, RAGMetric]) -> list[QuestionScore]:
         """
-        Handle transformations of questions scores data frame.
+        Pivot per-metric columns into a question-centric list.
 
         Parameters
         ----------
         scores_df : pd.DataFrame
-            Data returned by the unitxt evaluate function containing scores without ids.
+            Data returned by the unitxt evaluate function.
+
+        metric_lookup : dict[str, RAGMetric]
+            Mapping from unitxt metric name to the originating ``RAGMetric``.
 
         Returns
         -------
-        dict
-            Scores calculated for each question in the evaluation data.
+        list[QuestionScore]
+            One entry per question with ``question_id`` and ``metrics``.
         """
-        reversed_metrics_mapping = {v: k for k, v in self.METRIC_TYPE_MAP.items()}
         scores_df = scores_df.mask(scores_df == "")
-        raw_ret_dict = scores_df.round(4).to_dict()
-        without_id = {
-            reversed_metrics_mapping[key]: val for key, val in raw_ret_dict.items() if key in reversed_metrics_mapping
-        }
-        question_scores = {}
-        for key, val in without_id.items():
-            question_scores[key] = {raw_ret_dict["question_id"][k]: v for k, v in val.items()}
+        metric_columns = [col for col in scores_df.columns if col in metric_lookup]
+        records = scores_df.round(4).to_dict(orient="records")
 
-        return question_scores
+        return [
+            QuestionScore(
+                question_id=record["question_id"],
+                metrics=[
+                    QuestionMetric(
+                        name=metric_lookup[col].name,
+                        evaluator=metric_lookup[col].evaluator,
+                        value=record[col],
+                    )
+                    for col in metric_columns
+                ],
+            )
+            for record in records
+        ]
 
-    def _handle_ci_calculations(self, ci_table: pd.DataFrame) -> dict:
+    @staticmethod
+    def _build_aggregate_metrics(ci_table: pd.DataFrame, metric_lookup: dict[str, RAGMetric]) -> list[AggregateMetric]:
         """
-        Handle transformations of confidence interval scores data frame.
+        Transform the confidence-interval table into a list of metric summaries.
 
         Parameters
         ----------
         ci_table : pd.DataFrame
             Data with calculated confidence intervals via unitxt evaluate.
 
+        metric_lookup : dict[str, RAGMetric]
+            Mapping from unitxt metric name to the originating ``RAGMetric``.
+
         Returns
         -------
-        dict
-            Transformed confidence interval data that will be further processed.
+        list[AggregateMetric]
+            One entry per metric with ``name``, ``evaluator``, ``description``, and ``scores``.
         """
-        reversed_metrics_mapping = {v: k for k, v in self.METRIC_TYPE_MAP.items()}
         ci_dict = ci_table.to_dict()
 
         def round_or_none(x: float | None) -> float | None:
             return None if x is None or pd.isna(x) else round(x, 4)
 
-        returned_ci = {}
-        for key, val in ci_dict.items():
-            returned_ci[reversed_metrics_mapping[key]] = {
-                "mean": round_or_none(val["score"]),
-                "ci_low": round_or_none(val.get("score_ci_low")),
-                "ci_high": round_or_none(val.get("score_ci_high")),
-            }
-
-        return returned_ci
+        return [
+            AggregateMetric(
+                name=metric_lookup[key].name,
+                evaluator=metric_lookup[key].evaluator,
+                description=metric_lookup[key].description,
+                scores=ConfidenceInterval(
+                    mean=round_or_none(val["score"]),
+                    ci_low=round_or_none(val.get("score_ci_low")),
+                    ci_high=round_or_none(val.get("score_ci_high")),
+                ),
+            )
+            for key, val in ci_dict.items()
+            if key in metric_lookup
+        ]
 
     @classmethod
-    def get_metric_types(cls, metric_types: Sequence[str]) -> list[str]:
+    def get_metric_types(cls, metrics: Sequence[RAGMetric]) -> list[str]:
         """
-        Perform mapping of general metric names to the specific metric names
-        in the unitxt library.
+        Map ``RAGMetric`` instances to unitxt-specific metric strings.
 
         Parameters
         ----------
-        metric_types : Sequence[str]
-            Metrics defined in the MetricType class.
+        metrics : Sequence[RAGMetric]
+            Metric definitions.
 
         Returns
         -------
         list[str]
-            Specific versions of the metrics that can be used within
-            unitxt evaluation process.
+            Unitxt metric identifiers for the given metrics.
         """
-        mapping = [cls.METRIC_TYPE_MAP.get(metric, None) for metric in metric_types]
-        return [metric for metric in mapping if metric is not None]
+        return [cls.METRIC_TYPE_MAP[m.name] for m in metrics if m.name in cls.METRIC_TYPE_MAP]
 
     @classmethod
     def decode_unitxt_metric(cls, unitxt_metrics: list[str]) -> list[str]:
@@ -143,10 +172,7 @@ class UnitxtEvaluator(BaseEvaluator):
         Returns
         -------
         list[str]
-            Corresponding decoded messages
+            Corresponding decoded names.
         """
-
         reversed_mapping = {v: k for k, v in cls.METRIC_TYPE_MAP.items()}
-        decoded = [reversed_mapping[metric] for metric in unitxt_metrics]
-
-        return decoded
+        return [reversed_mapping[metric] for metric in unitxt_metrics]
