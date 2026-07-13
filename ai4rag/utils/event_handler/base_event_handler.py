@@ -27,19 +27,22 @@ class LogLevel(StrEnum):
 # ---------------------------------------------------------------------------
 
 
-class MetricCI(TypedDict):
-    """Aggregate score with confidence interval for a single metric."""
+class AggregateMetricScore(TypedDict):
+    """Confidence interval for a single aggregate metric."""
 
-    mean: float
+    mean: float | None
     ci_low: float | None
     ci_high: float | None
 
 
-class PatternScores(TypedDict):
-    """Scores section of :class:`PatternPayload`."""
+class AggregateMetricPayload(TypedDict, total=False):
+    """Single metric entry in the ``metrics`` list of :class:`EvaluationPayload`."""
 
-    scores: dict[str, MetricCI]
-    question_scores: dict[str, dict[str, float]]
+    name: str
+    evaluator: str
+    description: str
+    scores: AggregateMetricScore
+    optimization_metric: bool
 
 
 class VectorStoreSettings(TypedDict, total=False):
@@ -98,14 +101,19 @@ class PatternSettings(TypedDict):
     generation: GenerationSettings
 
 
+class EvaluationPayload(TypedDict):
+    """Evaluation section of :class:`PatternPayload`."""
+
+    metrics: list[AggregateMetricPayload]
+
+
 class PatternPayload(TypedDict):
     """Payload passed to :meth:`BaseEventHandler.on_pattern_creation`."""
 
     name: str
     max_combinations: int
-    scores: PatternScores
+    evaluation: EvaluationPayload
     duration_seconds: int
-    final_score: float
     settings: PatternSettings
     iteration: int
 
@@ -122,6 +130,14 @@ class AnswerContext(TypedDict):
     document_id: str
 
 
+class EvaluationMetricRecord(TypedDict):
+    """Single metric score for a question."""
+
+    name: str
+    evaluator: str
+    score: float
+
+
 class EvaluationRecord(TypedDict):
     """Per-question evaluation entry in the ``evaluation_results`` list."""
 
@@ -129,7 +145,7 @@ class EvaluationRecord(TypedDict):
     correct_answers: list[str]
     answer: str
     answer_contexts: list[AnswerContext]
-    scores: dict[str, float]
+    metrics: list[EvaluationMetricRecord]
 
 
 class BaseEventHandler(ABC):
@@ -173,20 +189,30 @@ class BaseEventHandler(ABC):
             {
                 'name': 'Pattern1',
                 'max_combinations': 24,
-                'scores': {
-                    'scores': {
-                        'answer_correctness': {'mean': 0.0, 'ci_low': None, 'ci_high': None},
-                        'faithfulness': {'mean': 0.0909, 'ci_low': 0.0145, 'ci_high': 0.016},
-                        'context_correctness': {'mean': 0.0, 'ci_low': None, 'ci_high': None},
-                    },
-                    'question_scores': {
-                        'answer_correctness': {'q0': 0, 'q1': 0, 'q2': 0},
-                        'faithfulness': {'q0': 0.0909, 'q1': 0.0909, 'q2': 0.0909},
-                        'context_correctness': {'q0': 0, 'q1': 0, 'q2': 0},
-                    },
+                'evaluation': {
+                    'metrics': [
+                        {
+                            'name': 'answer_correctness',
+                            'evaluator': 'unitxt',
+                            'description': '',
+                            'scores': {'mean': 0.0, 'ci_low': None, 'ci_high': None}
+                        },
+                        {
+                            'name': 'faithfulness',
+                            'evaluator': 'unitxt',
+                            'description': '',
+                            'scores': {'mean': 0.0909, 'ci_low': 0.0145, 'ci_high': 0.016},
+                            'optimization_metric': True
+                        },
+                        {
+                            'name': 'context_correctness',
+                            'evaluator': 'unitxt',
+                            'description': '',
+                            'scores': {'mean': 0.0, 'ci_low': None, 'ci_high': None}
+                        },
+                    ],
                 },
                 'duration_seconds': 42,
-                'final_score': 0.0909,
                 'settings': {
                     'vector_store_binding': {'provider_id': 'local_chroma', 'vector_store_id': 'ai4rag_20260317092550'},
                     'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},
@@ -213,18 +239,18 @@ class BaseEventHandler(ABC):
 
             [
                 {
-                    "question": "<question_1>"
+                    "question": "<question_1>",
                     "answer": "<model's answer>",
                     "answer_contexts": [
                         {"text": "<content1_text>", "document_id": "document_1.pdf"},
                         {"text": "<content2_text>", "document_id": "document_2.pdf"},
-                    ]
-                    'correct_answers': ['correct_answer_for_question_1'],
-                    "scores": {
-                        "answer_correctness": 0.79,
-                        "faithfulness": 0.55,
-                        "context_correctness": 0.65,
-                    }
+                    ],
+                    "correct_answers": ["correct_answer_for_question_1"],
+                    "metrics": [
+                        {"name": "answer_correctness", "evaluator": "unitxt", "score": 0.79},
+                        {"name": "faithfulness", "evaluator": "unitxt", "score": 0.55},
+                        {"name": "context_correctness", "evaluator": "unitxt", "score": 0.65},
+                    ],
                 },
                 {
                     "question": "<question_2>",
@@ -232,13 +258,13 @@ class BaseEventHandler(ABC):
                     "answer_contexts": [
                         {"text": "<content3_text>", "document_id": "document_3.pdf"},
                         {"text": "<content4_text>", "document_id": "document_4.pdf"},
-                    ]
+                    ],
                     "correct_answers": ["correct_answer_1_for_question_2", "correct_answer_2_for_question_3"],
-                    "scores": {
-                        "answer_correctness": 0.79,
-                        "faithfulness": 0.55,
-                        "context_correctness": 0.65,
-                    },
+                    "metrics": [
+                        {"name": "answer_correctness", "evaluator": "unitxt", "score": 0.79},
+                        {"name": "faithfulness", "evaluator": "unitxt", "score": 0.55},
+                        {"name": "context_correctness", "evaluator": "unitxt", "score": 0.65},
+                    ],
                 },
             ]
         """

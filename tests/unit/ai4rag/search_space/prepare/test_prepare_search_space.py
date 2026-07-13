@@ -432,7 +432,6 @@ class TestPrepareSearchSpaceWithOgx:
         with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_sizes": [99999]}, MagicMock())
 
-
     def test_custom_chunk_overlaps_override_defaults(self, mocker):
         """chunk_overlaps in payload overrides the default chunk_overlap dimension."""
         mock_client = self._setup_mock_client(mocker)
@@ -450,4 +449,3 @@ class TestPrepareSearchSpaceWithOgx:
         """A chunk overlap above MAX_CHUNK_OVERLAP raises ValidationError before any I/O."""
         with pytest.raises(ValidationError):
             prepare_search_space_with_ogx({"chunk_overlaps": [99999]}, MagicMock())
-

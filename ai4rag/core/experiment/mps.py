@@ -16,7 +16,9 @@ from ai4rag.core.experiment.exception_handler import (
 )
 from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
 from ai4rag.evaluator import UnitxtEvaluator
-from ai4rag.evaluator.base_evaluator import BaseEvaluator
+from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationMetricsResult
+from ai4rag.evaluator.custom_metrics import calculate_overall_score
+from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
@@ -39,8 +41,7 @@ class MPSEvaluationResultsTyped(TypedDict):
 
     foundation_model: BaseFoundationModel
     embedding_model: BaseEmbeddingModel
-    scores: dict
-    question_scores: dict
+    evaluation: EvaluationMetricsResult
 
 
 # pylint: disable=too-many-instance-attributes
@@ -58,7 +59,7 @@ class ModelsPreSelector:
 
     Parameters
     ----------
-    metric : str
+    metric : RAGMetric
         Metric used in ranking the models.
 
     foundation_models : list[BaseFoundationModel]
@@ -101,7 +102,7 @@ class ModelsPreSelector:
 
     def __init__(
         self,
-        metric: str,
+        metric: RAGMetric,
         foundation_models: list[BaseFoundationModel],
         embedding_models: list[BaseEmbeddingModel],
         documents: list[DoclingDocument],
@@ -128,6 +129,10 @@ class ModelsPreSelector:
         self.evaluation_results: list[MPSEvaluationResultsTyped] = []
         self._exception_handler = ExperimentExceptionHandler()
         self.max_threads = kwargs.pop("max_threads", 10)
+        self.metrics = kwargs.pop(
+            "metrics",
+            (Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS, Metrics.OVERALL_SCORE),
+        )
 
     def evaluate_patterns(self):
         """
@@ -203,8 +208,7 @@ class ModelsPreSelector:
                     {
                         "embedding_model": embedding_model,
                         "foundation_model": foundation_model,
-                        "scores": result_scores.get("scores", {}),
-                        "question_scores": result_scores.get("question_scores", {}),
+                        "evaluation": result_scores,
                     }
                 )
 
@@ -269,7 +273,9 @@ class ModelsPreSelector:
 
         return vector_store
 
-    def _evaluate_single_pattern(self, foundation_model: BaseFoundationModel, retriever: Retriever) -> dict[str, dict]:
+    def _evaluate_single_pattern(
+        self, foundation_model: BaseFoundationModel, retriever: Retriever
+    ) -> EvaluationMetricsResult:
         """
         Perform retrieval-augmented generation and evaluate generated response.
 
@@ -283,8 +289,8 @@ class ModelsPreSelector:
 
         Returns
         -------
-        dict[str, dict]
-            Evaluation scores per model.
+        EvaluationMetricsResult
+            Aggregate metrics with confidence intervals and per-question scores.
         """
 
         rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
@@ -293,9 +299,16 @@ class ModelsPreSelector:
             rag=rag, questions=list(self.benchmark_data.questions), max_threads=self.max_threads
         )
 
-        result_scores = self._evaluate_response(inference_response=inference_response)
+        result = self._evaluate_response(inference_response=inference_response)
 
-        return result_scores
+        # pylint: disable=duplicate-code
+        custom_metrics = [m.name for m in self.metrics if m.name == "overall_score"]
+        for custom_metric in custom_metrics:
+            match custom_metric:
+                case "overall_score":
+                    result = calculate_overall_score(scores=result)
+
+        return result
 
     def select_models(
         self,
@@ -367,7 +380,11 @@ class ModelsPreSelector:
         _mean_scoring_results = []
 
         for result in self.evaluation_results:
-            mean_score = result.get("scores", {}).get(self.metric, {}).get("mean", {})
+            evaluation = result.get("evaluation", {})
+            mean_score = next(
+                (m["scores"]["mean"] for m in evaluation.get("metrics", []) if m["name"] == self.metric.name),
+                None,
+            )
             _mean_scoring_results.append(
                 {
                     "embedding_model": result.get("embedding_model"),
@@ -380,13 +397,13 @@ class ModelsPreSelector:
 
         models_with_scores = sorted(
             _mean_scoring_results,
-            key=lambda x: x.get("score"),
+            key=lambda x: x.get("score") or 0.0,
             reverse=True,
         )
 
         return models_with_scores
 
-    def _evaluate_response(self, inference_response: list[dict[str, Any]]) -> dict[str, dict]:
+    def _evaluate_response(self, inference_response: list[dict[str, Any]]) -> EvaluationMetricsResult:
         """
         Evaluate response from the model based on the chosen context,
         real questions/answers/ids from the benchmark_data.
@@ -399,15 +416,8 @@ class ModelsPreSelector:
 
         Returns
         -------
-        dict[str, dict]
-            Data from evaluation that is of following structure:
-            data = {
-                "scores": {"answer_correctness": {"mean": 0.5, "ci_low": 0.4, "ci_high": 0.6}, ...},
-                "question_scores": {
-                    "answer_correctness": {"q_id_0": 0.5, "q_id_1": 0.8, ...},
-                    "context_correctness": {"q_id_0": 0.5, "q_id_1": 0.8, ...},
-                },
-            }
+        EvaluationMetricsResult
+            Aggregate metrics with confidence intervals and per-question scores.
         """
         logger.debug("MPS: Evaluating responses...")
 
