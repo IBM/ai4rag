@@ -9,6 +9,7 @@ from statistics import fmean
 from ai4rag.evaluator.base_evaluator import EvaluationMetricsResult
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 
+
 def calculate_overall_score(scores: EvaluationMetricsResult) -> None:
     """Append an overall-score metric (mean of all other metrics) to *scores* in-place.
 
