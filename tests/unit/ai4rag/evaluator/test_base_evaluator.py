@@ -4,7 +4,8 @@
 # -----------------------------------------------------------------------------
 import pytest
 
-from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
+from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData
+from ai4rag.evaluator.metric import Metrics
 
 
 @pytest.fixture
@@ -124,35 +125,35 @@ class TestEvaluationDataToDict:
         assert set(result.keys()) == expected_keys
 
 
-class TestMetricType:
-    """Test suite for MetricType constants."""
+class TestMetrics:
+    """Test suite for Metrics constants."""
 
-    def test_answer_correctness_constant(self):
-        """Test ANSWER_CORRECTNESS constant value."""
-        assert MetricType.ANSWER_CORRECTNESS == "answer_correctness"
+    def test_answer_correctness_name(self):
+        assert Metrics.ANSWER_CORRECTNESS.name == "answer_correctness"
 
-    def test_faithfulness_constant(self):
-        """Test FAITHFULNESS constant value."""
-        assert MetricType.FAITHFULNESS == "faithfulness"
+    def test_faithfulness_name(self):
+        assert Metrics.FAITHFULNESS.name == "faithfulness"
 
-    def test_context_correctness_constant(self):
-        """Test CONTEXT_CORRECTNESS constant value."""
-        assert MetricType.CONTEXT_CORRECTNESS == "context_correctness"
+    def test_context_correctness_name(self):
+        assert Metrics.CONTEXT_CORRECTNESS.name == "context_correctness"
 
-    def test_all_metrics_are_strings(self):
-        """Test that all metric constants are strings."""
-        assert isinstance(MetricType.ANSWER_CORRECTNESS, str)
-        assert isinstance(MetricType.FAITHFULNESS, str)
-        assert isinstance(MetricType.CONTEXT_CORRECTNESS, str)
+    def test_overall_score_name(self):
+        assert Metrics.OVERALL_SCORE.name == "overall_score"
 
-    def test_metrics_are_unique(self):
-        """Test that all metric constants have unique values."""
-        metrics = [
-            MetricType.ANSWER_CORRECTNESS,
-            MetricType.FAITHFULNESS,
-            MetricType.CONTEXT_CORRECTNESS,
+    def test_all_metrics_have_evaluator(self):
+        assert Metrics.ANSWER_CORRECTNESS.evaluator == "unitxt"
+        assert Metrics.FAITHFULNESS.evaluator == "unitxt"
+        assert Metrics.CONTEXT_CORRECTNESS.evaluator == "unitxt"
+        assert Metrics.OVERALL_SCORE.evaluator == "custom"
+
+    def test_metrics_names_are_unique(self):
+        names = [
+            Metrics.ANSWER_CORRECTNESS.name,
+            Metrics.FAITHFULNESS.name,
+            Metrics.CONTEXT_CORRECTNESS.name,
+            Metrics.OVERALL_SCORE.name,
         ]
-        assert len(metrics) == len(set(metrics))
+        assert len(names) == len(set(names))
 
 
 class TestBaseEvaluator:

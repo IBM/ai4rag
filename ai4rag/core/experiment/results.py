@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 from typing import Any, Generator
 
 from ai4rag import logger
-from ai4rag.evaluator.base_evaluator import EvaluationData
+from ai4rag.evaluator.base_evaluator import EvaluationData, EvaluationMetricsResult
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 
 
@@ -33,15 +33,8 @@ class EvaluationResult:
         Subspace of hyperparameters used during inference stage in the
         Retrieval Augmented Generation.
 
-    scores : dict[str, dict[str, float]]
-        Score data from the evaluation that may look like:
-        data = {
-            "scores": {"answer_correctness": {"mean": 0.5, "ci_low": 0.4, "ci_high": 0.6}, ...},
-            "question_scores": {
-                "answer_correctness": {"q_id_0": 0.5, "q_id_1": 0.8, ...},
-                "context_correctness": {"q_id_0": 0.5, "q_id_1": 0.8, ...},
-            },
-        }
+    scores : EvaluationMetricsResult
+        Evaluation output with aggregate metrics and per-question scores.
 
     execution_time : float
         Time in seconds how long did experiment take to run.
@@ -57,7 +50,7 @@ class EvaluationResult:
     collection: str
     indexing_params: dict[str, Any]
     rag_params: dict[str, Any]
-    scores: dict[str, dict]
+    scores: EvaluationMetricsResult
     execution_time: float
     final_score: float
     rag_pattern: BaseRAGTemplate | None = None
@@ -213,33 +206,21 @@ class ExperimentResults:
         """
         Create json made of evaluation results with proper data.
 
-        Example file content:
-        [
-            {
-                "question_id": "0",
-                "answer": "<model's answer>",
-                "answer_contexts": [
-                    {"text": "<content1_text>", "document_id": "document_1.pdf"},
-                    {"text": "<content2_text>", "document_id": "document_2.pdf"},
-                ]
-                "scores": {
-                    "answer_correctness": 0.79,
-                    "context_correctness": 0.65,
-                }
-            },
-            {
-                "question_id": "1",
-                "answer": "<model's answer>",
-                "answer_contexts": [
-                    {"text": "<content3_text>", "document_id": "document_3.pdf"},
-                    {"text": "<content4_text>", "document_id": "document_4.pdf"},
-                ]
-                "scores": {
-                    "answer_correctness": 0.79,
-                    "context_correctness": 0.65,
-                }
-            },
-        ]
+        Example file content::
+
+            [
+                {
+                    "question_id": "0",
+                    "answer": "<model's answer>",
+                    "answer_contexts": [
+                        {"text": "<content1_text>", "document_id": "document_1.pdf"},
+                    ],
+                    "metrics": [
+                        {"name": "answer_correctness", "evaluator": "unitxt", "score": 0.79},
+                        {"name": "overall_score", "evaluator": "custom", "score": 0.79},
+                    ]
+                },
+            ]
 
         Parameters
         ----------
@@ -254,21 +235,23 @@ class ExperimentResults:
         list[dict[str, Any]]
             json-like object with evaluation results.
         """
+        scores_by_qid = {q["question_id"]: q["metrics"] for q in evaluation_result.scores["question_scores"]}
+
         data = []
-        for local_ev_data in evaluation_data:
-            ret = {
-                "question": local_ev_data.question,
-                "correct_answers": local_ev_data.ground_truths,
-                "answer": local_ev_data.answer,
-                "answer_contexts": [
-                    {"text": text, "document_id": doc_id}
-                    for text, doc_id in zip(local_ev_data.contexts, local_ev_data.context_ids)
-                ],
-                "scores": {
-                    key: evaluation_result.scores["question_scores"][key][local_ev_data.question_id]
-                    for key in evaluation_result.scores["question_scores"]
-                },
-            }
-            data.append(ret)
+        for ev in evaluation_data:
+            data.append(
+                {
+                    "question": ev.question,
+                    "correct_answers": ev.ground_truths,
+                    "answer": ev.answer,
+                    "answer_contexts": [
+                        {"text": text, "document_id": doc_id} for text, doc_id in zip(ev.contexts, ev.context_ids)
+                    ],
+                    "metrics": [
+                        {"name": m["name"], "evaluator": m["evaluator"], "score": m["value"]}
+                        for m in scores_by_qid.get(ev.question_id, [])
+                    ],
+                }
+            )
 
         return data

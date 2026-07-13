@@ -106,6 +106,27 @@ def _normalize_flat_settings(settings: dict | None) -> dict | None:
     }
 
 
+def _get_aggregate_scores(e: dict) -> dict[str, dict]:
+    """Extract aggregate metric scores as ``{name: {mean, ci_low, ci_high}}`` from either format."""
+    evaluation = e.get("evaluation")
+    if isinstance(evaluation, dict):
+        return {m["name"]: m["scores"] for m in evaluation.get("metrics", []) if isinstance(m, dict)}
+    raw = e.get("scores") or {}
+    if isinstance(raw, list):
+        return {m["name"]: m["scores"] for m in raw if isinstance(m, dict)}
+    aggregate = raw.get("scores") if isinstance(raw.get("scores"), dict) else raw
+    return aggregate or {}
+
+
+def _get_final_score(e: dict) -> float | None:
+    """Extract the mean score of the metric marked with ``optimization_metric: True``."""
+    metrics = e.get("evaluation", {}).get("metrics", [])
+    for m in metrics:
+        if isinstance(m, dict) and m.get("optimization_metric"):
+            return m.get("scores", {}).get("mean")
+    return None
+
+
 def _metric_to_mean_key(metric: str) -> str:
     return "mean_" + metric
 
@@ -360,15 +381,13 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
 
     # Sort by optimization metric score descending; missing scores last
     def _optimization_score(e: dict) -> tuple[bool, float]:
-        v = e.get("final_score")
+        v = _get_final_score(e)
         if v is not None:
             try:
                 return (False, -float(v))
             except (TypeError, ValueError):
                 pass
-        raw = e.get("scores") or {}
-        aggregate = raw.get("scores") if isinstance(raw.get("scores"), dict) else raw
-        for _k, info in (aggregate or {}).items():
+        for info in _get_aggregate_scores(e).values():
             if isinstance(info, dict):
                 mean = info.get("mean")
                 if mean is not None:
@@ -383,9 +402,7 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
     # Discover metric columns present in data
     all_metric_names: list[str] = []
     for e in evaluations:
-        raw = e.get("scores") or {}
-        aggregate = raw.get("scores") if isinstance(raw.get("scores"), dict) else raw
-        for m in aggregate or {}:
+        for m in _get_aggregate_scores(e):
             if m not in all_metric_names:
                 all_metric_names.append(m)
     metric_columns = [c for c in _LEADERBOARD_METRIC_COLUMNS if c.replace("mean_", "", 1) in all_metric_names]
@@ -409,8 +426,7 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
     rows: list[str] = []
     for i, e in enumerate(evaluations):
         pattern_name = e.get("name") or e.get("pattern_name") or (e.get("rag_pattern") or {}).get("name", "—")
-        raw = e.get("scores") or {}
-        scores = raw.get("scores") if isinstance(raw.get("scores"), dict) else raw
+        scores = _get_aggregate_scores(e)
         merged = (
             _settings_from_rag_pattern(e)
             or _normalize_flat_settings(e.get("settings"))

@@ -233,4 +233,3 @@ class TestPrepareSearchSpaceReportFiltering:
         assert result.search_space["chunk_size"] == []
         assert result.search_space["chunk_overlap"] == []
         assert result.search_space["chunking_method"] == []
-

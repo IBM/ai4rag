@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from collections.abc import Hashable
 from typing import Any
 
 __all__ = [
@@ -22,7 +23,7 @@ class ConstantMeta(type):
         _constant_attributes = [
             val
             for key, val in class_dict.items()
-            if not key.startswith("__") and not callable(val) and type(val) in (str, int, float)
+            if not key.startswith("__") and not callable(val) and isinstance(val, Hashable)
         ]
         class_dict["_constant_attributes"] = _constant_attributes
 

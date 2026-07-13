@@ -32,7 +32,9 @@ from ai4rag.core.experiment.utils import (
 from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
-from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
+from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, EvaluationMetricsResult
+from ai4rag.evaluator.custom_metrics import apply_custom_metrics
+from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.chunking import DoclingChunker, LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
@@ -91,20 +93,18 @@ class AI4RAGExperiment:
         results and intermediate status updates. EventHandler is an entrypoint to configure
         custom logging and assets handling.
 
-    optimization_metric : str, default=MetricType.FAITHFULNESS
-        Metrics that should be used for calculating final score value that will be minimized.
-        This sequence should contain 1 value for first release.
-
+    optimization_metric : RAGMetric | str, default=Metrics.FAITHFULNESS
+        Metric used for calculating the final score that drives optimization.
 
     Other Parameters
     ----------------
     job_id : str, default="ai4rag_job_a0b1c2d3"
         Unique identifier for a job.
 
-    metrics : Sequence[str]
-        Metrics that will be evaluated during AutoRAG experiment. Not all
-        of these metrics will be used to calculate final score, but they will
-        be included in the evaluation results.
+    metrics : Sequence[RAGMetric]
+        Metrics evaluated during the AutoRAG experiment. Not all
+        of these metrics are used to calculate the final score, but they
+        are included in the evaluation results.
 
     evaluator : BaseEvaluator, default=UnitxtEvaluator()
         An implementation of the BaseEvaluator class, that will be used by the AI4RAGExperiment
@@ -138,7 +138,7 @@ class AI4RAGExperiment:
         event_handler: BaseEventHandler,
         client: OgxClient | Any = None,
         ogx_vector_io_provider_id: str | None = None,
-        optimization_metric: str = MetricType.FAITHFULNESS,
+        optimization_metric: RAGMetric | str = Metrics.FAITHFULNESS,
         **kwargs,
     ):
         self.documents = documents
@@ -152,8 +152,9 @@ class AI4RAGExperiment:
         self.optimization_metric = optimization_metric
 
         self.job_id = kwargs.pop("job_id", "ai4rag_job_a0b1c2d3").replace("-", "_")
-        self.metrics: Sequence[str] = kwargs.pop(
-            "metrics", (MetricType.ANSWER_CORRECTNESS, MetricType.FAITHFULNESS, MetricType.CONTEXT_CORRECTNESS)
+        self.metrics: Sequence[RAGMetric] = kwargs.pop(
+            "metrics",
+            (Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS, Metrics.OVERALL_SCORE),
         )
         self.evaluator: BaseEvaluator = kwargs.pop(
             "evaluator",
@@ -196,20 +197,32 @@ class AI4RAGExperiment:
         self._documents = proper_docs
 
     @property
-    def optimization_metric(self) -> str:
+    def optimization_metric(self) -> RAGMetric:
         """Get optimization metrics used for the experiment."""
         return self._optimization_metric
 
     @optimization_metric.setter
-    def optimization_metric(self, val: str) -> None:
+    def optimization_metric(self, val: RAGMetric | str) -> None:
         """Validate and set optimization metrics"""
-        if val not in MetricType:
+        available_metrics = [m.name for m in Metrics]
+
+        if isinstance(val, str):
+            n_val = next((metric for metric in Metrics if metric.name == val), None)
+            val_name = val
+        elif isinstance(val, RAGMetric):
+            n_val = val if val in Metrics else None
+            val_name = val.name
+        else:
             raise RAGExperimentError(
-                f"Provided optimization metric: '{val}' is not supported. "
-                f"Available metrics: ['answer_correctness', 'faithfulness', 'context_correctness']."
+                f"Incorrect type for optimization metric: {val}. Expected ai4rag.evaluator.metric.RAGMetric or str."
             )
 
-        self._optimization_metric = val
+        if not n_val:
+            raise RAGExperimentError(
+                f"Provided optimization metric: '{val_name}' is not supported. Available metrics: {available_metrics}."
+            )
+
+        self._optimization_metric = n_val
 
     @property
     def benchmark_data(self) -> BenchmarkData:
@@ -458,9 +471,17 @@ class AI4RAGExperiment:
         stop_time = time.time()
         execution_time = stop_time - start_time
 
-        result_score = result_scores["scores"][self.optimization_metric]["mean"]
+        final_score = next(
+            (r["scores"]["mean"] for r in result_scores["metrics"] if r["name"] == self.optimization_metric.name),
+            None,
+        )
+        if final_score is None:
+            raise RAGExperimentError(
+                f"Optimization metric '{self.optimization_metric.name}' not found in evaluation results. "
+                f"Available: {[m['name'] for m in result_scores['metrics']]}."
+            )
 
-        logger.info("Calculated optimization score for '%s': %s", pattern_name, result_score)
+        logger.info("Calculated optimization score for '%s': %s", pattern_name, final_score)
 
         evaluation_result = EvaluationResult(
             pattern_name=pattern_name,
@@ -469,7 +490,7 @@ class AI4RAGExperiment:
             rag_params=rag_params,
             scores=result_scores,
             execution_time=execution_time,
-            final_score=result_score,
+            final_score=final_score,
             rag_pattern=rag_pattern,
         )
 
@@ -479,7 +500,7 @@ class AI4RAGExperiment:
 
         logger.info(
             "Evaluation scores: %s",
-            {el.get("question_id"): el.get("scores") for el in evaluation_results_json if isinstance(el, dict)},
+            {el.get("question"): el.get("metrics") for el in evaluation_results_json if isinstance(el, dict)},
         )
 
         try:
@@ -495,7 +516,7 @@ class AI4RAGExperiment:
             evaluation_result=evaluation_result,
         )
 
-        return result_score
+        return final_score
 
     def search(self, **kwargs) -> None:
         """
@@ -630,12 +651,16 @@ class AI4RAGExperiment:
 
         n_known = len(self.known_observations) if self.known_observations else 0
 
+        metrics_payload = [
+            {**m, "optimization_metric": True} if m["name"] == self.optimization_metric.name else m
+            for m in evaluation_result.scores["metrics"]
+        ]
+
         payload = {
             "name": evaluation_result.pattern_name,
             "max_combinations": self.search_space.max_combinations,
-            "scores": evaluation_result.scores["scores"],
+            "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
-            "final_score": evaluation_result.final_score,
             "settings": {
                 "vector_store_binding": vector_store_payload,
                 **indexing_payload,
@@ -654,7 +679,7 @@ class AI4RAGExperiment:
         self,
         inference_response: list[dict[str, Any]],
         pattern_name: str,
-    ) -> tuple[dict[str, dict], list[EvaluationData]]:
+    ) -> tuple[EvaluationMetricsResult, list[EvaluationData]]:
         """
         Evaluate response from the model based on the chosen context,
         real questions/answers/ids from the benchmark_data.
@@ -670,15 +695,8 @@ class AI4RAGExperiment:
 
         Returns
         -------
-        tuple[dict[str, dict], list[EvaluationData]]
-            Data from evaluation that is of following structure:
-            data = {
-                "scores": {"answer_correctness": {"mean": 0.5, "ci_low": 0.4, "ci_high": 0.6}, ...},
-                "question_scores": {
-                    "answer_correctness": {"q_id_0": 0.5, "q_id_1": 0.8, ...},
-                    "context_correctness": {"q_id_0": 0.5, "q_id_1": 0.8, ...},
-                },
-            }
+        tuple[EvaluationMetricsResult, list[EvaluationData]]
+            Input and output evaluation data.
         """
 
         logger.info(
@@ -691,7 +709,11 @@ class AI4RAGExperiment:
         )
 
         eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
-        result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=self.metrics)
+
+        unitxt_metrics = [m for m in self.metrics if m.evaluator == "unitxt"]
+        result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=unitxt_metrics)
+
+        apply_custom_metrics(scores=result, metrics=self.metrics)
 
         logger.info("Response evaluation results for '%s': %s.", pattern_name, result)
         return result, eval_data

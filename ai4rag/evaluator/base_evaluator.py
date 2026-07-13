@@ -4,9 +4,9 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import Any, Sequence
+from typing import Any, Sequence, TypedDict
 
-from ai4rag.utils.constants import ConstantMeta
+from ai4rag.evaluator.metric import RAGMetric
 
 
 # pylint: disable=too-many-instance-attributes
@@ -61,22 +61,43 @@ class EvaluationData:
         return asdict(self)
 
 
-class MetricType(metaclass=ConstantMeta):
-    """
-    Holder for metric names.
+class ConfidenceInterval(TypedDict):
+    """Aggregate scores with confidence interval bounds."""
 
-    Attributes
-    ----------
-    ANSWER_CORRECTNESS : str, default="answer_correctness"
+    mean: float | None
+    ci_low: float | None
+    ci_high: float | None
 
-    FAITHFULNESS : str, default="faithfulness"
 
-    CONTEXT_CORRECTNESS : str, default="context_correctness"
-    """
+class AggregateMetric(TypedDict):
+    """Single metric with its aggregate scores."""
 
-    ANSWER_CORRECTNESS = "answer_correctness"
-    FAITHFULNESS = "faithfulness"
-    CONTEXT_CORRECTNESS = "context_correctness"
+    name: str
+    evaluator: str
+    description: str
+    scores: ConfidenceInterval
+
+
+class QuestionMetric(TypedDict):
+    """Single metric value for one question."""
+
+    name: str
+    evaluator: str
+    value: float
+
+
+class QuestionScore(TypedDict):
+    """Per-question breakdown of all evaluated metrics."""
+
+    question_id: str
+    metrics: list[QuestionMetric]
+
+
+class EvaluationMetricsResult(TypedDict):
+    """Top-level return type of ``evaluate_metrics``."""
+
+    metrics: list[AggregateMetric]
+    question_scores: list[QuestionScore]
 
 
 class BaseEvaluator(ABC):
@@ -86,7 +107,11 @@ class BaseEvaluator(ABC):
     """
 
     @abstractmethod
-    def evaluate_metrics(self, evaluation_data: list[EvaluationData], metrics: Sequence[str]) -> dict:
+    def evaluate_metrics(
+        self,
+        evaluation_data: list[EvaluationData],
+        metrics: Sequence[RAGMetric],
+    ) -> EvaluationMetricsResult:
         """
         Evaluate the model's responses against list of different metrics.
 
@@ -96,11 +121,11 @@ class BaseEvaluator(ABC):
             List of EvaluationData instances containing all the data needed
             to perform evaluation.
 
-        metrics : Sequence[str]
-            Metrics given as strings. They should be referred to MetricType.
+        metrics : Sequence[RAGMetric]
+            Metric definitions to evaluate.
 
         Returns
         -------
-        dict
-            Evaluation result data.
+        EvaluationMetricsResult
+            Aggregate metrics with confidence intervals and per-question scores.
         """

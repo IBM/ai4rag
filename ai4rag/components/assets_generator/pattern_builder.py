@@ -237,6 +237,7 @@ def build_responses_system_input(generation: dict) -> str:
 
 def build_pattern_json(
     pattern: dict,
+    indexing_pipeline_params: dict | None = None,
 ) -> dict:
     """Update pattern information with responses template.
 
@@ -245,6 +246,10 @@ def build_pattern_json(
     pattern : dict
         A single evaluation result object carrying ``indexing_params``,
         ``rag_params``, ``pattern_name``, ``collection``, etc.
+
+    indexing_pipeline_params : dict | None, default=None
+        Set of parameter for the indexing pipeline build.
+        If not set, indexing pipeline object is not set.
 
     Notes
     -----
@@ -288,8 +293,6 @@ def build_pattern_json(
     if generation.get("max_completion_tokens") is not None:
         responses_template["max_output_tokens"] = generation["max_completion_tokens"]
 
-    pattern["settings"]["responses_template"] = responses_template
-
     retrieval_settings = pattern["settings"]["retrieval"]
     search_mode = retrieval_settings.get("search_mode")
     ranker_strategy = retrieval_settings.get("ranker_strategy")
@@ -297,20 +300,49 @@ def build_pattern_json(
     ranker_alpha = retrieval_settings.get("ranker_alpha")
 
     if search_mode == "hybrid" and ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
-        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
+        responses_template["tools"][0]["ranking_options"] = {
             "ranker": "rrf",
             "impact_factor": ranker_k,
         }
     elif search_mode == "hybrid" and ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
-        # ``ranker_alpha == 1.0`` intentionally falls through to ``else`` (semantic-only default).
-        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
+        responses_template["tools"][0]["ranking_options"] = {
             "ranker": "weighted",
             "alpha": ranker_alpha,
         }
     else:
-        pattern["settings"]["responses_template"]["tools"][0]["ranking_options"] = {
+        responses_template["tools"][0]["ranking_options"] = {
             "ranker": "weighted",
             "alpha": 1.0,
+        }
+
+    pattern["inference"] = {"responses_template": responses_template}
+
+    if indexing_pipeline_params:
+        pattern["indexing"] = {
+            "pipeline_spec": {
+                "pipeline_name": indexing_pipeline_params.get("pipeline_name", "documents_indexing_pipeline"),
+                "parameters": {
+                    "ogx_secret_name": indexing_pipeline_params.get("ogx_secret_name"),
+                    "vector_io_provider_id": indexing_pipeline_params.get("vector_io_provider_id"),
+                    "input_data_secret_name": indexing_pipeline_params.get("input_data_secret_name"),
+                    "input_data_bucket_name": indexing_pipeline_params.get("input_data_bucket_name"),
+                    "input_data_key": indexing_pipeline_params.get("input_data_key"),
+                    "batch_size": indexing_pipeline_params.get("batch_size"),
+                    "vector_store_id": pattern["settings"]["vector_store_binding"]["vector_store_id"],
+                    "embedding_model_id": pattern["settings"]["embedding"]["model_id"],
+                    "embedding_params": pattern["settings"]["embedding"]["embedding_params"],
+                    "chunking_method": pattern["settings"]["chunking"]["method"],
+                    "chunk_size": pattern["settings"]["chunking"]["chunk_size"],
+                    "chunk_overlap": pattern["settings"]["chunking"]["chunk_overlap"],
+                },
+                "overrides_allowed": [
+                    "input_data_secret_name",
+                    "input_data_bucket_name",
+                    "input_data_key",
+                    "vector_store_id",
+                    "batch_size",
+                ],
+            }
         }
 
     return pattern
