@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from enum import StrEnum
-from typing import TypedDict
+from typing import NotRequired, TypedDict
 
 __all__ = [
     "BaseEventHandler",
@@ -35,14 +35,14 @@ class AggregateMetricScore(TypedDict):
     ci_high: float | None
 
 
-class AggregateMetricPayload(TypedDict, total=False):
+class AggregateMetricPayload(TypedDict):
     """Single metric entry in the ``metrics`` list of :class:`EvaluationPayload`."""
 
     name: str
     evaluator: str
     description: str
     scores: AggregateMetricScore
-    optimization_metric: bool
+    optimization_metric: NotRequired[bool]
 
 
 class VectorStoreSettings(TypedDict, total=False):

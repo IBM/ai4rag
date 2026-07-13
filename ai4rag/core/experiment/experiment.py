@@ -33,7 +33,7 @@ from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, Opt
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, EvaluationMetricsResult
-from ai4rag.evaluator.custom_metrics import calculate_overall_score
+from ai4rag.evaluator.custom_metrics import apply_custom_metrics
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.chunking import DoclingChunker, LangChainChunker
@@ -472,8 +472,14 @@ class AI4RAGExperiment:
         execution_time = stop_time - start_time
 
         final_score = next(
-            r["scores"]["mean"] for r in result_scores["metrics"] if r["name"] == self.optimization_metric.name
+            (r["scores"]["mean"] for r in result_scores["metrics"] if r["name"] == self.optimization_metric.name),
+            None,
         )
+        if final_score is None:
+            raise RAGExperimentError(
+                f"Optimization metric '{self.optimization_metric.name}' not found in evaluation results. "
+                f"Available: {[m['name'] for m in result_scores['metrics']]}."
+            )
 
         logger.info("Calculated optimization score for '%s': %s", pattern_name, final_score)
 
@@ -707,12 +713,7 @@ class AI4RAGExperiment:
         unitxt_metrics = [m for m in self.metrics if m.evaluator == "unitxt"]
         result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=unitxt_metrics)
 
-        # Add custom metric
-        custom_metrics = [m.name for m in self.metrics if m.name == "overall_score"]
-        for custom_metric in custom_metrics:
-            match custom_metric:
-                case "overall_score":
-                    result = calculate_overall_score(scores=result)
+        apply_custom_metrics(scores=result, metrics=self.metrics)
 
         logger.info("Response evaluation results for '%s': %s.", pattern_name, result)
         return result, eval_data

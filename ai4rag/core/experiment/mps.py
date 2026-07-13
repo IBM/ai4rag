@@ -17,7 +17,7 @@ from ai4rag.core.experiment.exception_handler import (
 from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationMetricsResult
-from ai4rag.evaluator.custom_metrics import calculate_overall_score
+from ai4rag.evaluator.custom_metrics import apply_custom_metrics
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
@@ -301,12 +301,7 @@ class ModelsPreSelector:
 
         result = self._evaluate_response(inference_response=inference_response)
 
-        # pylint: disable=duplicate-code
-        custom_metrics = [m.name for m in self.metrics if m.name == "overall_score"]
-        for custom_metric in custom_metrics:
-            match custom_metric:
-                case "overall_score":
-                    result = calculate_overall_score(scores=result)
+        apply_custom_metrics(scores=result, metrics=self.metrics)
 
         return result
 
@@ -397,7 +392,7 @@ class ModelsPreSelector:
 
         models_with_scores = sorted(
             _mean_scoring_results,
-            key=lambda x: x.get("score") or 0.0,
+            key=lambda x: x["score"] if x["score"] is not None else float("-inf"),
             reverse=True,
         )
 

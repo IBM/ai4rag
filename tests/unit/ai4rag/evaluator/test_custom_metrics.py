@@ -87,8 +87,10 @@ class TestCalculateOverallScore:
         assert q1_overall["evaluator"] == "custom"
 
     def test_mutates_in_place(self, two_metric_result):
-        returned = calculate_overall_score(two_metric_result)
-        assert returned is two_metric_result
+        original_metrics = two_metric_result["metrics"]
+        calculate_overall_score(two_metric_result)
+        assert two_metric_result["metrics"] is original_metrics
+        assert any(m["name"] == Metrics.OVERALL_SCORE.name for m in original_metrics)
 
     def test_with_none_ci(self):
         result = {

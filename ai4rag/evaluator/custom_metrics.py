@@ -3,14 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import math
+from collections.abc import Sequence
 from statistics import fmean
 
 from ai4rag.evaluator.base_evaluator import EvaluationMetricsResult
-from ai4rag.evaluator.metric import Metrics
+from ai4rag.evaluator.metric import Metrics, RAGMetric
 
-
-def calculate_overall_score(scores: EvaluationMetricsResult) -> EvaluationMetricsResult:
-    """Append an overall-score metric (mean of all other metrics) to *results* in-place.
+def calculate_overall_score(scores: EvaluationMetricsResult) -> None:
+    """Append an overall-score metric (mean of all other metrics) to *scores* in-place.
 
     Aggregate scores average mean/ci_low/ci_high independently across existing
     metrics.  Per-question scores average that question's metric values.
@@ -45,4 +45,11 @@ def calculate_overall_score(scores: EvaluationMetricsResult) -> EvaluationMetric
             }
         )
 
-    return scores
+
+def apply_custom_metrics(scores: EvaluationMetricsResult, metrics: Sequence[RAGMetric]) -> None:
+    """Evaluate and append all requested custom metrics to *scores* in-place."""
+    for metric in metrics:
+        if metric.evaluator != "custom":
+            continue
+        if metric.name == "overall_score":
+            calculate_overall_score(scores)
