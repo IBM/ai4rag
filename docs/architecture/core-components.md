@@ -17,7 +17,7 @@ graph TB
     D[Documents]
     E[Benchmark Data]
     F[RAG Components]
-    G[Evaluator]
+    G[Evaluators<br/>Unitxt + LLM Judge]
 
     D --> A
     E --> A
@@ -122,9 +122,10 @@ sequenceDiagram
         RAG-->>Exp: inference responses
         deactivate RAG
 
-        Exp->>Eval: evaluate responses
+        Note over Exp: Multi-evaluator dispatch
+        Exp->>Eval: evaluate responses (Unitxt + LLM Judge)
         activate Eval
-        Eval-->>Exp: metric scores
+        Eval-->>Exp: EvaluationMetricsResult
         deactivate Eval
 
         Exp->>EH: stream finished pattern

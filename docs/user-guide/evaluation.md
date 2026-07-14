@@ -12,13 +12,13 @@ RAG systems can fail in subtle ways:
 - Retrieve irrelevant documents that don't help answer the question
 - Produce incorrect answers even when the right information is available
 
-ai4rag uses **unitxt-based metrics** to detect these failures and guide optimization toward configurations that produce accurate, grounded, and relevant responses.
+ai4rag uses **multiple evaluator types** to detect these failures and guide optimization toward configurations that produce accurate, grounded, and relevant responses.
 
 ---
 
 ## Available Metrics
 
-ai4rag evaluates three complementary aspects of RAG performance:
+ai4rag evaluates four complementary aspects of RAG performance using two evaluator types — **Unitxt** (reference-based) and **LLM-as-a-Judge**:
 
 ### Faithfulness
 
@@ -86,26 +86,46 @@ Retrieved document IDs: ["hybrid_search_guide.md", "installation.md"]
 Context Correctness: Medium (1 of 2 correct documents retrieved)
 ```
 
+### Answer Relevance (LLM Judge)
+
+**What it measures**: Whether the generated response directly and helpfully addresses the user's question, as judged by an LLM.
+
+**Why it matters**: This metric provides an independent quality signal that does not require ground-truth answers. It detects off-topic, unhelpful, or incoherent responses that reference-based metrics might miss.
+
+**Score range**: 0.0 to 1.0 (higher is better)
+
+**How it works**: An LLM judge scores the response on a 1–5 rubric using structured JSON output. The raw score is normalized to [0.0, 1.0]. Confidence intervals are computed via bootstrapping.
+
+---
+
+### Overall Score
+
+**What it measures**: The mean of all other evaluated metrics.
+
+**Why it matters**: A single aggregate score for optimization that balances all quality dimensions. This is the **default optimization metric** in ai4rag.
+
+**Score range**: 0.0 to 1.0 (higher is better)
+
 ---
 
 ## How Evaluation Works
 
-### The UnitxtEvaluator
+### Multi-Evaluator Architecture
 
-ai4rag uses the `UnitxtEvaluator` class, which wraps the [unitxt](https://github.com/IBM/unitxt) library for RAG evaluation.
+ai4rag supports multiple evaluator types working together. Each evaluator handles the metrics matching its type:
+
+- **`UnitxtEvaluator`** — wraps the [unitxt](https://github.com/IBM/unitxt) library for reference-based RAG metrics (`faithfulness`, `answer_correctness`, `context_correctness`)
+- **`LLMaJEvaluator`** — uses an LLM as a judge for `answer_relevance`
+- **Custom metrics** — computed from the results of other evaluators (e.g. `overall_score` is the mean of all other metrics)
 
 For each RAG configuration being tested:
 
 1. **Generate answers** for all benchmark questions using the current configuration
-2. **Collect evaluation data**:
-   - Question
-   - Generated answer
-   - Retrieved contexts (chunks)
-   - Context IDs (document IDs)
-   - Ground truth answers
-   - Ground truth document IDs
-3. **Compute metrics** using unitxt's RAG evaluation algorithms
-4. **Return scores** with confidence intervals
+2. **Collect evaluation data** (question, answer, contexts, ground truths)
+3. **Route metrics to evaluators** — each evaluator receives only its own metrics
+4. **Merge results** into a single `EvaluationMetricsResult`
+5. **Compute custom metrics** (e.g. `overall_score`) on top of the merged results
+6. **Return scores** with confidence intervals
 
 ### EvaluationData Structure
 
@@ -135,40 +155,52 @@ evaluation_data = EvaluationData(
 
 ## Result Structure
 
-Evaluation results include both aggregate scores and per-question breakdowns.
+Evaluation results are returned as an `EvaluationMetricsResult` TypedDict with two sections: aggregate metrics and per-question breakdowns.
 
-### Aggregate Scores
+### Aggregate Metrics
 
 For each metric, you get:
 
-- **`mean`**: Average score across all questions
-- **`ci_low`**: Lower bound of 95% confidence interval
-- **`ci_high`**: Upper bound of 95% confidence interval
+- **`name`**: Metric identifier
+- **`evaluator`**: Which evaluator produced it (`"unitxt"`, `"judge"`, or `"custom"`)
+- **`scores.mean`**: Average score across all questions
+- **`scores.ci_low`**: Lower bound of 95% confidence interval
+- **`scores.ci_high`**: Upper bound of 95% confidence interval
 
 **Example**:
 
 ```python
 {
-    "scores": {
-        "faithfulness": {
-            "mean": 0.72,
-            "ci_low": 0.61,
-            "ci_high": 0.83
+    "metrics": [
+        {
+            "name": "faithfulness",
+            "evaluator": "unitxt",
+            "description": "Measures whether the generated answer is grounded in the retrieved context.",
+            "scores": {"mean": 0.72, "ci_low": 0.61, "ci_high": 0.83},
         },
-        "answer_correctness": {
-            "mean": 0.68,
-            "ci_low": 0.55,
-            "ci_high": 0.81
+        {
+            "name": "answer_correctness",
+            "evaluator": "unitxt",
+            "description": "Measures how accurately the generated answer matches the ground-truth.",
+            "scores": {"mean": 0.68, "ci_low": 0.55, "ci_high": 0.81},
         },
-        "context_correctness": {
-            "mean": 0.80,
-            "ci_low": 0.70,
-            "ci_high": 0.90
-        }
-    },
-    "question_scores": {
+        {
+            "name": "answer_relevance",
+            "evaluator": "judge",
+            "description": "LLM judge score for how directly the response addresses the question.",
+            "scores": {"mean": 0.85, "ci_low": 0.78, "ci_high": 0.92},
+            "model_id": "ollama/llama3.2:3b",
+        },
+        {
+            "name": "overall_score",
+            "evaluator": "custom",
+            "description": "Aggregate score computed as the mean of all other evaluated metrics.",
+            "scores": {"mean": 0.75, "ci_low": 0.65, "ci_high": 0.85},
+        },
+    ],
+    "question_scores": [
         # Per-question breakdown (see below)
-    }
+    ],
 }
 ```
 
@@ -183,23 +215,26 @@ Detailed breakdown showing how each question performed:
 
 ```python
 {
-    "question_scores": {
-        "faithfulness": {
-            "q0": 0.71,
-            "q1": 0.73,
-            "q2": 0.68
+    "question_scores": [
+        {
+            "question_id": "q0",
+            "metrics": [
+                {"name": "faithfulness", "evaluator": "unitxt", "value": 0.71},
+                {"name": "answer_correctness", "evaluator": "unitxt", "value": 0.65},
+                {"name": "answer_relevance", "evaluator": "judge", "value": 0.90},
+                {"name": "overall_score", "evaluator": "custom", "value": 0.75},
+            ],
         },
-        "answer_correctness": {
-            "q0": 0.65,
-            "q1": 0.70,
-            "q2": 0.69
+        {
+            "question_id": "q1",
+            "metrics": [
+                {"name": "faithfulness", "evaluator": "unitxt", "value": 0.73},
+                {"name": "answer_correctness", "evaluator": "unitxt", "value": 0.70},
+                {"name": "answer_relevance", "evaluator": "judge", "value": 0.80},
+                {"name": "overall_score", "evaluator": "custom", "value": 0.74},
+            ],
         },
-        "context_correctness": {
-            "q0": 0.80,
-            "q1": 0.85,
-            "q2": 0.75
-        }
-    }
+    ]
 }
 ```
 
@@ -213,56 +248,45 @@ This granular data helps you identify:
 
 ## Choosing the Optimization Metric
 
-ai4rag optimizes for a **single objective metric**. By default, this is **`FAITHFULNESS`**, but you can change it when creating your experiment.
+ai4rag optimizes for a **single objective metric**. By default, this is **`overall_score`** (the mean of all other metrics), but you can change it when creating your experiment.
 
-### Default: Faithfulness
+The `optimization_metric` parameter accepts either a `RAGMetric` instance from the `Metrics` registry or a metric name string:
+
+### Default: Overall Score
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
 experiment = AI4RAGExperiment(
     # ... other parameters
-    # objective_metric defaults to MetricType.FAITHFULNESS
+    # optimization_metric defaults to Metrics.OVERALL_SCORE
 )
 ```
 
-**Why faithfulness is the default**: Hallucination is the most critical failure mode. A system that invents information is worse than one that gives incomplete but accurate answers.
+**Why overall_score is the default**: It balances all quality dimensions — grounding, accuracy, retrieval precision, and response relevance — into a single aggregate score, preventing optimization from over-fitting to one aspect at the expense of others.
 
 ---
 
-### Optimizing for Answer Correctness
+### Optimizing for a Specific Metric
 
-If your priority is maximizing accuracy:
-
-```python
-from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.evaluator.base_evaluator import MetricType
-
-experiment = AI4RAGExperiment(
-    # ... other parameters
-    objective_metric=MetricType.ANSWER_CORRECTNESS
-)
-```
-
-**When to use this**: When you have high-quality ground truth answers and want to maximize end-to-end accuracy, even if it means occasionally including less relevant context.
-
----
-
-### Optimizing for Context Correctness
-
-If your priority is retrieval quality:
+You can target any metric from the `Metrics` registry:
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.evaluator.base_evaluator import MetricType
+from ai4rag.evaluator.metric import Metrics
 
+# Using a RAGMetric instance
 experiment = AI4RAGExperiment(
     # ... other parameters
-    objective_metric=MetricType.CONTEXT_CORRECTNESS
+    optimization_metric=Metrics.FAITHFULNESS,
+)
+
+# Or using a metric name string
+experiment = AI4RAGExperiment(
+    # ... other parameters
+    optimization_metric="answer_correctness",
 )
 ```
-
-**When to use this**: When you're primarily optimizing retrieval (chunking, embedding, retrieval method) and your generation model is already well-tuned.
 
 ---
 
@@ -270,12 +294,14 @@ experiment = AI4RAGExperiment(
 
 | Metric | Optimizes For | Risk |
 |--------|--------------|------|
+| **Overall Score** | Balanced quality across all dimensions | May not maximize any single aspect |
 | **Faithfulness** | Grounded, trustworthy answers | May retrieve more context than necessary |
 | **Answer Correctness** | Accurate final answers | May prioritize accuracy over explainability |
 | **Context Correctness** | Retrieval precision | May not account for generation quality |
+| **Answer Relevance** | Direct, helpful responses (LLM judge) | Requires a judge model; adds inference cost |
 
 !!! tip "Multi-Objective Optimization"
-    While ai4rag optimizes a single metric, all three are computed for every evaluation. Review all metrics when analyzing results to ensure your best configuration doesn't sacrifice one quality for another.
+    While ai4rag optimizes a single metric, all configured metrics are computed for every evaluation. Review all metrics when analyzing results to ensure your best configuration doesn't sacrifice one quality for another.
 
 ---
 
@@ -393,6 +419,39 @@ Manually verify that:
 
 ---
 
+## Configuring Evaluators
+
+By default, `AI4RAGExperiment` uses only the `UnitxtEvaluator`. To enable LLM-as-a-Judge evaluation alongside Unitxt, pass both evaluators:
+
+```python
+from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
+from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
+from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+
+judge_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+
+experiment = AI4RAGExperiment(
+    # ... other parameters
+    evaluators=[UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)],
+)
+```
+
+When both evaluators are configured, the experiment automatically evaluates `answer_relevance` via the LLM judge alongside the Unitxt reference-based metrics. The default metrics list adjusts to include `answer_relevance` when a judge evaluator is present.
+
+You can also explicitly control which metrics to evaluate:
+
+```python
+from ai4rag.evaluator.metric import Metrics
+
+experiment = AI4RAGExperiment(
+    # ... other parameters
+    evaluators=[UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)],
+    metrics=[Metrics.FAITHFULNESS, Metrics.JUDGE_ANSWER_RELEVANCE, Metrics.OVERALL_SCORE],
+)
+```
+
+---
+
 ## Code Example
 
 Here's a complete example showing how evaluation is used in the experiment loop:
@@ -409,7 +468,9 @@ from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.evaluator.base_evaluator import MetricType
+from ai4rag.evaluator.metric import Metrics
+from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
+from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
@@ -447,7 +508,10 @@ search_space = AI4RAGSearchSpace(
     ]
 )
 
-# Run optimization (optimizes for faithfulness by default)
+# Configure evaluators — Unitxt for reference-based metrics, LLMaJ for judge-based
+judge_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+
+# Run optimization (optimizes for overall_score by default)
 experiment = AI4RAGExperiment(
     client=client,
     documents=documents,
@@ -456,16 +520,17 @@ experiment = AI4RAGExperiment(
     vector_store_type="ogx",
     ogx_vector_io_provider_id="milvus",
     optimizer_settings=GAMOptSettings(max_evals=8, n_random_nodes=3),
-    objective_metric=MetricType.FAITHFULNESS,  # Can change to ANSWER_CORRECTNESS or CONTEXT_CORRECTNESS
+    evaluators=[UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)],
+    optimization_metric=Metrics.OVERALL_SCORE,
     event_handler=LocalEventHandler(output_path="./results"),
 )
 
-best_pattern = experiment.search()
+experiment.search()
 
-# Results are automatically saved to ./results with all three metrics
-print(f"Best pattern achieved faithfulness: {best_pattern.scores['scores']['faithfulness']['mean']:.2f}")
-print(f"Answer correctness: {best_pattern.scores['scores']['answer_correctness']['mean']:.2f}")
-print(f"Context correctness: {best_pattern.scores['scores']['context_correctness']['mean']:.2f}")
+# Access results
+best = experiment.results.get_best_evaluations(k=1)[0]
+for m in best.scores["metrics"]:
+    print(f"{m['name']}: {m['scores']['mean']:.2f}")
 ```
 
 ---
@@ -541,9 +606,10 @@ print(f"Context correctness: {best_pattern.scores['scores']['context_correctness
 
 Evaluation in ai4rag:
 
-- **Three metrics**: Faithfulness (grounding), Answer Correctness (accuracy), Context Correctness (retrieval quality)
-- **Powered by unitxt**: Industry-standard RAG evaluation library
-- **Single objective**: Optimizes for one metric, but computes all three
+- **Four metrics**: Faithfulness (grounding), Answer Correctness (accuracy), Context Correctness (retrieval quality), Answer Relevance (LLM judge)
+- **Multi-evaluator architecture**: Unitxt for reference-based metrics, LLM-as-a-Judge for response quality
+- **Overall score**: Cross-metric mean used as the default optimization target
+- **Single objective**: Optimizes for one metric, but computes all configured metrics
 - **Benchmark-driven**: Quality depends on your benchmark data
 - **Confidence intervals**: Statistical rigor built-in
 - **Per-question breakdown**: Detailed diagnostics for analysis

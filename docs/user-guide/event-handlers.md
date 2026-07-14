@@ -60,18 +60,29 @@ def on_pattern_creation(
     "name": "Pattern1",
     "iteration": 0,
     "max_combinations": 24,
-    "final_score": 0.72,
     "duration_seconds": 134,
-    "scores": {
-        "scores": {
-            "faithfulness":        {"mean": 0.72, "ci_low": 0.61, "ci_high": 0.83},
-            "answer_correctness":  {"mean": 0.68, "ci_low": 0.55, "ci_high": 0.81},
-            "context_correctness": {"mean": 0.80, "ci_low": 0.70, "ci_high": 0.90},
-        },
-        "question_scores": {
-            "faithfulness": {"q0": 0.71, "q1": 0.73, ...},
-            ...
-        },
+    "evaluation": {
+        "metrics": [
+            {
+                "name": "faithfulness",
+                "evaluator": "unitxt",
+                "description": "...",
+                "scores": {"mean": 0.72, "ci_low": 0.61, "ci_high": 0.83},
+            },
+            {
+                "name": "answer_relevance",
+                "evaluator": "judge",
+                "description": "...",
+                "scores": {"mean": 0.85, "ci_low": 0.78, "ci_high": 0.92},
+            },
+            {
+                "name": "overall_score",
+                "evaluator": "custom",
+                "description": "...",
+                "scores": {"mean": 0.75, "ci_low": 0.65, "ci_high": 0.85},
+                "optimization_metric": True,
+            },
+        ],
     },
     "settings": {
         "chunking":    {"method": "recursive", "chunk_size": 512, "chunk_overlap": 64},
@@ -94,11 +105,11 @@ def on_pattern_creation(
         "answer_contexts": [
             {"text": "Retrieved chunk text ...", "document_id": "doc1.pdf"},
         ],
-        "scores": {
-            "faithfulness": 0.71,
-            "answer_correctness": 0.65,
-            "context_correctness": 0.80,
-        },
+        "metrics": [
+            {"name": "faithfulness", "evaluator": "unitxt", "score": 0.71},
+            {"name": "answer_relevance", "evaluator": "judge", "score": 0.85},
+            {"name": "overall_score", "evaluator": "custom", "score": 0.78},
+        ],
     },
     ...
 ]
@@ -149,7 +160,7 @@ class MyEventHandler(BaseEventHandler):
     ) -> None:
         requests.post("https://my-service/patterns", json={
             "name": payload["name"],
-            "score": payload["final_score"],
+            "metrics": payload["evaluation"]["metrics"],
             "settings": payload["settings"],
         })
 ```

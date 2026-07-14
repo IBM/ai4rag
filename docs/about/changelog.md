@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.0](https://github.com/IBM/ai4rag/releases/tag/v0.10.0)
+
+### Added
+- **Evaluator** — `LLMaJEvaluator` for LLM-as-a-Judge evaluation, scoring `answer_relevance` on a 1–5 rubric with structured JSON output and bootstrap confidence intervals; scores are normalized to [0.0, 1.0]
+- **Evaluator** — automatic judge model selection via `select_judge_model()` — when multiple generation models are available, a calibration round scores each candidate on a benchmark subset and picks the one with the highest spread-and-stability score
+- **Evaluator** — `RAGMetric` frozen dataclass and `Metrics` registry replacing raw metric-name strings throughout the evaluator and experiment APIs
+- **Evaluator** — `custom_metrics` module with `calculate_overall_score()` — computes a cross-metric mean as a built-in custom metric (`overall_score`)
+- **Experiment** — multi-evaluator dispatch: `AI4RAGExperiment` now accepts an `evaluators` list and routes each metric to the evaluator matching its `EVALUATOR_TYPE`
+- **Experiment** — `metrics` parameter on `AI4RAGExperiment` for explicit control over which metrics are evaluated; defaults are derived from configured evaluators when omitted
+- **RAG optimization component** — `indexing_pipeline_params` parameter on `run_rag_optimization()` for enriching `pattern.json` with indexing pipeline settings
+- **OGX client utilities** — `ogx_inference_base_url()` helper for building `/v1`-suffixed inference endpoint URLs
+
+### Changed
+- **Evaluator** — `BaseEvaluator.evaluate_metrics()` signature now accepts `Sequence[RAGMetric]` and returns a structured `EvaluationMetricsResult` TypedDict (was `list[str]` → `dict`)
+- **Evaluator** — `UnitxtEvaluator` updated to work with the new `RAGMetric`-based metric dispatch and return `EvaluationMetricsResult`
+- **Event handler** — `BaseEventHandler.on_pattern_creation()` payload and evaluation results now fully typed via `PatternPayload` and `EvaluationRecord` TypedDicts with nested structured types (`AggregateMetricPayload`, `VectorStoreSettings`, `ChunkingSettings`, `RetrievalSettings`, `GenerationSettings`)
+- **Experiment** — `optimization_metric` parameter accepts `RAGMetric | str` (was `str` only); default changed from `faithfulness` to `overall_score`
+- **Experiment** — evaluation results internally use structured `EvaluationMetricsResult` throughout the scoring, streaming, and caching pipeline
+- **RAG optimization component** — default optimization metric changed from `faithfulness` to `overall_score`; supported metrics now include `overall_score`
+- **RAG optimization component** — judge model selection and LLM-as-a-Judge evaluation are now automatically enabled during `run_rag_optimization()`
+- **RAG optimization component** — artefact generation extracted into `_generate_output_artifacts()` for clearer separation of concerns
+- **Dependencies** — refreshed `uv.lock` and sorted dependency declarations in `pyproject.toml`
+
+---
+
 ## [0.9.3](https://github.com/IBM/ai4rag/releases/tag/v0.9.3)
 
 ### Added
