@@ -143,10 +143,13 @@ graph TB
 
 **Evaluator** (`ai4rag/evaluator/`)
 
-- Wraps `unitxt` evaluation library
-- Computes metrics: `faithfulness`, `answer_correctness` and `context_correctness`
-- Compares generated answers to ground truth
-- Returns scores for optimization
+- Multi-evaluator architecture with dispatch by metric type
+- `UnitxtEvaluator` — wraps the `unitxt` library for reference-based metrics (`faithfulness`, `answer_correctness`, `context_correctness`)
+- `LLMaJEvaluator` — LLM-as-a-Judge for `answer_relevance` scoring with structured output
+- `custom_metrics` — derived metrics such as `overall_score` (mean of all other metrics)
+- `RAGMetric` dataclass and `Metrics` registry for typed metric definitions
+- Automatic judge model selection via calibration when multiple generation models are available
+- Returns structured `EvaluationMetricsResult` with confidence intervals and per-question breakdowns
 
 ### 5. Pipeline Components Layer
 
@@ -223,11 +226,13 @@ Ground Truth Answer
 Retrieved Documents
 Ground Truth Documents
     ↓
-Unitxt Evaluator
+Multi-Evaluator Dispatch
+  ├─ UnitxtEvaluator → faithfulness, answer_correctness, context_correctness
+  └─ LLMaJEvaluator  → answer_relevance
     ↓
-Metrics (faithfulness, answer_correctness, context_correctness)
+Custom Metrics (overall_score = mean of all)
     ↓
-Aggregated Score
+Optimization Score
     ↓
 HPO Optimizer (feedback for next configuration)
 ```

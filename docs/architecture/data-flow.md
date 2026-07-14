@@ -465,14 +465,15 @@ answer = response.choices[0].message.content
 
 ## Evaluation Phase
 
-The evaluation phase compares generated answers against ground truth using unitxt metrics.
+The evaluation phase compares generated answers against ground truth using multiple evaluator types and merges results.
 
 ```mermaid
 sequenceDiagram
     participant Exp as AI4RAGExperiment
     participant Builder as build_evaluation_data()
     participant UE as UnitxtEvaluator
-    participant Unitxt as unitxt.evaluate()
+    participant JE as LLMaJEvaluator
+    participant CM as custom_metrics
 
     Exp->>Builder: build_evaluation_data(benchmark_data, inference_response)
     activate Builder
@@ -484,20 +485,24 @@ sequenceDiagram
     Builder-->>Exp: evaluation_data: list[EvaluationData]
     deactivate Builder
 
-    Exp->>UE: evaluate_metrics(evaluation_data, metrics)
+    Note over Exp: Route metrics to matching evaluators
+
+    Exp->>UE: evaluate_metrics(eval_data, unitxt_metrics)
     activate UE
-    UE->>UE: convert to DataFrame
-    UE->>Unitxt: evaluate(df, metric_names, compute_conf_intervals=True)
-    Unitxt-->>UE: scores_df, ci_table
-
-    UE->>UE: _handle_ci_calculations(ci_table)
-    Note over UE: Extract mean, ci_low, ci_high<br/>for each metric
-
-    UE->>UE: _handle_questions_scores(scores_df)
-    Note over UE: Extract per-question scores<br/>for each metric
-
-    UE-->>Exp: {"scores": {...}, "question_scores": {...}}
+    UE-->>Exp: EvaluationMetricsResult (faithfulness, answer_correctness, ...)
     deactivate UE
+
+    Exp->>JE: evaluate_metrics(eval_data, judge_metrics)
+    activate JE
+    JE-->>Exp: EvaluationMetricsResult (answer_relevance)
+    deactivate JE
+
+    Exp->>Exp: merge_evaluation_results(partial_results)
+
+    Exp->>CM: apply_custom_metrics(merged, metrics)
+    activate CM
+    CM-->>Exp: overall_score appended
+    deactivate CM
 ```
 
 ### EvaluationData Assembly
@@ -627,9 +632,12 @@ scores_df, ci_table = evaluate(
 The final optimization score is extracted from the aggregate results:
 
 ```python
-optimization_metric = "faithfulness"  # User-configured
-optimization_score = result_scores["scores"][optimization_metric]["mean"]
-# Example: 0.72
+optimization_metric = "overall_score"  # Default; user-configurable
+final_score = next(
+    m["scores"]["mean"] for m in result_scores["metrics"]
+    if m["name"] == optimization_metric
+)
+# Example: 0.75
 ```
 
 This single scalar value is returned to the optimizer.
@@ -791,22 +799,32 @@ After each evaluation completes:
 ```python
 event_handler.on_pattern_creation(
     payload={
-        "pattern_name": "Pattern5",
+        "name": "Pattern5",
         "iteration": 4,
-        "final_score": 0.72,
-        "execution_time": 134,
-        "scores": {...},
+        "max_combinations": 24,
+        "duration_seconds": 134,
+        "evaluation": {
+            "metrics": [
+                {"name": "faithfulness", "evaluator": "unitxt", "description": "...",
+                 "scores": {"mean": 0.72, "ci_low": 0.61, "ci_high": 0.83}},
+                {"name": "overall_score", "evaluator": "custom", "description": "...",
+                 "scores": {"mean": 0.75, ...}, "optimization_metric": True},
+            ],
+        },
         "settings": {
             "chunking": {...},
             "embedding": {...},
             "retrieval": {...},
-            "generation": {...}
-        }
+            "generation": {...},
+            "vector_store_binding": {...},
+        },
     },
     evaluation_results=[
-        {"question": ..., "answer": ..., "scores": {...}},
+        {"question": ..., "answer": ..., "metrics": [
+            {"name": "faithfulness", "evaluator": "unitxt", "score": 0.71}, ...
+        ]},
         ...
-    ]
+    ],
 )
 ```
 
@@ -952,11 +970,17 @@ question = "What is the capital of France?"
     "contexts": [...],
     "ground_truths_context_ids": [...]
 }
-↓ (UnitxtEvaluator)
+↓ (Multi-Evaluator Dispatch → merge → custom metrics)
 {
-    "faithfulness": {"mean": 0.95, "ci_low": 0.90, "ci_high": 1.0},
-    "answer_correctness": {"mean": 0.88, "ci_low": 0.75, "ci_high": 1.0},
-    ...
+    "metrics": [
+        {"name": "faithfulness", "evaluator": "unitxt", ...,
+         "scores": {"mean": 0.95, "ci_low": 0.90, "ci_high": 1.0}},
+        {"name": "answer_relevance", "evaluator": "judge", ...,
+         "scores": {"mean": 0.92, "ci_low": 0.85, "ci_high": 0.98}},
+        {"name": "overall_score", "evaluator": "custom", ...,
+         "scores": {"mean": 0.91, ...}},
+    ],
+    "question_scores": [...]
 }
 ```
 

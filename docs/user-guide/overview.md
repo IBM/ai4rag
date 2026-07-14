@@ -51,11 +51,13 @@ The **HPO engine** explores the search space intelligently:
 
 ### Evaluation Metrics
 
-ai4rag uses **unitxt-based metrics**:
+ai4rag uses **multiple evaluator types** for comprehensive quality assessment:
 
-- **Faithfulness**: Answer grounded in retrieved context
-- **Answer Correctness**: Answer matches ground truth
-- **Context Correctness**: Retrieved documents are relevant
+- **Faithfulness** (Unitxt): Answer grounded in retrieved context
+- **Answer Correctness** (Unitxt): Answer matches ground truth
+- **Context Correctness** (Unitxt): Retrieved documents are relevant
+- **Answer Relevance** (LLM Judge): Response directly addresses the question
+- **Overall Score** (Custom): Mean of all other metrics (default optimization target)
 
 ---
 

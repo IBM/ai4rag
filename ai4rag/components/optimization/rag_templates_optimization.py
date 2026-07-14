@@ -74,6 +74,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     optimization_settings: dict | None = None,
     inference_max_threads: int = 10,
     indexing_pipeline_params: dict | None = None,
+    judge_enabled: bool = True,
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -112,6 +113,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     indexing_pipeline_params : dict | None, default=None
         Parameters required to enhance pattern.json with indexing pipeline
         settings.
+    judge_enabled : bool, default=True
+        Whether LLM as a Judge metrics should be calculated.
 
     Returns
     -------
@@ -155,6 +158,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     foundation_models: list[OGXFoundationModel] = []
     embedding_models: list[OGXEmbeddingModel] = []
     params: list[Parameter] = []
+
     for param_name, values in search_space_raw.items():
         if param_name == "foundation_model":
             values = [_deserialize_model(m, ogx_client) for m in values]
@@ -166,17 +170,20 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     search_space = AI4RAGSearchSpace(params=params)
 
-    # --- Select judge model and build evaluators ---
-    judge_model = select_judge_model(
-        generation_models=foundation_models,
-        embedding_models=embedding_models,
-        benchmark_data=benchmark_data_obj,
-        documents=documents,
-        max_threads=inference_max_threads,
-    )
-    _logger.info("Judge model selected: %s", judge_model.model_id)
+    if judge_enabled:
+        # --- Select judge model and build evaluators ---
+        judge_model = select_judge_model(
+            generation_models=foundation_models,
+            embedding_models=embedding_models,
+            benchmark_data=benchmark_data_obj,
+            documents=documents,
+            max_threads=inference_max_threads,
+        )
+        _logger.info("Judge model selected: %s", judge_model.model_id)
 
-    evaluators = [UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)]
+        evaluators = [UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)]
+    else:
+        evaluators = [UnitxtEvaluator()]
 
     # --- Configure experiment ---
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
