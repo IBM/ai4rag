@@ -36,7 +36,14 @@ _logger.addHandler(handler)
 DEFAULT_MAX_RAG_PATTERNS = 8
 MIN_MAX_RAG_PATTERNS_RANGE = (4, 20)
 DEFAULT_METRIC = Metrics.OVERALL_SCORE.name
-SUPPORTED_OPTIMIZATION_METRICS = frozenset(m.name for m in Metrics if m.evaluator in ("unitxt", "custom"))
+SUPPORTED_OPTIMIZATION_METRICS = frozenset(
+    {
+        Metrics.FAITHFULNESS.name,
+        Metrics.ANSWER_CORRECTNESS.name,
+        Metrics.CONTEXT_CORRECTNESS.name,
+        Metrics.OVERALL_SCORE.name,
+    }
+)
 
 
 @dataclass
@@ -249,10 +256,10 @@ def _generate_output_artifacts(
             ogx_base_url=ogx_base_url,
         )
 
-        with (patt_dir / "pattern.json").open("w+", encoding="utf-8") as f:
+        with (patt_dir / "pattern.json").open("w", encoding="utf-8") as f:
             json_dump(pattern_data, f, indent=2)
 
-        with (patt_dir / "evaluation_results.json").open("w+", encoding="utf-8") as f:
+        with (patt_dir / "evaluation_results.json").open("w", encoding="utf-8") as f:
             json_dump(pattern.get("evaluation_results", []), f, indent=2)
 
         patterns.append(pattern_data)

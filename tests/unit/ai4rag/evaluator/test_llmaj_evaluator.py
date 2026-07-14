@@ -12,7 +12,6 @@ from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData
 from ai4rag.evaluator.llmaj_evaluator import (
     JUDGE_RESPONSE_FORMAT,
     LLMaJEvaluator,
-    _llmaj_log_io_enabled,
     _normalize_score,
 )
 from ai4rag.evaluator.metric import Metrics
@@ -101,14 +100,6 @@ class TestHelpers:
     def test_normalize_score(self):
         assert _normalize_score(1) == 0.0
         assert _normalize_score(5) == 1.0
-
-    def test_llmaj_log_io_enabled_by_default(self, monkeypatch):
-        monkeypatch.delenv("AI4RAG_LLMAJ_LOG_IO", raising=False)
-        assert _llmaj_log_io_enabled() is True
-
-    def test_llmaj_log_io_can_be_disabled(self, monkeypatch):
-        monkeypatch.setenv("AI4RAG_LLMAJ_LOG_IO", "0")
-        assert _llmaj_log_io_enabled() is False
 
     def test_judge_row_logs_prompt_and_response(self, caplog):
         import logging

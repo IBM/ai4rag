@@ -330,6 +330,7 @@ class AI4RAGExperiment:
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
+            metric=Metrics.OVERALL_SCORE,
         )
         mps.evaluate_patterns()
 

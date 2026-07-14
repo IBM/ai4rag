@@ -28,8 +28,11 @@ def is_ssl_error(exc: BaseException) -> bool:
     return False
 
 
-def openai_compatible_base_url(base_url: str) -> str:
-    """Build an OpenAI client ``base_url`` for an OGX inference endpoint."""
+def ogx_inference_base_url(base_url: object) -> str:
+    """Build a ``/v1``-suffixed base URL for the OGX inference endpoint.
+
+    Accepts plain strings and ``pydantic.AnyUrl`` instances.
+    """
     return f"{str(base_url).rstrip('/')}/v1"
 
 

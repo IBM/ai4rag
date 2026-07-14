@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import json
-import os
 from typing import Sequence
 
 import numpy as np
@@ -81,12 +80,6 @@ JUDGE_RESPONSE_FORMAT: dict = {
         "strict": True,
     },
 }
-
-
-def _llmaj_log_io_enabled() -> bool:
-    """Return whether judge prompt/response bodies should be logged."""
-    value = os.getenv("AI4RAG_LLMAJ_LOG_IO", "1").strip().lower()
-    return value not in ("0", "false", "no", "off")
 
 
 class LLMaJEvaluator(BaseEvaluator):
@@ -177,13 +170,12 @@ class LLMaJEvaluator(BaseEvaluator):
             question=evaluation_data.question or "",
             answer=evaluation_data.answer or "",
         )
-        if _llmaj_log_io_enabled():
-            logger.info(
-                "LLM judge request [model=%s question_id=%s]\n--- PROMPT ---\n%s\n--- END PROMPT ---",
-                self.model.model_id,
-                question_id,
-                prompt,
-            )
+        logger.info(
+            "LLM judge request [model=%s question_id=%s]\n--- PROMPT ---\n%s\n--- END PROMPT ---",
+            self.model.model_id,
+            question_id,
+            prompt,
+        )
         try:
             choices = self.model.chat(
                 [{"role": "user", "content": prompt}],
@@ -195,25 +187,23 @@ class LLMaJEvaluator(BaseEvaluator):
             data = json.loads(content)
             raw_score = int(data["score"])
             normalized = _normalize_score(raw_score) if 1 <= raw_score <= 5 else None
-            if _llmaj_log_io_enabled():
-                logger.info(
-                    "LLM judge response [model=%s question_id=%s raw_score=%s normalized=%s]\n"
-                    "--- RESPONSE ---\n%s\n--- END RESPONSE ---",
-                    self.model.model_id,
-                    question_id,
-                    raw_score,
-                    normalized,
-                    content,
-                )
+            logger.info(
+                "LLM judge response [model=%s question_id=%s raw_score=%s normalized=%s]\n"
+                "--- RESPONSE ---\n%s\n--- END RESPONSE ---",
+                self.model.model_id,
+                question_id,
+                raw_score,
+                normalized,
+                content,
+            )
             return normalized
-        except (ValueError, KeyError, AttributeError, IndexError, json.JSONDecodeError) as exc:
-            if _llmaj_log_io_enabled():
-                logger.warning(
-                    "LLM judge call failed [model=%s question_id=%s]: %s",
-                    self.model.model_id,
-                    question_id,
-                    exc,
-                )
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            logger.warning(
+                "LLM judge call failed [model=%s question_id=%s]: %s",
+                self.model.model_id,
+                question_id,
+                exc,
+            )
             return None
 
     def get_supported_metrics(self) -> list[str]:
