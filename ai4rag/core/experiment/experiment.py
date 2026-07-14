@@ -305,7 +305,7 @@ class AI4RAGExperiment:
             if "judge" in evaluator_types:
                 base.append(Metrics.JUDGE_ANSWER_RELEVANCE)
             self._metrics = tuple(base)
-            logger.info("No metrics provided; defaulting to %s.", [m.name for m in self._metrics])
+            logger.info("Using default metrics: %s.", [m.name for m in self._metrics])
 
         evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
         opt = self.optimization_metric
@@ -784,7 +784,7 @@ class AI4RAGExperiment:
         tuple[EvaluationMetricsResult, list[EvaluationData]]
             Combined evaluation scores and input evaluation data.
         """
-        evaluator_names = [e.__class__.__name__ for e in self.evaluators]
+        evaluator_names = [e.EVALUATOR_TYPE for e in self.evaluators]
         logger.info("Evaluating RAG Pattern '%s' using %s.", pattern_name, evaluator_names)
         self.event_handler.on_status_change(
             level=LogLevel.INFO,

@@ -201,10 +201,11 @@ class TestExperimentChromaWithMockedModels:
                 f"final_score {evaluation.final_score!r} is outside [0, 1] " f"for {evaluation.pattern_name}"
             )
 
-            for metric_name, metric_data in evaluation.scores["scores"].items():
-                mean = metric_data.get("mean")
+            for metric in evaluation.scores["metrics"]:
+                mean = metric["scores"]["mean"]
                 assert mean is None or 0.0 <= mean <= 1.0, (
-                    f"Mean score {mean!r} is outside [0, 1] for metric '{metric_name}' " f"in {evaluation.pattern_name}"
+                    f"Mean score {mean!r} is outside [0, 1] for metric '{metric['name']}' "
+                    f"in {evaluation.pattern_name}"
                 )
 
     def test_best_pattern_can_generate_answer(self, documents, benchmark_data, foundation_models, embedding_models):

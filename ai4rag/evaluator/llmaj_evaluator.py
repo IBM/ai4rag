@@ -170,12 +170,6 @@ class LLMaJEvaluator(BaseEvaluator):
             question=evaluation_data.question or "",
             answer=evaluation_data.answer or "",
         )
-        logger.info(
-            "LLM judge request [model=%s question_id=%s]\n--- PROMPT ---\n%s\n--- END PROMPT ---",
-            self.model.model_id,
-            question_id,
-            prompt,
-        )
         try:
             choices = self.model.chat(
                 [{"role": "user", "content": prompt}],
@@ -187,16 +181,9 @@ class LLMaJEvaluator(BaseEvaluator):
             data = json.loads(content)
             raw_score = int(data["score"])
             normalized = _normalize_score(raw_score) if 1 <= raw_score <= 5 else None
-            logger.info(
-                "LLM judge response [model=%s question_id=%s raw_score=%s normalized=%s]\n"
-                "--- RESPONSE ---\n%s\n--- END RESPONSE ---",
-                self.model.model_id,
-                question_id,
-                raw_score,
-                normalized,
-                content,
-            )
+
             return normalized
+
         except (json.JSONDecodeError, KeyError, ValueError) as exc:
             logger.warning(
                 "LLM judge call failed [model=%s question_id=%s]: %s",
