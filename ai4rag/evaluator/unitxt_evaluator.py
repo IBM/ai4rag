@@ -23,6 +23,8 @@ from ai4rag.evaluator.metric import Metrics, RAGMetric
 class UnitxtEvaluator(BaseEvaluator):
     """Unitxt wrapper making evaluation of the RAG's usage."""
 
+    EVALUATOR_TYPE = "unitxt"
+
     METRIC_TYPE_MAP: dict[str, str] = {
         Metrics.ANSWER_CORRECTNESS.name: "metrics.rag.external_rag.answer_correctness",
         Metrics.FAITHFULNESS.name: "metrics.rag.external_rag.faithfulness",

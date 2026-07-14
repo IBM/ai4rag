@@ -22,8 +22,6 @@ from ai4rag.search_space.prepare.prepare_search_space import prepare_search_spac
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
 
-SUPPORTED_METRICS = ("faithfulness", "answer_correctness", "context_correctness")
-
 _DEFAULT_METRIC = "faithfulness"
 _DEFAULT_TOP_N_GENERATION = 3
 _DEFAULT_TOP_K_EMBEDDING = 2
@@ -107,7 +105,6 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     ogx_client: OgxClient,
     embedding_models: list[str] | None = None,
     generation_models: list[str] | None = None,
-    metric: str = _DEFAULT_METRIC,
     top_n_generation: int = _DEFAULT_TOP_N_GENERATION,
     top_k_embedding: int = _DEFAULT_TOP_K_EMBEDDING,
     sample_size: int = _DEFAULT_SAMPLE_SIZE,
@@ -138,10 +135,6 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         Embedding model identifiers.  ``None`` uses the server defaults.
     generation_models
         Generation model identifiers.  ``None`` uses the server defaults.
-    metric
-        Quality metric for intermediate pattern evaluation.  Must be one
-        of ``"faithfulness"``, ``"answer_correctness"``, or
-        ``"context_correctness"``.
     top_n_generation
         Maximum number of generation models to retain.
     top_k_embedding
@@ -192,9 +185,6 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         or *chunk_overlaps* contains values outside
         ``[ChunkingConstraints.MIN_CHUNK_OVERLAP, ChunkingConstraints.MAX_CHUNK_OVERLAP]``.
     """
-    if metric not in SUPPORTED_METRICS:
-        raise ValueError(f"Metric {metric!r} is not supported. Supported metrics are {list(SUPPORTED_METRICS)}.")
-
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
 
@@ -238,7 +228,6 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             documents=documents,
             foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
             embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
-            metric=metric,
             max_threads=inference_max_threads,
         )
         mps.evaluate_patterns()

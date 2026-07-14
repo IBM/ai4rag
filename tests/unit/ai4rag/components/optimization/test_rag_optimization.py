@@ -197,10 +197,12 @@ class TestRunRagOptimizationValidation:
             )
 
     def test_supported_optimization_metrics_constant(self):
-        """SUPPORTED_OPTIMIZATION_METRICS must contain the three canonical metrics."""
+        """SUPPORTED_OPTIMIZATION_METRICS must contain unitxt and custom metrics."""
         assert "faithfulness" in SUPPORTED_OPTIMIZATION_METRICS
         assert "answer_correctness" in SUPPORTED_OPTIMIZATION_METRICS
         assert "context_correctness" in SUPPORTED_OPTIMIZATION_METRICS
+        assert "overall_score" in SUPPORTED_OPTIMIZATION_METRICS
+        assert "answer_relevance" not in SUPPORTED_OPTIMIZATION_METRICS
 
     def test_invalid_optimization_settings_type_raises(self, mock_ogx_client):
         """Non-dict optimization_settings must raise TypeError."""
@@ -261,3 +263,22 @@ class TestRunRagOptimizationInferenceMaxThreads:
                 test_data_key="bench.json",
                 inference_max_threads=4,
             )
+
+
+# ---------------------------------------------------------------------------
+# run_rag_optimization -- hybrid evaluation setup
+# ---------------------------------------------------------------------------
+
+
+class TestRunRagOptimizationEvaluation:
+    """Tests for hybrid evaluation wiring on run_rag_optimization."""
+
+    def test_optimization_metric_defaults_to_overall_score(self):
+        import inspect
+
+        sig = inspect.signature(run_rag_optimization)
+        assert "evaluator" not in sig.parameters
+
+        from ai4rag.components.optimization import rag_templates_optimization as module
+
+        assert module.DEFAULT_METRIC == "overall_score"

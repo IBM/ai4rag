@@ -9,7 +9,7 @@ from typing import Any, Literal, TypeAlias, TypedDict, TypeVar
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.exception_handler import GenerationError
-from ai4rag.evaluator.base_evaluator import EvaluationData
+from ai4rag.evaluator.base_evaluator import EvaluationData, EvaluationMetricsResult, QuestionMetric
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.template.base_template import BaseRAGTemplate
@@ -23,6 +23,7 @@ __all__ = [
     "RAGParamsType",
     "query_rag",
     "build_evaluation_data",
+    "merge_evaluation_results",
     "get_retrieval_params",
     "get_chunking_params",
     "RAGRetrievalParamsType",
@@ -292,3 +293,37 @@ def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
         raise RAGExperimentError(f"Missing or invalid values in retrieval configuration: {retrieval_params}.")
 
     return retrieval_params
+
+
+def merge_evaluation_results(results: list[EvaluationMetricsResult]) -> EvaluationMetricsResult:
+    """Merge partial ``EvaluationMetricsResult`` dicts from multiple evaluators.
+
+    Aggregate metrics are concatenated. Per-question scores are joined by
+    ``question_id`` so each question carries metrics from all evaluators.
+
+    Parameters
+    ----------
+    results
+        Partial results, one per evaluator.
+
+    Returns
+    -------
+    EvaluationMetricsResult
+        Single merged result.
+    """
+    if not results:
+        return EvaluationMetricsResult(metrics=[], question_scores=[])
+    if len(results) == 1:
+        return results[0]
+
+    all_metrics = [m for r in results for m in r["metrics"]]
+
+    scores_by_qid: dict[str, list[QuestionMetric]] = {}
+    for result in results:
+        for qs in result["question_scores"]:
+            scores_by_qid.setdefault(qs["question_id"], []).extend(qs["metrics"])
+
+    return EvaluationMetricsResult(
+        metrics=all_metrics,
+        question_scores=[{"question_id": qid, "metrics": qmetrics} for qid, qmetrics in scores_by_qid.items()],
+    )

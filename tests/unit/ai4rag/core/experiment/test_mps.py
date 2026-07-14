@@ -66,29 +66,45 @@ def pre_selector_evaluation_results(embedding_models, foundation_models) -> list
     results = []
 
     score = 0.05
+    unitxt_metric_names = ("answer_correctness", "faithfulness", "context_correctness")
 
     for fm in foundation_models:
         for em in embedding_models:
+            aggregate_metrics = [
+                {
+                    "name": name,
+                    "evaluator": "unitxt",
+                    "description": "",
+                    "scores": {"mean": score, "ci_low": None, "ci_high": None},
+                }
+                for name in unitxt_metric_names
+            ]
+            overall_mean = round(score, 4)
+            aggregate_metrics.append(
+                {
+                    "name": "overall_score",
+                    "evaluator": "custom",
+                    "description": "",
+                    "scores": {"mean": overall_mean, "ci_low": None, "ci_high": None},
+                }
+            )
+            question_scores = [
+                {
+                    "question_id": f"q{i}",
+                    "metrics": [
+                        *[{"name": name, "evaluator": "unitxt", "value": score} for name in unitxt_metric_names],
+                        {"name": "overall_score", "evaluator": "custom", "value": overall_mean},
+                    ],
+                }
+                for i in range(5)
+            ]
             results.append(
                 {
                     "embedding_model": em,
                     "foundation_model": fm,
                     "evaluation": {
-                        "metrics": [
-                            {
-                                "name": "answer_correctness",
-                                "evaluator": "unitxt",
-                                "description": "",
-                                "scores": {"mean": score, "ci_low": None, "ci_high": None},
-                            },
-                        ],
-                        "question_scores": [
-                            {
-                                "question_id": f"q{i}",
-                                "metrics": [{"name": "answer_correctness", "evaluator": "unitxt", "value": score}],
-                            }
-                            for i in range(5)
-                        ],
+                        "metrics": aggregate_metrics,
+                        "question_scores": question_scores,
                     },
                 }
             )
@@ -103,16 +119,43 @@ def pre_selector(
 ) -> ModelsPreSelector:
 
     pre_selector = ModelsPreSelector(
-        embedding_model_id="fake_embedding_model_id",
         documents=documents,
         benchmark_data=benchmark_data,
         foundation_models=foundation_models,
         embedding_models=embedding_models,
-        metric=Metrics.ANSWER_CORRECTNESS,
     )
     pre_selector.evaluation_results = pre_selector_evaluation_results
 
     return pre_selector
+
+
+def _make_evaluate_metrics_result(evaluation_data, metrics):
+    """Build a minimal EvaluationMetricsResult for each requested metric."""
+    question_ids = [ed.question_id or str(i) for i, ed in enumerate(evaluation_data)]
+    score = 0.5
+    return {
+        "metrics": [
+            {
+                "name": m.name,
+                "evaluator": m.evaluator,
+                "description": m.description,
+                "scores": {"mean": score, "ci_low": None, "ci_high": None},
+            }
+            for m in metrics
+            if m.name in ("answer_correctness", "faithfulness", "context_correctness")
+        ],
+        "question_scores": [
+            {
+                "question_id": qid,
+                "metrics": [
+                    {"name": m.name, "evaluator": m.evaluator, "value": score}
+                    for m in metrics
+                    if m.name in ("answer_correctness", "faithfulness", "context_correctness")
+                ],
+            }
+            for qid in question_ids
+        ],
+    }
 
 
 @pytest.fixture
@@ -133,8 +176,8 @@ def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, f
         documents=documents,
         foundation_models=foundation_models,
         embedding_models=embedding_models,
-        metric=Metrics.ANSWER_CORRECTNESS,
     )
+    mocker.patch.object(selector.evaluator, "evaluate_metrics", side_effect=_make_evaluate_metrics_result)
 
     return selector
 
@@ -147,10 +190,20 @@ class TestModelsPreSelectorInit:
             documents=documents,
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric=Metrics.ANSWER_CORRECTNESS,
         )
 
         assert selector.retrieval_params["search_mode"] == "vector"
+
+    def test_default_metric_is_overall_score(self, documents, benchmark_data, embedding_models, foundation_models):
+        """Test that the default optimization metric is OVERALL_SCORE."""
+        selector = ModelsPreSelector(
+            benchmark_data=benchmark_data,
+            documents=documents,
+            foundation_models=foundation_models,
+            embedding_models=embedding_models,
+        )
+
+        assert selector.metric == Metrics.OVERALL_SCORE
 
     def test_custom_search_mode(self, documents, benchmark_data, embedding_models, foundation_models):
         """Test that search_mode can be set via kwargs."""
@@ -159,7 +212,6 @@ class TestModelsPreSelectorInit:
             documents=documents,
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric=Metrics.ANSWER_CORRECTNESS,
             search_mode="hybrid",
         )
 
@@ -174,7 +226,6 @@ class TestModelsPreSelectorInit:
             documents=documents,
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric=Metrics.ANSWER_CORRECTNESS,
             retrieval_method="window",
         )
 

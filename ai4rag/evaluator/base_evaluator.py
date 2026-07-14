@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
-from typing import Any, Sequence, TypedDict
+from typing import Any, NotRequired, Sequence, TypedDict
 
 from ai4rag.evaluator.metric import RAGMetric
 
@@ -76,6 +76,7 @@ class AggregateMetric(TypedDict):
     evaluator: str
     description: str
     scores: ConfidenceInterval
+    model_id: NotRequired[str]
 
 
 class QuestionMetric(TypedDict):
@@ -105,6 +106,8 @@ class BaseEvaluator(ABC):
     This class defines the functionality to evaluate a RAG application
     and compare different RAG applications.
     """
+
+    EVALUATOR_TYPE: str = ""
 
     @abstractmethod
     def evaluate_metrics(

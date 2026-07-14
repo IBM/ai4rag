@@ -16,8 +16,13 @@ from ogx_client import OgxClient
 from ai4rag import handler
 from ai4rag.components.assets_generator import build_pattern_json, generate_notebook_from_template
 from ai4rag.components.utils.docling_io import load_docling_documents
+from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
+from ai4rag.evaluator.judge_selection import select_judge_model
+from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
+from ai4rag.evaluator.metric import Metrics
+from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
@@ -30,8 +35,15 @@ _logger.addHandler(handler)
 
 DEFAULT_MAX_RAG_PATTERNS = 8
 MIN_MAX_RAG_PATTERNS_RANGE = (4, 20)
-DEFAULT_METRIC = "faithfulness"
-SUPPORTED_OPTIMIZATION_METRICS = frozenset({"faithfulness", "answer_correctness", "context_correctness"})
+DEFAULT_METRIC = Metrics.OVERALL_SCORE.name
+SUPPORTED_OPTIMIZATION_METRICS = frozenset(
+    {
+        Metrics.FAITHFULNESS.name,
+        Metrics.ANSWER_CORRECTNESS.name,
+        Metrics.CONTEXT_CORRECTNESS.name,
+        Metrics.OVERALL_SCORE.name,
+    }
+)
 
 
 @dataclass
@@ -129,21 +141,42 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     if optimization_metric not in SUPPORTED_OPTIMIZATION_METRICS:
         raise ValueError(
             f"Optimization metric {optimization_metric} is not supported. "
-            f"Select one of {SUPPORTED_OPTIMIZATION_METRICS}."
+            f"Select one of {sorted(SUPPORTED_OPTIMIZATION_METRICS)}."
         )
 
     documents = load_docling_documents(extracted_text_path)
+    benchmark_data = pd.read_json(Path(test_data_path))
+    benchmark_data_obj = BenchmarkData(benchmark_data)
 
+    # --- Reconstruct search space from report ---
     with open(search_space_report_path, "r", encoding="utf-8") as f:
         search_space_raw: dict[str, Any] = json.load(f)
 
+    foundation_models: list[OGXFoundationModel] = []
+    embedding_models: list[OGXEmbeddingModel] = []
     params: list[Parameter] = []
     for param_name, values in search_space_raw.items():
-        if param_name in ("foundation_model", "embedding_model"):
+        if param_name == "foundation_model":
             values = [_deserialize_model(m, ogx_client) for m in values]
+            foundation_models = values
+        elif param_name == "embedding_model":
+            values = [_deserialize_model(m, ogx_client) for m in values]
+            embedding_models = values
         params.append(Parameter(param_name, "C", values=values))
 
     search_space = AI4RAGSearchSpace(params=params)
+
+    # --- Select judge model and build evaluators ---
+    judge_model = select_judge_model(
+        generation_models=foundation_models,
+        embedding_models=embedding_models,
+        benchmark_data=benchmark_data_obj,
+        documents=documents,
+        max_threads=inference_max_threads,
+    )
+    _logger.info("Judge model selected: %s", judge_model.model_id)
+
+    evaluators = [UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)]
 
     # --- Configure experiment ---
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
@@ -152,8 +185,6 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     optimizer_settings = GAMOptSettings(max_evals=max_rag_patterns)
 
     event_handler = KFPEventHandler()
-
-    benchmark_data = pd.read_json(Path(test_data_path))
 
     rag_exp = AI4RAGExperiment(
         client=ogx_client,
@@ -166,6 +197,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         optimization_metric=optimization_metric,
         ogx_vector_io_provider_id=vector_io_provider_id,
         inference_max_threads=inference_max_threads,
+        evaluators=evaluators,
     )
 
     # --- Run the optimization loop ---
@@ -175,11 +207,32 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    evaluations_list = list(rag_exp.results.evaluations)
-    ogx_base_url = (os.environ.get("OGX_CLIENT_BASE_URL") or "").strip()
+    patterns = _generate_output_artifacts(
+        patterns_raw=event_handler.patterns,
+        output_dir=output_dir,
+        input_data_key=input_data_key,
+        test_data_key=test_data_key,
+        indexing_pipeline_params=indexing_pipeline_params,
+    )
 
+    return OptimizationResult(
+        patterns=patterns,
+        evaluations=list(rag_exp.results.evaluations),
+    )
+
+
+def _generate_output_artifacts(
+    patterns_raw: list[dict],
+    output_dir: Path,
+    input_data_key: str,
+    test_data_key: str,
+    indexing_pipeline_params: dict | None,
+) -> list[dict]:
+    """Write per-pattern artefacts (JSON, notebooks, evaluation results)."""
+    ogx_base_url = (os.environ.get("OGX_CLIENT_BASE_URL") or "").strip()
     patterns: list[dict] = []
-    for pattern in event_handler.patterns:
+
+    for pattern in patterns_raw:
         patt_dir = output_dir / pattern.get("payload").get("name")
         patt_dir.mkdir(parents=True, exist_ok=True)
 
@@ -188,7 +241,6 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
             indexing_pipeline_params=indexing_pipeline_params,
         )
 
-        # Generate notebooks
         generate_notebook_from_template(
             "ogx_indexing",
             pattern_data,
@@ -204,22 +256,15 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
             ogx_base_url=ogx_base_url,
         )
 
-        # Attach scores to pattern data and write pattern.json
-
-        with (patt_dir / "pattern.json").open("w+", encoding="utf-8") as f:
+        with (patt_dir / "pattern.json").open("w", encoding="utf-8") as f:
             json_dump(pattern_data, f, indent=2)
 
-        # Write evaluation results
-        evaluation_result_list = pattern.get("evaluation_results", [])
-        with (patt_dir / "evaluation_results.json").open("w+", encoding="utf-8") as f:
-            json_dump(evaluation_result_list, f, indent=2)
+        with (patt_dir / "evaluation_results.json").open("w", encoding="utf-8") as f:
+            json_dump(pattern.get("evaluation_results", []), f, indent=2)
 
         patterns.append(pattern_data)
 
-    return OptimizationResult(
-        patterns=patterns,
-        evaluations=evaluations_list,
-    )
+    return patterns
 
 
 def _deserialize_model(data: dict[str, Any], ogx_client: OgxClient) -> OGXEmbeddingModel | OGXFoundationModel:

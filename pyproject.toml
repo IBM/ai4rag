@@ -60,6 +60,7 @@ dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
     "ai4rag[docs]",
+    "ai4rag[llm-judge]",
     "beautifulsoup4",      # reading data from html
     "dotenv",
     "ipykernel",
