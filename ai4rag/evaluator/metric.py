@@ -33,8 +33,15 @@ class Metrics(metaclass=ConstantMeta):
     CONTEXT_CORRECTNESS = RAGMetric(
         name="context_correctness",
         evaluator="unitxt",
-        description="Measures the relevance and correctness of the retrieved context passages for the given question.",
+        description="Measures whether the retrieved context passages match the ground-truth reference documents.",
     )
+
+    JUDGE_ANSWER_RELEVANCE = RAGMetric(
+        name="answer_relevance",
+        evaluator="judge",
+        description="LLM judge score for how directly and helpfully the response addresses the question.",
+    )
+
     OVERALL_SCORE = RAGMetric(
         name="overall_score",
         evaluator="custom",

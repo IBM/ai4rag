@@ -27,6 +27,7 @@ from ai4rag.core.experiment.utils import (
     build_evaluation_data,
     get_chunking_params,
     get_retrieval_params,
+    merge_evaluation_results,
     query_rag,
 )
 from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
@@ -98,18 +99,17 @@ class AI4RAGExperiment:
 
     Other Parameters
     ----------------
-    job_id : str, default="ai4rag_job_a0b1c2d3"
-        Unique identifier for a job.
-
     metrics : Sequence[RAGMetric]
         Metrics evaluated during the AutoRAG experiment. Not all
         of these metrics are used to calculate the final score, but they
-        are included in the evaluation results.
+        are included in the evaluation results. When omitted, defaults
+        are derived from the configured evaluators.
 
-    evaluator : BaseEvaluator, default=UnitxtEvaluator()
-        An implementation of the BaseEvaluator class, that will be used by the AI4RAGExperiment
-        To evaluate the RAG pattern performance and will be utilized during the optimization
-        process.
+    evaluators : list[BaseEvaluator] | None, default=None
+        Evaluator instances used to score RAG patterns during optimization.
+        When ``None``, defaults to ``[UnitxtEvaluator()]``.  To enable
+        LLM-as-a-Judge evaluation, pass both a ``UnitxtEvaluator`` and a
+        ``LLMaJEvaluator`` configured with a judge model.
 
     n_mps_foundation_models : int, default=3
         Amount of foundation models to be further used in experiment post pre-selection.
@@ -138,7 +138,7 @@ class AI4RAGExperiment:
         event_handler: BaseEventHandler,
         client: OgxClient | Any = None,
         ogx_vector_io_provider_id: str | None = None,
-        optimization_metric: RAGMetric | str = Metrics.FAITHFULNESS,
+        optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.documents = documents
@@ -151,15 +151,10 @@ class AI4RAGExperiment:
         self.client = client
         self.optimization_metric = optimization_metric
 
-        self.job_id = kwargs.pop("job_id", "ai4rag_job_a0b1c2d3").replace("-", "_")
-        self.metrics: Sequence[RAGMetric] = kwargs.pop(
-            "metrics",
-            (Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS, Metrics.OVERALL_SCORE),
-        )
-        self.evaluator: BaseEvaluator = kwargs.pop(
-            "evaluator",
-            UnitxtEvaluator(),
-        )
+        self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
+        self._metrics: Sequence[RAGMetric] | None = kwargs.pop(
+            "metrics", None
+        )  # resolved in _resolve_metrics_and_validate
         self.n_mps_foundation_models = kwargs.pop(
             "n_mps_foundation_models", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS
         )
@@ -172,6 +167,8 @@ class AI4RAGExperiment:
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
+
+        self._resolve_metrics_and_validate()
 
     @property
     def documents(self) -> list[DoclingDocument]:
@@ -234,6 +231,58 @@ class AI4RAGExperiment:
         """Check and set benchmark data based on the executed scenario."""
         self._benchmark_data = val
 
+    @property
+    def evaluators(self) -> list[BaseEvaluator]:
+        """Get experiment evaluators."""
+        return self._evaluators
+
+    @evaluators.setter
+    def evaluators(self, val: list[BaseEvaluator] | None) -> None:
+        """Validate and set experiment evaluators."""
+        if val is None:
+            self._evaluators = [UnitxtEvaluator()]
+            logger.info("No evaluators provided; defaulting to UnitxtEvaluator only.")
+        else:
+            if not all(isinstance(e, BaseEvaluator) for e in val):
+                raise ValueError("All evaluators must be BaseEvaluator instances.")
+            self._evaluators = list(val)
+
+    @property
+    def metrics(self) -> Sequence[RAGMetric]:
+        """Get evaluation metrics."""
+        return self._metrics
+
+    def _resolve_metrics_and_validate(self) -> None:
+        """Derive default metrics from configured evaluators and validate coverage.
+
+        Called once at the end of ``__init__``.  When no explicit metrics
+        were provided, the default set is derived from the evaluators that
+        are already configured at this point.  Regardless of how metrics
+        were set, the optimization metric is checked against the available
+        evaluator types.
+        """
+        if self._metrics is None:
+            base: list[RAGMetric] = [
+                Metrics.ANSWER_CORRECTNESS,
+                Metrics.FAITHFULNESS,
+                Metrics.CONTEXT_CORRECTNESS,
+                Metrics.OVERALL_SCORE,
+            ]
+            evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
+            if "judge" in evaluator_types:
+                base.append(Metrics.JUDGE_ANSWER_RELEVANCE)
+            self._metrics = tuple(base)
+            logger.info("No metrics provided; defaulting to %s.", [m.name for m in self._metrics])
+
+        evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
+        opt = self.optimization_metric
+        if opt.evaluator not in ("custom", *evaluator_types):
+            raise ValueError(
+                f"Optimization metric '{opt.name}' requires a '{opt.evaluator}' evaluator, "
+                f"but only {evaluator_types} are configured. "
+                f"Pass an evaluator with EVALUATOR_TYPE='{opt.evaluator}' in the evaluators list."
+            )
+
     def run_pre_selection(
         self,
         foundation_models: list[BaseFoundationModel],
@@ -281,7 +330,6 @@ class AI4RAGExperiment:
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
-            metric=self.optimization_metric,
         )
         mps.evaluate_patterns()
 
@@ -681,8 +729,12 @@ class AI4RAGExperiment:
         pattern_name: str,
     ) -> tuple[EvaluationMetricsResult, list[EvaluationData]]:
         """
-        Evaluate response from the model based on the chosen context,
-        real questions/answers/ids from the benchmark_data.
+        Evaluate response using all configured evaluators and merge results.
+
+        Each evaluator receives only the metrics matching its
+        ``EVALUATOR_TYPE``.  Results are merged into a single
+        ``EvaluationMetricsResult`` before custom metrics (e.g.
+        ``overall_score``) are computed on top.
 
         Parameters
         ----------
@@ -696,26 +748,41 @@ class AI4RAGExperiment:
         Returns
         -------
         tuple[EvaluationMetricsResult, list[EvaluationData]]
-            Input and output evaluation data.
+            Combined evaluation scores and input evaluation data.
         """
-
-        logger.info(
-            "Evaluating the RAG Pattern '%s' response using %s.", pattern_name, self.evaluator.__class__.__name__
-        )
+        evaluator_names = [e.__class__.__name__ for e in self.evaluators]
+        logger.info("Evaluating RAG Pattern '%s' using %s.", pattern_name, evaluator_names)
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
-            message=f"Evaluating the RAG Pattern '{pattern_name}' response using {self.evaluator.__class__.__name__}.",
+            message=f"Evaluating RAG Pattern '{pattern_name}' using {evaluator_names}.",
             step="evaluation",
         )
 
         eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
 
-        unitxt_metrics = [m for m in self.metrics if m.evaluator == "unitxt"]
-        result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=unitxt_metrics)
+        evaluator_map: dict[str, BaseEvaluator] = {e.EVALUATOR_TYPE: e for e in self.evaluators}
 
+        metrics_by_type: dict[str, list[RAGMetric]] = {}
+        for m in self.metrics:
+            if m.evaluator != "custom":
+                metrics_by_type.setdefault(m.evaluator, []).append(m)
+
+        partial_results: list[EvaluationMetricsResult] = []
+        for eval_type, type_metrics in metrics_by_type.items():
+            evaluator = evaluator_map.get(eval_type)
+            if evaluator is None:
+                logger.debug(
+                    "No evaluator registered for type '%s'; skipping metrics %s.",
+                    eval_type,
+                    [m.name for m in type_metrics],
+                )
+                continue
+            partial_results.append(evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=type_metrics))
+
+        result = merge_evaluation_results(partial_results)
         apply_custom_metrics(scores=result, metrics=self.metrics)
 
-        logger.info("Response evaluation results for '%s': %s.", pattern_name, result)
+        logger.info("Evaluation results for '%s': %s.", pattern_name, result)
         return result, eval_data
 
     def _collection_exists(self, collection_name: str) -> bool:

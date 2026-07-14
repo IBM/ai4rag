@@ -3,20 +3,19 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, PropertyMock
 
 import pytest
 
 from ai4rag import logger
-from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, MetricType
+from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData
 from ai4rag.evaluator.llmaj_evaluator import (
-    LLMaJConfig,
+    JUDGE_RESPONSE_FORMAT,
     LLMaJEvaluator,
-    _extract_json,
     _llmaj_log_io_enabled,
     _normalize_score,
-    _parse_score,
 )
+from ai4rag.evaluator.metric import Metrics
 
 
 @pytest.fixture
@@ -43,84 +42,62 @@ def sample_evaluation_data() -> list[EvaluationData]:
     ]
 
 
-def _make_chat_response(score: int) -> MagicMock:
-    resp = MagicMock()
-    resp.choices = [MagicMock()]
-    resp.choices[0].message.content = json.dumps({"score": score, "rationale": "OK"})
-    return resp
+def _make_chat_choice(score: int) -> MagicMock:
+    choice = MagicMock()
+    choice.message.content = json.dumps({"score": score, "rationale": "OK"})
+    return choice
 
 
-@pytest.fixture
-def llmaj_config() -> LLMaJConfig:
-    return LLMaJConfig(
-        base_url="https://ogx.example.com/v1",
-        api_key="test-api-key",
-        model="judge-model",
-    )
-
-
-class TestLLMaJConfig:
-    def test_required_fields(self, llmaj_config):
-        assert llmaj_config.base_url == "https://ogx.example.com/v1"
-        assert llmaj_config.api_key == "test-api-key"
-        assert llmaj_config.model == "judge-model"
-        assert llmaj_config.temperature == 0.0
-
-    def test_missing_required_fields_raise(self):
-        with pytest.raises(TypeError):
-            LLMaJConfig()  # type: ignore[call-arg]
-
-        with pytest.raises(ValueError, match="base_url is required"):
-            LLMaJConfig(base_url="", api_key="key", model="model")
-
-        with pytest.raises(ValueError, match="api_key is required"):
-            LLMaJConfig(base_url="https://ogx.example.com/v1", api_key="", model="model")
-
-        with pytest.raises(ValueError, match="model is required"):
-            LLMaJConfig(base_url="https://ogx.example.com/v1", api_key="key", model="")
+def _make_judge_model() -> MagicMock:
+    model = MagicMock()
+    type(model).model_id = PropertyMock(return_value="judge-model")
+    return model
 
 
 class TestLLMaJEvaluator:
-    @patch("ai4rag.evaluator.llmaj_evaluator.OpenAI")
-    def test_supported_metrics(self, _mock_openai, llmaj_config):
-        evaluator = LLMaJEvaluator(llmaj_config)
+    def test_supported_metrics(self):
+        evaluator = LLMaJEvaluator(model=_make_judge_model())
         supported = evaluator.get_supported_metrics()
-        assert supported == [MetricType.ANSWER_RELEVANCE]
+        assert supported == [Metrics.JUDGE_ANSWER_RELEVANCE.name]
 
-    @patch("ai4rag.evaluator.llmaj_evaluator.OpenAI")
-    def test_evaluate_metrics(self, mock_openai_cls, sample_evaluation_data, llmaj_config):
-        client = MagicMock()
-        mock_openai_cls.return_value = client
-        client.chat.completions.create.side_effect = [
-            _make_chat_response(5),
-            _make_chat_response(4),
+    def test_evaluate_metrics(self, sample_evaluation_data):
+        model = _make_judge_model()
+        model.chat.side_effect = [
+            [_make_chat_choice(5)],
+            [_make_chat_choice(4)],
         ]
 
-        evaluator = LLMaJEvaluator(llmaj_config)
-        result = evaluator.evaluate_metrics(sample_evaluation_data, [MetricType.ANSWER_RELEVANCE])
+        evaluator = LLMaJEvaluator(model=model)
+        result = evaluator.evaluate_metrics(sample_evaluation_data, [Metrics.JUDGE_ANSWER_RELEVANCE])
 
-        assert result["scores"][MetricType.ANSWER_RELEVANCE]["mean"] == 0.875
-        assert result["question_scores"][MetricType.ANSWER_RELEVANCE]["q1"] == 1.0
-        assert result["question_scores"][MetricType.ANSWER_RELEVANCE]["q2"] == 0.75
+        assert len(result["metrics"]) == 1
+        agg = result["metrics"][0]
+        assert agg["name"] == Metrics.JUDGE_ANSWER_RELEVANCE.name
+        assert agg["evaluator"] == "judge"
+        assert agg["scores"]["mean"] == 0.875
 
-    @patch("ai4rag.evaluator.llmaj_evaluator.OpenAI")
-    def test_is_base_evaluator_subclass(self, _mock_openai):
+        q_scores = {qs["question_id"]: qs for qs in result["question_scores"]}
+        q1_val = q_scores["q1"]["metrics"][0]["value"]
+        q2_val = q_scores["q2"]["metrics"][0]["value"]
+        assert q1_val == 1.0
+        assert q2_val == 0.75
+
+    def test_structured_output_format_passed(self):
+        model = _make_judge_model()
+        model.chat.return_value = [_make_chat_choice(3)]
+
+        evaluator = LLMaJEvaluator(model=model)
+        ed = EvaluationData(question="Q?", answer="A.", question_id="q0")
+        evaluator._judge_row(ed, "Check relevance.")
+
+        call_kwargs = model.chat.call_args.kwargs
+        assert call_kwargs["response_format"] == JUDGE_RESPONSE_FORMAT
+
+    def test_is_base_evaluator_subclass(self):
         assert issubclass(LLMaJEvaluator, BaseEvaluator)
 
 
-class TestParsingHelpers:
-    def test_extract_json_plain(self):
-        assert _extract_json('{"score": 4}') == {"score": 4}
-
-    def test_extract_json_from_surrounding_text(self):
-        assert _extract_json('Here is the result: {"score": 3, "rationale": "ok"} done') == {
-            "score": 3,
-            "rationale": "ok",
-        }
-
-    def test_parse_score_valid(self):
-        assert _parse_score('{"score": 3}') == 3
-
+class TestHelpers:
     def test_normalize_score(self):
         assert _normalize_score(1) == 0.0
         assert _normalize_score(5) == 1.0
@@ -133,17 +110,15 @@ class TestParsingHelpers:
         monkeypatch.setenv("AI4RAG_LLMAJ_LOG_IO", "0")
         assert _llmaj_log_io_enabled() is False
 
-    @patch("ai4rag.evaluator.llmaj_evaluator.OpenAI")
-    def test_judge_row_logs_prompt_and_response(self, mock_openai_cls, llmaj_config, caplog):
+    def test_judge_row_logs_prompt_and_response(self, caplog):
         import logging
 
         caplog.set_level(logging.INFO, logger="ai4rag")
 
-        client = MagicMock()
-        mock_openai_cls.return_value = client
-        client.chat.completions.create.return_value = _make_chat_response(4)
+        model = _make_judge_model()
+        model.chat.return_value = [_make_chat_choice(4)]
 
-        evaluator = LLMaJEvaluator(llmaj_config)
+        evaluator = LLMaJEvaluator(model=model)
         evaluation_data = EvaluationData(
             question="What is Python?",
             answer="A language.",

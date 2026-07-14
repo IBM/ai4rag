@@ -10,9 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ai4rag.components.optimization.search_space_preparation import (
-    SUPPORTED_METRICS,
     SearchSpaceReport,
-    _mps_metric_for,
     _validate_model_list,
     prepare_search_space_report,
 )
@@ -79,28 +77,6 @@ class TestValidateModelList:
 
 
 # ---------------------------------------------------------------------------
-# _mps_metric_for
-# ---------------------------------------------------------------------------
-
-
-class TestMpsMetricFor:
-    """Tests for mapping optimization metrics to MPS selection metrics."""
-
-    @pytest.mark.parametrize(
-        ("metric", "expected"),
-        [
-            ("faithfulness", "faithfulness"),
-            ("answer_correctness", "answer_correctness"),
-            ("context_correctness", "context_correctness"),
-            ("overall_score", "faithfulness"),
-            ("answer_relevance", "faithfulness"),
-        ],
-    )
-    def test_maps_optimization_metrics(self, metric: str, expected: str):
-        assert _mps_metric_for(metric) == expected
-
-
-# ---------------------------------------------------------------------------
 # SearchSpaceReport.save_json
 # ---------------------------------------------------------------------------
 
@@ -150,34 +126,6 @@ class TestPrepareSearchSpaceReportValidation:
     These tests verify that the function rejects bad inputs before
     reaching any heavy I/O or OGX calls.
     """
-
-    def test_invalid_metric_raises_value_error(self, mock_ogx_client):
-        """An unsupported metric string must raise ValueError."""
-        with pytest.raises(ValueError, match="not supported"):
-            prepare_search_space_report(
-                test_data_path="dummy.json",
-                extracted_text_path="dummy_dir",
-                ogx_client=mock_ogx_client,
-                metric="invalid_metric",
-            )
-
-    def test_supported_metrics_constant(self):
-        """SUPPORTED_METRICS must contain all optimization metrics."""
-        assert "faithfulness" in SUPPORTED_METRICS
-        assert "answer_correctness" in SUPPORTED_METRICS
-        assert "context_correctness" in SUPPORTED_METRICS
-        assert "answer_relevance" in SUPPORTED_METRICS
-        assert "overall_score" in SUPPORTED_METRICS
-
-    def test_overall_score_passes_metric_validation(self, mock_ogx_client):
-        """overall_score must pass validation (fail later on missing files, not on metric)."""
-        with pytest.raises((FileNotFoundError, OSError)):
-            prepare_search_space_report(
-                test_data_path="dummy.json",
-                extracted_text_path="dummy_dir",
-                ogx_client=mock_ogx_client,
-                metric="overall_score",
-            )
 
     def test_invalid_embedding_models_raises_type_error(self, mock_ogx_client):
         """An empty string in embedding_models must raise TypeError."""

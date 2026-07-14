@@ -106,6 +106,8 @@ class BaseEvaluator(ABC):
     and compare different RAG applications.
     """
 
+    EVALUATOR_TYPE: str = ""
+
     @abstractmethod
     def evaluate_metrics(
         self,

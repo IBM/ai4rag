@@ -197,12 +197,12 @@ class TestRunRagOptimizationValidation:
             )
 
     def test_supported_optimization_metrics_constant(self):
-        """SUPPORTED_OPTIMIZATION_METRICS must contain all hybrid metrics."""
+        """SUPPORTED_OPTIMIZATION_METRICS must contain unitxt and custom metrics."""
         assert "faithfulness" in SUPPORTED_OPTIMIZATION_METRICS
         assert "answer_correctness" in SUPPORTED_OPTIMIZATION_METRICS
         assert "context_correctness" in SUPPORTED_OPTIMIZATION_METRICS
-        assert "answer_relevance" in SUPPORTED_OPTIMIZATION_METRICS
         assert "overall_score" in SUPPORTED_OPTIMIZATION_METRICS
+        assert "answer_relevance" not in SUPPORTED_OPTIMIZATION_METRICS
 
     def test_invalid_optimization_settings_type_raises(self, mock_ogx_client):
         """Non-dict optimization_settings must raise TypeError."""
@@ -282,48 +282,3 @@ class TestRunRagOptimizationEvaluation:
         from ai4rag.components.optimization import rag_templates_optimization as module
 
         assert module.DEFAULT_METRIC == "overall_score"
-
-    def test_missing_evaluation_block_raises(self, mock_ogx_client, tmp_path, mocker):
-        mocker.patch(
-            "ai4rag.components.optimization.rag_templates_optimization.load_docling_documents",
-            return_value=[],
-        )
-        report_path = tmp_path / "search_space.json"
-        report_path.write_text('{"foundation_model": []}', encoding="utf-8")
-        test_data = tmp_path / "bench.json"
-        test_data.write_text("[]", encoding="utf-8")
-
-        with pytest.raises(ValueError, match="missing the evaluation block"):
-            run_rag_optimization(
-                extracted_text_path=tmp_path / "docs",
-                test_data_path=test_data,
-                search_space_report_path=report_path,
-                output_dir=tmp_path / "out",
-                ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
-                test_data_key="bench.json",
-            )
-
-    def test_missing_judge_model_id_raises(self, mock_ogx_client, tmp_path, mocker):
-        mocker.patch(
-            "ai4rag.components.optimization.rag_templates_optimization.load_docling_documents",
-            return_value=[],
-        )
-        report_path = tmp_path / "search_space.json"
-        report_path.write_text(
-            '{"evaluation": [{"evaluator": "unitxt", "metrics": ["faithfulness"]}]}',
-            encoding="utf-8",
-        )
-        test_data = tmp_path / "bench.json"
-        test_data.write_text("[]", encoding="utf-8")
-
-        with pytest.raises(ValueError, match="Judge model_id is missing"):
-            run_rag_optimization(
-                extracted_text_path=tmp_path / "docs",
-                test_data_path=test_data,
-                search_space_report_path=report_path,
-                output_dir=tmp_path / "out",
-                ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
-                test_data_key="bench.json",
-            )

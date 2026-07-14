@@ -59,9 +59,6 @@ class ModelsPreSelector:
 
     Parameters
     ----------
-    metric : RAGMetric
-        Metric used in ranking the models.
-
     foundation_models : list[BaseFoundationModel]
         List of foundation models that should be considered in the selection.
 
@@ -73,6 +70,9 @@ class ModelsPreSelector:
 
     benchmark_data : BenchmarkData
         Sample of benchmark data used for the pre-selection.
+
+    metric : RAGMetric, default=Metrics.OVERALL_SCORE
+        Metric used for ranking models during pre-selection.
 
     Attributes
     ----------
@@ -102,11 +102,11 @@ class ModelsPreSelector:
 
     def __init__(
         self,
-        metric: RAGMetric,
         foundation_models: list[BaseFoundationModel],
         embedding_models: list[BaseEmbeddingModel],
         documents: list[DoclingDocument],
         benchmark_data: BenchmarkData,
+        metric: RAGMetric = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.benchmark_data = benchmark_data
@@ -129,10 +129,8 @@ class ModelsPreSelector:
         self.evaluation_results: list[MPSEvaluationResultsTyped] = []
         self._exception_handler = ExperimentExceptionHandler()
         self.max_threads = kwargs.pop("max_threads", 10)
-        self.metrics = kwargs.pop(
-            "metrics",
-            (Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS, Metrics.OVERALL_SCORE),
-        )
+        self._unitxt_metrics = tuple(m for m in Metrics if m.evaluator == "unitxt")
+        self.metrics = (*self._unitxt_metrics, Metrics.OVERALL_SCORE)
 
     def evaluate_patterns(self):
         """
@@ -417,7 +415,7 @@ class ModelsPreSelector:
         logger.debug("MPS: Evaluating responses...")
 
         eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
-        evaluation_result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=[self.metric])
+        evaluation_result = self.evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=self._unitxt_metrics)
 
         logger.debug("MPS: Responses evaluation finished!")
 

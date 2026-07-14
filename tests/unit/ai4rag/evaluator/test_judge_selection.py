@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from ai4rag.components.optimization.judge_selection import calibration_subset_size
+from ai4rag.evaluator.judge_selection import calibration_subset_size
 
 
 def test_calibration_subset_size():
