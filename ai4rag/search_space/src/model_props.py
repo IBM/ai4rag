@@ -28,10 +28,13 @@ _LANGUAGE_AUTODETECT_PROMPT = (
 )
 
 
-_LANGUAGE_INSTRUCTION = "You MUST respond in {lang_name}."
+_LANGUAGE_INSTRUCTION = (
+    "Respond exclusively in {lang_name}, regardless of any other language used in the provided context. "
+    "You MUST respond in {lang_name}."
+)
 
 
-_DEFAULT_NUMBERED_CONTEXT_TEMPLATE = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}}:\n{{{CONTEXT_TEXT_PLACEHOLDER}}}\n"
+_DEFAULT_NUMBERED_CONTEXT_TEMPLATE = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}}:\n{{{CONTEXT_TEXT_PLACEHOLDER}}}"
 
 
 _DEFAULT_SYSTEM_MESSAGE_TEXT = (
@@ -43,7 +46,7 @@ _DEFAULT_SYSTEM_MESSAGE_TEXT = (
 
 _DEFAULT_USER_MESSAGE_TEXT = (
     f"\n\nContext:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}:\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}. \n"
+    f"Question: {{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. \n"
     "Again, please answer the question based on the context provided only. If the context is not related to "
     "the question, just say you cannot answer. "
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
@@ -62,7 +65,7 @@ _DEFAULT_GRANITE_USER_MESSAGE_TEXT = (
     "assistant. When generating responses, prioritize correctness, i.e., ensure that your response is grounded in "
     "context and user query. Always make sure that your response is relevant to the question. "
     "\n"
-    "Answer Length: detailed"
+    "Answer Length: concise"
     "\n"
     f"{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}"
     "\n"
@@ -85,7 +88,7 @@ _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT = (
 
 _DEFAULT_LLAMA_USER_MESSAGE_TEXT = (
     f"{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n"
-    f"[conversation]: {{{QUESTION_PLACEHOLDER}}}. Be concise. If you cannot base your "
+    f"[conversation]: {{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. If you cannot base your "
     "answer on the given document, please state that you do not have an answer. "
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
@@ -105,7 +108,7 @@ _DEFAULT_MISTRAL_USER_MESSAGE_TEXT = (
     "Generate the next agent response by answering the question. You are provided several documents with titles. "
     "If the answer comes from different documents please mention all possibilities and use the titles of documents "
     "to separate between topics or domains. If you cannot base your answer on the given documents, "
-    f"please state that you do not have an answer. "
+    f"please state that you do not have an answer. Your answer should be concise. "
     f"{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n\n"
     f"{{{QUESTION_PLACEHOLDER}}}"
@@ -126,7 +129,7 @@ _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT = (
 
 _DEFAULT_OPENAI_USER_MESSAGE_TEXT = (
     f"[Document]\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n[End]\n"
-    f"{{{QUESTION_PLACEHOLDER}}}. \n"
+    f"{{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. \n"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
 )
 
