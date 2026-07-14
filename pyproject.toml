@@ -33,7 +33,6 @@ keywords = [
 dynamic = ["version"]
 
 dependencies = [
-    "langchain~=1.1.3",
     "langchain_chroma~=1.1.0",
     "langchain-text-splitters~=1.1.0",
     "llama-stack-client~=0.7.1",
