@@ -143,6 +143,7 @@ class LLMaJEvaluator(BaseEvaluator):
                         ci_low=ci[0],
                         ci_high=ci[1],
                     ),
+                    model_id=self.model.model_id,
                 )
             )
 

@@ -101,13 +101,14 @@ class TestHelpers:
         assert _normalize_score(1) == 0.0
         assert _normalize_score(5) == 1.0
 
-    def test_judge_row_logs_prompt_and_response(self, caplog):
+    def test_judge_row_logs_warning_on_failure(self, caplog):
         import logging
 
-        caplog.set_level(logging.INFO, logger="ai4rag")
+        caplog.set_level(logging.WARNING, logger="ai4rag")
 
         model = _make_judge_model()
         model.chat.return_value = [_make_chat_choice(4)]
+        model.chat.return_value[0].message.content = "not json"
 
         evaluator = LLMaJEvaluator(model=model)
         evaluation_data = EvaluationData(
@@ -117,9 +118,7 @@ class TestHelpers:
         )
         result = evaluator._judge_row(evaluation_data, "Check relevance.")
 
-        assert result == 0.75
-        assert "LLM judge request" in caplog.text
-        assert "--- PROMPT ---" in caplog.text
-        assert "What is Python?" in caplog.text
-        assert "LLM judge response" in caplog.text
-        assert "--- RESPONSE ---" in caplog.text
+        assert result is None
+        assert "LLM judge call failed" in caplog.text
+        assert "judge-model" in caplog.text
+        assert "q-log" in caplog.text
