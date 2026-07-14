@@ -23,7 +23,7 @@ from docling_core.types.doc.labels import DocItemLabel
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
-from ai4rag.evaluator.base_evaluator import MetricType
+from ai4rag.evaluator.metric import Metrics
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
@@ -187,8 +187,8 @@ class TestExperimentChromaWithMockedModels:
             benchmark_data,
             foundation_models,
             embedding_models,
-            optimization_metric=MetricType.FAITHFULNESS,
-            metrics=(MetricType.FAITHFULNESS, MetricType.ANSWER_CORRECTNESS, MetricType.CONTEXT_CORRECTNESS),
+            optimization_metric=Metrics.FAITHFULNESS,
+            metrics=(Metrics.FAITHFULNESS, Metrics.ANSWER_CORRECTNESS, Metrics.CONTEXT_CORRECTNESS),
         )
 
         experiment.search(optimizer=RandomOptimizer)

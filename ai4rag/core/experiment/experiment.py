@@ -152,7 +152,7 @@ class AI4RAGExperiment:
         self.optimization_metric = optimization_metric
 
         self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
-        self._metrics: Sequence[RAGMetric] | None = kwargs.pop(
+        self.metrics: Sequence[RAGMetric | str] | None = kwargs.pop(
             "metrics", None
         )  # resolved in _resolve_metrics_and_validate
         self.n_mps_foundation_models = kwargs.pop(
@@ -252,6 +252,39 @@ class AI4RAGExperiment:
         """Get evaluation metrics."""
         return self._metrics
 
+    @metrics.setter
+    def metrics(self, val: Sequence[RAGMetric | str] | None) -> None:
+        """Validate and set evaluation metrics.
+
+        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``),
+        a sequence of ``RAGMetric`` instances, a sequence of metric name
+        strings, or a mixed sequence of both.
+        """
+        if val is None:
+            self._metrics = None
+            return
+
+        available = {m.name: m for m in Metrics}
+        resolved: list[RAGMetric] = []
+
+        for item in val:
+            if isinstance(item, RAGMetric):
+                if item not in Metrics:
+                    raise ValueError(f"Unknown RAGMetric '{item.name}'. Available: {list(available.keys())}.")
+                resolved.append(item)
+            elif isinstance(item, str):
+                metric = available.get(item)
+                if metric is None:
+                    raise ValueError(f"Unknown metric name '{item}'. Available: {list(available.keys())}.")
+                resolved.append(metric)
+            else:
+                raise TypeError(f"Each metric must be a RAGMetric or str, got {type(item).__name__}.")
+
+        if not resolved:
+            raise ValueError("Metrics sequence must not be empty.")
+
+        self._metrics = tuple(resolved)
+
     def _resolve_metrics_and_validate(self) -> None:
         """Derive default metrics from configured evaluators and validate coverage.
 
@@ -261,7 +294,7 @@ class AI4RAGExperiment:
         were set, the optimization metric is checked against the available
         evaluator types.
         """
-        if self._metrics is None:
+        if self.metrics is None:
             base: list[RAGMetric] = [
                 Metrics.ANSWER_CORRECTNESS,
                 Metrics.FAITHFULNESS,
