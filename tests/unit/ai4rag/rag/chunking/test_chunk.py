@@ -44,6 +44,15 @@ class TestAI4RAGChunkId:
         assert len(chunk.chunk_id) == 64
         assert all(c in "0123456789abcdef" for c in chunk.chunk_id)
 
+    def test_list_sequence_number_from_window_merge(self):
+        chunk = AI4RAGChunk(text="merged", metadata={"document_id": "doc1", "sequence_number": [1, 2, 3]})
+        assert len(chunk.chunk_id) == 64
+
+    def test_list_sequence_number_order_independent(self):
+        chunk_a = AI4RAGChunk(text="merged", metadata={"document_id": "doc1", "sequence_number": [3, 1, 2]})
+        chunk_b = AI4RAGChunk(text="merged", metadata={"document_id": "doc1", "sequence_number": [1, 2, 3]})
+        assert chunk_a.chunk_id == chunk_b.chunk_id
+
     @pytest.mark.parametrize(
         "text",
         ["", "a", "hello world", "unicode: äöüß☃", "a" * 10_000],

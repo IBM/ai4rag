@@ -9,7 +9,7 @@ from typing import Any
 __all__ = ["AI4RAGChunk"]
 
 
-@dataclass(frozen=True)
+@dataclass
 class AI4RAGChunk:
     """
     Framework-agnostic chunk representation used across the ai4rag pipeline.
@@ -27,12 +27,16 @@ class AI4RAGChunk:
 
     text: str
     metadata: dict[str, Any] = field(default_factory=dict)
+    chunk_id: str = field(init=False, repr=False)
 
-    @property
-    def chunk_id(self) -> str:
-        """Deterministic SHA-256 identifier derived from document_id, sequence_number, and text."""
+    def __post_init__(self) -> None:
         hasher = hashlib.sha256()
         hasher.update(self.metadata.get("document_id", "").encode())
-        hasher.update(self.metadata.get("sequence_number", 0).to_bytes(4, "big"))
+        seq = self.metadata.get("sequence_number", 0)
+        if isinstance(seq, list):
+            for s in sorted(seq):
+                hasher.update(s.to_bytes(4, "big"))
+        else:
+            hasher.update(seq.to_bytes(4, "big"))
         hasher.update(self.text.encode())
-        return hasher.hexdigest()
+        self.chunk_id = hasher.hexdigest()
