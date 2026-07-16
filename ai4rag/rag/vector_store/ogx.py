@@ -229,7 +229,7 @@ class OGXVectorStore(BaseVectorStore):
                     "document_id": doc.metadata["document_id"],
                 },
                 "metadata": doc.metadata,
-                "chunk_id": str(hash(doc.text)),
+                "chunk_id": doc.chunk_id,
                 "embedding_model": self.embedding_model.model_id,
                 "embedding_dimension": embedding_dimension,
             }

@@ -441,7 +441,7 @@ class TestOGXVectorStoreAddDocuments:
         assert "content" in chunks[0]
         assert "embedding" in chunks[0]
         assert "chunk_id" in chunks[0]
-        assert chunks[0]["chunk_id"] == str(hash(docs[0].text))
+        assert chunks[0]["chunk_id"] == docs[0].chunk_id
         assert chunks[0]["chunk_metadata"] == {"document_id": "doc1"}
         assert chunks[0]["metadata"] == {"document_id": "doc1"}
 
@@ -863,4 +863,4 @@ class TestOGXVectorStoreDuplicateChunks:
             vector_store.add_documents(docs)
 
         # Should not have any warnings
-        assert "Skipping duplicate chunk_id" not in [record.message for record in caplog.records]
+        assert "Skipping duplicate chunk_id" not in caplog.text
