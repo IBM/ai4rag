@@ -45,7 +45,7 @@ _DEFAULT_SYSTEM_MESSAGE_TEXT = (
 
 
 _DEFAULT_USER_MESSAGE_TEXT = (
-    f"\n\nContext:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}:\n\n"
+    f"\nContext:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}:\n\n"
     f"Question: {{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. \n"
     "Again, please answer the question based on the context provided only. If the context is not related to "
     "the question, just say you cannot answer. "
