@@ -359,7 +359,7 @@ class TestBuildDoclingFormatOptions:
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
 
-    def test_new_formats_registered(self):
+    def test_formats_registered_have_entries_in_options(self):
         """All newly added formats must have entries in the options dict."""
         from docling.datamodel.base_models import InputFormat
 
