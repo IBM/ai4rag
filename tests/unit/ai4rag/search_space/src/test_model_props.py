@@ -48,7 +48,7 @@ def test_system_message_contains_family_marker(model_name: str, expected_fragmen
     "model_name, expected_fragment",
     [
         ("meta-llama/llama-3-1-8b-instruct", "[conversation]:"),
-        ("ibm/granite-3-8b-instruct", "Answer Length: detailed"),
+        ("ibm/granite-3-8b-instruct", "Answer Length: concise"),
         ("mistralai/mistral-large", "Generate the next agent response"),
         ("openai/gpt-oss-120b", "[Document]"),
         ("unknown-model", "Context:"),
@@ -96,6 +96,6 @@ def test_user_message_has_no_word_count_limit(model_name: str):
 
 
 def test_llama_user_message_instructs_to_be_concise():
-    """Llama user message uses 'Be concise.' in place of the removed word-count limit."""
+    """Llama user message instructs conciseness in place of the removed word-count limit."""
     user_message = get_user_message_text("meta-llama/llama-3-1-8b-instruct")
-    assert "Be concise" in user_message
+    assert "Your answer should be concise" in user_message
