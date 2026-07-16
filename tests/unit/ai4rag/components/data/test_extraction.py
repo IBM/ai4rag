@@ -355,18 +355,27 @@ class TestBuildDoclingFormatOptions:
         from docling.datamodel.base_models import InputFormat
 
         options = _build_docling_format_options()
+
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
 
-        for fmt in (
-            InputFormat.ODT,
-            InputFormat.ODP,
-            InputFormat.ASCIIDOC,
-            InputFormat.LATEX,
-            InputFormat.EPUB,
-            InputFormat.EMAIL,
-        ):
-            assert fmt in options, f"{fmt} missing from format options"
+        odt_option = options[InputFormat.ODT]
+        assert odt_option.pipeline_options.do_table_structure is False
+
+        odp_option = options[InputFormat.ODP]
+        assert odp_option.pipeline_options.do_table_structure is False
+
+        ascii_option = options[InputFormat.ASCIIDOC]
+        assert ascii_option.pipeline_options.do_table_structure is False
+
+        latex_option = options[InputFormat.LATEX]
+        assert latex_option.pipeline_options.do_table_structure is False
+
+        epub_option = options[InputFormat.EPUB]
+        assert epub_option.pipeline_options.do_table_structure is False
+
+        email_option = options[InputFormat.EMAIL]
+        assert email_option.pipeline_options.do_table_structure is False
 
     def test_do_table_structure_true(self):
         """Explicit ``True`` should enable table structure parsing."""
