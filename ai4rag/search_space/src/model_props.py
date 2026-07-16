@@ -38,17 +38,15 @@ _DEFAULT_NUMBERED_CONTEXT_TEMPLATE = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}
 
 
 _DEFAULT_SYSTEM_MESSAGE_TEXT = (
-    "Please answer the question I provide in the Question section below, "
-    "based solely on the information I provide in the Context section. "
-    "If the question is unanswerable, please say you cannot answer."
+    "Please answer the user's question based solely on the provided context documents. "
+    "If the question cannot be answered from the provided context, say you cannot answer. "
+    "Your answer should be concise."
 )
 
 
 _DEFAULT_USER_MESSAGE_TEXT = (
-    f"\nContext:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}:\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. \n"
-    "Again, please answer the question based on the context provided only. If the context is not related to "
-    "the question, just say you cannot answer. "
+    f"\nContext:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
+    f"Question: {{{QUESTION_PLACEHOLDER}}}\n"
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
 )
 
