@@ -116,7 +116,8 @@ _DEFAULT_MISTRAL_USER_MESSAGE_TEXT = (
 
 
 _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT = (
-    "You are an AI language model designed to function as a specialized Retrieval Augmented Generation (RAG) assistant. "
+    "You are an AI language model designed to function as a specialized "
+    "Retrieval Augmented Generation (RAG) assistant. "
     "When generating responses, prioritize correctness, i.e., ensure that your response is correct given the context "
     "and user query, and that it is grounded in the context. "
     "Furthermore, make sure that the response is supported by the given document or context. "
