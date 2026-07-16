@@ -15,7 +15,27 @@ from ai4rag.components.utils.s3 import create_s3_client
 _logger = logging.getLogger("documents-discovery")
 _logger.addHandler(handler)
 
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".docx", ".pptx", ".md", ".html", ".txt"})
+
+SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".pdf",
+        ".docx",
+        ".pptx",
+        ".md",
+        ".html",
+        ".txt",
+        # New formats
+        ".odt",
+        ".odp",
+        ".adoc",
+        ".tex",
+        ".epub",
+        ".eml",
+        ".qmd",
+        ".Rmd",
+        ".xhtml",
+    }
+)
 DOCUMENTS_DESCRIPTOR_FILENAME = "documents_descriptor.json"
 SAMPLING_MAX_SIZE_GB: float = 1
 

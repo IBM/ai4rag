@@ -123,6 +123,15 @@ class TestDiscoverDocuments:
             _s3_object("docs/report.pdf", 500),
             _s3_object("docs/notes.md", 200),
             _s3_object("docs/slide.pptx", 300),
+            _s3_object("docs/file.odt", 100),
+            _s3_object("docs/file.odp", 100),
+            _s3_object("docs/file.adoc", 100),
+            _s3_object("docs/file.tex", 100),
+            _s3_object("docs/file.epub", 100),
+            _s3_object("docs/file.eml", 100),
+            _s3_object("docs/file.qmd", 100),
+            _s3_object("docs/file.Rmd", 100),
+            _s3_object("docs/file.xhtml", 100),
         ]
         mock_client = _make_mock_s3_client(mocker, contents)
 
@@ -133,14 +142,23 @@ class TestDiscoverDocuments:
             s3_client=mock_client,
         )
 
-        assert result.count == 3
-        assert result.total_size_bytes == 1000
+        assert result.count == 12
+        assert result.total_size_bytes == 1900
         assert result.bucket == "bucket"
         assert result.prefix == "docs/"
         keys = [d.key for d in result.documents]
         assert "docs/report.pdf" in keys
         assert "docs/notes.md" in keys
         assert "docs/slide.pptx" in keys
+        assert "docs/file.odt" in keys
+        assert "docs/file.odp" in keys
+        assert "docs/file.adoc" in keys
+        assert "docs/file.tex" in keys
+        assert "docs/file.epub" in keys
+        assert "docs/file.eml" in keys
+        assert "docs/file.qmd" in keys
+        assert "docs/file.Rmd" in keys
+        assert "docs/file.xhtml" in keys
 
     def test_unsupported_extensions_filtered_out(self, mocker):
         """Files with unsupported extensions must be excluded."""
