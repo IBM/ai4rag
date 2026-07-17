@@ -23,6 +23,13 @@ class AI4RAGChunk:
         Chunk metadata. Expected keys include ``document_id`` and
         ``sequence_number``; additional keys (headings, provenance)
         are chunker-dependent.
+
+    Attributes
+    ----------
+    chunk_id : str
+        Deterministic SHA-256 hex digest derived from ``document_id``,
+        ``sequence_number``, and ``text``. Computed automatically on
+        construction; not passed as an ``__init__`` argument.
     """
 
     text: str
