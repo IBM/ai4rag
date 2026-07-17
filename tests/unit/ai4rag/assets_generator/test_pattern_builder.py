@@ -259,7 +259,7 @@ class TestBuildPatternJson:
         assert actual == expected
         assert actual != pattern["settings"]["generation"]["system_message_text"]
         assert "Granite Chat" in actual
-        assert "retrieval-augmented assistant" in actual
+        assert "Retrieval Augmented Generation" in actual
         assert "You MUST respond in English" in actual
 
     @pytest.mark.parametrize(
@@ -319,17 +319,15 @@ class TestBuildPatternJson:
             "ibm/granite-3-8b-instruct",
         ],
     )
-    def test_export_merges_unified_rag_instructions(self, model_id: str):
-        """All model families use unified RAG instructions after PR #81."""
+    def test_export_includes_language_instruction(self, model_id: str):
+        """Exported system for each model includes the language instruction and no word-count limit."""
         generation = {
             "system_message_text": get_system_message_text(model_id),
             "user_message_text": get_user_message_text(model_id, language="English"),
         }
         system_text = build_responses_system_input(generation)
-        # All models now use unified RAG structure from PR #81
-        assert "retrieval-augmented assistant" in system_text
-        assert "max 150 words" in system_text
         assert "You MUST respond in English" in system_text
+        assert "150 words" not in system_text
 
     def test_build_responses_system_input_handles_empty_inputs(self):
         """When both system and user are empty or contain only placeholders, return fallback."""
