@@ -54,6 +54,7 @@ Issues = "https://github.com/IBM/ai4rag/issues"
 Documentation = "https://ibm.github.io/ai4rag/"
 
 
+[project.optional-dependencies]
 dev = [
     "ai4rag[test]",
     "ai4rag[code_check]",
