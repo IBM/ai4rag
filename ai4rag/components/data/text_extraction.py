@@ -16,18 +16,18 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
 from docling.document_converter import (
+    AsciiDocFormatOption,
     DocumentConverter,
+    EmailFormatOption,
+    EpubFormatOption,
     HTMLFormatOption,
+    LatexFormatOption,
     MarkdownFormatOption,
+    OdpFormatOption,
+    OdtFormatOption,
     PdfFormatOption,
     PowerpointFormatOption,
     WordFormatOption,
-    OdtFormatOption,
-    OdpFormatOption,
-    LatexFormatOption,
-    AsciiDocFormatOption,
-    EpubFormatOption,
-    EmailFormatOption,
 )
 
 from ai4rag import handler
