@@ -92,8 +92,7 @@ USER_GROUNDING_SKIP_PREFIXES = (
     "If the documents do not contain the answer",
 )
 # Used in: Pass 1 filtering (_should_skip_redundant_user_line in pattern_builder.py)
-# Only suppressed when system prompt already has grounding policy to avoid duplication.
-# Note: these prefixes no longer match the built-in default prompts (reverted in fix_prompts_components).
+# Only suppressed when system prompt already has grounding policy to avoid duplication. 
 # They remain as defensive filters for custom HPO configurations that may use these phrasings.
 USER_RAG_GROUNDING_PREFIXES = (
     "You are a specialized Retrieval Augmented Generation",
