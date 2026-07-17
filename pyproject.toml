@@ -34,8 +34,7 @@ dynamic = ["version"]
 
 dependencies = [
     "boto3>=1.28",
-    "docling~=2.112.0",
-    "docling-core>=2.73.0,<3.0.0",
+    "docling[feat-chunking]~=2.112.0",
     "langchain_chroma~=1.1.0",
     "langchain-text-splitters~=1.1.0",
     "multiprocess>=0.70",
@@ -54,11 +53,6 @@ Repository = "https://github.com/IBM/ai4rag"
 Issues = "https://github.com/IBM/ai4rag/issues"
 Documentation = "https://ibm.github.io/ai4rag/"
 
-
-[project.optional-dependencies]
-feat-chunking = [
-    "docling-core[chunking]>=2.73.0,<3.0.0",
-]
 
 dev = [
     "ai4rag[test]",
