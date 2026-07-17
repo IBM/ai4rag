@@ -5,7 +5,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ogx_client import BadRequestError, OgxClient
+from ogx_client import APITimeoutError, BadRequestError, OgxClient
 
 from ai4rag import logger
 from ai4rag.utils.constants import TokenEstimation
@@ -124,8 +124,14 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
             "Provide 'context_length' explicitly or ensure the embedding service is reachable."
         )
 
+    _FALLBACK_TIMEOUT = 1200.0
+
     def _call_embedding_api(self, text_input: list[str] | str) -> list[list[float]]:
-        """Send a raw embedding request to the OGX server.
+        """Send an embedding request to the OGX server.
+
+        On ``APITimeoutError``, retries once with a 20-minute timeout
+        and no client-level retries to accommodate slow (CPU-deployed)
+        models.
 
         Parameters
         ----------
@@ -137,6 +143,21 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         list[list[float]]
             Embedding vectors corresponding to the input texts.
         """
+        try:
+            return self._parse_embeddings(text_input)
+        except APITimeoutError:
+            logger.warning(
+                "Embedding request timed out. Retrying with %.0fs timeout (no retries).",
+                self._FALLBACK_TIMEOUT,
+            )
+            original_client = self.client
+            try:
+                self.client = original_client.with_options(timeout=self._FALLBACK_TIMEOUT, max_retries=0)
+                return self._parse_embeddings(text_input)
+            finally:
+                self.client = original_client
+
+    def _parse_embeddings(self, text_input: list[str] | str) -> list[list[float]]:
         return [
             data.embedding
             for data in self.client.embeddings.create(
