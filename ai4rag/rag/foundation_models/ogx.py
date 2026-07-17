@@ -12,6 +12,8 @@ from ai4rag import logger
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, Language, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
 
+_FALLBACK_TIMEOUT = 1200.0
+
 
 class OGXModelParameters(BaseModel):
     """Parameters to use for OGXFoundationModel."""
@@ -58,8 +60,6 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         else:
             self._params = OGXModelParameters()
 
-    _FALLBACK_TIMEOUT = 1200.0
-
     def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """Chat completion for communication with selected foundation model.
 
@@ -87,13 +87,10 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         except APITimeoutError:
             logger.warning(
                 "Chat request timed out. Retrying with %.0fs timeout (no retries).",
-                self._FALLBACK_TIMEOUT,
+                _FALLBACK_TIMEOUT,
             )
-            original_client = self.client
-            try:
-                self.client = original_client.with_options(timeout=self._FALLBACK_TIMEOUT, max_retries=0)
-                return self.client.chat.completions.create(
-                    model=self.model_id, messages=messages, **chat_params
-                ).choices
-            finally:
-                self.client = original_client
+
+            no_retries_client = self.client.with_options(timeout=_FALLBACK_TIMEOUT, max_retries=0)
+            return no_retries_client.chat.completions.create(
+                model=self.model_id, messages=messages, **chat_params
+            ).choices
