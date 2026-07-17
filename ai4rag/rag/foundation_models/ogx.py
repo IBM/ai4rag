@@ -5,11 +5,14 @@
 from typing import Annotated, Any
 
 from annotated_types import Ge, Gt, Le
-from ogx_client import OgxClient
+from ogx_client import APITimeoutError, OgxClient
 from pydantic import BaseModel
 
+from ai4rag import logger
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, Language, MessageTyped
 from ai4rag.utils.constants import ChatGenerationConstants
+
+_FALLBACK_TIMEOUT = 1200.0
 
 
 class OGXModelParameters(BaseModel):
@@ -32,7 +35,6 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         context_template_text: str | None = None,
         language: Language | None = None,
     ):
-
         super().__init__(
             client=client,
             model_id=model_id,
@@ -59,8 +61,11 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
             self._params = OGXModelParameters()
 
     def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
-        """
-        Chat completion for communication with selected foundation model.
+        """Chat completion for communication with selected foundation model.
+
+        On ``APITimeoutError``, retries once with a 20-minute timeout
+        and no client-level retries to accommodate slow (CPU-deployed)
+        models.
 
         Parameters
         ----------
@@ -69,18 +74,23 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
 
         Returns
         -------
-        str
-            Chat response from the model.
+        list[MessageTyped]
+            Chat response choices from the model.
         """
-
         chat_params = {
             "max_completion_tokens": self.params.max_completion_tokens,
             "temperature": self.params.temperature,
-        }
+        } | kwargs
 
-        updated_params = chat_params | kwargs
+        try:
+            return self.client.chat.completions.create(model=self.model_id, messages=messages, **chat_params).choices
+        except APITimeoutError:
+            logger.warning(
+                "Chat request timed out. Retrying with %.0fs timeout (no retries).",
+                _FALLBACK_TIMEOUT,
+            )
 
-        response_chat = self.client.chat.completions.create(model=self.model_id, messages=messages, **updated_params)
-        response_choices = response_chat.choices
-
-        return response_choices
+            no_retries_client = self.client.with_options(timeout=_FALLBACK_TIMEOUT, max_retries=0)
+            return no_retries_client.chat.completions.create(
+                model=self.model_id, messages=messages, **chat_params
+            ).choices
