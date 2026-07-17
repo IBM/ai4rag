@@ -709,7 +709,7 @@ def add_documents(self, documents: list[AI4RAGChunk], batch_size: int = 2048):
         {
             "content": chunk.text,
             "chunk_metadata": chunk.metadata,
-            "chunk_id": chunk.metadata["document_id"],
+            "chunk_id": chunk.chunk_id,
             "embedding_model": self.embedding_model.model_id,
             "embedding_dimension": self.embedding_model.params.embedding_dimension,
             "embedding": embedding_vector,
@@ -770,10 +770,11 @@ Chunkers split `DoclingDocument` objects into `AI4RAGChunk` instances for embedd
 Framework-agnostic chunk representation used across the pipeline:
 
 ```python
-@dataclass(frozen=True)
+@dataclass
 class AI4RAGChunk:
     text: str                                  # Chunk content
     metadata: dict[str, Any] = field(default_factory=dict)  # document_id, sequence_number, etc.
+    chunk_id: str = field(init=False, repr=False)  # Deterministic SHA-256 (auto-computed)
 ```
 
 ### BaseChunker
