@@ -28,50 +28,30 @@ _LANGUAGE_AUTODETECT_PROMPT = (
 )
 
 
-_LANGUAGE_INSTRUCTION = "You MUST respond in {lang_name}."
-
-
-_RAG_GROUNDING_INSTRUCTION = (
-    "Answer ONLY using information from the documents below. "
-    "Do not use outside knowledge. "
-    "If the documents do not contain the answer, say you do not have enough information."
+_LANGUAGE_INSTRUCTION = (
+    "Respond exclusively in {lang_name}, regardless of any other language used in the provided context. "
+    "You MUST respond in {lang_name}."
 )
 
 
-_RAG_CITATION_INSTRUCTION = (
-    "You MUST cite sources using [1], [2], etc. matching the document numbers for every factual claim."
-)
-
-
-_RAG_ANSWER_LENGTH_GUIDANCE = "max 150 words"
-
-
-_RAG_ANSWER_PROMPT_LINE = f"Answer ({_RAG_ANSWER_LENGTH_GUIDANCE}, with citations):\n"
-
-
-_RAG_SYSTEM_PREFIX = "You are a retrieval-augmented assistant. Answer using ONLY the provided documents. "
-
-
-_DEFAULT_NUMBERED_CONTEXT_TEMPLATE = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}}:\n{{{CONTEXT_TEXT_PLACEHOLDER}}}\n"
+_DEFAULT_NUMBERED_CONTEXT_TEMPLATE = f"Document {{{DOCUMENT_NUMBER_PLACEHOLDER}}}:\n{{{CONTEXT_TEXT_PLACEHOLDER}}}"
 
 
 _DEFAULT_SYSTEM_MESSAGE_TEXT = (
-    f"{_RAG_SYSTEM_PREFIX}" "If the question is unanswerable from the documents, say you cannot answer."
+    "Please answer the user's question based solely on the provided context documents. "
+    "If the question cannot be answered from the provided context, say you cannot answer. "
+    "Your answer should be concise."
 )
 
 
 _DEFAULT_USER_MESSAGE_TEXT = (
-    f"{_RAG_GROUNDING_INSTRUCTION}\n"
-    f"{_RAG_CITATION_INSTRUCTION}\n\n"
-    f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"{_RAG_ANSWER_PROMPT_LINE}"
-    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
+    f"\nContext:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
+    f"Question: {{{QUESTION_PLACEHOLDER}}}\n"
+    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
 )
 
 
 _DEFAULT_GRANITE_SYSTEM_MESSAGE_TEXT = (
-    f"{_RAG_SYSTEM_PREFIX}"
     "You are Granite Chat, an AI language model developed by IBM. "
     "You are a cautious assistant. You carefully follow instructions. "
     "You are helpful and harmless and you follow ethical guidelines and promote positive behaviour."
@@ -79,19 +59,23 @@ _DEFAULT_GRANITE_SYSTEM_MESSAGE_TEXT = (
 
 
 _DEFAULT_GRANITE_USER_MESSAGE_TEXT = (
-    f"{_RAG_GROUNDING_INSTRUCTION}\n"
-    f"{_RAG_CITATION_INSTRUCTION}\n\n"
-    "You are a specialized Retrieval Augmented Generation (RAG) assistant. "
-    "Prioritize correctness and ensure your response is grounded in the documents.\n\n"
-    f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"{_RAG_ANSWER_PROMPT_LINE}"
-    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
+    "You are an AI language model designed to function as a specialized Retrieval Augmented Generation (RAG) "
+    "assistant. When generating responses, prioritize correctness, i.e., ensure that your response is grounded in "
+    "context and user query. Always make sure that your response is relevant to the question. "
+    "\n"
+    "Answer Length: concise"
+    "\n"
+    f"{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}"
+    "\n"
+    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
+    "\n"
+    f"{{{QUESTION_PLACEHOLDER}}}"
+    "\n"
+    "\n"
 )
 
 
 _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT = (
-    f"{_RAG_SYSTEM_PREFIX}"
     "You are a helpful, respectful and honest assistant. Always answer as helpfully as possible, while being safe. "
     "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. "
     "Please ensure that your responses are socially unbiased and positive in nature.\n"
@@ -101,17 +85,14 @@ _DEFAULT_LLAMA_SYSTEM_MESSAGE_TEXT = (
 
 
 _DEFAULT_LLAMA_USER_MESSAGE_TEXT = (
-    f"{_RAG_GROUNDING_INSTRUCTION}\n"
-    f"{_RAG_CITATION_INSTRUCTION}\n\n"
-    f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"{_RAG_ANSWER_PROMPT_LINE}"
+    f"{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n"
+    f"[conversation]: {{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. If you cannot base your "
+    "answer on the given document, please state that you do not have an answer. "
     f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
 )
 
 
 _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT = (
-    f"{_RAG_SYSTEM_PREFIX}"
     "You are a helpful, respectful and honest assistant. "
     "Always answer as helpfully as possible, while being safe. "
     "Your answers should not include any harmful, unethical, racist, sexist, toxic, dangerous, or illegal content. "
@@ -122,17 +103,19 @@ _DEFAULT_MISTRAL_SYSTEM_MESSAGE_TEXT = (
 
 
 _DEFAULT_MISTRAL_USER_MESSAGE_TEXT = (
-    f"{_RAG_GROUNDING_INSTRUCTION}\n"
-    f"{_RAG_CITATION_INSTRUCTION}\n\n"
-    f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"{_RAG_ANSWER_PROMPT_LINE}"
-    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
+    "Generate the next agent response by answering the question. You are provided several documents with titles. "
+    "If the answer comes from different documents please mention all possibilities and use the titles of documents "
+    "to separate between topics or domains. If you cannot base your answer on the given documents, "
+    f"please state that you do not have an answer. Your answer should be concise. "
+    f"{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
+    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n\n"
+    f"{{{QUESTION_PLACEHOLDER}}}"
 )
 
 
 _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT = (
-    f"{_RAG_SYSTEM_PREFIX}"
+    "You are an AI language model designed to function as a specialized "
+    "Retrieval Augmented Generation (RAG) assistant. "
     "When generating responses, prioritize correctness, i.e., ensure that your response is correct given the context "
     "and user query, and that it is grounded in the context. "
     "Furthermore, make sure that the response is supported by the given document or context. "
@@ -144,12 +127,9 @@ _DEFAULT_OPENAI_SYSTEM_MESSAGE_TEXT = (
 
 
 _DEFAULT_OPENAI_USER_MESSAGE_TEXT = (
-    f"{_RAG_GROUNDING_INSTRUCTION}\n"
-    f"{_RAG_CITATION_INSTRUCTION}\n\n"
-    f"Documents:\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n\n"
-    f"Question: {{{QUESTION_PLACEHOLDER}}}\n\n"
-    f"{_RAG_ANSWER_PROMPT_LINE}"
-    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}\n"
+    f"[Document]\n{{{REFERENCE_DOCUMENTS_PLACEHOLDER}}}\n[End]\n"
+    f"{{{QUESTION_PLACEHOLDER}}}. Your answer should be concise. \n"
+    f"{{{MULTILINGUAL_SUPPORT_INSTRUCTION_PLACEHOLDER}}}"
 )
 
 
