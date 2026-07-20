@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from consts import SUPPORTED_EXTENSIONS
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
@@ -31,7 +32,6 @@ from docling.document_converter import (
 )
 
 from ai4rag import handler
-from consts import SUPPORTED_EXTENSIONS
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)

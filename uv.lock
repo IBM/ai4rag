@@ -32,7 +32,6 @@ source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "docling" },
-    { name = "docling-core" },
     { name = "langchain-chroma" },
     { name = "langchain-text-splitters" },
     { name = "multiprocess" },
@@ -75,9 +74,6 @@ docs = [
     { name = "mkdocs-minify-plugin" },
     { name = "mkdocstrings", extra = ["python"] },
 ]
-feat-chunking = [
-    { name = "docling-core", extra = ["chunking"] },
-]
 test = [
     { name = "nbformat" },
     { name = "psutil" },
@@ -95,9 +91,7 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
-    { name = "docling", specifier = "~=2.112.0" },
-    { name = "docling-core", specifier = ">=2.73.0,<3.0.0" },
-    { name = "docling-core", extras = ["chunking"], marker = "extra == 'feat-chunking'", specifier = ">=2.73.0,<3.0.0" },
+    { name = "docling", extras = ["feat-chunking"], specifier = "~=2.112.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
@@ -122,7 +116,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = "==1.8.*" },
     { name = "unitxt", specifier = "~=1.26.1" },
 ]
-provides-extras = ["feat-chunking", "dev", "test", "code-check", "docs"]
+provides-extras = ["dev", "test", "code-check", "docs"]
 
 [[package]]
 name = "aiohappyeyeballs"
