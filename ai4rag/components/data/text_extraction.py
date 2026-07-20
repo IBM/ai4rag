@@ -31,30 +31,11 @@ from docling.document_converter import (
 )
 
 from ai4rag import handler
+from consts import SUPPORTED_EXTENSIONS
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
 
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
-    {
-        ".pdf",
-        ".docx",
-        ".pptx",
-        ".md",
-        ".html",
-        ".txt",
-        # New formats
-        ".odt",
-        ".odp",
-        ".adoc",
-        ".tex",
-        ".epub",
-        ".eml",
-        ".qmd",
-        ".Rmd",
-        ".xhtml",
-    }
-)
 DOWNLOAD_MAX_THREADS = 8
 
 # Module-level global used by multiprocessing workers.  Each spawned worker
