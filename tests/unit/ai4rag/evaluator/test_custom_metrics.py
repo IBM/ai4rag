@@ -151,7 +151,7 @@ class TestCalculateOverallScore:
         calculate_overall_score(result)
 
         q1_overall = next(m for m in result["question_scores"][0]["metrics"] if m["name"] == Metrics.OVERALL_SCORE.name)
-        assert math.isnan(q1_overall["value"])
+        assert q1_overall["value"] is None
 
     def test_empty_metrics(self):
         result = {"metrics": [], "question_scores": []}
