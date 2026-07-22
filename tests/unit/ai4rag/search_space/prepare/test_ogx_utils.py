@@ -24,6 +24,7 @@ class TestValidateFoundationModel:
         """Test that validation returns True when model responds successfully."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.return_value = Mock(choices=[])
+        mock_client.with_options.return_value = mock_client
 
         model = OGXFoundationModel(model_id="test-model", client=mock_client)
 
@@ -36,6 +37,7 @@ class TestValidateFoundationModel:
         """Test that validation returns False when model raises exception."""
         mock_client = MagicMock()
         mock_client.chat.completions.create.side_effect = Exception("Model error")
+        mock_client.with_options.return_value = mock_client
 
         model = OGXFoundationModel(model_id="test-model", client=mock_client)
 
@@ -55,6 +57,7 @@ class TestValidateEmbeddingModel:
         mock_response = Mock()
         mock_response.data = [mock_data]
         mock_client.embeddings.create.return_value = mock_response
+        mock_client.with_options.return_value = mock_client
 
         model = OGXEmbeddingModel(
             model_id="test-model",
@@ -69,6 +72,7 @@ class TestValidateEmbeddingModel:
     def test_returns_false_when_model_fails(self):
         """Test that validation returns False when model raises exception."""
         mock_client = MagicMock()
+        mock_client.with_options.return_value = mock_client
 
         model = OGXEmbeddingModel(
             model_id="test-model",

@@ -2,7 +2,6 @@
 #  (C) Copyright IBM Corp. 2025-2026.
 #  https://opensource.org/licenses/BSD-3-Clause
 #  -----------------------------------------------------------------------------------------
-import hashlib
 from datetime import datetime
 from typing import Any, cast
 
@@ -159,15 +158,11 @@ class ChromaVectorStore(BaseVectorStore):
         tuple[list[str], list[Document]]
             Lists with unique IDs and deduplicated langchain documents.
         """
+        if not chunks:
+            return [], []
         docs = self._to_langchain_documents(chunks)
-        if docs:
-            return tuple(
-                map(
-                    list,
-                    zip(*{hashlib.sha256(str(doc).encode(errors="replace")).hexdigest(): doc for doc in docs}.items()),
-                )
-            )
-        return [], []
+        deduped = {chunk.chunk_id: doc for chunk, doc in zip(chunks, docs)}
+        return list(deduped.keys()), list(deduped.values())
 
     def add_documents(self, documents: list[AI4RAGChunk], **kwargs: Any) -> list[str]:
         """

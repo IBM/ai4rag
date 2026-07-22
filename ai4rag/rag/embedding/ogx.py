@@ -5,7 +5,7 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ogx_client import BadRequestError, OgxClient
+from ogx_client import APITimeoutError, BadRequestError, OgxClient
 
 from ai4rag import logger
 from ai4rag.utils.constants import TokenEstimation
@@ -17,6 +17,7 @@ __all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
 
 MIN_CONTEXT_LENGTH = 700
 _TRUNCATION_MARGINS = (0.05, 0.10)
+_FALLBACK_TIMEOUT = 1200.0
 
 
 @dataclass
@@ -125,7 +126,11 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         )
 
     def _call_embedding_api(self, text_input: list[str] | str) -> list[list[float]]:
-        """Send a raw embedding request to the OGX server.
+        """Send an embedding request to the OGX server.
+
+        On ``APITimeoutError``, retries once with a 20-minute timeout
+        and no client-level retries to accommodate slow (CPU-deployed)
+        models.
 
         Parameters
         ----------
@@ -137,13 +142,27 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         list[list[float]]
             Embedding vectors corresponding to the input texts.
         """
-        return [
-            data.embedding
-            for data in self.client.embeddings.create(
-                input=text_input, model=self.model_id, extra_body={"truncate_prompt_tokens": -1}
-            ).data
-            if not isinstance(data.embedding, str)
-        ]
+        try:
+            return [
+                data.embedding
+                for data in self.client.embeddings.create(
+                    input=text_input, model=self.model_id, extra_body={"truncate_prompt_tokens": -1}
+                ).data
+                if not isinstance(data.embedding, str)
+            ]
+        except APITimeoutError:
+            logger.warning(
+                "Embedding request timed out. Retrying with %.0fs timeout (no retries).",
+                _FALLBACK_TIMEOUT,
+            )
+            no_retries_client = self.client.with_options(timeout=_FALLBACK_TIMEOUT, max_retries=0)
+            return [
+                data.embedding
+                for data in no_retries_client.embeddings.create(
+                    input=text_input, model=self.model_id, extra_body={"truncate_prompt_tokens": -1}
+                ).data
+                if not isinstance(data.embedding, str)
+            ]
 
     def _truncate_text(self, text: str, margin: float) -> str:
         """Truncate text to fit within the model's context length.

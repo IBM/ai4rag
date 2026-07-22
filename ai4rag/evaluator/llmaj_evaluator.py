@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import json
+import re
 from typing import Sequence
 
 import numpy as np
@@ -56,6 +57,10 @@ Question: {question}
 - 3 = partially meets the criterion
 - 4 = mostly meets with minor gaps
 - 5 = fully meets the criterion
+
+## Output format
+Respond with a JSON object containing exactly two keys: "score" (integer 1-5) and "rationale" (string).
+Example: {{"score": 3, "rationale": "The response partially addresses the question but misses key details."}}
 """
 
 JUDGE_RESPONSE_FORMAT: dict = {
@@ -179,13 +184,7 @@ class LLMaJEvaluator(BaseEvaluator):
                 response_format=JUDGE_RESPONSE_FORMAT,
             )
             content = choices[0].message.content.strip()
-            data = json.loads(content)
-            raw_score = int(data["score"])
-            normalized = _normalize_score(raw_score) if 1 <= raw_score <= 5 else None
-
-            return normalized
-
-        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+        except Exception as exc:
             logger.warning(
                 "LLM judge call failed [model=%s question_id=%s]: %s",
                 self.model.model_id,
@@ -194,9 +193,59 @@ class LLMaJEvaluator(BaseEvaluator):
             )
             return None
 
+        try:
+            data = _parse_judge_response(content)
+            raw_score = int(data["score"])
+        except (json.JSONDecodeError, KeyError, ValueError) as exc:
+            logger.warning(
+                "LLM judge response is not valid JSON [model=%s question_id=%s]: %s. Raw response: %.200s",
+                self.model.model_id,
+                question_id,
+                exc,
+                content,
+            )
+            return None
+
+        normalized = _normalize_score(raw_score) if 1 <= raw_score <= 5 else None
+        if normalized is None:
+            logger.warning(
+                "LLM judge returned out-of-range score=%d [model=%s question_id=%s]",
+                raw_score,
+                self.model.model_id,
+                question_id,
+            )
+        return normalized
+
     def get_supported_metrics(self) -> list[str]:
         """Return metric names supported by this evaluator."""
         return list(self.METRIC_GUIDELINES.keys())
+
+
+def _parse_judge_response(content: str) -> dict:
+    """Parse JSON from judge response, attempting lightweight repair on failure.
+
+    Handles two common malformed outputs from models that ignore ``response_format``:
+    1. Single-quoted JSON (Python dict literal style).
+    2. JSON embedded in markdown fences or surrounding prose.
+    """
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        pass
+
+    # Try extracting a JSON object from markdown fences or surrounding text.
+    match = re.search(r"\{[^{}]+\}", content)
+    if match:
+        extracted = match.group()
+        try:
+            return json.loads(extracted)
+        except json.JSONDecodeError:
+            # Single-quote repair on the extracted fragment.
+            repaired = extracted.replace("'", '"')
+            return json.loads(repaired)
+
+    # Last resort: single-quote repair on the full content.
+    return json.loads(content.replace("'", '"'))
 
 
 def _normalize_score(score: int) -> float:

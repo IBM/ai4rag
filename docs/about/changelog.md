@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.1](https://github.com/IBM/ai4rag/releases/tag/v0.10.1)
+
+### Added
+- **OGX client** — timeout fallback for embedding and chat requests: on `APITimeoutError`, retries once with a 20-minute timeout and disabled client-level retries to accommodate slow CPU-deployed models
+
+### Changed
+- **Chunking** — `AI4RAGChunk` now carries a deterministic `chunk_id` field (SHA-256 of document ID, sequence number, and text), replacing ad-hoc hash-based ID generation in vector stores
+- **Chunking** — hybrid chunking method now automatically includes document metadata during experiment execution
+- **Vector store** — `ChromaVectorStore` and `OGXVectorStore` deduplication and chunk identification now use the deterministic `AI4RAGChunk.chunk_id` instead of independent hash computations
+
+### Fixed
+- **Prompt templates** — partially reverted default RAG prompt templates for all model families (Granite, Llama, Mistral, OpenAI, default) to use model-native prompting patterns, removing shared instruction boilerplate
+- **Prompt filters** — decoupled `HPO_CITATION_FRAGMENTS` from internal `_RAG_CITATION_INSTRUCTION` constant, using inline string literals for portability
+
+---
+
 ## [0.10.0](https://github.com/IBM/ai4rag/releases/tag/v0.10.0)
 
 ### Added

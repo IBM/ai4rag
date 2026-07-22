@@ -42,7 +42,7 @@ def calculate_overall_score(scores: EvaluationMetricsResult) -> None:
             {
                 "name": overall.name,
                 "evaluator": overall.evaluator,
-                "value": score if score is not None else float("nan"),
+                "value": score,
             }
         )
 
