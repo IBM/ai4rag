@@ -18,7 +18,7 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
         ".epub",
         ".eml",
         ".qmd",
-        ".Rmd",
+        ".rmd",
         ".xhtml",
     }
 )
