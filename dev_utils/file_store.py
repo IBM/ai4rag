@@ -32,7 +32,7 @@ SUPPORTED_EXTENSIONS =     {
         ".epub",
         ".eml",
         ".qmd",
-        ".Rmd",
+        ".rmd",
         ".xhtml",
     }
 

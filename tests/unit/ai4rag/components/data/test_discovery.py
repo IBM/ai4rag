@@ -157,7 +157,7 @@ class TestDiscoverDocuments:
         assert "docs/file.epub" in keys
         assert "docs/file.eml" in keys
         assert "docs/file.qmd" in keys
-        assert "docs/file.Rmd" in keys
+        assert "docs/file.rmd" in keys
         assert "docs/file.xhtml" in keys
 
     def test_unsupported_extensions_filtered_out(self, mocker):
