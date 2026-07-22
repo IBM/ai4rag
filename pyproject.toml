@@ -45,7 +45,6 @@ dependencies = [
     "pygam~=0.12.0",
     "scikit-learn==1.8.*",
     "unitxt~=1.26.1",
-    "pytest>=9.1.1",
 ]
 
 

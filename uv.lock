@@ -40,7 +40,6 @@ dependencies = [
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pygam" },
-    { name = "pytest" },
     { name = "scikit-learn" },
     { name = "unitxt" },
 ]
@@ -113,7 +112,6 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.11.*" },
     { name = "pygam", specifier = "~=0.12.0" },
     { name = "pylint", marker = "extra == 'code-check'" },
-    { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "pytest-cov", marker = "extra == 'test'" },
     { name = "pytest-mock", marker = "extra == 'test'" },
