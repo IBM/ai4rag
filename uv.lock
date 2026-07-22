@@ -35,10 +35,12 @@ dependencies = [
     { name = "langchain-chroma" },
     { name = "langchain-text-splitters" },
     { name = "multiprocess" },
+    { name = "odfdo" },
     { name = "ogx-client" },
     { name = "pandas" },
     { name = "pydantic" },
     { name = "pygam" },
+    { name = "pytest" },
     { name = "scikit-learn" },
     { name = "unitxt" },
 ]
@@ -104,12 +106,14 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.25.0" },
     { name = "multiprocess", specifier = ">=0.70" },
     { name = "nbformat", marker = "extra == 'test'" },
+    { name = "odfdo", specifier = ">=3.0" },
     { name = "ogx-client", specifier = "~=1.1.0" },
     { name = "pandas", specifier = "==2.2.*" },
     { name = "psutil", marker = "extra == 'test'" },
     { name = "pydantic", specifier = "==2.11.*" },
     { name = "pygam", specifier = "~=0.12.0" },
     { name = "pylint", marker = "extra == 'code-check'" },
+    { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "pytest-cov", marker = "extra == 'test'" },
     { name = "pytest-mock", marker = "extra == 'test'" },
@@ -2390,6 +2394,18 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
+name = "odfdo"
+version = "3.23.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lxml" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/36/10/7b2d8d7c8a70c1d8c7357706ee7e1f05b41cf24aadde92ec0c6d55638ffe/odfdo-3.23.0.tar.gz", hash = "sha256:fa7a1e4bd93855dc7caad681defdbf3e75452b633ddf1c8f80acd22c2381aa15", size = 325569, upload-time = "2026-07-18T09:44:33.488Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/65/bc69ea6b5d034cd6d604917148fb722580702927dec140cd55d606d52f22/odfdo-3.23.0-py3-none-any.whl", hash = "sha256:1919c8cedd438cf7cce9d15a34512c1e19dd33bc1c6bb35c697878af2bcd4bf4", size = 428049, upload-time = "2026-07-18T09:44:32.04Z" },
 ]
 
 [[package]]

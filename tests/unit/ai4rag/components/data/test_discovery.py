@@ -130,7 +130,7 @@ class TestDiscoverDocuments:
             _s3_object("docs/file.epub", 100),
             _s3_object("docs/file.eml", 100),
             _s3_object("docs/file.qmd", 100),
-            _s3_object("docs/file.Rmd", 100),
+            _s3_object("docs/file.rmd", 100),
             _s3_object("docs/file.xhtml", 100),
         ]
         mock_client = _make_mock_s3_client(mocker, contents)
