@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ai4rag import handler
-from ai4rag.components.data.consts import SUPPORTED_EXTENSIONS
+from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 from ai4rag.components.utils.s3 import create_s3_client
 
 _logger = logging.getLogger("documents-discovery")

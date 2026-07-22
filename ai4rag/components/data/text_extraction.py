@@ -31,7 +31,7 @@ from docling.document_converter import (
 )
 
 from ai4rag import handler
-from ai4rag.components.data.consts import SUPPORTED_EXTENSIONS
+from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
