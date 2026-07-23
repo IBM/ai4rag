@@ -727,6 +727,7 @@ class AI4RAGExperiment:
                 "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
                 "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
                 "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
+                "include_metadata": evaluation_result.indexing_params["chunking"]["include_metadata"],
             },
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
