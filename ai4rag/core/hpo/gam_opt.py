@@ -288,10 +288,7 @@ class GAMOptimizer(BaseOptimizer):
         if not categorical_cols:
             return 1
         seen = already_covered or {}
-        return max(
-            len({c[col] for c in combinations} - seen.get(col, set()))
-            for col in categorical_cols
-        )
+        return max(len({c[col] for c in combinations} - seen.get(col, set())) for col in categorical_cols)
 
     @staticmethod
     def _get_stratified_combinations(
