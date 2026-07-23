@@ -155,7 +155,7 @@ graph TB
 
 **Data Components** (`ai4rag/components/data/`)
 
-- Reusable functions for pipeline data stages: document discovery, text extraction, indexing, and test data loading
+- Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
 - Provider-agnostic — accepts injected S3 clients and OGX clients
 
