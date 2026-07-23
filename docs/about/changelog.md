@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.2](https://github.com/IBM/ai4rag/releases/tag/v0.10.2)
+
+### Changed
+- **Dependencies** — updated `ogx-client` dependency from `~=1.1.0` to `~=1.2.0`
+- **Data component** — `ChunkingConstraints.METHODS` changed from mutable list to immutable tuple for correctness
+
+### Fixed
+- **Evaluator** — hardened LLM-as-a-Judge JSON response parsing with lightweight repair for common malformed outputs (single-quoted JSON, markdown-fenced blocks, JSON embedded in surrounding prose); added explicit output format instructions to the judge prompt; separated LLM call failures from JSON parse failures with distinct warning messages and raw response logging
+- **Evaluator** — `calculate_overall_score()` now propagates `None` directly for unevaluated metrics instead of converting to `float("nan")`
+- **Experiment** — streamed pattern now includes the `include_metadata` chunking field, ensuring metadata-aware chunking configurations are fully captured in pattern output
+
+### Removed
+- **Data component** — removed `index_documents()` function and `documents_indexing` module from `ai4rag.components.data`; the component was unused
+
+---
+
 ## [0.10.1](https://github.com/IBM/ai4rag/releases/tag/v0.10.1)
 
 ### Added

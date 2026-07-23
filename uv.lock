@@ -106,7 +106,7 @@ requires-dist = [
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=0.25.0" },
     { name = "multiprocess", specifier = ">=0.70" },
     { name = "nbformat", marker = "extra == 'test'" },
-    { name = "ogx-client", specifier = "~=1.1.0" },
+    { name = "ogx-client", specifier = ">=1.1.0,<=1.1.3" },
     { name = "pandas", specifier = "==2.2.*" },
     { name = "psutil", marker = "extra == 'test'" },
     { name = "pydantic", specifier = "==2.11.*" },
