@@ -38,9 +38,11 @@ The GAM Optimizer uses **Generalized Additive Models** to predict which configur
 
 The optimization process has two phases:
 
-**Phase 1: Random Exploration**
+**Phase 1: Stratified Random Exploration**
 
-- Randomly sample `n_random_nodes` configurations from the search space
+- Select `n_random_nodes` configurations from the search space using stratified sampling
+- Stratification ensures every unique value of each string-valued categorical parameter (e.g. `search_mode`, `chunking_method`) is evaluated at least once before GAM training begins — this prevents biased model training when some parameter values dominate the search space
+- Integer/float parameters are not stratified; only string-typed categorical parameters participate
 - Evaluate each using the objective function (your chosen metric)
 - Build an initial dataset of (configuration, score) pairs
 
@@ -95,11 +97,11 @@ optimizer_settings = GAMOptSettings(
 
 #### `n_random_nodes`
 
-**What it controls**: Number of random configurations to evaluate before training the GAM model.
+**What it controls**: Number of configurations to evaluate before training the GAM model, selected using stratified sampling over string-valued categorical parameters.
 
 **Default**: 4
 
-**Why it matters**: Random exploration ensures the model is trained on diverse configurations, avoiding local optima.
+**Why it matters**: The initial exploration phase uses stratified sampling to guarantee that every unique value of each string-valued categorical parameter (e.g. `search_mode`, `chunking_method`, `ranker_strategy`) is evaluated at least once. This ensures the GAM model is trained on diverse, representative configurations, avoiding local optima caused by search space imbalance.
 
 **Typical values**:
 
@@ -114,6 +116,9 @@ optimizer_settings = GAMOptSettings(
 
 !!! warning "Balance with max_evals"
     Ensure `n_random_nodes < max_evals`. If `n_random_nodes` equals or exceeds `max_evals`, the optimizer will only perform random search.
+
+!!! tip "Sizing for categorical coverage"
+    Set `n_random_nodes` to at least the number of unique values of your most varied string parameter. For example, if `chunking_method` has 3 values and `search_mode` has 2, use at least `n_random_nodes=3`. A warning is emitted when the value is too small for full coverage. When warm-starting, already-evaluated categorical values are accounted for automatically.
 
 ---
 
@@ -221,6 +226,7 @@ best_result = optimizer.search()
 - Skip re-evaluating configurations you've already tested
 - Build on previous optimization runs
 - Useful when expanding search space or changing objective metric
+- Stratified sampling accounts for categorical values already covered by warm-start observations, so early slots are not wasted on redundant coverage
 
 !!! note "Known Observations Format"
     Each observation must include:

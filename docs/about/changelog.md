@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.3](https://github.com/IBM/ai4rag/releases/tag/v0.10.3)
+
+### Fixed
+- **RAG optimization component** — `GAMOptimizer` initial random phase now uses stratified sampling to guarantee that every unique value of each string-valued categorical parameter (e.g. `search_mode`, `chunking_method`) is evaluated at least once before GAM training begins, preventing biased exploration when the search space is skewed toward a dominant category; warm-start observations are accounted for so stratification does not waste early slots on already-covered values; a warning is emitted when `n_random_nodes` is too small for full categorical coverage
+
+---
+
 ## [0.10.2](https://github.com/IBM/ai4rag/releases/tag/v0.10.2)
 
 ### Changed
