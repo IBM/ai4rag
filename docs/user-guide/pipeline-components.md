@@ -73,25 +73,6 @@ result = extract_text(
 print(f"Processed {result.processed_count}/{result.total_documents}")
 ```
 
-### Document Indexing
-
-Chunk, embed, and index documents into a vector store:
-
-```python
-from ai4rag.components.data import index_documents
-from ai4rag.components import create_ogx_client
-
-client = create_ogx_client(base_url="http://localhost:8321", api_key="key")
-total_chunks = index_documents(
-    extracted_text_dir="/tmp/extracted",
-    embedding_model_id="ibm/slate-125m-english-rtrvr",
-    vector_io_provider_id="milvus",
-    ogx_client=client,
-    chunking_method="hybrid",
-    chunk_size=1024,
-)
-```
-
 ### Test Data Loading
 
 Load benchmark test data from S3:

@@ -19,13 +19,6 @@ Data processing functions for the AutoRAG pipeline.
         - extract_text
         - ExtractionResult
 
-## Document Indexing
-
-::: ai4rag.components.data.documents_indexing
-    options:
-      members:
-        - index_documents
-
 ## Test Data Loading
 
 ::: ai4rag.components.data.test_data_loader

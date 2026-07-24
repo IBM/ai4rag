@@ -111,7 +111,7 @@ class ChunkingConstraints(metaclass=ConstantMeta):
     MAX_CHUNK_SIZE = 2048
     MIN_CHUNK_OVERLAP = 0
     MAX_CHUNK_OVERLAP = 256
-    METHODS = ["recursive", "hybrid"]
+    METHODS = ("recursive", "hybrid")
 
 
 class TokenEstimation(metaclass=ConstantMeta):
