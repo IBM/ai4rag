@@ -397,7 +397,7 @@ class AI4RAGExperiment:
         start_time = time.time()
 
         chunking_params = get_chunking_params(rag_params)
-        chunking_params["include_metadata"] = chunking_params.get("method") == "hybrid"
+        chunking_params["include_metadata"] = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD) == "hybrid"
 
         retrieval_params = get_retrieval_params(rag_params)
 
