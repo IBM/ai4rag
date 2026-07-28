@@ -24,7 +24,6 @@ SUPPORTED_EXTENSIONS =     {
         ".md",
         ".html",
         ".txt",
-        # New formats
         ".odt",
         ".odp",
         ".adoc",
