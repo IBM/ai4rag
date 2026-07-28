@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.10.4](https://github.com/IBM/ai4rag/releases/tag/v0.10.4)
+
+### Fixed
+- **Experiment** — fixed incorrect dictionary key `"method"` used to check the chunking method when determining whether to include metadata; now uses the canonical `AI4RAGParamNames.CHUNKING_METHOD` constant, ensuring `include_metadata` is correctly set for hybrid chunking during experiment execution
+
+---
+
 ## [0.10.3](https://github.com/IBM/ai4rag/releases/tag/v0.10.3)
 
 ### Fixed
