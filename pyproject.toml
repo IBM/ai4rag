@@ -29,8 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "docling~=2.107.0",
-  "docling-core[chunking]~=2.84.0",
+  "docling[feat-chunking,format-opendocument]~=2.107.0",
   "langchain_chroma~=1.1.0",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",

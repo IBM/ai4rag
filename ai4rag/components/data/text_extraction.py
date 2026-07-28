@@ -16,24 +16,30 @@ from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
 from docling.document_converter import (
+    AsciiDocFormatOption,
     DocumentConverter,
+    EmailFormatOption,
+    EpubFormatOption,
     HTMLFormatOption,
+    LatexFormatOption,
     MarkdownFormatOption,
+    OdpFormatOption,
+    OdtFormatOption,
     PdfFormatOption,
     PowerpointFormatOption,
     WordFormatOption,
 )
 
 from ai4rag import handler
+from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
 
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".docx", ".pptx", ".md", ".html", ".txt"})
 DOWNLOAD_MAX_THREADS = 8
 
 # Module-level global used by multiprocessing workers.  Each spawned worker
-# initialises its own ``DocumentConverter`` via the pool initializer and
+# initializes its own ``DocumentConverter`` via the pool initializer and
 # stores it here so that ``_worker_process_document`` can retrieve it.
 _mp_worker_converter = None  # pylint: disable=invalid-name
 
@@ -367,6 +373,12 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         InputFormat.PPTX: PowerpointFormatOption(pipeline_options=paginated_pipeline_options),
         InputFormat.HTML: HTMLFormatOption(),
         InputFormat.MD: MarkdownFormatOption(),
+        InputFormat.ODT: OdtFormatOption(),
+        InputFormat.ODP: OdpFormatOption(),
+        InputFormat.ASCIIDOC: AsciiDocFormatOption(),
+        InputFormat.LATEX: LatexFormatOption(),
+        InputFormat.EPUB: EpubFormatOption(),
+        InputFormat.EMAIL: EmailFormatOption(),
     }
 
 
