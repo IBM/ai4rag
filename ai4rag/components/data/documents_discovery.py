@@ -103,7 +103,7 @@ def discover_documents(  # pylint: disable=too-many-locals
 
     Lists objects under *bucket_name*/*prefix*, filters by file extension,
     and applies size-based sampling when enabled.  Documents referenced by
-    ``test_data_doc_names`` are prioritised during sampling so that
+    ``test_data_doc_names`` are prioritized during sampling so that
     benchmark-relevant files are always included when the budget permits.
 
     Parameters
