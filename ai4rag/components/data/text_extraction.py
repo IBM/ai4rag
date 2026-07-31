@@ -14,11 +14,13 @@ from typing import Any
 
 from ai4rag import handler
 from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
+from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
     PaginatedPipelineOptions,
     ThreadedPdfPipelineOptions,
+    AsrPipelineOptions,
 )
 from docling.document_converter import (
     AsciiDocFormatOption,
@@ -365,6 +367,11 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         do_table_structure=do_table_structure,
         accelerator_options=accel,
     )
+
+    asr_pipeline_options = AsrPipelineOptions(
+        asr_options=asr_model_specs.WHISPER_TURBO_MLX
+    )
+
     paginated_pipeline_options = PaginatedPipelineOptions(
         artifacts_path=ap,
         generate_page_images=False,
@@ -383,7 +390,7 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         InputFormat.LATEX: LatexFormatOption(),
         InputFormat.EPUB: EpubFormatOption(),
         InputFormat.EMAIL: EmailFormatOption(),
-        InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=AsrPipeline),
+        InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=asr_pipeline_options),
     }
 
 
