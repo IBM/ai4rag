@@ -32,6 +32,7 @@ source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "docling" },
+    { name = "docling-slim", extra = ["feat-chunking", "format-opendocument"] },
     { name = "langchain-chroma" },
     { name = "langchain-text-splitters" },
     { name = "multiprocess" },
@@ -91,7 +92,8 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
-    { name = "docling", extras = ["feat-chunking", "format-opendocument"], specifier = "~=2.107.0" },
+    { name = "docling", specifier = "~=2.107.0" },
+    { name = "docling-slim", extras = ["asr", "feat-chunking", "format-opendocument"], specifier = "~=2.107.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
@@ -922,6 +924,12 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+feat-chunking = [
+    { name = "docling-core", extra = ["chunking"] },
+]
+format-opendocument = [
+    { name = "odfdo" },
+]
 standard = [
     { name = "accelerate" },
     { name = "beautifulsoup4" },
@@ -2383,6 +2391,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/0b/5f/19930f824ffeb0ad4372da4812c50edbd1434f678c90c2733e1188edfc63/oauthlib-3.3.1.tar.gz", hash = "sha256:0f0f8aa759826a193cf66c12ea1af1637f87b9b4622d46e866952bb022e538c9", size = 185918, upload-time = "2025-06-19T22:48:08.269Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/be/9c/92789c596b8df838baa98fa71844d84283302f7604ed565dafe5a6b5041a/oauthlib-3.3.1-py3-none-any.whl", hash = "sha256:88119c938d2b8fb88561af5f6ee0eec8cc8d552b7bb1f712743136eb7523b7a1", size = 160065, upload-time = "2025-06-19T22:48:06.508Z" },
+]
+
+[[package]]
+name = "odfdo"
+version = "3.23.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "lxml" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/32/7c/77b3ef7ac4074eebd5fea4edd839c0637f2738ac323ee5ba60459b0c4f8e/odfdo-3.23.1.tar.gz", hash = "sha256:86414364d1184f94f7d1788822d9002d402e5b5737fdaa463e9c637a1428baf9", size = 326049, upload-time = "2026-07-22T16:54:06.327Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/86/57/8a1713d09b3366be82adf51571922afe5ac245e481b9ffbdbf5a0de47509/odfdo-3.23.1-py3-none-any.whl", hash = "sha256:06e4136dcffb5407041a8342b15b15bf874906c190d546551d15bbf20fa3062a", size = 428137, upload-time = "2026-07-22T16:54:04.957Z" },
 ]
 
 [[package]]

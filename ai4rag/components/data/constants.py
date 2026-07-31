@@ -19,5 +19,11 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
         ".qmd",
         ".rmd",
         ".xhtml",
+        ".wav",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".ogg",
+        ".flac"
     }
 )

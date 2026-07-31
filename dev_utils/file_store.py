@@ -17,23 +17,29 @@ from docling_core.types.doc.labels import DocItemLabel
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_EXTENSIONS =     {
-        ".pdf",
-        ".docx",
-        ".pptx",
-        ".md",
-        ".html",
-        ".txt",
-        ".odt",
-        ".odp",
-        ".adoc",
-        ".tex",
-        ".epub",
-        ".eml",
-        ".qmd",
-        ".rmd",
-        ".xhtml",
-    }
+SUPPORTED_EXTENSIONS = {
+    ".pdf",
+    ".docx",
+    ".pptx",
+    ".md",
+    ".html",
+    ".txt",
+    ".odt",
+    ".odp",
+    ".adoc",
+    ".tex",
+    ".epub",
+    ".eml",
+    ".qmd",
+    ".rmd",
+    ".xhtml",
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".flac",
+}
 
 _DEFAULT_CACHE_DIR = Path(__file__).parent / "local" / "docling_cache"
 

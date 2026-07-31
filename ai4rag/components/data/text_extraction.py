@@ -12,9 +12,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from ai4rag import handler
+from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
+from docling.datamodel.pipeline_options import (
+    PaginatedPipelineOptions,
+    ThreadedPdfPipelineOptions,
+)
 from docling.document_converter import (
     AsciiDocFormatOption,
     DocumentConverter,
@@ -28,10 +33,9 @@ from docling.document_converter import (
     PdfFormatOption,
     PowerpointFormatOption,
     WordFormatOption,
+    AudioFormatOption,
 )
-
-from ai4rag import handler
-from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
+from docling.pipeline.asr_pipeline import AsrPipeline
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
@@ -379,6 +383,7 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         InputFormat.LATEX: LatexFormatOption(),
         InputFormat.EPUB: EpubFormatOption(),
         InputFormat.EMAIL: EmailFormatOption(),
+        InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=AsrPipeline),
     }
 
 
