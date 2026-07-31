@@ -46,6 +46,7 @@ class SimpleRAG(BaseRAGTemplate):
         chunker: BaseChunker | None = None,
         embedding_model: BaseEmbeddingModel | None = None,
         vector_store: BaseVectorStore | None = None,
+        **kwargs,
     ):
         super().__init__(
             foundation_model=foundation_model,
@@ -53,6 +54,7 @@ class SimpleRAG(BaseRAGTemplate):
             embedding_model=embedding_model,
             vector_store=vector_store,
         )
+        self.optimized_dspy_module = kwargs.pop("optimized_dspy_module", None)
 
         self.chunker = chunker
 
@@ -110,10 +112,16 @@ class SimpleRAG(BaseRAGTemplate):
             {"role": "user", "content": user_message},
         ]
 
-        chat_response = self.foundation_model.chat(messages=messages)
+        if self.optimized_dspy_module:
+            model_prediction = self.optimized_dspy_module(question=question, contexts=reference_documents)
+            answer = model_prediction.answer_grounded_in_contexts
+            # TODO log model reasoning for a given question
+        else:
+            chat_response = self.foundation_model.chat(messages=messages)
+            answer = chat_response[0].message.content
 
         return {
-            "answer": chat_response[0].message.content,
+            "answer": answer,
             "reference_documents": reference_documents,
             "question": question,
         }

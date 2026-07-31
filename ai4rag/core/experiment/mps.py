@@ -2,9 +2,11 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from random import choice, seed
 from typing import Any, TypedDict
 
 from docling_core.types.doc import DoclingDocument
+import dspy
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -15,6 +17,7 @@ from ai4rag.core.experiment.exception_handler import (
     IndexingError,
 )
 from ai4rag.core.experiment.utils import build_evaluation_data, query_rag
+from ai4rag.core.hpo.prompts import RAGPrompt, overall_score_per_question
 from ai4rag.evaluator import UnitxtEvaluator
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationMetricsResult
 from ai4rag.evaluator.custom_metrics import apply_custom_metrics
@@ -179,6 +182,58 @@ class ModelsPreSelector:
                 f"Foundation models pre-selection has failed. "
                 f"None of the given models has been successfully evaluated. {msg}"
             )
+
+    def optimize_prompts(self, api_base, api_key):
+        """Performs prompts optimization using the MIPROv2 algorithm and CoT module."""
+        # same model as MPS uses!
+        lm = dspy.LM(
+            f"openai/{self.foundation_models[0]}",
+            api_base=api_base,  ## must end with `/v1`
+            api_key=api_key,
+        )
+        dspy.configure(lm=lm)
+
+        cot = dspy.ChainOfThought(RAGPrompt)
+
+        document_ids = []
+        for element in self.benchmark_data.document_ids:
+            document_ids.extend(element)
+        documents = [document for document in self.documents if document.name in document_ids]
+        chunked_documents = self._chunk_documents(documents)
+        try:
+            vector_store = self._create_vector_store(
+                self.embedding_models[0], chunked_documents, collection_name="prompt_optimization_collection"
+            )
+        except Exception as exc:
+            raise IndexingError(exc, "prompt_optimization_collection", self.embedding_models[0].model_id) from exc
+
+        retriever = Retriever(vector_store, **self.retrieval_params)
+
+        dspy_train_set = []
+        dspy_test_set = []
+
+        # prepare dspy_train_set so that it contains the same questions as mps_train_set
+        for _, question_data in self.benchmark_data._benchmark_data.iterrows():
+            contexts = retriever.retrieve(question_data["question"])
+            dspy_example = dspy.Example(
+                question=question_data["question"],
+                contexts=contexts,
+                correct_answer=question_data["correct_answers"],
+                correct_answer_document_ids=question_data["correct_answer_document_ids"],
+            ).with_inputs("question", "contexts")
+            dspy_train_set.append(dspy_example)
+
+        seed(17)
+        test_question = choice(dspy_train_set)
+        dspy_test_set.append(test_question)
+        dspy_train_set.remove(test_question)
+
+        mipro = dspy.MIPROv2(metric=overall_score_per_question, auto="light", seed=17)
+        optimized_cot = mipro.compile(
+            cot, trainset=dspy_train_set, valset=dspy_test_set, seed=17, max_bootstrapped_demos=0, max_labeled_demos=0
+        )
+        # TODO save the chain's state
+        return optimized_cot
 
     def _evaluate_foundation_models(self, retriever: Retriever, embedding_model: BaseEmbeddingModel):
         """

@@ -6,9 +6,11 @@ import time
 from dataclasses import asdict, is_dataclass
 from typing import Any, Sequence
 
+import dspy
 import pandas as pd
 from docling_core.types.doc import DoclingDocument
 from ogx_client import OgxClient
+from ai4rag.core.hpo.prompts import RAGPrompt
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -161,6 +163,7 @@ class AI4RAGExperiment:
         self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
+        self.optimized_dspy_module = kwargs.pop("optimized_dspy_module", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -427,9 +430,21 @@ class AI4RAGExperiment:
                 "Only 'vector' mode is supported for chroma."
             )
 
-        context_template_text = foundation_model.context_template_text
-        system_message_text = foundation_model.system_message_text
-        user_message_text = foundation_model.user_message_text
+        if self.optimized_dspy_module:
+            chat_adapter = dspy.ChatAdapter(use_json_adapter_fallback=True)
+            optimized_dspy_module_signature = RAGPrompt.load_state(
+                self.optimized_dspy_module.dump_state()["predict"]["signature"]
+            )
+            context_template_text = "[[ ## contexts ## ]]"
+            system_message_text = chat_adapter.format_system_message(signature=optimized_dspy_module_signature)
+            user_message_text = chat_adapter.format_user_message_content(
+                signature=optimized_dspy_module_signature,
+                inputs={"question": "<user_question>", "contexts": "<contexts>"},
+            )
+        else:
+            context_template_text = foundation_model.context_template_text
+            system_message_text = foundation_model.system_message_text
+            user_message_text = foundation_model.user_message_text
 
         rag_params = {
             "retrieval": retrieval_params,
@@ -528,10 +543,10 @@ class AI4RAGExperiment:
             ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
         )
 
-        rag_pattern = SimpleRAG(
-            foundation_model=foundation_model,
-            retriever=retriever,
-        )
+        rag_pattern_kwargs = {}
+        if self.optimized_dspy_module is not None:
+            rag_pattern_kwargs["optimized_dspy_module"] = self.optimized_dspy_module
+        rag_pattern = SimpleRAG(foundation_model=foundation_model, retriever=retriever, **rag_pattern_kwargs)
 
         _rag_log = (
             f"Retrieval and generation using collection: '{collection_name}' and "

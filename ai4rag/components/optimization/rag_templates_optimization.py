@@ -10,6 +10,7 @@ from json import dump as json_dump
 from pathlib import Path
 from typing import Any
 
+import dspy
 import pandas as pd
 from ogx_client import OgxClient
 
@@ -159,6 +160,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     embedding_models: list[OGXEmbeddingModel] = []
     params: list[Parameter] = []
 
+    optimized_dspy_module = dspy.ChainOfThought("->")
     for param_name, values in search_space_raw.items():
         if param_name == "foundation_model":
             values = [_deserialize_model(m, ogx_client) for m in values]
@@ -166,6 +168,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         elif param_name == "embedding_model":
             values = [_deserialize_model(m, ogx_client) for m in values]
             embedding_models = values
+        elif param_name == "optmized_dspy_module" and values:
+            optimized_dspy_module = dspy.ChainOfThought("->").load_state(state=values)
+            continue
         params.append(Parameter(param_name, "C", values=values))
 
     search_space = AI4RAGSearchSpace(params=params)
@@ -193,6 +198,12 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     event_handler = KFPEventHandler()
 
+    experiments_kwargs = {}
+
+    if optimized_dspy_module.history:
+        # If it has been optimized it has non-empty history. Otherwise it's the default value which we want to discard
+        experiments_kwargs["optimized_dspy_module"] = optimized_dspy_module
+
     rag_exp = AI4RAGExperiment(
         client=ogx_client,
         event_handler=event_handler,
@@ -205,6 +216,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         ogx_vector_io_provider_id=vector_io_provider_id,
         inference_max_threads=inference_max_threads,
         evaluators=evaluators,
+        **experiments_kwargs,
     )
 
     # --- Run the optimization loop ---

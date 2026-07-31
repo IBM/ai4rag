@@ -78,10 +78,13 @@ class SearchSpaceReport:
         model lists and non-model parameter ranges.
     selected_models : dict[str, list]
         Foundation and embedding model lists that survived pre-selection.
+    optimized_dspy_module : dict[str, Any]
+        A serialized representation of an optimized DSPy module as returned by `dump_state()` method.
     """
 
     search_space: dict[str, Any]
     selected_models: dict[str, list]
+    optimized_dspy_module: dict[str, Any]
 
     def save_json(self, path: str | Path) -> None:
         """Serialize the report to a JSON file.
@@ -95,8 +98,9 @@ class SearchSpaceReport:
         """
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
+        report = {**self.search_space, "optimized_dspy_module": self.optimized_dspy_module}
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.search_space, f, indent=2)
+            json.dump(report, f, indent=2)
 
 
 def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
@@ -113,6 +117,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     chunk_sizes: list[int] | None = None,
     chunk_overlaps: list[int] | None = None,
     inference_max_threads: int = 10,
+    optimize_prompts: bool = True,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
@@ -161,6 +166,8 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         RAG service during benchmark evaluation.  Lower values reduce
         per-request concurrency (useful when each request carries more
         retrieved context).  Defaults to ``10``.
+    optimize_prompts
+        Whether to utilise DSPy library for building and optimization of the prompts.
 
     Returns
     -------
@@ -222,14 +229,15 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     fm_values = search_space["foundation_model"].values
     em_values = search_space["embedding_model"].values
 
+    mps = ModelsPreSelector(
+        benchmark_data=benchmark_data.get_random_sample(n_records=sample_size, random_seed=random_seed),
+        documents=documents,
+        foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
+        embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
+        max_threads=inference_max_threads,
+    )
+
     if len(fm_values) > top_n_generation or len(em_values) > top_k_embedding:
-        mps = ModelsPreSelector(
-            benchmark_data=benchmark_data.get_random_sample(n_records=sample_size, random_seed=random_seed),
-            documents=documents,
-            foundation_models=search_space._search_space["foundation_model"].values,  # pylint: disable=protected-access
-            embedding_models=search_space._search_space["embedding_model"].values,  # pylint: disable=protected-access
-            max_threads=inference_max_threads,
-        )
         mps.evaluate_patterns()
         selected = mps.select_models(
             n_embedding_models=top_k_embedding,
@@ -245,6 +253,10 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
             "embedding_model": list(em_values),
         }
 
+    optimized_dspy_module = None
+    if optimize_prompts:
+        optimized_dspy_module = mps.optimize_prompts(ogx_client.base_url, ogx_client.api_key)
+
     # Build verbose representation from valid (rule-filtered) combinations only
     valid_combinations = search_space.combinations
     if not valid_combinations:
@@ -259,6 +271,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     return SearchSpaceReport(
         search_space=verbose_repr,
         selected_models=selected_models,
+        optimized_dspy_module=optimized_dspy_module.dump_state() if optimized_dspy_module else {},
     )
 
 
