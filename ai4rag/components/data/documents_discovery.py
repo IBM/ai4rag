@@ -10,12 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from ai4rag import handler
+from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 from ai4rag.components.utils.s3 import create_s3_client
 
 _logger = logging.getLogger("documents-discovery")
 _logger.addHandler(handler)
 
-SUPPORTED_EXTENSIONS: frozenset[str] = frozenset({".pdf", ".docx", ".pptx", ".md", ".html", ".txt"})
+
 DOCUMENTS_DESCRIPTOR_FILENAME = "documents_descriptor.json"
 SAMPLING_MAX_SIZE_GB: float = 1
 
@@ -102,7 +103,7 @@ def discover_documents(  # pylint: disable=too-many-locals
 
     Lists objects under *bucket_name*/*prefix*, filters by file extension,
     and applies size-based sampling when enabled.  Documents referenced by
-    ``test_data_doc_names`` are prioritised during sampling so that
+    ``test_data_doc_names`` are prioritized during sampling so that
     benchmark-relevant files are always included when the budget permits.
 
     Parameters
