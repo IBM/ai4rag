@@ -24,6 +24,7 @@ from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
+from ai4rag.rag.vector_store.config import ChromaConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
@@ -113,7 +114,7 @@ def _make_experiment(documents, benchmark_data, foundation_models, embedding_mod
         documents=documents,
         benchmark_data=benchmark_data,
         search_space=_build_search_space(foundation_models, embedding_models),
-        vector_store_type="chroma",
+        vector_store_config=ChromaConfig(),
         optimizer_settings=RandomOptSettings(max_evals=3),
         event_handler=LocalEventHandler(),
         **kwargs,

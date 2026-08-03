@@ -346,7 +346,7 @@ params = {
     "mode": "hybrid",
     "reranker_type": "rrf",  # or "weighted", "normalized"
     "reranker_params": {
-        "impact_factor": 60  # ranker_k for RRF
+        "k": 60  # ranker_k for RRF
         # or "alpha": 0.7 for weighted
     }
 }

@@ -2,574 +2,395 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+"""Unit tests for :class:`ChromaVectorStore` on the native ``chromadb`` client.
+
+These tests exercise the store end-to-end against a real in-memory
+``EphemeralClient`` rather than mocking the client. ``chromadb`` keeps a single
+process-wide in-memory system that is shared across every ``EphemeralClient``
+instance, so isolation is achieved by giving each store its own auto-generated
+collection name and dropping the collection on teardown (see the ``store``
+fixture).
+"""
+
+import hashlib
 from unittest.mock import MagicMock
 
 import pytest
-from langchain_core.documents import Document
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
+from ai4rag.rag.vector_store.config import ChromaConfig
 
 
 class MockEmbeddingModel(BaseEmbeddingModel):
-    """Mock BaseEmbeddingModel for testing."""
+    """Deterministic 3-D embedding model for reproducible search ordering.
+
+    The vector is derived from the SHA-256 digest of the text, so identical
+    texts embed to identical vectors (cosine distance ``0`` → similarity ``1``)
+    while distinct texts get distinct, non-zero vectors. This makes nearest-
+    neighbour ordering deterministic without a real embedding backend.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(client=MagicMock(), model_id="mock-embed", params={"embedding_dimension": 3})
+
+    @staticmethod
+    def _vector(text: str) -> list[float]:
+        digest = hashlib.sha256(text.encode()).digest()
+        # +1.0 keeps every component strictly positive so no vector is the zero
+        # vector (for which cosine distance is undefined).
+        return [1.0 + digest[0] / 255.0, 1.0 + digest[1] / 255.0, 1.0 + digest[2] / 255.0]
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Mock embed_documents implementation."""
-        return [[0.1, 0.2, 0.3] for _ in texts]
+        return [self._vector(text) for text in texts]
 
     def embed_query(self, query: str) -> list[float]:
-        """Mock embed_query implementation."""
-        return [0.1, 0.2, 0.3]
+        return self._vector(query)
+
+
+@pytest.fixture
+def embedding_model() -> MockEmbeddingModel:
+    """Provide a fresh deterministic embedding model."""
+    return MockEmbeddingModel()
+
+
+@pytest.fixture
+def store(embedding_model):
+    """Provide an ephemeral store with an isolated, auto-cleaned collection."""
+    vector_store = ChromaVectorStore(embedding_model=embedding_model)
+    yield vector_store
+    # Drop the collection so the shared in-memory system does not leak state
+    # between tests.
+    try:
+        vector_store.clean_collection()
+    except Exception:  # pragma: no cover - teardown best effort
+        pass
+
+
+def _doc_chunks() -> list[AI4RAGChunk]:
+    """Build five single-word chunks of one document with disjoint vocabularies.
+
+    Disjoint words keep the merged window text predictable (no incidental
+    overlap de-duplication) while sequence numbers drive window expansion.
+    """
+    words = ["alpha", "bravo", "charlie", "delta", "echo"]
+    return [
+        AI4RAGChunk(text=word, metadata={"document_id": "docA", "sequence_number": i}) for i, word in enumerate(words)
+    ]
 
 
 class TestChromaVectorStoreInitialization:
-    """Test suite for ChromaVectorStore initialization."""
+    """Initialization and collection-name handling."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_init_with_defaults(self, store):
+        assert store.collection_name.startswith("ai4rag_")
+        assert store.distance_metric == "cosine"
+        assert store.DOCUMENT_NAME_FIELD == "document_id"
+        assert store.SEQUENCE_NUMBER_FIELD == "sequence_number"
+        assert store.count() == 0
 
-    @pytest.fixture
-    def mock_chroma_client(self, mocker):
-        """Create a mock Chroma client."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": []}
-        mock_client.add_documents.return_value = ["id1", "id2"]
-        mock_client.similarity_search.return_value = [Document(page_content="test")]
-        mock_client.similarity_search_with_score.return_value = [(Document(page_content="test"), 0.95)]
-        return mock_client
-
-    def test_init_with_defaults(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test initialization with default parameters."""
-        mock_chroma_class = mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        assert vector_store.embedding_model == mock_embedding_model
-        assert vector_store.collection_name.startswith("ai4rag_")
-        assert vector_store.distance_metric == "cosine"
-        assert vector_store._document_name_field == "document_id"
-        assert vector_store._chunk_sequence_number_field == "sequence_number"
-
-    def test_init_with_custom_parameters(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test initialization with custom parameters."""
-        mock_chroma_class = mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
+    def test_init_with_custom_parameters(self, embedding_model):
         vector_store = ChromaVectorStore(
-            embedding_model=mock_embedding_model,
-            reuse_collection_name="custom_collection",
+            embedding_model=embedding_model,
+            collection_name="ai4rag_custom_collection",
             distance_metric="l2",
-            document_name_field="doc_id",
-            chunk_sequence_number_field="seq_num",
         )
-        assert vector_store.collection_name == "custom_collection"
-        assert vector_store.distance_metric == "l2"
-        assert vector_store._document_name_field == "doc_id"
-        assert vector_store._chunk_sequence_number_field == "seq_num"
+        try:
+            assert vector_store.collection_name == "ai4rag_custom_collection"
+            assert vector_store.distance_metric == "l2"
+        finally:
+            vector_store.clean_collection()
 
-    def test_init_creates_chroma_client(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test that Chroma client is created during initialization."""
-        mock_chroma_class = mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        mock_chroma_class.assert_called_once()
-        call_kwargs = mock_chroma_class.call_args.kwargs
-        assert call_kwargs["collection_name"].startswith("ai4rag_")
-        assert call_kwargs["embedding_function"] == mock_embedding_model
-        assert call_kwargs["collection_metadata"]["hnsw:space"] == "cosine"
+    def test_init_sanitizes_collection_name(self, embedding_model):
+        vector_store = ChromaVectorStore(embedding_model=embedding_model, collection_name="ai4rag-collection.v1")
+        try:
+            assert vector_store.collection_name == "ai4rag_collection_v1"
+        finally:
+            vector_store.clean_collection()
 
-    def test_init_passes_kwargs_to_chroma(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test that additional kwargs are passed to Chroma client."""
-        mock_chroma_class = mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model, persist_directory="/tmp/test")
-        call_kwargs = mock_chroma_class.call_args.kwargs
-        assert "persist_directory" in call_kwargs
-        assert call_kwargs["persist_directory"] == "/tmp/test"
+
+class TestChromaVectorStoreClientSelection:
+    """``_build_client`` selects the client implied by the config."""
+
+    def test_ephemeral_client_by_default(self, mocker):
+        ephemeral = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.EphemeralClient")
+        persistent = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.PersistentClient")
+        http = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.HttpClient")
+
+        client = ChromaVectorStore._build_client(ChromaConfig())
+
+        ephemeral.assert_called_once_with()
+        persistent.assert_not_called()
+        http.assert_not_called()
+        assert client is ephemeral.return_value
+
+    def test_persistent_client_when_persist_directory(self, mocker):
+        persistent = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.PersistentClient")
+        ephemeral = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.EphemeralClient")
+
+        client = ChromaVectorStore._build_client(ChromaConfig(persist_directory="/data/chroma"))
+
+        persistent.assert_called_once_with(path="/data/chroma")
+        ephemeral.assert_not_called()
+        assert client is persistent.return_value
+
+    def test_http_client_when_host(self, mocker):
+        http = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.HttpClient")
+        persistent = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.PersistentClient")
+
+        client = ChromaVectorStore._build_client(ChromaConfig(host="chroma.local", port=9000))
+
+        http.assert_called_once_with(host="chroma.local", port=9000)
+        persistent.assert_not_called()
+        assert client is http.return_value
+
+    def test_host_takes_precedence_over_persist_directory(self, mocker):
+        http = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.HttpClient")
+        persistent = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.PersistentClient")
+
+        ChromaVectorStore._build_client(ChromaConfig(host="h", persist_directory="/data"))
+
+        http.assert_called_once()
+        persistent.assert_not_called()
 
 
 class TestChromaVectorStoreDistanceMetric:
-    """Test suite for ChromaVectorStore distance_metric property."""
+    """``distance_metric`` property and validation."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_distance_metric_getter(self, embedding_model):
+        vector_store = ChromaVectorStore(embedding_model=embedding_model, distance_metric="l2")
+        try:
+            assert vector_store.distance_metric == "l2"
+        finally:
+            vector_store.clean_collection()
 
-    def test_distance_metric_getter(self, mocker, mock_embedding_model):
-        """Test distance_metric property getter."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model, distance_metric="l2")
-        assert vector_store.distance_metric == "l2"
+    def test_distance_metric_setter_valid(self, store):
+        store.distance_metric = "l2"
+        assert store.distance_metric == "l2"
 
-    def test_distance_metric_setter_valid(self, mocker, mock_embedding_model):
-        """Test distance_metric setter with valid value."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model, distance_metric="cosine")
-        vector_store.distance_metric = "l2"
-        assert vector_store.distance_metric == "l2"
-
-    def test_distance_metric_setter_invalid(self, mocker, mock_embedding_model):
-        """Test distance_metric setter with invalid value raises ValueError."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
+    def test_distance_metric_setter_invalid(self, store):
         with pytest.raises(ValueError) as exc_info:
-            vector_store.distance_metric = "invalid_metric"
+            store.distance_metric = "invalid_metric"
         assert "Invalid distance metric" in str(exc_info.value)
-        assert "cosine" in str(exc_info.value) or "l2" in str(exc_info.value)
 
 
-class TestChromaVectorStoreToLangchainDocuments:
-    """Test suite for ChromaVectorStore._to_langchain_documents method."""
+class TestChromaVectorStoreDistanceToSimilarity:
+    """Score mapping keeps the 'higher = more relevant' convention."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_cosine_mapping(self, store):
+        assert store.distance_metric == "cosine"
+        assert store._distance_to_similarity(0.0) == pytest.approx(1.0)
+        assert store._distance_to_similarity(0.2) == pytest.approx(0.8)
+        assert store._distance_to_similarity(2.0) == pytest.approx(-1.0)
 
-    def test_to_langchain_documents_basic(self, mocker, mock_embedding_model):
-        """Test _to_langchain_documents converts AI4RAGChunks to Documents."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [
-            AI4RAGChunk(text="First document"),
-            AI4RAGChunk(text="Second document"),
-            AI4RAGChunk(text="Third document"),
-        ]
-        result = vector_store._to_langchain_documents(chunks)
-        assert len(result) == 3
-        assert all(isinstance(doc, Document) for doc in result)
-        assert result[0].page_content == "First document"
-        assert result[1].page_content == "Second document"
-        assert result[2].page_content == "Third document"
-
-    def test_to_langchain_documents_with_metadata(self, mocker, mock_embedding_model):
-        """Test _to_langchain_documents preserves metadata."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [
-            AI4RAGChunk(text="First doc", metadata={"id": 1}),
-            AI4RAGChunk(text="Second doc", metadata={"id": 2}),
-        ]
-        result = vector_store._to_langchain_documents(chunks)
-        assert len(result) == 2
-        assert result[0].page_content == "First doc"
-        assert result[0].metadata == {"id": 1}
-        assert result[1].page_content == "Second doc"
-        assert result[1].metadata == {"id": 2}
-
-    def test_to_langchain_documents_empty_list(self, mocker, mock_embedding_model):
-        """Test _to_langchain_documents with empty list."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store._to_langchain_documents([])
-        assert len(result) == 0
-
-
-class TestChromaVectorStoreProcessDocuments:
-    """Test suite for ChromaVectorStore._process_documents method."""
-
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
-
-    def test_process_documents_basic(self, mocker, mock_embedding_model):
-        """Test _process_documents with basic AI4RAGChunks."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [AI4RAGChunk(text="Doc 1"), AI4RAGChunk(text="Doc 2")]
-        ids, docs = vector_store._process_documents(chunks)
-        assert len(ids) == len(docs)
-        assert len(ids) == 2
-        assert all(isinstance(doc, Document) for doc in docs)
-        assert all(isinstance(doc_id, str) for doc_id in ids)
-
-    def test_process_documents_removes_duplicates(self, mocker, mock_embedding_model):
-        """Test _process_documents removes duplicate chunks."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [AI4RAGChunk(text="Same doc"), AI4RAGChunk(text="Same doc"), AI4RAGChunk(text="Different doc")]
-        ids, docs = vector_store._process_documents(chunks)
-        # Should have 2 unique documents
-        assert len(ids) == 2
-        assert len(docs) == 2
-        assert len(set(ids)) == 2  # All IDs should be unique
-
-    def test_process_documents_empty_list(self, mocker, mock_embedding_model):
-        """Test _process_documents with empty list."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        ids, docs = vector_store._process_documents([])
-        assert ids == []
-        assert docs == []
+    def test_l2_mapping(self, embedding_model):
+        vector_store = ChromaVectorStore(embedding_model=embedding_model, distance_metric="l2")
+        try:
+            assert vector_store._distance_to_similarity(0.0) == pytest.approx(1.0)
+            assert vector_store._distance_to_similarity(3.0) == pytest.approx(0.25)
+        finally:
+            vector_store.clean_collection()
 
 
 class TestChromaVectorStoreAddDocuments:
-    """Test suite for ChromaVectorStore.add_documents method."""
+    """``add_documents`` embedding, dedup, and batching."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_add_documents_basic(self, store):
+        chunks = [AI4RAGChunk(text="alpha"), AI4RAGChunk(text="bravo")]
+        ids = store.add_documents(chunks)
+        assert len(ids) == 2
+        assert ids == [chunk.chunk_id for chunk in chunks]
+        assert store.count() == 2
 
-    @pytest.fixture
-    def mock_chroma_client(self):
-        """Create a mock Chroma client."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": []}
-        mock_client.add_documents.return_value = ["id1", "id2"]
-        return mock_client
+    def test_add_documents_with_metadata(self, store):
+        store.add_documents([AI4RAGChunk(text="alpha", metadata={"source": "a"})])
+        results = store.search("alpha", k=1)
+        assert results[0].metadata == {"source": "a"}
 
-    def test_add_documents_basic(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test add_documents with AI4RAGChunks."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [AI4RAGChunk(text="Doc 1"), AI4RAGChunk(text="Doc 2")]
-        result = vector_store.add_documents(chunks)
-        assert isinstance(result, list)
-        assert len(result) == 2
-        mock_chroma_client.add_documents.assert_called_once()
+    def test_add_documents_empty_metadata_roundtrips_as_empty_dict(self, store):
+        # Chroma rejects empty-dict metadata; the store maps it to None on write
+        # and it comes back as {} on read.
+        store.add_documents([AI4RAGChunk(text="lonely")])
+        results = store.search("lonely", k=1)
+        assert results[0].text == "lonely"
+        assert results[0].metadata == {}
 
-    def test_add_documents_with_metadata(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test add_documents with AI4RAGChunks carrying metadata."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [
-            AI4RAGChunk(text="Doc 1", metadata={"source": "a"}),
-            AI4RAGChunk(text="Doc 2", metadata={"source": "b"}),
-        ]
-        result = vector_store.add_documents(chunks)
-        assert isinstance(result, list)
-        mock_chroma_client.add_documents.assert_called_once()
+    def test_add_documents_deduplicates_by_chunk_id(self, store):
+        chunks = [AI4RAGChunk(text="dup"), AI4RAGChunk(text="dup"), AI4RAGChunk(text="unique")]
+        ids = store.add_documents(chunks)
+        assert len(ids) == 2
+        assert store.count() == 2
 
-    def test_add_documents_with_batching(self, mocker, mock_embedding_model):
-        """Test add_documents with batching when exceeding max_batch_size."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": []}
-        mock_client.add_documents.return_value = ["id1", "id2"]
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [AI4RAGChunk(text=f"Doc {i}") for i in range(5)]
-        result = vector_store.add_documents(chunks, max_batch_size=2)
-        # Should be called multiple times due to batching
-        assert mock_client.add_documents.call_count >= 2
-        assert isinstance(result, list)
+    def test_add_documents_empty_list(self, store):
+        assert store.add_documents([]) == []
+        assert store.count() == 0
 
-    def test_add_documents_with_custom_max_batch_size(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test add_documents with custom max_batch_size."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [AI4RAGChunk(text=f"Doc {i}") for i in range(3)]
-        result = vector_store.add_documents(chunks, max_batch_size=2)
-        # Should be called multiple times due to custom batch size
-        assert mock_chroma_client.add_documents.call_count >= 2
-        assert isinstance(result, list)
-
-    def test_add_documents_with_default_max_batch_size(self, mocker, mock_embedding_model):
-        """Test add_documents uses default max_batch_size of 2048."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": []}
-        mock_client.add_documents.return_value = ["id1"]
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunks = [AI4RAGChunk(text="Doc 1")]
-        result = vector_store.add_documents(chunks)
-        # Should use default max_batch_size of 2048
-        assert isinstance(result, list)
-        mock_client.add_documents.assert_called_once()
+    def test_add_documents_batches_by_max_batch_size(self, store, mocker):
+        spy = mocker.patch.object(store._collection, "upsert", wraps=store._collection.upsert)
+        chunks = [AI4RAGChunk(text=f"word{i}") for i in range(5)]
+        ids = store.add_documents(chunks, max_batch_size=2)
+        # 5 chunks in batches of 2 -> 3 upsert calls.
+        assert spy.call_count == 3
+        assert len(ids) == 5
+        assert store.count() == 5
 
 
 class TestChromaVectorStoreSearch:
-    """Test suite for ChromaVectorStore.search method."""
+    """``search`` returns chunks and 'higher = better' scores."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_search_basic(self, store):
+        store.add_documents([AI4RAGChunk(text="alpha"), AI4RAGChunk(text="bravo")])
+        results = store.search("alpha", k=5)
+        assert all(isinstance(chunk, AI4RAGChunk) for chunk in results)
+        assert results[0].text == "alpha"
 
-    @pytest.fixture
-    def mock_chroma_client(self):
-        """Create a mock Chroma client."""
-        mock_client = MagicMock()
-        mock_doc = Document(page_content="Test document", metadata={"id": 1})
-        mock_client.similarity_search.return_value = [mock_doc]
-        mock_client.similarity_search_with_score.return_value = [(mock_doc, 0.95)]
-        return mock_client
+    def test_search_respects_k(self, store):
+        store.add_documents([AI4RAGChunk(text=w) for w in ("alpha", "bravo", "charlie")])
+        assert len(store.search("alpha", k=2)) == 2
 
-    def test_search_basic(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test basic search without scores returns AI4RAGChunks."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.search("test query", k=5)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        assert isinstance(result[0], AI4RAGChunk)
-        assert result[0].text == "Test document"
-        mock_chroma_client.similarity_search.assert_called_once_with("test query", k=5)
+    def test_search_with_scores_higher_is_more_relevant(self, store):
+        store.add_documents([AI4RAGChunk(text="alpha"), AI4RAGChunk(text="zulu different")])
+        results = store.search("alpha", k=2, include_scores=True)
+        assert isinstance(results[0], tuple)
+        chunk, score = results[0]
+        # Exact match ranks first with the maximal cosine similarity (~1.0)...
+        assert chunk.text == "alpha"
+        assert score == pytest.approx(1.0, abs=1e-4)
+        # ...and outranks the dissimilar document.
+        assert results[0][1] > results[1][1]
 
-    def test_search_with_scores(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test search with scores returns AI4RAGChunk tuples."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.search("test query", k=5, include_scores=True)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        assert isinstance(result[0], tuple)
-        assert len(result[0]) == 2
-        assert isinstance(result[0][0], AI4RAGChunk)
-        assert result[0][0].text == "Test document"
-        assert isinstance(result[0][1], float)
-        mock_chroma_client.similarity_search_with_score.assert_called_once_with("test query", k=5)
+    def test_search_with_where_filter(self, store):
+        store.add_documents(
+            [
+                AI4RAGChunk(text="cat doc", metadata={"category": "animal"}),
+                AI4RAGChunk(text="car doc", metadata={"category": "vehicle"}),
+            ]
+        )
+        results = store.search("cat doc", k=5, where={"category": {"$eq": "animal"}})
+        assert len(results) == 1
+        assert results[0].metadata["category"] == "animal"
 
-    def test_search_with_kwargs(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test search with additional kwargs."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.search("test query", k=3, filter={"key": "value"})
-        mock_chroma_client.similarity_search.assert_called_once_with("test query", k=3, filter={"key": "value"})
+    def test_search_with_filter_alias(self, store):
+        store.add_documents(
+            [
+                AI4RAGChunk(text="cat doc", metadata={"category": "animal"}),
+                AI4RAGChunk(text="car doc", metadata={"category": "vehicle"}),
+            ]
+        )
+        results = store.search("car doc", k=5, filter={"category": {"$eq": "vehicle"}})
+        assert len(results) == 1
+        assert results[0].metadata["category"] == "vehicle"
+
+    def test_search_empty_collection(self, store):
+        assert store.search("anything", k=5) == []
 
 
 class TestChromaVectorStoreWindowSearch:
-    """Test suite for ChromaVectorStore.window_search method."""
+    """``window_search`` expands each hit with its neighbouring chunks."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_zero_window_size_returns_search_results(self, store):
+        store.add_documents(_doc_chunks())
+        results = store.window_search("charlie", k=1, window_size=0)
+        assert len(results) == 1
+        assert results[0].text == "charlie"
 
-    @pytest.fixture
-    def mock_chroma_client(self):
-        """Create a mock Chroma client."""
-        mock_client = MagicMock()
-        mock_doc = Document(
-            page_content="Test document",
-            metadata={"document_id": "doc1", "sequence_number": 5},
-        )
-        mock_client.similarity_search.return_value = [mock_doc]
-        mock_client.similarity_search_with_score.return_value = [(mock_doc, 0.95)]
-        return mock_client
+    def test_negative_window_size_returns_search_results(self, store):
+        store.add_documents(_doc_chunks())
+        results = store.window_search("charlie", k=1, window_size=-1)
+        assert results[0].text == "charlie"
 
-    def test_window_search_with_zero_window_size(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test window_search with zero window_size returns original results."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.window_search("test query", k=5, window_size=0)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        # Should return same as regular search
-        mock_chroma_client.similarity_search.assert_called_once()
+    def test_window_search_without_scores_merges_neighbours(self, store):
+        store.add_documents(_doc_chunks())
+        results = store.window_search("charlie", k=1, window_size=1)
+        assert isinstance(results[0], AI4RAGChunk)
+        # seq 1 (bravo), 2 (charlie), 3 (delta) merged in sequence order.
+        assert results[0].text == "bravo charlie delta"
 
-    def test_window_search_with_negative_window_size(self, mocker, mock_embedding_model, mock_chroma_client):
-        """Test window_search with negative window_size returns original results."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_chroma_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.window_search("test query", k=5, window_size=-1)
-        assert isinstance(result, list)
-        # Should return same as regular search (window_size <= 0)
-        mock_chroma_client.similarity_search.assert_called_once()
+    def test_window_search_with_scores_merges_and_keeps_score(self, store):
+        store.add_documents(_doc_chunks())
+        results = store.window_search("charlie", k=1, window_size=1, include_scores=True)
+        chunk, score = results[0]
+        assert isinstance(chunk, AI4RAGChunk)
+        assert chunk.text == "bravo charlie delta"
+        assert score == pytest.approx(1.0, abs=1e-4)
 
-    def test_window_search_without_scores(self, mocker, mock_embedding_model):
-        """Test window_search without scores returns AI4RAGChunks."""
-        mock_client = MagicMock()
-        mock_doc = Document(
-            page_content="Test document",
-            metadata={"document_id": "doc1", "sequence_number": 5},
-        )
-        mock_client.similarity_search.return_value = [mock_doc]
-        mock_client.get.return_value = {
-            "documents": ["Window doc 1", "Window doc 2", "Window doc 3"],
-            "metadatas": [
-                {"sequence_number": 4, "document_id": "doc1"},
-                {"sequence_number": 5, "document_id": "doc1"},
-                {"sequence_number": 6, "document_id": "doc1"},
-            ],
-        }
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.window_search("test query", k=5, window_size=1, include_scores=False)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        assert isinstance(result[0], AI4RAGChunk)
-
-    def test_window_search_with_scores(self, mocker, mock_embedding_model):
-        """Test window_search with scores returns AI4RAGChunk tuples."""
-        mock_client = MagicMock()
-        mock_doc = Document(
-            page_content="Test document",
-            metadata={"document_id": "doc1", "sequence_number": 5},
-        )
-        mock_client.similarity_search_with_score.return_value = [(mock_doc, 0.95)]
-        mock_client.get.return_value = {
-            "documents": ["Window doc 1", "Window doc 2", "Window doc 3"],
-            "metadatas": [
-                {"sequence_number": 4, "document_id": "doc1"},
-                {"sequence_number": 5, "document_id": "doc1"},
-                {"sequence_number": 6, "document_id": "doc1"},
-            ],
-        }
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store.window_search("test query", k=5, window_size=1, include_scores=True)
-        assert isinstance(result, list)
-        assert len(result) > 0
-        assert isinstance(result[0], tuple)
-        assert isinstance(result[0][0], AI4RAGChunk)
-        assert isinstance(result[0][1], float)
+    def test_window_clamped_at_document_edges(self, store):
+        store.add_documents(_doc_chunks())
+        # Centered on the first chunk: only seq 0 and 1 exist to the right.
+        results = store.window_search("alpha", k=1, window_size=1)
+        assert results[0].text == "alpha bravo"
 
 
 class TestChromaVectorStoreWindowExtendAndMerge:
-    """Test suite for ChromaVectorStore._window_extend_and_merge method."""
+    """``_window_extend_and_merge`` validation and merging."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_missing_document_id_raises(self, store):
+        chunk = AI4RAGChunk(text="x", metadata={"sequence_number": 1})
+        with pytest.raises(ValueError, match="document_id"):
+            store._window_extend_and_merge(chunk, window_size=2)
 
-    def test_window_extend_and_merge_missing_document_id(self, mocker, mock_embedding_model):
-        """Test _window_extend_and_merge raises ValueError when document_id is missing."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunk = AI4RAGChunk(text="Test", metadata={"sequence_number": 1})
-        with pytest.raises(ValueError) as exc_info:
-            vector_store._window_extend_and_merge(chunk, window_size=2)
-        assert "document_id" in str(exc_info.value)
+    def test_missing_sequence_number_raises(self, store):
+        chunk = AI4RAGChunk(text="x", metadata={"document_id": "docA"})
+        with pytest.raises(ValueError, match="sequence_number"):
+            store._window_extend_and_merge(chunk, window_size=2)
 
-    def test_window_extend_and_merge_missing_sequence_number(self, mocker, mock_embedding_model):
-        """Test _window_extend_and_merge raises ValueError when sequence_number is missing."""
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=MagicMock())
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunk = AI4RAGChunk(text="Test", metadata={"document_id": "doc1"})
-        with pytest.raises(ValueError) as exc_info:
-            vector_store._window_extend_and_merge(chunk, window_size=2)
-        assert "sequence_number" in str(exc_info.value)
-
-    def test_window_extend_and_merge_basic(self, mocker, mock_embedding_model):
-        """Test _window_extend_and_merge with basic chunk."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {
-            "documents": ["Chunk 1", "Chunk 2", "Chunk 3"],
-            "metadatas": [
-                {"sequence_number": 1, "document_id": "doc1"},
-                {"sequence_number": 2, "document_id": "doc1"},
-                {"sequence_number": 3, "document_id": "doc1"},
-            ],
-        }
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        chunk = AI4RAGChunk(
-            text="Chunk 2",
-            metadata={"document_id": "doc1", "sequence_number": 2},
-        )
-        result = vector_store._window_extend_and_merge(chunk, window_size=1)
-        assert isinstance(result, AI4RAGChunk)
-        assert "Chunk" in result.text  # Should contain merged content
+    def test_basic_merge(self, store):
+        store.add_documents(_doc_chunks())
+        center = AI4RAGChunk(text="charlie", metadata={"document_id": "docA", "sequence_number": 2})
+        merged = store._window_extend_and_merge(center, window_size=1)
+        assert isinstance(merged, AI4RAGChunk)
+        assert merged.text == "bravo charlie delta"
 
 
 class TestChromaVectorStoreGetWindowDocuments:
-    """Test suite for ChromaVectorStore._get_window_documents method."""
+    """``_get_window_documents`` fetches a contiguous slice of one document."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_returns_chunks_within_range(self, store):
+        store.add_documents(_doc_chunks())
+        results = store._get_window_documents("docA", [1, 2, 3])
+        assert all(isinstance(chunk, AI4RAGChunk) for chunk in results)
+        assert sorted(chunk.metadata["sequence_number"] for chunk in results) == [1, 2, 3]
 
-    def test_get_window_documents_basic(self, mocker, mock_embedding_model):
-        """Test _get_window_documents with basic parameters."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {
-            "documents": ["Doc 1", "Doc 2", "Doc 3"],
-            "metadatas": [
-                {"sequence_number": 1, "document_id": "doc1"},
-                {"sequence_number": 2, "document_id": "doc1"},
-                {"sequence_number": 3, "document_id": "doc1"},
-            ],
-        }
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        result = vector_store._get_window_documents("doc1", [1, 2, 3])
-        assert isinstance(result, list)
-        assert len(result) == 3
-        assert all(isinstance(doc, Document) for doc in result)
-        # Verify the query expression was constructed correctly
-        mock_client.get.assert_called_once()
-        call_kwargs = mock_client.get.call_args.kwargs
-        assert "where" in call_kwargs
+    def test_filters_by_document_id(self, store):
+        chunks = _doc_chunks()
+        chunks.append(AI4RAGChunk(text="foreign", metadata={"document_id": "docB", "sequence_number": 2}))
+        store.add_documents(chunks)
+        results = store._get_window_documents("docA", [0, 1, 2])
+        texts = {chunk.text for chunk in results}
+        assert "foreign" not in texts
+        assert all(chunk.metadata["document_id"] == "docA" for chunk in results)
 
 
-class TestChromaVectorStoreCount:
-    """Test suite for ChromaVectorStore.count method."""
+class TestChromaVectorStoreLifecycle:
+    """``count``, ``clear``, ``delete``, and ``clean_collection``."""
 
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
+    def test_count_reflects_contents(self, store):
+        assert store.count() == 0
+        store.add_documents([AI4RAGChunk(text="alpha"), AI4RAGChunk(text="bravo")])
+        assert store.count() == 2
 
-    def test_count_empty(self, mocker, mock_embedding_model):
-        """Test count with empty vector store."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": []}
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        assert vector_store.count() == 0
+    def test_clear_removes_all_entries(self, store):
+        store.add_documents([AI4RAGChunk(text="alpha"), AI4RAGChunk(text="bravo")])
+        store.clear()
+        assert store.count() == 0
 
-    def test_count_with_documents(self, mocker, mock_embedding_model):
-        """Test count with documents in vector store."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": ["id1", "id2", "id3"]}
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        assert vector_store.count() == 3
+    def test_clear_on_empty_is_noop(self, store):
+        store.clear()
+        assert store.count() == 0
 
+    def test_delete_by_ids(self, store):
+        chunks = [AI4RAGChunk(text="alpha"), AI4RAGChunk(text="bravo")]
+        ids = store.add_documents(chunks)
+        store.delete([ids[0]])
+        assert store.count() == 1
+        remaining = store.search("bravo", k=5)
+        assert remaining[0].text == "bravo"
 
-class TestChromaVectorStoreClear:
-    """Test suite for ChromaVectorStore.clear method."""
-
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
-
-    def test_clear_with_documents(self, mocker, mock_embedding_model):
-        """Test clear with documents in vector store."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": ["id1", "id2", "id3"]}
-        mock_client.delete = MagicMock()
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        vector_store.clear()
-        mock_client.delete.assert_called_once_with(["id1", "id2", "id3"])
-
-    def test_clear_empty(self, mocker, mock_embedding_model):
-        """Test clear with empty vector store."""
-        mock_client = MagicMock()
-        mock_client.get.return_value = {"ids": []}
-        mock_client.delete = MagicMock()
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        vector_store.clear()
-        # Should not call delete if there are no documents
-        mock_client.delete.assert_not_called()
-
-
-class TestChromaVectorStoreDelete:
-    """Test suite for ChromaVectorStore.delete method."""
-
-    @pytest.fixture
-    def mock_embedding_model(self):
-        """Create a mock embedding model."""
-        return MockEmbeddingModel(client=MagicMock(), model_id="test-embedding-model")
-
-    def test_delete_basic(self, mocker, mock_embedding_model):
-        """Test delete with list of IDs."""
-        mock_client = MagicMock()
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        vector_store.delete(["id1", "id2", "id3"])
-        mock_client.delete.assert_called_once_with(["id1", "id2", "id3"])
-
-    def test_delete_with_kwargs(self, mocker, mock_embedding_model):
-        """Test delete with additional kwargs."""
-        mock_client = MagicMock()
-        mocker.patch("ai4rag.rag.vector_store.chroma.Chroma", return_value=mock_client)
-        vector_store = ChromaVectorStore(embedding_model=mock_embedding_model)
-        vector_store.delete(["id1"], filter={"key": "value"})
-        mock_client.delete.assert_called_once_with(["id1"], filter={"key": "value"})
+    def test_clean_collection_drops_collection(self, embedding_model):
+        vector_store = ChromaVectorStore(embedding_model=embedding_model)
+        vector_store.add_documents([AI4RAGChunk(text="alpha")])
+        name = vector_store.collection_name
+        vector_store.clean_collection()
+        existing = {collection.name for collection in vector_store._client.list_collections()}
+        assert name not in existing

@@ -290,7 +290,7 @@ class TestModelsPreSelector:
 
         with pytest.raises(PreSelectorError) as err:
             fully_mocked_selector._create_vector_store(
-                embedding_model=mocked_em, chunked_documents=[document], collection_name="mps_collection_1"
+                embedding_model=mocked_em, chunked_documents=[document], collection_name="ai4rag_mps_collection_1"
             )
 
         exp_msg = f"Failed to create in-memory vector index due to: {repr(val_err)}."

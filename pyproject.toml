@@ -29,15 +29,18 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
+  "chromadb>=1.5,<2",
   "docling~=2.107.0",
   "docling-core[chunking]~=2.84.0",
-  "langchain_chroma~=1.1.0",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
   "ogx-client>=1.1.0,<=1.1.3",
   "pandas==2.2.*",
+  "pgvector>=0.3.0",
+  "psycopg[binary]>=3.1",
   "pydantic==2.11.*",
   "pygam~=0.12.0",
+  "pymilvus>=2.5.0",
   "scikit-learn==1.8.*",
   "unitxt~=1.26.1",
 ]
@@ -115,6 +118,12 @@ disable = [
   "import-outside-toplevel",
   "broad-exception-caught",
 ]
+# psycopg's connection type cannot be introspected by astroid: `connect()` is an
+# overloaded classmethod returning `Self`, and importing `pgvector.psycopg`
+# (whose API is annotated with `Connection[Any]`) poisons the inference to an
+# anonymous class, yielding spurious no-member errors on every `execute`/`cursor`
+# call. Skip member checks for objects typed as coming from psycopg.
+ignored-modules = ["psycopg"]
 max-line-length = 120
 max-args = 8
 max-positional-arguments = 8

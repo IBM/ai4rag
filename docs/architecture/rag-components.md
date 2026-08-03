@@ -440,9 +440,28 @@ class BaseVectorStore(ABC):
         self,
         embedding_model: BaseEmbeddingModel,
         distance_metric: str,
-        reuse_collection_name: str | None = None
+        collection_name: str | None = None
     ):
 ```
+
+**Collection naming (shared across all backends):**
+
+The base class resolves `collection_name` once, in one place, via
+`ai4rag.rag.vector_store.utils.resolve_collection_name`, so every backend
+behaves identically:
+
+- **Auto-generation** — when `collection_name` is `None`, a unique name of the
+  form `ai4rag_<UTC timestamp>_<8 random chars>` is generated.
+- **Mandatory `ai4rag` prefix** — a caller-supplied name **must** start with
+  `ai4rag`. This prefix is the cross-backend isolation guard: because every
+  collection (and, for pgvector, the physical table it maps to one-to-one)
+  starts with it, ai4rag never creates, reuses, or drops a table/collection it
+  does not own. A non-compliant name raises `ValueError` rather than being
+  silently coerced.
+- **Identifier safety** — the name is sanitized into a valid identifier
+  (non-alphanumeric characters become underscores) and bounded to 63 characters
+  (the tightest limit across PostgreSQL and Chroma), so it is usable verbatim as
+  a backend collection name *and* as a physical SQL table name.
 
 **Interface Methods:**
 
@@ -456,9 +475,13 @@ def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
     """Add chunks to the collection."""
 
 @property
-@abstractmethod
 def collection_name(self) -> str:
-    """Returns collection name (reused or newly created)."""
+    """The resolved collection name (reused or auto-generated).
+
+    Concrete on the base class — guaranteed to start with ``ai4rag`` and to be a
+    valid, length-bounded identifier usable as both a collection name and a SQL
+    table name.
+    """
 ```
 
 ### ChromaVectorStore
@@ -470,8 +493,9 @@ class ChromaVectorStore(BaseVectorStore):
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        reuse_collection_name: str | None = None,
+        config: ChromaConfig | None = None,
         distance_metric: str = "cosine",
+        collection_name: str | None = None,
         **kwargs
     ):
 ```
@@ -668,7 +692,7 @@ Combines dense vector search with sparse keyword search (e.g., BM25).
 params = {
     "mode": "hybrid",
     "reranker_type": "rrf",
-    "reranker_params": {"impact_factor": 60}  # ranker_k
+    "reranker_params": {"k": 60}  # ranker_k
 }
 ```
 

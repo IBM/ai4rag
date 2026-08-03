@@ -15,6 +15,7 @@ from ai4rag.components.optimization.rag_templates_optimization import (
     _validate_optimization_settings,
     run_rag_optimization,
 )
+from ai4rag.rag.vector_store.config import ChromaConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -130,32 +131,6 @@ class TestRunRagOptimizationValidation:
     reaching any heavy I/O or OGX calls.
     """
 
-    def test_empty_vector_io_provider_id_raises(self, mock_ogx_client):
-        """An empty vector_io_provider_id must raise ValueError."""
-        with pytest.raises(ValueError, match="non-empty string"):
-            run_rag_optimization(
-                extracted_text_path="dummy",
-                test_data_path="dummy.json",
-                search_space_report_path="dummy.json",
-                output_dir="out",
-                ogx_client=mock_ogx_client,
-                vector_io_provider_id="",
-                test_data_key="data.json",
-            )
-
-    def test_whitespace_vector_io_provider_id_raises(self, mock_ogx_client):
-        """A whitespace-only vector_io_provider_id must raise ValueError."""
-        with pytest.raises(ValueError, match="non-empty string"):
-            run_rag_optimization(
-                extracted_text_path="dummy",
-                test_data_path="dummy.json",
-                search_space_report_path="dummy.json",
-                output_dir="out",
-                ogx_client=mock_ogx_client,
-                vector_io_provider_id="   ",
-                test_data_key="data.json",
-            )
-
     def test_test_data_key_not_json_raises(self, mock_ogx_client):
         """A test_data_key not ending in .json must raise ValueError."""
         with pytest.raises(ValueError, match="JSON file"):
@@ -165,7 +140,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="data.csv",
             )
 
@@ -178,7 +153,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="",
             )
 
@@ -191,7 +166,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings={"metric": "nonexistent_metric"},
             )
@@ -213,7 +188,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings="bad",  # type: ignore[arg-type]
             )
@@ -227,7 +202,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings={"max_number_of_rag_patterns": 50},
             )
@@ -252,15 +227,15 @@ class TestRunRagOptimizationInferenceMaxThreads:
     def test_inference_max_threads_is_accepted(self, mock_ogx_client):
         """Passing inference_max_threads alongside an invalid input must still raise
         the expected validation error (not a TypeError from an unknown param)."""
-        with pytest.raises(ValueError, match="non-empty string"):
+        with pytest.raises(ValueError, match="JSON file"):
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.yaml",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="",
-                test_data_key="bench.json",
+                vector_store_config=ChromaConfig(),
+                test_data_key="bench.csv",
                 inference_max_threads=4,
             )
 

@@ -123,7 +123,7 @@ class TestBuildPatternJson:
         assert result is pattern
 
     def test_hybrid_rrf_ranking_options(self):
-        """Hybrid search with RRF ranker must set ranker and impact_factor in ranking_options."""
+        """Hybrid search with RRF ranker must set ranker and k in ranking_options."""
         pattern = _make_pattern()
         pattern["settings"]["retrieval"]["search_mode"] = "hybrid"
         pattern["settings"]["retrieval"]["ranker_strategy"] = "rrf"
@@ -132,7 +132,7 @@ class TestBuildPatternJson:
         build_pattern_json(pattern)
 
         ro = pattern["inference"]["responses_template"]["tools"][0]["ranking_options"]
-        assert ro == {"ranker": "rrf", "impact_factor": 60}
+        assert ro == {"ranker": "rrf", "k": 60}
         assert pattern["inference"]["responses_template"]["tools"][0]["max_num_results"] == 5
 
     def test_hybrid_weighted_ranking_options(self):

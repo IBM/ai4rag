@@ -13,7 +13,7 @@ from ogx_client import OgxClient
 from ai4rag.search_space.prepare import prepare_search_space_with_ogx
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
-load_dotenv(find_dotenv())
+load_dotenv(find_dotenv(".env.local"))
 
 
 pytestmark = pytest.mark.skipif(

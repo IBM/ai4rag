@@ -8,7 +8,6 @@ from typing import Any, Sequence
 
 import pandas as pd
 from docling_core.types.doc import DoclingDocument
-from ogx_client import OgxClient
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -42,6 +41,7 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -74,20 +74,13 @@ class AI4RAGExperiment:
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimization.
 
-    vector_store_type : str
-        Specific type of Vector Data Base that will be used during the experiment.
-        Supported values: ``"ogx"`` and ``"chroma"``.
-
-    ogx_vector_io_provider_id : str | None
-        Provider ID for OGX vector store (e.g., ``"milvus"``, ``"qdrant"``).
-        Required when ``vector_store_type="ogx"``.
-
     optimizer_settings : OptimizerSettings
         Settings for the optimizer to be used during the experiment.
 
-    client : OgxClient | Any
-        Instance of the OGX client or other client allowing to communicate
-        with the available vector store providers.
+    vector_store_config : ChromaConfig | MilvusConfig | PGVectorConfig
+        Connection config for the vector store backend. Its type (via
+        ``config.provider``) determines which vector store implementation
+        is used for indexing and retrieval.
 
     event_handler : BaseEventHandler
         Instance satisfying BaseEventHandler's interface to stream pattern evaluation
@@ -133,22 +126,18 @@ class AI4RAGExperiment:
         documents: list[DoclingDocument],
         benchmark_data: pd.DataFrame,
         search_space: AI4RAGSearchSpace,
-        vector_store_type: str,
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
-        client: OgxClient | Any = None,
-        ogx_vector_io_provider_id: str | None = None,
+        vector_store_config: ChromaConfig | MilvusConfig | PGVectorConfig,
         optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.documents = documents
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.search_space = search_space
-        self.vector_store_type = vector_store_type
-        self.ogx_vector_io_provider_id = ogx_vector_io_provider_id
+        self.vector_store_config = vector_store_config
         self.optimizer_settings = optimizer_settings
         self.event_handler = event_handler
-        self.client = client
         self.optimization_metric = optimization_metric
 
         self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
@@ -421,7 +410,7 @@ class AI4RAGExperiment:
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
-        if search_mode != "vector" and self.vector_store_type == "chroma":
+        if search_mode != "vector" and self.vector_store_config.provider == "chroma":
             raise RAGExperimentError(
                 f"Search mode '{search_mode}' is not supported with chroma vector store. "
                 "Only 'vector' mode is supported for chroma."
@@ -455,21 +444,19 @@ class AI4RAGExperiment:
         pattern_name = self._create_pattern_name()
         logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
+        collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
 
         try:
             vector_store = get_vector_store(
-                vs_type=self.vector_store_type,
                 embedding_model=embedding_model,
-                reuse_collection_name=reuse_collection_name,
-                client=self.client,
-                ogx_vector_io_provider_id=self.ogx_vector_io_provider_id,
+                collection_name=collection_name,
+                config=self.vector_store_config,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(
                 exc,
                 embedding_model_id=embedding_model.model_id,
-                vector_store_provider_id=self.ogx_vector_io_provider_id or "local_chroma",
+                vector_store_provider_id=self.vector_store_config.provider,
             ) from exc
 
         collection_name = vector_store.collection_name
@@ -707,20 +694,9 @@ class AI4RAGExperiment:
                 )
 
         vector_store_payload = {
-            "provider_id": self.ogx_vector_io_provider_id or "local_chroma",
-            "vector_store_id": evaluation_result.collection,
+            "provider_type": self.vector_store_config.provider,
+            "collection_name": evaluation_result.collection,
         }
-        if self.vector_store_type == "ogx":
-            try:
-                provider = self.client.providers.retrieve(self.ogx_vector_io_provider_id)
-                provider_type = getattr(provider, "provider_type", "unknown")
-            except Exception as exc:
-                provider_type = "unknown"
-                logger.warning(
-                    "Could not retrieve provider_type attribute of vector store in use...",
-                    exc_info=exc,
-                )
-            vector_store_payload["provider_type"] = provider_type
 
         indexing_payload = {
             "chunking": {
@@ -843,8 +819,8 @@ class AI4RAGExperiment:
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method returns name of the collection / vector_store_id (for OGX)
-        if chosen indexing params have already been used to create an index / collection.
+        This method returns the name of the collection if the chosen indexing
+        params have already been used to create an index / collection.
 
         Parameters
         ----------

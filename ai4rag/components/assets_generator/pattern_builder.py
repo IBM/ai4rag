@@ -302,7 +302,7 @@ def build_pattern_json(
     if search_mode == "hybrid" and ranker_strategy == "rrf" and ranker_k is not None and ranker_k > 0:
         responses_template["tools"][0]["ranking_options"] = {
             "ranker": "rrf",
-            "impact_factor": ranker_k,
+            "k": ranker_k,
         }
     elif search_mode == "hybrid" and ranker_strategy == "weighted" and ranker_alpha is not None and ranker_alpha != 1:
         responses_template["tools"][0]["ranking_options"] = {

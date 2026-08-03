@@ -157,7 +157,7 @@ class ModelsPreSelector:
 
         for i, embedding_model in enumerate(self.embedding_models):
             try:
-                collection_name = f"mps_collection_{i}"
+                collection_name = f"ai4rag_mps_collection_{i}"
                 try:
                     vector_store = self._create_vector_store(
                         embedding_model, chunked_documents, collection_name=collection_name
