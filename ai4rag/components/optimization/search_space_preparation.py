@@ -255,7 +255,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 
     optimized_dspy_module = None
     if optimize_prompts:
-        optimized_dspy_module = mps.optimize_prompts(ogx_client.base_url, ogx_client.api_key)
+        optimized_dspy_module = mps.optimize_prompts(f"{ogx_client.base_url}/v1", ogx_client.api_key)
 
     # Build verbose representation from valid (rule-filtered) combinations only
     valid_combinations = search_space.combinations

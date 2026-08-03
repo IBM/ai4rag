@@ -168,8 +168,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         elif param_name == "embedding_model":
             values = [_deserialize_model(m, ogx_client) for m in values]
             embedding_models = values
-        elif param_name == "optmized_dspy_module" and values:
-            optimized_dspy_module = dspy.ChainOfThought("->").load_state(state=values)
+        elif param_name == "optimized_dspy_module":
+            if values:
+                optimized_dspy_module.load_state(state=values)
             continue
         params.append(Parameter(param_name, "C", values=values))
 
