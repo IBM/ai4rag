@@ -367,3 +367,7 @@ class MilvusVectorStore(BaseVectorStore):
     def clean_collection(self) -> None:
         """Drop the Milvus collection."""
         self._client.drop_collection(self._collection_name)
+
+    def close(self) -> None:
+        """Close the underlying Milvus client connection."""
+        self._client.close()

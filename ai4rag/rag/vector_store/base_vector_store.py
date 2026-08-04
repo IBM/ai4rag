@@ -91,3 +91,21 @@ class BaseVectorStore(ABC):
         and a physical SQL table name.
         """
         return self._collection_name
+
+    def close(self) -> None:
+        """Release backend resources held by this store (connections, clients).
+
+        A no-op by default. Concrete stores that hold a real connection or
+        client (e.g. :class:`~ai4rag.rag.vector_store.pgvector.PGVectorStore`,
+        :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore`) override this
+        to release it; callers should call ``close()`` (or use the store as a
+        context manager) once they are done searching or indexing, since the
+        store performs no automatic cleanup on garbage collection. Idempotent:
+        safe to call more than once.
+        """
+
+    def __enter__(self) -> "BaseVectorStore":
+        return self
+
+    def __exit__(self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: object) -> None:
+        self.close()

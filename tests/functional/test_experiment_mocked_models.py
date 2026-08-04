@@ -208,20 +208,3 @@ class TestExperimentChromaWithMockedModels:
                     f"Mean score {mean!r} is outside [0, 1] for metric '{metric['name']}' "
                     f"in {evaluation.pattern_name}"
                 )
-
-    def test_best_pattern_can_generate_answer(self, documents, benchmark_data, foundation_models, embedding_models):
-        """
-        The best RAG pattern returned by the experiment must produce a non-empty answer,
-        confirming the full inference pipeline (retrieval + generation) is intact.
-        """
-        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
-
-        experiment.search(optimizer=RandomOptimizer)
-
-        best_evals = experiment.results.get_best_evaluations(k=1)
-        assert len(best_evals) == 1
-
-        result = best_evals[0].rag_pattern.generate("What is topic_0 about?")
-        assert isinstance(result, dict), f"Expected dict from generate(), got {type(result)}"
-        answer = result.get("answer")
-        assert isinstance(answer, str) and len(answer) > 0, f"Expected a non-empty answer string, got {answer!r}"

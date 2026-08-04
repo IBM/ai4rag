@@ -109,9 +109,8 @@ class TestGetVectorStoreMilvus:
 class TestGetVectorStorePGVector:
     """Test suite for get_vector_store with PGVector provider."""
 
-    @patch("ai4rag.rag.vector_store.pgvector.register_vector")
-    @patch("ai4rag.rag.vector_store.pgvector.psycopg.connect")
-    def test_pgvector_returns_vector_store(self, mock_connect, mock_reg, mock_embedding_model):
+    @patch("ai4rag.rag.vector_store.pgvector.ConnectionPool")
+    def test_pgvector_returns_vector_store(self, mock_pool_cls, mock_embedding_model):
         config = PGVectorConfig()
 
         vector_store = get_vector_store(

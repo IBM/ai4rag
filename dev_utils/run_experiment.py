@@ -12,7 +12,7 @@ from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.vector_store.config import MilvusConfig
+from ai4rag.rag.vector_store.config import MilvusConfig, get_vector_store_config
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
@@ -63,6 +63,8 @@ if __name__ == "__main__":
         ],
     )
 
+    vs_config = get_vector_store_config(provider="milvus")
+
     experiment = AI4RAGExperiment(
         client=client,
         documents=documents,
@@ -71,7 +73,7 @@ if __name__ == "__main__":
         optimizer_settings=optimizer_settings,
         event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chunkers"),
         # event_handler=LocalEventHandler(),
-        vector_store_config=MilvusConfig.from_env(),
+        vector_store_config=vs_config,
     )
 
     experiment.search(skip_mps=True)

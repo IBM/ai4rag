@@ -222,7 +222,7 @@ experiment.search()
 
 best_pattern = experiment.results.get_best_evaluations(k=1)[0]
 
-print(best_pattern.rag_pattern.generate("What is the main purpose of ai4rag?"))
+print(f"Best pattern: {best_pattern.pattern_name}, score: {best_pattern.final_score}")
 ```
 
 ---

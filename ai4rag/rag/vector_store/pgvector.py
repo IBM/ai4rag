@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import heapq
 import json
+import threading
 from typing import Any
 
 import psycopg
 from pgvector.psycopg import register_vector
+from psycopg_pool import ConnectionPool
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -49,6 +51,14 @@ class PGVectorStore(BaseVectorStore):
     _BATCH_SIZE = 1024
     _CONNECT_TIMEOUT = 10
 
+    # search() is called concurrently across threads: query_rag() (the only caller
+    # that matters for concurrency) runs one worker per benchmark question, up to
+    # its own max_threads default of 10. A single shared psycopg connection is not
+    # safe for concurrent use, so this store pools connections instead; max_size
+    # mirrors that default so a fully concurrent trial never queues for a slot.
+    _MIN_POOL_SIZE = 1
+    _MAX_POOL_SIZE = 10
+
     # pgvector caps HNSW (and IVFFlat) indexes on the ``vector`` type at 2000
     # dimensions (https://github.com/pgvector/pgvector#hnsw). Higher-dimensional
     # vectors still store and query correctly, but the index cannot be built. Since
@@ -79,13 +89,13 @@ class PGVectorStore(BaseVectorStore):
         distance_metric: str = "cosine",
         collection_name: str | None = None,
     ):
-        """Initialize the store, connect to PostgreSQL, and ensure the table.
+        """Initialize the store, open a connection pool, and ensure the table.
 
         Resolves the distance metric to its pgvector operator and index opclass,
-        opens a connection (registering the vector adapter and ensuring the
-        ``vector`` extension), and creates the backing table when absent. HNSW
-        and GIN indexes are built lazily on the first search (see
-        :meth:`_ensure_indexes`), not here.
+        opens a connection pool (registering the vector adapter and ensuring the
+        ``vector`` extension on every pooled connection), and creates the backing
+        table when absent. HNSW and GIN indexes are built lazily on the first
+        search (see :meth:`_ensure_indexes`), not here.
 
         Parameters
         ----------
@@ -131,22 +141,34 @@ class PGVectorStore(BaseVectorStore):
         # Indexes are built lazily after documents are loaded (see ``_ensure_indexes``),
         # not at connection time: maintaining an HNSW graph on every insert is the
         # memory-heavy path that can trigger the server-side OOM killer on large batches.
+        # search() is called concurrently across threads (see _MAX_POOL_SIZE above), so
+        # the flag guarding this one-time DDL needs a lock, not just a bare check.
         self._indexes_built = False
+        self._indexes_lock = threading.Lock()
 
-        self._conn: psycopg.Connection | None = None
-        self._connect()
+        self._pool = self._open_pool()
 
         # The collection name IS the physical table name: the base class has
         # already validated (ai4rag prefix) and sanitized it into a safe SQL
         # identifier, so no separate table name or prefix is needed.
         self._create_table()
 
-    def _connect(self) -> None:
-        """Open a new connection, register the vector adapter, and ensure the extension.
+    def _open_pool(self) -> ConnectionPool:
+        """Open the connection pool backing this store.
 
-        Extracted from :meth:`__init__` so :meth:`_ensure_connection` and the insert
-        retry path can transparently re-establish a connection that the server has
-        dropped (e.g. a recycled backend or a middlebox closing an idle socket).
+        Every physical connection the pool creates — at startup, to grow the
+        pool under concurrent load, or to replace one the pool has detected as
+        broken — is configured identically via *configure*: the ``vector`` type
+        adapter is registered and the ``pgvector`` extension is ensured, so no
+        caller ever sees an unconfigured connection regardless of pool churn.
+
+        Returns
+        -------
+        ConnectionPool
+            The opened pool. :meth:`_create_table`, called right after this in
+            :meth:`__init__`, borrows the first connection and so blocks (up to
+            :attr:`_CONNECT_TIMEOUT`) until one is ready — a misconfigured
+            connection still fails fast, during construction.
         """
         connect_kwargs: dict[str, Any] = {
             "host": self._config.host,
@@ -165,24 +187,31 @@ class PGVectorStore(BaseVectorStore):
         if self._config.password:
             connect_kwargs["password"] = self._config.password
 
-        self._conn = psycopg.connect(**connect_kwargs)
-        register_vector(self._conn)
-        self._conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        return ConnectionPool(
+            kwargs=connect_kwargs,
+            min_size=self._MIN_POOL_SIZE,
+            max_size=self._MAX_POOL_SIZE,
+            configure=self._configure_connection,
+            timeout=self._CONNECT_TIMEOUT,
+            open=True,
+        )
 
-    def _ensure_connection(self) -> None:
-        """Reconnect if the connection was never opened or has since been closed."""
-        if self._conn is None or self._conn.closed:
-            logger.warning("PGVector connection is down; reconnecting to %s:%s", self._config.host, self._config.port)
-            self._connect()
+    @staticmethod
+    def _configure_connection(conn: psycopg.Connection) -> None:
+        """Prepare one physical connection for use: register the vector adapter and ensure the extension.
 
-    def _reconnect(self) -> None:
-        """Force-close a broken connection and open a fresh one."""
-        try:
-            if self._conn is not None and not self._conn.closed:
-                self._conn.close()
-        except Exception:  # pragma: no cover - best-effort teardown of an already-broken socket
-            pass
-        self._connect()
+        Passed to :class:`ConnectionPool` as its ``configure`` callback, so the
+        pool invokes it on every connection it creates — at startup, when
+        growing the pool, or when replacing one it found broken — rather than
+        this store calling it once itself.
+
+        Parameters
+        ----------
+        conn : psycopg.Connection
+            A newly opened, not-yet-pooled connection.
+        """
+        register_vector(conn)
+        conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
     def _create_table(self) -> None:
         """Create the backing table if it does not already exist.
@@ -192,15 +221,16 @@ class PGVectorStore(BaseVectorStore):
         plain ``content_text``, and a ``tokenized_content`` ``tsvector`` column
         feeding full-text (keyword) search.
         """
-        self._conn.execute(f"""
-            CREATE TABLE IF NOT EXISTS {self._quoted_table()} (
-                id TEXT PRIMARY KEY,
-                document JSONB,
-                embedding vector({self._embedding_dimension}),
-                content_text TEXT,
-                tokenized_content TSVECTOR
-            )
-            """)
+        with self._pool.connection() as conn:
+            conn.execute(f"""
+                CREATE TABLE IF NOT EXISTS {self._quoted_table()} (
+                    id TEXT PRIMARY KEY,
+                    document JSONB,
+                    embedding vector({self._embedding_dimension}),
+                    content_text TEXT,
+                    tokenized_content TSVECTOR
+                )
+                """)
         logger.info("PGVector table ready: %s (dim=%d)", self._collection_name, self._embedding_dimension)
 
     def _ensure_indexes(self) -> None:
@@ -212,26 +242,71 @@ class PGVectorStore(BaseVectorStore):
         indexes once the data is in place is both faster and far lighter on server memory.
         ``IF NOT EXISTS`` keeps this a no-op for reused collections whose indexes already
         exist, and the in-memory flag avoids re-issuing the DDL on every subsequent search.
+
+        ``search()`` runs concurrently across threads (see :attr:`_MAX_POOL_SIZE`), so the
+        flag check is guarded by :attr:`_indexes_lock` with the standard double-checked
+        pattern: without it, two threads can both see ``False``, and both race to run the
+        DDL. PostgreSQL's ``IF NOT EXISTS`` is not atomic across concurrent sessions — the
+        loser doesn't silently no-op, it raises a real ``UniqueViolation`` on the system
+        catalog. The lock prevents that race for this instance; the ``UniqueViolation``
+        catch below is a second line of defense for a collection shared across instances
+        (e.g. reused by another trial), where no Python-level lock can help.
         """
         if self._indexes_built:
             return
 
-        self._ensure_connection()
+        with self._indexes_lock:
+            if self._indexes_built:
+                return
 
-        hnsw_idx = f"idx_{self._collection_name}_hnsw"
-        self._conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS {hnsw_idx}
-            ON {self._quoted_table()} USING hnsw (embedding {self._index_ops})
-            """)
+            hnsw_idx = f"idx_{self._collection_name}_hnsw"
+            gin_idx = f"idx_{self._collection_name}_gin"
+            with self._pool.connection() as conn:
+                # Each statement is guarded independently, not by one shared try/except:
+                # under autocommit there is no transaction spanning them, so a race lost on
+                # one index must not skip creating the other.
+                self._create_index_ignoring_race(
+                    conn,
+                    f"""
+                    CREATE INDEX IF NOT EXISTS {hnsw_idx}
+                    ON {self._quoted_table()} USING hnsw (embedding {self._index_ops})
+                    """,
+                )
+                self._create_index_ignoring_race(
+                    conn,
+                    f"""
+                    CREATE INDEX IF NOT EXISTS {gin_idx}
+                    ON {self._quoted_table()} USING gin (tokenized_content)
+                    """,
+                )
 
-        gin_idx = f"idx_{self._collection_name}_gin"
-        self._conn.execute(f"""
-            CREATE INDEX IF NOT EXISTS {gin_idx}
-            ON {self._quoted_table()} USING gin (tokenized_content)
-            """)
+            self._indexes_built = True
+            logger.info("PGVector indexes ready: %s", self._collection_name)
 
-        self._indexes_built = True
-        logger.info("PGVector indexes ready: %s", self._collection_name)
+    def _create_index_ignoring_race(self, conn: psycopg.Connection, index_sql: str) -> None:
+        """Run a ``CREATE INDEX IF NOT EXISTS`` statement, tolerating a concurrent creator.
+
+        PostgreSQL's ``IF NOT EXISTS`` is not atomic across concurrent sessions: two
+        sessions that both see the index absent can both attempt to create it, and the
+        loser gets a real ``UniqueViolation`` on the system catalog rather than a silent
+        no-op. That outcome means the index now exists (created by the winner), which is
+        exactly what this method is trying to achieve, so it is swallowed rather than
+        raised.
+
+        Parameters
+        ----------
+        conn : psycopg.Connection
+            Connection to execute *index_sql* on.
+        index_sql : str
+            A ``CREATE INDEX IF NOT EXISTS ...`` statement.
+        """
+        try:
+            conn.execute(index_sql)
+        except psycopg.errors.UniqueViolation:
+            logger.info(
+                "PGVector index for %s was created concurrently elsewhere; continuing.",
+                self._collection_name,
+            )
 
     def _quoted_table(self) -> str:
         """Return the collection name as a safely double-quoted SQL identifier.
@@ -285,7 +360,6 @@ class PGVectorStore(BaseVectorStore):
             Matched chunks, optionally paired with their scores.
         """
         validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
-        self._ensure_connection()
         self._ensure_indexes()
 
         if search_mode == "hybrid":
@@ -317,15 +391,16 @@ class PGVectorStore(BaseVectorStore):
         """
         embedding = self.embedding_model.embed_query(query)
 
-        rows = self._conn.execute(
-            f"""
-            SELECT document, embedding {self._distance_operator} %s::vector AS distance
-            FROM {self._quoted_table()}
-            ORDER BY distance
-            LIMIT %s
-            """,
-            (embedding, k),
-        ).fetchall()
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT document, embedding {self._distance_operator} %s::vector AS distance
+                FROM {self._quoted_table()}
+                ORDER BY distance
+                LIMIT %s
+                """,
+                (embedding, k),
+            ).fetchall()
 
         results: list[tuple[AI4RAGChunk, float]] = []
         for row in rows:
@@ -357,16 +432,17 @@ class PGVectorStore(BaseVectorStore):
         list[tuple[AI4RAGChunk, float]]
             Matched chunks paired with their ``ts_rank`` scores.
         """
-        rows = self._conn.execute(
-            f"""
-            SELECT document, ts_rank(tokenized_content, plainto_tsquery('english', %s)) AS score
-            FROM {self._quoted_table()}
-            WHERE tokenized_content @@ plainto_tsquery('english', %s)
-            ORDER BY score DESC
-            LIMIT %s
-            """,
-            (query, query, k),
-        ).fetchall()
+        with self._pool.connection() as conn:
+            rows = conn.execute(
+                f"""
+                SELECT document, ts_rank(tokenized_content, plainto_tsquery('english', %s)) AS score
+                FROM {self._quoted_table()}
+                WHERE tokenized_content @@ plainto_tsquery('english', %s)
+                ORDER BY score DESC
+                LIMIT %s
+                """,
+                (query, query, k),
+            ).fetchall()
 
         results: list[tuple[AI4RAGChunk, float]] = []
         for row in rows:
@@ -486,7 +562,7 @@ class PGVectorStore(BaseVectorStore):
 
         Duplicate ``chunk_id`` values within *documents* are skipped (first
         occurrence wins) and logged. Rows are upserted in batches, each with a
-        one-shot reconnect-and-retry on a dropped connection.
+        one-shot retry on a dropped connection.
 
         Parameters
         ----------
@@ -522,7 +598,7 @@ class PGVectorStore(BaseVectorStore):
             Rows to upsert, each as ``(id, document JSON, embedding, content
             text, text to tokenize)``.
         """
-        with self._conn.cursor() as cur:
+        with self._pool.connection() as conn, conn.cursor() as cur:
             cur.executemany(
                 f"""
                 INSERT INTO {self._quoted_table()} (id, document, embedding, content_text, tokenized_content)
@@ -537,26 +613,26 @@ class PGVectorStore(BaseVectorStore):
             )
 
     def _insert_batch_with_retry(self, batch: list[tuple[str, str, list[float], str, str]]) -> None:
-        """Insert one batch, reconnecting once and retrying if the connection was dropped.
+        """Insert one batch, retrying once on a dropped connection.
 
         The ``ON CONFLICT`` upsert makes the retry idempotent even when the first attempt
-        committed some rows before the connection died. This recovers from *transient*
-        drops (recycled backend, middlebox); it deliberately does not mask a deterministic
-        failure — a batch that always kills the backend still surfaces after one retry.
+        committed some rows before the connection died. The pool discards a connection it
+        finds broken and hands out a fresh one on the next borrow, so the retry itself needs
+        no explicit reconnect. This recovers from *transient* drops (recycled backend,
+        middlebox); it deliberately does not mask a deterministic failure — a batch that
+        always kills the backend still surfaces after one retry.
         """
-        self._ensure_connection()
         try:
             self._insert_batch(batch)
         except psycopg.OperationalError as exc:
-            logger.warning("PGVector insert failed (%s); reconnecting and retrying batch of %d rows.", exc, len(batch))
-            self._reconnect()
+            logger.warning("PGVector insert failed (%s); retrying batch of %d rows.", exc, len(batch))
             self._insert_batch(batch)
 
     def clean_collection(self) -> None:
         """Drop the PostgreSQL table."""
-        self._conn.execute(f"DROP TABLE IF EXISTS {self._quoted_table()} CASCADE")
+        with self._pool.connection() as conn:
+            conn.execute(f"DROP TABLE IF EXISTS {self._quoted_table()} CASCADE")
 
     def close(self) -> None:
-        """Close the database connection."""
-        if self._conn and not self._conn.closed:
-            self._conn.close()
+        """Close the connection pool."""
+        self._pool.close()

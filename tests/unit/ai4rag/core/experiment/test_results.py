@@ -76,7 +76,6 @@ class TestEvaluationResult:
             "scores",
             "execution_time",
             "final_score",
-            "rag_pattern",
         }
         assert set(result_dict.keys()) == expected_keys
 

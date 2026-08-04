@@ -318,6 +318,14 @@ class ChromaVectorStore(BaseVectorStore):
         """Drop the underlying Chroma collection."""
         self._client.delete_collection(self._collection_name)
 
+    def close(self) -> None:
+        """Close the underlying Chroma client.
+
+        Matters most for a persistent client, where this releases the SQLite
+        file lock; a no-op-equivalent for the ephemeral and HTTP clients.
+        """
+        self._client.close()
+
     def _get_window_documents(self, doc_id: str, seq_nums_window: list[int]) -> list[AI4RAGChunk]:
         """Fetch chunks of a document within a contiguous sequence-number range.
 

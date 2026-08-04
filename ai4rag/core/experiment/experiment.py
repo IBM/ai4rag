@@ -41,7 +41,7 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
-from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.rag.vector_store.config import BaseVectorStoreConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -77,7 +77,7 @@ class AI4RAGExperiment:
     optimizer_settings : OptimizerSettings
         Settings for the optimizer to be used during the experiment.
 
-    vector_store_config : ChromaConfig | MilvusConfig | PGVectorConfig
+    vector_store_config : BaseVectorStoreConfig
         Connection config for the vector store backend. Its type (via
         ``config.provider``) determines which vector store implementation
         is used for indexing and retrieval.
@@ -128,7 +128,7 @@ class AI4RAGExperiment:
         search_space: AI4RAGSearchSpace,
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
-        vector_store_config: ChromaConfig | MilvusConfig | PGVectorConfig,
+        vector_store_config: BaseVectorStoreConfig,
         optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
@@ -461,79 +461,88 @@ class AI4RAGExperiment:
 
         collection_name = vector_store.collection_name
 
-        if not self._collection_exists(collection_name=collection_name):
-            chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
-            chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
-            chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
+        # The store's connection/client is only needed for indexing and retrieval,
+        # both of which finish before scoring; closing it deterministically here
+        # (rather than waiting on garbage collection) keeps a long HPO search from
+        # accumulating one open connection per evaluated pattern, including on
+        # trials that fail and get caught by search()'s objective_function.
+        with vector_store:
+            if not self._collection_exists(collection_name=collection_name):
+                chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
+                chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
+                chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
 
-            if chunking_method == "hybrid":
-                chunker = DoclingChunker(max_tokens=chunk_size)
-            else:
-                chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            chunked_documents = chunker.split_documents(self.documents)
+                if chunking_method == "hybrid":
+                    chunker = DoclingChunker(max_tokens=chunk_size)
+                else:
+                    chunker = LangChainChunker(
+                        method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+                    )
+                chunked_documents = chunker.split_documents(self.documents)
 
-            if self.event_handler:
+                if self.event_handler:
+                    self.event_handler.on_status_change(
+                        level=LogLevel.INFO,
+                        message=(
+                            f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
+                            f"and chunk_overlap: {chunk_overlap}."
+                        ),
+                        step=ExperimentStep.CHUNKING,
+                    )
+
                 self.event_handler.on_status_change(
                     level=LogLevel.INFO,
                     message=(
-                        f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
-                        f"and chunk_overlap: {chunk_overlap}."
+                        f"Embedding chunks using the {embedding_model.model_id} model. "
+                        f"Building index: {collection_name}."
                     ),
-                    step=ExperimentStep.CHUNKING,
+                    step=ExperimentStep.EMBEDDING,
                 )
 
-            self.event_handler.on_status_change(
-                level=LogLevel.INFO,
-                message=(
-                    f"Embedding chunks using the {embedding_model.model_id} model. "
-                    f"Building index: {collection_name}."
-                ),
-                step=ExperimentStep.EMBEDDING,
+                try:
+                    vector_store.add_documents(chunked_documents)
+                except Exception as exc:
+                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
+
+            else:
+                self.event_handler.on_status_change(
+                    level=LogLevel.INFO,
+                    message=f"Using index {collection_name}.",
+                    step=ExperimentStep.EMBEDDING,
+                )
+
+            logger.info("Using retriever with parameters: %s", retrieval_params)
+
+            retriever = Retriever(
+                vector_store=vector_store,
+                number_of_chunks=number_of_chunks,
+                method=retrieval_method,
+                search_mode=search_mode,
+                ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
+                ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
+                ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
             )
 
-            try:
-                vector_store.add_documents(chunked_documents)
-            except Exception as exc:
-                raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
-
-        else:
-            self.event_handler.on_status_change(
-                level=LogLevel.INFO,
-                message=f"Using index {collection_name}.",
-                step=ExperimentStep.EMBEDDING,
+            rag_pattern = SimpleRAG(
+                foundation_model=foundation_model,
+                retriever=retriever,
             )
 
-        logger.info("Using retriever with parameters: %s", retrieval_params)
+            _rag_log = (
+                f"Retrieval and generation using collection: '{collection_name}' and "
+                f"foundation model: '{foundation_model.model_id}'."
+            )
+            logger.info(_rag_log)
+            self.event_handler.on_status_change(
+                level=LogLevel.INFO,
+                message=_rag_log,
+                step=ExperimentStep.GENERATION,
+            )
 
-        retriever = Retriever(
-            vector_store=vector_store,
-            number_of_chunks=number_of_chunks,
-            method=retrieval_method,
-            search_mode=search_mode,
-            ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
-            ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
-            ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
-        )
+            inference_response = query_rag(
+                rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
+            )
 
-        rag_pattern = SimpleRAG(
-            foundation_model=foundation_model,
-            retriever=retriever,
-        )
-
-        _rag_log = (
-            f"Retrieval and generation using collection: '{collection_name}' and "
-            f"foundation model: '{foundation_model.model_id}'."
-        )
-        logger.info(_rag_log)
-        self.event_handler.on_status_change(
-            level=LogLevel.INFO,
-            message=_rag_log,
-            step=ExperimentStep.GENERATION,
-        )
-
-        inference_response = query_rag(
-            rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
-        )
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,
             pattern_name=pattern_name,
@@ -562,7 +571,6 @@ class AI4RAGExperiment:
             scores=result_scores,
             execution_time=execution_time,
             final_score=final_score,
-            rag_pattern=rag_pattern,
         )
 
         evaluation_results_json = self.results.create_evaluation_results_json(

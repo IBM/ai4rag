@@ -36,7 +36,7 @@ dependencies = [
   "ogx-client>=1.1.0,<=1.1.3",
   "pandas==2.2.*",
   "pgvector>=0.3.0",
-  "psycopg[binary]>=3.1",
+  "psycopg[binary,pool]>=3.1",
   "pydantic==2.11.*",
   "pygam~=0.12.0",
   "pymilvus>=2.5.0",

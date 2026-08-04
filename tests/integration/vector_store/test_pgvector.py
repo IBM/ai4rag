@@ -31,7 +31,8 @@ def _table_exists(store: PGVectorStore) -> bool:
     # ``to_regclass`` resolves a relation name to its OID, or NULL if it does not
     # exist — a non-throwing existence check. The collection name IS the table
     # name; ``_quoted_table`` supplies the safely-quoted identifier.
-    row = store._conn.execute("SELECT to_regclass(%s)", (store._quoted_table(),)).fetchone()
+    with store._pool.connection() as conn:
+        row = conn.execute("SELECT to_regclass(%s)", (store._quoted_table(),)).fetchone()
     return row is not None and row[0] is not None
 
 

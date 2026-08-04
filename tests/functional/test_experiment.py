@@ -115,10 +115,6 @@ class TestExperimentChroma:
         assert best_eval.final_score is not None
         assert 0 <= best_eval.final_score <= 1
 
-        answer = best_eval.rag_pattern.generate("What is greedy decoding?").get("answer")
-        assert isinstance(answer, str)
-        assert len(answer) > 0
-
 
 class TestExperimentMilvus:
     """Run experiment with a direct Milvus vector store client and OGX models."""
@@ -155,10 +151,6 @@ class TestExperimentMilvus:
         assert best_eval.final_score is not None
         assert 0 <= best_eval.final_score <= 1
 
-        answer = best_eval.rag_pattern.generate("What is greedy decoding?").get("answer")
-        assert isinstance(answer, str)
-        assert len(answer) > 0
-
 
 class TestExperimentPGVector:
     """Run experiment with PG vector store and OGX models."""
@@ -194,10 +186,6 @@ class TestExperimentPGVector:
         best_eval = best_evals[0]
         assert best_eval.final_score is not None
         assert 0 <= best_eval.final_score <= 1
-
-        answer = best_eval.rag_pattern.generate("What is greedy decoding?").get("answer")
-        assert isinstance(answer, str)
-        assert len(answer) > 0
 
 
 class TestExperimentChromaWithKnownObservations:
@@ -276,7 +264,3 @@ class TestExperimentChromaWithKnownObservations:
         best_eval = best_evals[0]
         assert best_eval.final_score is not None
         assert 0 <= best_eval.final_score <= 1
-
-        answer = best_eval.rag_pattern.generate("What is greedy decoding?").get("answer")
-        assert isinstance(answer, str)
-        assert len(answer) > 0
