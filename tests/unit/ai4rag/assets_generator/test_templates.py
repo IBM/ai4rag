@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -28,8 +29,8 @@ _SAMPLE_PATTERN_DATA: dict = {
             "embedding_params": {"embedding_dimension": 768},
         },
         "vector_store_binding": {
-            "provider_id": "milvus",
-            "vector_store_id": "test_collection",
+            "provider_type": "milvus",
+            "collection_name": "test_collection",
         },
         "retrieval": {
             "method": "simple",
@@ -74,8 +75,21 @@ class TestCreatePlaceholderMapping:
         assert mapping["EMBEDDING_PARAMS"] == {"embedding_dimension": 768}
 
     def test_vector_store_fields(self, mapping: dict):
-        assert mapping["PROVIDER_ID"] == "milvus"
+        assert mapping["PROVIDER_TYPE"] == "milvus"
         assert mapping["COLLECTION_NAME"] == "test_collection"
+
+    def test_required_env_vars_rendered(self, mapping: dict):
+        """The provider's env vars must render as a Markdown bullet list."""
+        rendered = mapping["REQUIRED_ENV_VARS"]
+        assert "- `MILVUS_URI`" in rendered
+        assert "- `MILVUS_TOKEN`" in rendered
+        assert "- `MILVUS_SERVER_CERT`" in rendered
+
+    def test_required_env_vars_empty_for_unknown_provider(self):
+        """An unknown or missing provider must yield an empty env-var block."""
+        mapping = create_placeholder_mapping({})
+        assert mapping["PROVIDER_TYPE"] == ""
+        assert mapping["REQUIRED_ENV_VARS"] == ""
 
     def test_retrieval_fields(self, mapping: dict):
         assert mapping["RETRIEVAL_METHOD"] == "simple"
@@ -104,8 +118,9 @@ class TestCreatePlaceholderMapping:
             "CONTEXT_TEXT",
             "EMBEDDING_MODEL_ID",
             "EMBEDDING_PARAMS",
-            "PROVIDER_ID",
+            "PROVIDER_TYPE",
             "COLLECTION_NAME",
+            "REQUIRED_ENV_VARS",
             "RETRIEVAL_METHOD",
             "NUMBER_OF_CHUNKS",
             "SEARCH_MODE",
@@ -201,3 +216,65 @@ class TestGenerateNotebookFromTemplate:
             input_data_key="key/input",
             ogx_base_url="https://ogx.local",
         )
+
+
+def _read_notebook_text(path: Path) -> str:
+    """Return the concatenated source of every cell in a generated notebook."""
+    notebook = json.loads(path.read_text(encoding="utf-8"))
+    return "\n".join(
+        "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"] for cell in notebook["cells"]
+    )
+
+
+@pytest.mark.parametrize("template", ["ogx_indexing", "ogx_inference"])
+class TestGeneratedNotebookUsesDirectClients:
+    """End-to-end checks that generated notebooks target the direct-client vector store API."""
+
+    def test_generated_notebook_uses_new_api(self, template: str, tmp_path: Path):
+        """Both templates must render the ``get_vector_store_config`` factory and drop the OGX store."""
+        output_path = tmp_path / f"{template}.ipynb"
+        generate_notebook_from_template(
+            notebook_template=template,
+            output_data=_SAMPLE_PATTERN_DATA,
+            output_notebook_path=output_path,
+        )
+        text = _read_notebook_text(output_path)
+
+        # New direct-client API is present, with the provider substituted from the pattern.
+        assert "get_vector_store_config" in text
+        assert "get_vector_store(" in text
+        assert 'provider_type = "milvus"' in text
+        assert 'collection_name = "test_collection"' in text
+
+        # Old OGX vector-store API is fully removed.
+        assert "OGXVectorStore" not in text
+        assert "provider_id" not in text
+        assert "reuse_collection_name" not in text
+
+    def test_generated_notebook_lists_required_env_vars(self, template: str, tmp_path: Path):
+        """The provider's required environment variables must be documented in the notebook."""
+        output_path = tmp_path / f"{template}.ipynb"
+        generate_notebook_from_template(
+            notebook_template=template,
+            output_data=_SAMPLE_PATTERN_DATA,
+            output_notebook_path=output_path,
+        )
+        text = _read_notebook_text(output_path)
+
+        assert "MILVUS_URI" in text
+
+    def test_generated_notebook_has_no_unresolved_placeholders(self, template: str, tmp_path: Path):
+        """No ``{PLACEHOLDER}`` tokens may survive substitution in the rendered notebook."""
+        import re
+
+        output_path = tmp_path / f"{template}.ipynb"
+        generate_notebook_from_template(
+            notebook_template=template,
+            output_data=_SAMPLE_PATTERN_DATA,
+            output_notebook_path=output_path,
+        )
+        text = _read_notebook_text(output_path)
+
+        # Escaped literal braces ({{ }}) are intentional; only single-brace ALL-CAPS tokens are placeholders.
+        leftover = sorted(set(re.findall(r"(?<!\{)\{[A-Z_]+\}(?!\})", text)))
+        assert leftover == [], f"Unresolved placeholders: {leftover}"

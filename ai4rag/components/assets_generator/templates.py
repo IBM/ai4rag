@@ -7,6 +7,32 @@ from typing import Any
 
 from ai4rag import __version__
 from ai4rag.components.assets_generator.notebook import Notebook
+from ai4rag.rag.vector_store import get_vector_store_env_vars
+
+
+def _format_required_env_vars(provider: str) -> str:
+    """Render a provider's environment variables as a Markdown bullet list.
+
+    Parameters
+    ----------
+    provider : str
+        Vector store backend discriminator (e.g. ``"milvus"``). An empty or
+        unsupported value yields an empty string so notebook generation never
+        fails on partial pattern data.
+
+    Returns
+    -------
+    str
+        One ``- `NAME` — description`` bullet per variable, joined by newlines;
+        empty string when *provider* is unknown or missing.
+    """
+    if not provider:
+        return ""
+    try:
+        env_vars = get_vector_store_env_vars(provider)
+    except ValueError:
+        return ""
+    return "\n".join(f"- `{name}` — {description}" for name, description in env_vars)
 
 
 def create_placeholder_mapping(
@@ -53,8 +79,10 @@ def create_placeholder_mapping(
     mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
     mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
     vs = settings.get("vector_store_binding", {})
-    mapping["PROVIDER_ID"] = vs.get("provider_id", "")
-    mapping["COLLECTION_NAME"] = vs.get("vector_store_id", "")
+    provider_type = vs.get("provider_type", "")
+    mapping["PROVIDER_TYPE"] = provider_type
+    mapping["COLLECTION_NAME"] = vs.get("collection_name", "")
+    mapping["REQUIRED_ENV_VARS"] = _format_required_env_vars(provider_type)
 
     ret = settings.get("retrieval", {})
     mapping["RETRIEVAL_METHOD"] = ret.get("method", "")

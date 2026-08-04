@@ -2,8 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from __future__ import annotations
-
 import importlib.resources
 from json import dump as json_dump
 from json import load as json_load
@@ -162,7 +160,7 @@ class Notebook:
             "nbformat_minor": self.nbformat_minor,
         }
 
-    def save(self, path: str | Path, indent: int = 2) -> Notebook:
+    def save(self, path: str | Path, indent: int = 2) -> "Notebook":
         """Save notebook to a file.
 
         Parameters
@@ -195,7 +193,7 @@ class Notebook:
         cls,
         notebook_name: str,
         templates_dir: str | Path | None = None,
-    ) -> Notebook:
+    ) -> "Notebook":
         """Load a Jupyter notebook template from bundled package data or a custom directory.
 
         Parameters

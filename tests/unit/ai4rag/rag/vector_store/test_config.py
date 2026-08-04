@@ -7,7 +7,13 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.rag.vector_store.config import (
+    ChromaConfig,
+    MilvusConfig,
+    PGVectorConfig,
+    get_vector_store_config,
+    get_vector_store_env_vars,
+)
 
 
 class TestChromaConfig:
@@ -148,3 +154,62 @@ class TestPGVectorConfig:
         assert cfg.dbname == "testdb"
         assert cfg.user == "testuser"
         assert cfg.password == "testpass"
+
+
+class TestGetVectorStoreConfig:
+    """Tests for the ``get_vector_store_config`` provider factory."""
+
+    def test_returns_chroma_config(self, monkeypatch):
+        for var in ("CHROMA_PERSIST_DIR", "CHROMA_HOST", "CHROMA_PORT"):
+            monkeypatch.delenv(var, raising=False)
+        cfg = get_vector_store_config("chroma")
+        assert isinstance(cfg, ChromaConfig)
+        assert cfg.provider == "chroma"
+
+    def test_returns_pgvector_config(self, monkeypatch):
+        for var in ("PGVECTOR_HOST", "PGVECTOR_PORT", "PGVECTOR_DB", "PGVECTOR_USER", "PGVECTOR_PASSWORD"):
+            monkeypatch.delenv(var, raising=False)
+        cfg = get_vector_store_config("pgvector")
+        assert isinstance(cfg, PGVectorConfig)
+        assert cfg.provider == "pgvector"
+
+    def test_returns_milvus_config_from_env(self, monkeypatch):
+        monkeypatch.setenv("MILVUS_URI", "http://host:19530")
+        monkeypatch.delenv("MILVUS_TOKEN", raising=False)
+        monkeypatch.delenv("MILVUS_SERVER_CERT", raising=False)
+        cfg = get_vector_store_config("milvus")
+        assert isinstance(cfg, MilvusConfig)
+        assert cfg.uri == "http://host:19530"
+
+    def test_milvus_missing_uri_raises_key_error(self, monkeypatch):
+        """The factory must surface the backend's own ``from_env`` failure."""
+        monkeypatch.delenv("MILVUS_URI", raising=False)
+        with pytest.raises(KeyError):
+            get_vector_store_config("milvus")
+
+    def test_unsupported_provider_raises_value_error(self):
+        with pytest.raises(ValueError, match="not supported"):
+            get_vector_store_config("qdrant")
+
+
+class TestGetVectorStoreEnvVars:
+    """Tests for the ``get_vector_store_env_vars`` documentation helper."""
+
+    @pytest.mark.parametrize(
+        ("provider", "config_cls"),
+        [("chroma", ChromaConfig), ("milvus", MilvusConfig), ("pgvector", PGVectorConfig)],
+    )
+    def test_matches_config_class_env_vars(self, provider, config_cls):
+        """The helper must return the exact ``env_vars`` tuple declared on the config class."""
+        assert get_vector_store_env_vars(provider) == config_cls.env_vars
+
+    def test_returns_name_description_pairs(self):
+        env_vars = get_vector_store_env_vars("milvus")
+        assert env_vars  # non-empty
+        names = [name for name, _ in env_vars]
+        assert "MILVUS_URI" in names
+        assert all(isinstance(name, str) and isinstance(desc, str) for name, desc in env_vars)
+
+    def test_unsupported_provider_raises_value_error(self):
+        with pytest.raises(ValueError, match="not supported"):
+            get_vector_store_env_vars("qdrant")

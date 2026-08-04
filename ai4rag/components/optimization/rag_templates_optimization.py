@@ -14,7 +14,7 @@ import pandas as pd
 from ogx_client import OgxClient
 
 from ai4rag import handler
-from ai4rag.components.assets_generator import build_pattern_json, generate_notebook_from_template
+from ai4rag.components.assets_generator import generate_notebook_from_template
 from ai4rag.components.utils.docling_io import load_docling_documents
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
@@ -241,10 +241,36 @@ def _generate_output_artifacts(
         patt_dir = output_dir / pattern.get("payload").get("name")
         patt_dir.mkdir(parents=True, exist_ok=True)
 
-        pattern_data = build_pattern_json(
-            pattern=pattern.get("payload"),
-            indexing_pipeline_params=indexing_pipeline_params,
-        )
+        pattern_data = pattern.get("payload")
+        if indexing_pipeline_params:
+            settings = pattern_data["settings"]
+            vector_store_binding = settings["vector_store_binding"]
+            pattern_data["indexing"] = {
+                "pipeline_spec": {
+                    "pipeline_name": indexing_pipeline_params.get("pipeline_name", "documents_indexing_pipeline"),
+                    "parameters": {
+                        "ogx_secret_name": indexing_pipeline_params.get("ogx_secret_name"),
+                        "input_data_secret_name": indexing_pipeline_params.get("input_data_secret_name"),
+                        "input_data_bucket_name": indexing_pipeline_params.get("input_data_bucket_name"),
+                        "input_data_key": indexing_pipeline_params.get("input_data_key"),
+                        "batch_size": indexing_pipeline_params.get("batch_size"),
+                        "provider_type": vector_store_binding["provider_type"],
+                        "collection_name": vector_store_binding["collection_name"],
+                        "embedding_model_id": settings["embedding"]["model_id"],
+                        "embedding_params": settings["embedding"]["embedding_params"],
+                        "chunking_method": settings["chunking"]["method"],
+                        "chunk_size": settings["chunking"]["chunk_size"],
+                        "chunk_overlap": settings["chunking"]["chunk_overlap"],
+                    },
+                    "overrides_allowed": [
+                        "input_data_secret_name",
+                        "input_data_bucket_name",
+                        "input_data_key",
+                        "collection_name",
+                        "batch_size",
+                    ],
+                }
+            }
 
         generate_notebook_from_template(
             "ogx_indexing",
