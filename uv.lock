@@ -31,7 +31,6 @@ name = "ai4rag"
 source = { editable = "." }
 dependencies = [
     { name = "boto3" },
-    { name = "docling" },
     { name = "docling-slim", extra = ["feat-chunking", "format-opendocument", "standard"] },
     { name = "langchain-chroma" },
     { name = "langchain-text-splitters" },
@@ -92,7 +91,6 @@ requires-dist = [
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
-    { name = "docling", specifier = "~=2.107.0" },
     { name = "docling-slim", extras = ["asr", "feat-chunking", "format-opendocument", "standard"], specifier = "~=2.107.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
@@ -809,18 +807,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f5/3a/005e4856ad8e9b9879414a4df4dbc56dc3663b96f9d8c920ef210e8931cf/doclang-0.7.3.tar.gz", hash = "sha256:ca50615357e46ebf9597bb9065b9112367103ec24bd539f8ae12649224cf50b0", size = 31569, upload-time = "2026-07-15T08:11:02.917Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a5/81/334ccc0f0cd7c3d75996b6b596e7f4c62c4c46a0ca042003315c28170159/doclang-0.7.3-py3-none-any.whl", hash = "sha256:9440c4ca9f7e061a7b8d33bdf15b1029be69a4c13cd8952dd6ce541884e4c685", size = 32267, upload-time = "2026-07-15T08:11:01.977Z" },
-]
-
-[[package]]
-name = "docling"
-version = "2.107.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "docling-slim", extra = ["standard"] },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/5e/b3/c0563269a680c4f3cf2b5814b8a2cb7e490d26343a25834124808896d1b3/docling-2.107.0.tar.gz", hash = "sha256:cabd688c00681361d13ccf00d802e4ef4e0514fcf6e9088709d58c10fbef08c1", size = 8946, upload-time = "2026-06-24T13:13:21.841Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/db/4d/f4ce1777977290f112b561b28862e6205bf4b419d09f9506067c007fd21f/docling-2.107.0-py3-none-any.whl", hash = "sha256:526bb6f28650174e5a4b0bcd341876cf9a753719d98cd93f2512ca008965e382", size = 5111, upload-time = "2026-06-24T13:13:20.505Z" },
 ]
 
 [[package]]
@@ -2395,15 +2381,15 @@ wheels = [
 
 [[package]]
 name = "odfdo"
-version = "3.23.1"
+version = "3.24.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "lxml" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/7c/77b3ef7ac4074eebd5fea4edd839c0637f2738ac323ee5ba60459b0c4f8e/odfdo-3.23.1.tar.gz", hash = "sha256:86414364d1184f94f7d1788822d9002d402e5b5737fdaa463e9c637a1428baf9", size = 326049, upload-time = "2026-07-22T16:54:06.327Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/7c/67/c89cb591f92879292b583309805743b264288e6d173704f2049766221afe/odfdo-3.24.0.tar.gz", hash = "sha256:7a76d2194442e684e6b68cd89a2338e6dcc7183015ff8d4fae0938228106dc01", size = 330847, upload-time = "2026-08-01T12:16:40.85Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/86/57/8a1713d09b3366be82adf51571922afe5ac245e481b9ffbdbf5a0de47509/odfdo-3.23.1-py3-none-any.whl", hash = "sha256:06e4136dcffb5407041a8342b15b15bf874906c190d546551d15bbf20fa3062a", size = 428137, upload-time = "2026-07-22T16:54:04.957Z" },
+    { url = "https://files.pythonhosted.org/packages/11/2a/232c324d92e0b637400acbfab3101d43154af88aefe057d29fffb0d89147/odfdo-3.24.0-py3-none-any.whl", hash = "sha256:7d9769a7a110632942d910d4794fe99bde763961a3f14604cd175c06cbba1711", size = 431945, upload-time = "2026-08-01T12:16:39.465Z" },
 ]
 
 [[package]]
