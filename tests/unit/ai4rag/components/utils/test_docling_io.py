@@ -2,10 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Tests for :mod:`ai4rag.components.utils.docling_io` -- DoclingDocument file loading."""
-
-from __future__ import annotations
-
 import pytest
 
 

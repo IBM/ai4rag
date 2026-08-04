@@ -2,8 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from __future__ import annotations
-
 import os
 from pathlib import Path
 

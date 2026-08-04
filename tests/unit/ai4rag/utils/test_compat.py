@@ -2,10 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Tests for :mod:`ai4rag.utils.compat` -- sqlite3 patching utility."""
-
-from __future__ import annotations
-
 import sys
 import types
 

@@ -2,10 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""PGVectorStore — direct ``psycopg`` + ``pgvector`` wrapper for vector and hybrid search."""
-
-from __future__ import annotations
-
 import heapq
 import json
 import threading

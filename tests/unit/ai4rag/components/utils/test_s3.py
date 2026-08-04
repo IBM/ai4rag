@@ -2,10 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Tests for :mod:`ai4rag.components.utils.s3` -- S3 credential loading and client creation."""
-
-from __future__ import annotations
-
 import pytest
 
 from ai4rag.components.utils.s3 import create_s3_client, get_s3_credentials_from_env
