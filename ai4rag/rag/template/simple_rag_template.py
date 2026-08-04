@@ -14,6 +14,7 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ..embedding.base_model import BaseEmbeddingModel
 from ..foundation_models.base_model import BaseFoundationModel
 from .base_template import BaseRAGTemplate, RAGTemplateError
+import dspy
 
 
 class SimpleRAG(BaseRAGTemplate):
@@ -112,8 +113,15 @@ class SimpleRAG(BaseRAGTemplate):
             {"role": "user", "content": user_message},
         ]
 
-        if self.optimized_dspy_module:
-            model_prediction = self.optimized_dspy_module(question=question, contexts=reference_documents)
+        if self.optimized_dspy_module is not None:
+            with dspy.context(
+                lm=dspy.LM(
+                    f"openai/{self.foundation_model}",
+                    api_base=f"{self.foundation_model.client.base_url}/v1",
+                    api_key=self.foundation_model.client.api_key,
+                )
+            ):
+                model_prediction = self.optimized_dspy_module(question=question, contexts=reference_documents)
             answer = model_prediction.answer_grounded_in_contexts
             # TODO log model reasoning for a given question
         else:

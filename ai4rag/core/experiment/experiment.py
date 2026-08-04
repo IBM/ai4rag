@@ -164,7 +164,6 @@ class AI4RAGExperiment:
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.optimized_dspy_module = kwargs.pop("optimized_dspy_module", None)
-
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
 
@@ -430,7 +429,7 @@ class AI4RAGExperiment:
                 "Only 'vector' mode is supported for chroma."
             )
 
-        if self.optimized_dspy_module:
+        if self.optimized_dspy_module is not None:
             chat_adapter = dspy.ChatAdapter(use_json_adapter_fallback=True)
             optimized_dspy_module_signature = RAGPrompt.load_state(
                 self.optimized_dspy_module.dump_state()["predict"]["signature"]
@@ -440,6 +439,9 @@ class AI4RAGExperiment:
             user_message_text = chat_adapter.format_user_message_content(
                 signature=optimized_dspy_module_signature,
                 inputs={"question": "<user_question>", "contexts": "<contexts>"},
+            )
+            logger.info(
+                "Using the DSPy-optimized `context_template_text`, `system_message_text` and `user_message_text`."
             )
         else:
             context_template_text = foundation_model.context_template_text
