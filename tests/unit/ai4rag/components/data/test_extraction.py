@@ -371,6 +371,7 @@ class TestBuildDoclingFormatOptions:
             InputFormat.LATEX,
             InputFormat.EPUB,
             InputFormat.EMAIL,
+            InputFormat.AUDIO,
         ):
             assert fmt in options, f"{fmt} missing from format options"
 
@@ -389,3 +390,47 @@ class TestBuildDoclingFormatOptions:
         options = _build_docling_format_options(do_table_structure=False)
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
+
+    def test_audio_format_uses_asr_pipeline(self):
+        """Audio format option must use the AsrPipeline class."""
+        from docling.datamodel.base_models import InputFormat
+        from docling.pipeline.asr_pipeline import AsrPipeline
+
+        options = _build_docling_format_options()
+        audio_option = options[InputFormat.AUDIO]
+        assert audio_option.pipeline_cls is AsrPipeline
+
+    def test_audio_format_language_is_auto_detect(self):
+        """Audio ASR options must use language=None for auto-detection."""
+        from docling.datamodel.base_models import InputFormat
+
+        options = _build_docling_format_options()
+        audio_option = options[InputFormat.AUDIO]
+        assert audio_option.pipeline_options.asr_options.language is None
+
+
+# ---------------------------------------------------------------------------
+# SUPPORTED_EXTENSIONS — audio formats
+# ---------------------------------------------------------------------------
+
+
+class TestSupportedExtensionsAudio:
+    """Tests that audio formats are included in SUPPORTED_EXTENSIONS."""
+
+    AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}
+
+    def test_audio_extensions_present(self):
+        """All audio extensions must be in SUPPORTED_EXTENSIONS."""
+        from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
+
+        for ext in self.AUDIO_EXTENSIONS:
+            assert ext in SUPPORTED_EXTENSIONS, f"{ext} missing from SUPPORTED_EXTENSIONS"
+
+    def test_original_extensions_still_present(self):
+        """Adding audio extensions must not remove existing document formats."""
+        from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
+
+        original = {".pdf", ".docx", ".pptx", ".md", ".html", ".txt", ".odt", ".odp",
+                     ".adoc", ".tex", ".epub", ".eml", ".qmd", ".rmd", ".xhtml"}
+        for ext in original:
+            assert ext in SUPPORTED_EXTENSIONS, f"{ext} missing from SUPPORTED_EXTENSIONS"

@@ -24,6 +24,6 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
         ".m4a",
         ".aac",
         ".ogg",
-        ".flac"
+        ".flac",
     }
 )
