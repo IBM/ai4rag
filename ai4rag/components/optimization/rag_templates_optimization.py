@@ -30,6 +30,7 @@ from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler.event_handler import KFPEventHandler
+from ai4rag.core.hpo.prompts import RAGPrompt
 
 _logger = logging.getLogger("rag-templates-optimization")
 _logger.addHandler(handler)
@@ -160,7 +161,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     embedding_models: list[OGXEmbeddingModel] = []
     params: list[Parameter] = []
 
-    optimized_dspy_module = dspy.ChainOfThought("->")
+    optimized_dspy_module = None
     for param_name, values in search_space_raw.items():
         if param_name == "foundation_model":
             values = [_deserialize_model(m, ogx_client) for m in values]
@@ -170,7 +171,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
             embedding_models = values
         elif param_name == "optimized_dspy_module":
             if values:
+                optimized_dspy_module = dspy.ChainOfThought(RAGPrompt)
                 optimized_dspy_module.load_state(state=values)
+                print("Loaded learned state of DSPy CoT!")
             continue
         params.append(Parameter(param_name, "C", values=values))
 
@@ -201,9 +204,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     experiments_kwargs = {}
 
-    if optimized_dspy_module.history:
-        # If it has been optimized it has non-empty history. Otherwise it's the default value which we want to discard
+    if optimized_dspy_module is not None:
         experiments_kwargs["optimized_dspy_module"] = optimized_dspy_module
+        print("Passing the trained DSPy Module down to the AI4RAGExperiment class!")
 
     rag_exp = AI4RAGExperiment(
         client=ogx_client,
