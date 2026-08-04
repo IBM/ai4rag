@@ -60,7 +60,7 @@ Faithfulness: High (answer is fully grounded in the context)
 
 ```
 Question: "What vector databases does ai4rag support?"
-Ground truth: ["ChromaDB and Milvus via OGX", "Milvus and ChromaDB"]
+Ground truth: ["ChromaDB and Milvus", "Milvus and ChromaDB"]
 Answer: "ai4rag supports ChromaDB and Milvus."
 Answer Correctness: High (matches ground truth)
 ```
@@ -326,7 +326,7 @@ Your `benchmark_data.json` must follow this schema:
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
-      "ChromaDB and Milvus via OGX"
+      "ChromaDB and Milvus"
     ],
     "correct_answer_document_ids": ["vector_stores.md", "quick_start.md"]
   }
@@ -368,7 +368,7 @@ Provide alternative phrasings for the same correct answer:
   "correct_answers": [
     "ChromaDB and Milvus",
     "Milvus and ChromaDB",
-    "ChromaDB (in-memory) and Milvus via OGX"
+    "ChromaDB (in-memory) and Milvus"
   ]
 }
 ```
@@ -467,6 +467,7 @@ from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.metric import Metrics
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
@@ -513,12 +514,10 @@ judge_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
 
 # Run optimization (optimizes for overall_score by default)
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",
+    vector_store_config=MilvusConfig.from_env(),
     optimizer_settings=GAMOptSettings(max_evals=8, n_random_nodes=3),
     evaluators=[UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)],
     optimization_metric=Metrics.OVERALL_SCORE,

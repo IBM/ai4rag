@@ -17,10 +17,3 @@ Programmatic notebook generation from RAG pattern definitions.
       members:
         - generate_notebook_from_template
         - create_placeholder_mapping
-
-## Pattern Builder
-
-::: ai4rag.components.assets_generator.pattern_builder
-    options:
-      members:
-        - build_pattern_json

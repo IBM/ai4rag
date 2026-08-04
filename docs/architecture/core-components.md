@@ -49,15 +49,16 @@ The `AI4RAGExperiment` class is the central orchestrator for the entire optimiza
 **Core Workflow:**
 
 ```python
+from ai4rag.core.experiment.experiment import AI4RAGExperiment
+from ai4rag.rag.vector_store import MilvusConfig  # or ChromaConfig, PGVectorConfig
+
 experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",
     optimizer_settings=GAMOptSettings(max_evals=20),
     event_handler=my_handler,
-    client=ogx_client,
+    vector_store_config=MilvusConfig.from_env(),
 )
 
 experiment.search()  # Execute optimization
@@ -428,9 +429,11 @@ class AI4RAGSearchSpace(SearchSpace):
         self,
         params: list[Parameter] | None = None,
         rules: list[RuleFunction] | None = None,
-        vector_store_type: str = "ogx",
+        vector_store_type: str = "milvus",
     ):
 ```
+
+`vector_store_type` selects which backend's hybrid-search rules apply during validation; supported values are `"milvus"`, `"pgvector"`, and `"chroma"`.
 
 **Built-in Validation Rules:**
 

@@ -4,14 +4,16 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) OGX Server** >= 1.1.0: With at least one foundation model, one embedding model, and vector database configured
+- **(Optional) OGX Server** >= 1.1.0: With at least one foundation model and one embedding model configured
+- **A vector store**: Chroma (in-memory by default, no setup required), or a running Milvus/PostgreSQL (pgvector) instance for hybrid retrieval
 
 
-!!! note "External models and vector database integration"
+!!! note "External models and vector store integration"
     `ai4rag` is designed to be provider-agnostic.
     It means you can use any model from any source as long as it satisfies `BaseFoundationModel` interface.
     The same rule applies to embedding model.
-    Custom vector database cannot be explicitly passed to the experiment configuration at this moment, but it can be handled by working the project and delivering custom `VectorStore` implementation.
+    Vector stores are selected via a typed `vector_store_config` (`ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) passed directly to the experiment.
+    A custom vector store can also be plugged in by delivering your own `BaseVectorStore` implementation.
 
 ---
 
@@ -26,6 +28,9 @@ pip install "git+https://github.com/IBM/ai4rag.git@main"
 This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
+
+Vector store clients — `chromadb`, `pymilvus`, `pgvector`, and `psycopg` — are core dependencies and install automatically.
+No extra step is needed to use Chroma, Milvus, or PostgreSQL/pgvector as a vector store.
 
 ---
 
@@ -76,7 +81,8 @@ uv sync --extra docs        # documentation tools only
 
 ## OGX Setup
 
-`ai4rag` can be used with OGX server as the foundation models, embedding models and vector database provider.
+`ai4rag` can be used with OGX server as the foundation model and embedding model provider.
+The vector store is configured independently, via direct clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
 Follow these steps:
 
 ### 1. Install OGX
@@ -91,7 +97,6 @@ Create an OGX configuration with:
 
 - At least one **foundation model** (e.g., `ollama/llama3.2:3b`)
 - At least one **embedding model** (e.g., `ollama/nomic-embed-text:latest`)
-- A **vector database** (e.g., Milvus lite or ChromaDB)
 
 Refer to the [OGX documentation](https://ogx-ai.github.io/docs/) for detailed setup instructions.
 
@@ -105,7 +110,33 @@ Note the server URL and API key for use in `ai4rag`.
 
 ---
 
-## Environment Configuration
+## Vector Store Setup
+
+`ai4rag` connects to the vector store directly — no OGX server is required for this part.
+Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
+
+| Provider | Config | Hybrid search (dense + keyword) | Setup |
+|----------|--------|:---:|-------|
+| Chroma | `ChromaConfig` | :material-close: vector-only | None — defaults to an ephemeral in-memory client |
+| Milvus | `MilvusConfig` | :material-check: dense + BM25 | Requires a reachable Milvus instance |
+| PGVector | `PGVectorConfig` | :material-check: dense + tsvector full-text | Requires a reachable PostgreSQL instance with the `pgvector` extension |
+
+```python
+from ai4rag.rag.vector_store import ChromaConfig, MilvusConfig, PGVectorConfig
+
+# Zero-config, in-memory (great for local experimentation)
+vector_store_config = ChromaConfig()
+
+# Or build a config from environment variables
+vector_store_config = MilvusConfig.from_env()      # reads MILVUS_URI, MILVUS_TOKEN, MILVUS_SERVER_CERT
+vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
+```
+
+Each config class exposes the environment variables it reads via its `env_vars` attribute, and can be constructed explicitly instead of from the environment, e.g. `MilvusConfig(uri="https://localhost:19530")`.
+
+---
+
+## OGX Environment Configuration
 
 Store your OGX credentials securely in a `.env` file:
 

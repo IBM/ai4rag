@@ -238,11 +238,11 @@ Parameter(
 
 ## Default Parameters
 
-If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. These defaults differ slightly between ChromaDB and OGX vector stores.
+If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. The `vector_store_type` parameter defaults to `"milvus"` and accepts `"milvus"`, `"pgvector"`, or `"chroma"`. These defaults differ slightly between Chroma (vector-only) and the hybrid-capable stores, Milvus and PGVector.
 
 ### Default Values
 
-| Parameter | Default (OGX) | Default (ChromaDB) | Type |
+| Parameter | Default (Milvus / PGVector) | Default (Chroma) | Type |
 |-----------|----------------------|-------------------|------|
 | `chunking_method` | `("recursive", "hybrid")` | `("recursive", "hybrid")` | Categorical |
 | `chunk_size` | `(512, 1024, 2048)` | `(512, 1024, 2048)` | Categorical |
@@ -256,9 +256,9 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 | `ranker_alpha` | `(1, 0.5)` | N/A | Categorical |
 
 !!! note "Why Different Defaults?"
-    - **ChromaDB** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
-    - **ChromaDB** defaults include window retrieval options since it's an in-memory store (faster experimentation)
-    - **OGX** defaults focus on simple retrieval but include hybrid search exploration
+    - **Chroma** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
+    - **Chroma** defaults include window retrieval options since it's an in-memory store (faster experimentation)
+    - **Milvus** and **PGVector** defaults focus on simple retrieval but include hybrid search exploration
 
 ---
 
@@ -613,8 +613,7 @@ search_space = AI4RAGSearchSpace(
         Parameter(name="ranker_k", param_type="C", values=[0, 30, 60, 100]),
         Parameter(name="ranker_alpha", param_type="C", values=[1, 0.3, 0.5, 0.7]),
     ],
-    vector_store_type="ogx",  # Required for hybrid search
-    ogx_vector_io_provider_id="milvus",
+    vector_store_type="milvus",  # Required for hybrid search
 )
 ```
 

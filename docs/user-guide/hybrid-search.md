@@ -1,7 +1,7 @@
 # Hybrid Search
 
 Hybrid search combines dense vector search with sparse keyword-based search to improve retrieval quality in RAG systems.
-This feature is available in `ai4rag` when using Milvus as your vector store.
+This feature is available in `ai4rag` when using Milvus or PGVector as your vector store.
 
 ## What is Hybrid Search?
 
@@ -40,14 +40,15 @@ Consider enabling hybrid search when:
 ## Prerequisites
 
 !!! warning "Vector Store Requirement"
-    Hybrid search is **only supported with OGX vector stores** (i.e., `vector_store_type="ogx"` with `ogx_vector_io_provider_id`). It is **NOT available with ChromaDB**.
+    Hybrid search is **supported with Milvus** (`MilvusConfig`) **and PGVector** (`PGVectorConfig`). It is **NOT available with Chroma**, which is vector-only.
 
 Ensure your experiment is configured with:
 
 ```python
+from ai4rag.rag.vector_store import MilvusConfig
+
 experiment = AI4RAGExperiment(
-    vector_store_type="ogx",  # Required for hybrid search
-    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
+    vector_store_config=MilvusConfig.from_env(),  # Required for hybrid search; PGVectorConfig also works
     # ... other parameters
 )
 ```
@@ -532,16 +533,17 @@ print("Hybrid avg score:", hybrid_results["objective_value"].mean())
 
 ## Troubleshooting
 
-### Error: "Hybrid search not supported with ChromaDB"
+### Error: "Search mode ... is not supported with chroma vector store"
 
-**Cause**: You're using `vector_store_type="chroma"`.
+**Cause**: Your `vector_store_config` is a `ChromaConfig` (Chroma is vector-only).
 
-**Solution**: Switch to an OGX vector store:
+**Solution**: Switch to Milvus or PGVector:
 
 ```python
+from ai4rag.rag.vector_store import MilvusConfig
+
 experiment = AI4RAGExperiment(
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
+    vector_store_config=MilvusConfig.from_env(),  # or PGVectorConfig.from_env()
     # ...
 )
 ```
@@ -590,7 +592,7 @@ experiment = AI4RAGExperiment(
 
 Hybrid search in `ai4rag` combines the best of semantic and keyword-based retrieval:
 
-- **Use `search_mode="hybrid"`** to enable hybrid search (requires an OGX vector store, i.e., `vector_store_type="ogx"`)
+- **Use `search_mode="hybrid"`** to enable hybrid search (requires Milvus or PGVector, i.e., `vector_store_config=MilvusConfig(...)` or `PGVectorConfig(...)`)
 - **Choose a ranker strategy**: `"rrf"` (general-purpose), `"weighted"` (fine control), or `"normalized"`
 - **Configure strategy parameters**: `ranker_k` for RRF, `ranker_alpha` for weighted
 - **Let the optimizer explore**: Include both vector and hybrid modes to find the best approach
