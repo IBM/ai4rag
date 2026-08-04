@@ -12,18 +12,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from ai4rag import handler
-from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
+    AsrPipelineOptions,
     PaginatedPipelineOptions,
     ThreadedPdfPipelineOptions,
-    AsrPipelineOptions,
 )
 from docling.document_converter import (
     AsciiDocFormatOption,
+    AudioFormatOption,
     DocumentConverter,
     EmailFormatOption,
     EpubFormatOption,
@@ -35,9 +34,11 @@ from docling.document_converter import (
     PdfFormatOption,
     PowerpointFormatOption,
     WordFormatOption,
-    AudioFormatOption,
 )
 from docling.pipeline.asr_pipeline import AsrPipeline
+
+from ai4rag import handler
+from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
@@ -369,7 +370,7 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
     )
 
     asr_pipeline_options = AsrPipelineOptions(
-        asr_options=asr_model_specs.WHISPER_TURBO,
+        asr_options=asr_model_specs.WHISPER_BASE,
     )
     asr_pipeline_options.asr_options.language = None
 
