@@ -3,8 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import os
-from abc import ABC
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from types import MappingProxyType
 from typing import ClassVar
 
 __all__ = [
@@ -30,6 +31,12 @@ class BaseVectorStoreConfig(ABC):
     """
 
     provider: str
+    env_vars = None
+
+    @classmethod
+    @abstractmethod
+    def from_env(cls) -> "BaseVectorStoreConfig":
+        """Create config from environment variables."""
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -186,6 +193,13 @@ class PGVectorConfig(BaseVectorStoreConfig):
         Database user.
     password : str | None
         Database password. ``None`` for trust/peer auth.
+    pool_max_size : int, default=10
+        Maximum number of concurrent connections the store's connection pool
+        will open. The pool starts lean and grows lazily on demand, so this is
+        a ceiling, not an eagerly-held count; it should be set to at least the
+        maximum number of concurrent ``search()``/``add_documents()`` calls the
+        caller will issue against this store, or those calls will queue for a
+        slot and can eventually time out.
     provider : str, default="pgvector"
         Name of the provider used in the system.
 
@@ -209,6 +223,7 @@ class PGVectorConfig(BaseVectorStoreConfig):
     dbname: str = "postgres"
     user: str = "postgres"
     password: str | None = None
+    pool_max_size: int = 10
     provider: str = "pgvector"
 
     @classmethod
@@ -236,9 +251,10 @@ class PGVectorConfig(BaseVectorStoreConfig):
 
 # Registry mapping a provider discriminator to its config class. Built from each
 # class's ``provider`` default so the provider string has a single source of truth.
-_CONFIG_BY_PROVIDER: dict[str, type[BaseVectorStoreConfig]] = {
-    config_cls.provider: config_cls for config_cls in (ChromaConfig, MilvusConfig, PGVectorConfig)
-}
+# Wrapped in a read-only view so importers cannot mutate the shared mapping.
+_CONFIG_BY_PROVIDER: MappingProxyType[str, type[BaseVectorStoreConfig]] = MappingProxyType(
+    {config_cls.provider: config_cls for config_cls in (ChromaConfig, MilvusConfig, PGVectorConfig)}
+)
 
 
 def _resolve_config_cls(provider: str) -> type[BaseVectorStoreConfig]:

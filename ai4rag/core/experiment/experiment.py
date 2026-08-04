@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from typing import Any, Sequence
 
 import pandas as pd
@@ -41,7 +41,7 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
-from ai4rag.rag.vector_store.config import BaseVectorStoreConfig
+from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -446,11 +446,18 @@ class AI4RAGExperiment:
 
         collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
 
+        vector_store_config = self.vector_store_config
+        if isinstance(vector_store_config, PGVectorConfig):
+            # Size the connection pool to this run's actual query concurrency so a
+            # fully concurrent query_rag() call never queues for a slot (see
+            # PGVectorConfig.pool_max_size).
+            vector_store_config = replace(vector_store_config, pool_max_size=self.inference_max_threads)
+
         try:
             vector_store = get_vector_store(
                 embedding_model=embedding_model,
                 collection_name=collection_name,
-                config=self.vector_store_config,
+                config=vector_store_config,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(

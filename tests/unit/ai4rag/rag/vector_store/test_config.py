@@ -127,6 +127,12 @@ class TestPGVectorConfig:
         assert cfg.user == "admin"
         assert cfg.password == "secret"
 
+    def test_pool_max_size_default(self):
+        assert PGVectorConfig().pool_max_size == 10
+
+    def test_pool_max_size_custom(self):
+        assert PGVectorConfig(pool_max_size=25).pool_max_size == 25
+
     def test_frozen(self):
         cfg = PGVectorConfig()
         with pytest.raises(FrozenInstanceError):

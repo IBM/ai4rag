@@ -47,13 +47,14 @@ class PGVectorStore(BaseVectorStore):
     _BATCH_SIZE = 1024
     _CONNECT_TIMEOUT = 10
 
-    # search() is called concurrently across threads: query_rag() (the only caller
-    # that matters for concurrency) runs one worker per benchmark question, up to
-    # its own max_threads default of 10. A single shared psycopg connection is not
-    # safe for concurrent use, so this store pools connections instead; max_size
-    # mirrors that default so a fully concurrent trial never queues for a slot.
+    # search() and add_documents() may be called concurrently across threads (e.g.
+    # one worker per benchmark question in query_rag(), or one per concurrent
+    # request in a deployed service), and a single shared psycopg connection is
+    # not safe for concurrent use. The pool starts at _MIN_POOL_SIZE and grows
+    # lazily up to the caller-supplied config.pool_max_size, so a fully concurrent
+    # caller never queues for a slot as long as pool_max_size covers its own
+    # concurrency (see PGVectorConfig.pool_max_size).
     _MIN_POOL_SIZE = 1
-    _MAX_POOL_SIZE = 10
 
     # pgvector caps HNSW (and IVFFlat) indexes on the ``vector`` type at 2000
     # dimensions (https://github.com/pgvector/pgvector#hnsw). Higher-dimensional
@@ -137,8 +138,8 @@ class PGVectorStore(BaseVectorStore):
         # Indexes are built lazily after documents are loaded (see ``_ensure_indexes``),
         # not at connection time: maintaining an HNSW graph on every insert is the
         # memory-heavy path that can trigger the server-side OOM killer on large batches.
-        # search() is called concurrently across threads (see _MAX_POOL_SIZE above), so
-        # the flag guarding this one-time DDL needs a lock, not just a bare check.
+        # search() is called concurrently across threads (see config.pool_max_size above),
+        # so the flag guarding this one-time DDL needs a lock, not just a bare check.
         self._indexes_built = False
         self._indexes_lock = threading.Lock()
 
@@ -161,10 +162,11 @@ class PGVectorStore(BaseVectorStore):
         Returns
         -------
         ConnectionPool
-            The opened pool. :meth:`_create_table`, called right after this in
-            :meth:`__init__`, borrows the first connection and so blocks (up to
-            :attr:`_CONNECT_TIMEOUT`) until one is ready — a misconfigured
-            connection still fails fast, during construction.
+            The opened pool, sized between :attr:`_MIN_POOL_SIZE` and
+            ``self._config.pool_max_size``. :meth:`_create_table`, called right
+            after this in :meth:`__init__`, borrows the first connection and so
+            blocks (up to :attr:`_CONNECT_TIMEOUT`) until one is ready — a
+            misconfigured connection still fails fast, during construction.
         """
         connect_kwargs: dict[str, Any] = {
             "host": self._config.host,
@@ -186,7 +188,7 @@ class PGVectorStore(BaseVectorStore):
         return ConnectionPool(
             kwargs=connect_kwargs,
             min_size=self._MIN_POOL_SIZE,
-            max_size=self._MAX_POOL_SIZE,
+            max_size=self._config.pool_max_size,
             configure=self._configure_connection,
             timeout=self._CONNECT_TIMEOUT,
             open=True,
@@ -239,8 +241,9 @@ class PGVectorStore(BaseVectorStore):
         ``IF NOT EXISTS`` keeps this a no-op for reused collections whose indexes already
         exist, and the in-memory flag avoids re-issuing the DDL on every subsequent search.
 
-        ``search()`` runs concurrently across threads (see :attr:`_MAX_POOL_SIZE`), so the
-        flag check is guarded by :attr:`_indexes_lock` with the standard double-checked
+        ``search()`` runs concurrently across threads (see
+        :attr:`PGVectorConfig.pool_max_size <ai4rag.rag.vector_store.config.PGVectorConfig.pool_max_size>`),
+        so the flag check is guarded by :attr:`_indexes_lock` with the standard double-checked
         pattern: without it, two threads can both see ``False``, and both race to run the
         DDL. PostgreSQL's ``IF NOT EXISTS`` is not atomic across concurrent sessions — the
         loser doesn't silently no-op, it raises a real ``UniqueViolation`` on the system

@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 import threading
 import time
+from dataclasses import replace
 from unittest.mock import MagicMock, patch
 
 import psycopg
@@ -136,8 +137,18 @@ class TestPGVectorStoreInit:
         PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
         pool_kwargs = mock_pool_cls.call_args.kwargs
         assert pool_kwargs["min_size"] == PGVectorStore._MIN_POOL_SIZE
-        assert pool_kwargs["max_size"] == PGVectorStore._MAX_POOL_SIZE
+        assert pool_kwargs["max_size"] == pgvector_config.pool_max_size
         assert pool_kwargs["configure"] == PGVectorStore._configure_connection
+
+    def test_pool_max_size_follows_config(self, mock_pool_cls, mock_embedding, pgvector_config):
+        """A caller-supplied ``pool_max_size`` — e.g. sized to its own query concurrency —
+        must reach ``ConnectionPool`` verbatim, not the class's historical default."""
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        cfg = replace(pgvector_config, pool_max_size=25)
+        PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        pool_kwargs = mock_pool_cls.call_args.kwargs
+        assert pool_kwargs["max_size"] == 25
 
 
 class TestConfigureConnection:
