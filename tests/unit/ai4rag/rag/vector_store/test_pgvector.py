@@ -294,6 +294,31 @@ class TestPGVectorStoreSearch:
         assert chunk.text == "hello"
         assert score == pytest.approx(2.0)  # 1/0.5
 
+    def test_inner_product_scores_preserve_ranking(self, mock_pool_cls, mock_embedding):
+        """The ``<#>`` operator returns the *negative* inner product (a signed value):
+        more similar rows have a more negative distance. A ``1 / distance`` transform
+        would be non-monotonic and invert that ranking, so the store must negate the
+        distance instead, restoring "higher score = more relevant".
+        """
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        cfg = PGVectorConfig(host="localhost", port=5432, dbname="testdb", user="testuser")
+        conn = _conn_from(mock_pool_cls)
+        store = PGVectorStore(mock_embedding, cfg, distance_metric="inner_product", collection_name="ai4rag_ip")
+
+        # Rows arrive already ordered by distance ASC: -0.9 (most similar) before -0.2.
+        conn.execute.return_value.fetchall.return_value = [
+            ({"content": "closer", "metadata": {}, "chunk_id": "c1"}, -0.9),
+            ({"content": "farther", "metadata": {}, "chunk_id": "c2"}, -0.2),
+        ]
+
+        results = store.search("query", k=2, include_scores=True)
+        assert [chunk.text for chunk, _ in results] == ["closer", "farther"]
+        # Negating recovers the plain inner product: 0.9 > 0.2, ranking preserved.
+        assert results[0][1] == pytest.approx(0.9)
+        assert results[1][1] == pytest.approx(0.2)
+        assert results[0][1] > results[1][1]
+
 
 @patch("ai4rag.rag.vector_store.pgvector.ConnectionPool")
 class TestPGVectorStoreValidation:

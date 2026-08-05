@@ -394,3 +394,72 @@ class TestChromaVectorStoreLifecycle:
         vector_store.clean_collection()
         existing = {collection.name for collection in vector_store._client.list_collections()}
         assert name not in existing
+
+
+class TestChromaVectorStoreClose:
+    """``close()`` releases OS resources without destroying shared ephemeral data."""
+
+    def test_ephemeral_data_survives_close_and_reopen(self, embedding_model):
+        """Regression: closing an ephemeral store must not wipe its shared in-memory data.
+
+        chromadb backs every ``EphemeralClient`` with one process-wide,
+        reference-counted in-memory ``System``. A ``close()`` that decremented that
+        count to zero would stop the ``System`` and discard all collections — wiping
+        data a later store still depends on, exactly as happens across HPO trials
+        that reuse a collection by name (see ``ChromaVectorStore.close``). This
+        asserts a closed-then-reopened ephemeral store still sees its documents.
+        """
+        collection_name = "ai4rag_reuse_regression"
+        with ChromaVectorStore(embedding_model=embedding_model, collection_name=collection_name) as store:
+            store.add_documents([AI4RAGChunk(text="alpha"), AI4RAGChunk(text="bravo")])
+            assert store.count() == 2
+
+        # A fresh store over the same collection — as a subsequent HPO trial would
+        # open — must still find the data the first (now-closed) store wrote.
+        reopened = ChromaVectorStore(embedding_model=embedding_model, collection_name=collection_name)
+        try:
+            assert reopened.count() == 2
+            assert reopened.search("alpha", k=1)[0].text == "alpha"
+        finally:
+            reopened.clean_collection()
+
+    def test_close_is_noop_for_ephemeral_client(self, embedding_model, mocker):
+        """An ephemeral client holds no OS resource; close() must not tear it down.
+
+        Calling the underlying ``client.close()`` would decrement the shared
+        ``System``'s refcount and risk destroying in-memory data other stores use,
+        so the store must skip it entirely for the ephemeral mode.
+        """
+        store = ChromaVectorStore(embedding_model=embedding_model, collection_name="ai4rag_noop_close")
+        spy = mocker.spy(store._client, "close")
+        try:
+            store.close()
+            spy.assert_not_called()
+        finally:
+            store.clean_collection()
+
+    def test_close_releases_persistent_client(self, embedding_model, mocker):
+        """A persistent client holds a SQLite file lock; close() must release it."""
+        persistent = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.PersistentClient")
+        store = ChromaVectorStore(
+            embedding_model=embedding_model,
+            config=ChromaConfig(persist_directory="/tmp/ai4rag-chroma-persist"),
+            collection_name="ai4rag_persist_close",
+        )
+
+        store.close()
+
+        persistent.return_value.close.assert_called_once()
+
+    def test_close_releases_http_client(self, embedding_model, mocker):
+        """An HTTP client holds client-side sockets; close() must release them."""
+        http = mocker.patch("ai4rag.rag.vector_store.chroma.chromadb.HttpClient")
+        store = ChromaVectorStore(
+            embedding_model=embedding_model,
+            config=ChromaConfig(host="chroma.local", port=9000),
+            collection_name="ai4rag_http_close",
+        )
+
+        store.close()
+
+        http.return_value.close.assert_called_once()

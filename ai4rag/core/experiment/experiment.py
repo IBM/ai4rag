@@ -87,7 +87,7 @@ class AI4RAGExperiment:
         results and intermediate status updates. EventHandler is an entrypoint to configure
         custom logging and assets handling.
 
-    optimization_metric : RAGMetric | str, default=Metrics.FAITHFULNESS
+    optimization_metric : RAGMetric | str, default=Metrics.OVERALL_SCORE
         Metric used for calculating the final score that drives optimization.
 
     Other Parameters
@@ -368,7 +368,7 @@ class AI4RAGExperiment:
 
         return selected_models
 
-    # pylint: disable=too-many-locals, too-many-statements
+    # pylint: disable=too-many-locals, too-many-statements, too-many-branches
     def run_single_evaluation(self, rag_params: RAGParamsType) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
@@ -450,8 +450,25 @@ class AI4RAGExperiment:
         if isinstance(vector_store_config, PGVectorConfig):
             # Size the connection pool to this run's actual query concurrency so a
             # fully concurrent query_rag() call never queues for a slot (see
-            # PGVectorConfig.pool_max_size).
-            vector_store_config = replace(vector_store_config, pool_max_size=self.inference_max_threads)
+            # PGVectorConfig.pool_max_size). Never shrink below a user-set ceiling:
+            # a caller who deliberately raised pool_max_size (e.g. to share the store
+            # with other concurrent work) must keep that headroom, so take the larger
+            # of the configured size and this run's inference concurrency.
+            pool_max_size = max(vector_store_config.pool_max_size, self.inference_max_threads)
+            if pool_max_size != vector_store_config.pool_max_size:
+                logger.info(
+                    "Raising PGVector pool_max_size from %d to %d to match inference_max_threads (%d).",
+                    vector_store_config.pool_max_size,
+                    pool_max_size,
+                    self.inference_max_threads,
+                )
+            else:
+                logger.info(
+                    "Keeping configured PGVector pool_max_size %d (>= inference_max_threads %d).",
+                    vector_store_config.pool_max_size,
+                    self.inference_max_threads,
+                )
+            vector_store_config = replace(vector_store_config, pool_max_size=pool_max_size)
 
         try:
             vector_store = get_vector_store(

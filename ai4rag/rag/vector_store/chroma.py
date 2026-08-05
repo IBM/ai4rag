@@ -72,6 +72,12 @@ class ChromaVectorStore(BaseVectorStore):
         config = config or ChromaConfig()
         super().__init__(embedding_model, config, distance_metric, collection_name)
 
+        # Ephemeral mode (neither host nor persist_directory) is backed by a
+        # single process-wide in-memory chromadb ``System`` shared across every
+        # ``EphemeralClient`` (keyed by the constant "ephemeral" identifier).
+        # This flag lets ``close()`` skip tearing that System down — see there
+        # for why closing an ephemeral client is actively harmful.
+        self._is_ephemeral = not config.host and not config.persist_directory
         self._client = self._build_client(config)
         self._collection = self._client.get_or_create_collection(
             name=self._collection_name,
@@ -319,11 +325,24 @@ class ChromaVectorStore(BaseVectorStore):
         self._client.delete_collection(self._collection_name)
 
     def close(self) -> None:
-        """Close the underlying Chroma client.
+        """Release the underlying Chroma client's operating-system resources.
 
-        Matters most for a persistent client, where this releases the SQLite
-        file lock; a no-op-equivalent for the ephemeral and HTTP clients.
+        No-op for an ephemeral client. Its data lives in a process-wide, in-memory
+        ``System`` that chromadb shares across every ``EphemeralClient`` and
+        reference-counts; ``client.close()`` decrements that count and, once it
+        reaches zero, stops the ``System`` and discards all in-memory data —
+        destroying collections a later store (e.g. a subsequent HPO trial reusing
+        the same ``collection_name``) still depends on. An ephemeral client holds
+        no OS resource to release, so skipping the close leaks nothing durable:
+        the shared ``System`` is reclaimed when the interpreter exits.
+
+        For a persistent client this releases the SQLite file lock (so the store
+        can be reopened); for an HTTP client it releases the client-side sockets.
+        In both cases the actual data survives on disk / on the server, so reuse
+        across store instances is unaffected.
         """
+        if self._is_ephemeral:
+            return
         self._client.close()
 
     def _get_window_documents(self, doc_id: str, seq_nums_window: list[int]) -> list[AI4RAGChunk]:

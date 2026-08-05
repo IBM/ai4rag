@@ -193,7 +193,6 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     event_handler = KFPEventHandler()
 
     rag_exp = AI4RAGExperiment(
-        client=ogx_client,
         event_handler=event_handler,
         optimizer_settings=optimizer_settings,
         search_space=search_space,

@@ -132,6 +132,7 @@ class PGVectorStore(BaseVectorStore):
                 f"Unsupported distance metric '{distance_metric}'. "
                 f"Must be one of {list(self._DISTANCE_METRIC_TO_OPERATOR)}."
             )
+        self._distance_key = distance_key
         self._distance_operator = self._DISTANCE_METRIC_TO_OPERATOR[distance_key]
         self._index_ops = self._DISTANCE_METRIC_TO_INDEX_OPS[distance_key]
 
@@ -365,14 +366,47 @@ class PGVectorStore(BaseVectorStore):
             return self._search_hybrid(query, k, include_scores, ranker_strategy, ranker_k, ranker_alpha)
         return self._search_vector(query, k, include_scores)
 
+    def _distance_to_score(self, distance: float) -> float:
+        """Convert a raw pgvector distance into a "higher = more relevant" score.
+
+        pgvector's operators return two different kinds of value, so a single
+        ``1 / distance`` rule does not fit all of them:
+
+        * ``cosine`` (``<=>``), ``l2`` (``<->``), ``l1`` (``<+>``) return a
+          non-negative *distance* — smaller means more similar. ``1 / distance``
+          maps that into a monotonically decreasing score (``inf`` at an exact
+          ``0`` distance), preserving the operator's ``ORDER BY distance ASC``
+          ranking.
+        * ``inner_product`` (``<#>``) returns the *negative* inner product, a
+          signed value where a more negative result means more similar. Here
+          ``1 / distance`` would be non-monotonic (it flips sign around zero and
+          diverges at the boundary), inverting the ranking. Negating restores the
+          plain inner product, for which higher already means more relevant and
+          the ordering matches ``ORDER BY distance ASC``.
+
+        Parameters
+        ----------
+        distance : float
+            Raw value returned by the configured distance operator.
+
+        Returns
+        -------
+        float
+            Score where larger values indicate greater relevance.
+        """
+        if self._distance_key == "inner_product":
+            return -distance
+        return 1.0 / distance if distance != 0 else float("inf")
+
     def _search_vector(
         self, query: str, k: int, include_scores: bool
     ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
         """Run a pure dense-vector similarity search.
 
         Rows are ordered by the configured distance operator, and each distance
-        is converted to a "higher = more relevant" score as ``1 / distance``
-        (``inf`` for an exact match at distance ``0``).
+        is converted to a "higher = more relevant" score via
+        :meth:`_distance_to_score` (which accounts for the signed value the
+        ``inner_product`` operator returns).
 
         Parameters
         ----------
@@ -404,8 +438,7 @@ class PGVectorStore(BaseVectorStore):
         results: list[tuple[AI4RAGChunk, float]] = []
         for row in rows:
             doc = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-            dist = float(row[1])
-            score = 1.0 / dist if dist != 0 else float("inf")
+            score = self._distance_to_score(float(row[1]))
             chunk = AI4RAGChunk(text=doc["content"], metadata=doc.get("metadata", {}))
             results.append((chunk, score))
 
