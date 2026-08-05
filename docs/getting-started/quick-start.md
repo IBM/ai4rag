@@ -192,19 +192,27 @@ optimizer_settings = GAMOptSettings(
 
 ### 6. Run the Experiment
 
+!!! note "Choosing a Vector Store"
+    The vector store is selected by passing a `vector_store_config` to `AI4RAGExperiment`:
+
+    - `ChromaConfig()` — zero-config, in-memory. Vector-only search (no hybrid/BM25).
+    - `MilvusConfig.from_env()` or `MilvusConfig(uri=...)` — a running Milvus server. Supports hybrid search (dense + BM25).
+    - `PGVectorConfig.from_env()` or `PGVectorConfig(host=...)` — a running PostgreSQL instance with `pgvector`. Supports hybrid search (dense + full-text).
+
+    All three classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
+
 Create and run the optimization experiment:
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",  # "ogx" for OGX, or "chroma" for in-memory
-    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
+    vector_store_config=MilvusConfig.from_env(),  # See "Choosing a Vector Store" above
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<path_to_store_results>"),  # Tracks progress
 )
@@ -214,7 +222,7 @@ experiment.search()
 
 best_pattern = experiment.results.get_best_evaluations(k=1)[0]
 
-print(best_pattern.rag_pattern.generate("What is the main purpose of ai4rag?"))
+print(f"Best pattern: {best_pattern.pattern_name}, score: {best_pattern.final_score}")
 ```
 
 ---
@@ -242,6 +250,7 @@ from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.utils.event_handler import LocalEventHandler
 
@@ -292,12 +301,10 @@ optimizer_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
 
 # 6. Run experiment
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",
+    vector_store_config=MilvusConfig.from_env(),
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="./results"),
 )

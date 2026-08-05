@@ -116,6 +116,7 @@ Run a full optimization experiment:
 
 ```python
 from ai4rag.components.optimization import run_rag_optimization
+from ai4rag.rag.vector_store import MilvusConfig
 
 result = run_rag_optimization(
     extracted_text_path="/tmp/extracted/",
@@ -123,7 +124,7 @@ result = run_rag_optimization(
     search_space_report_path="/tmp/search_space.yaml",
     output_dir="/tmp/rag_patterns/",
     ogx_client=client,
-    vector_io_provider_id="milvus",
+    vector_store_config=MilvusConfig.from_env(),
     test_data_key="benchmarks/test_data.json",
     input_data_key="documents/",
 )

@@ -2,66 +2,82 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from ogx_client import OgxClient
-
 from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
 from .chroma import ChromaVectorStore
-from .ogx import OGXVectorStore
+from .config import BaseVectorStoreConfig, ChromaConfig, MilvusConfig, PGVectorConfig
+from .milvus import MilvusVectorStore
+from .pgvector import PGVectorStore
 
 
 def get_vector_store(
-    vs_type: str,
     embedding_model: BaseEmbeddingModel,
-    reuse_collection_name: str | None = None,
-    client: OgxClient | None = None,
-    ogx_vector_io_provider_id: str | None = None,
+    config: BaseVectorStoreConfig,
+    collection_name: str | None = None,
 ) -> BaseVectorStore:
     """Get vector store of desired type with chosen settings.
 
+    The backend is selected by ``config.provider``, so the vector store type
+    is fully determined by which config class is passed in — no separate
+    type string is required.
+
     Parameters
     ----------
-    vs_type : str
-        Type of vector store. Supported values: ``"ogx"`` and ``"chroma"``.
-
     embedding_model : BaseEmbeddingModel
-        Embedding model used for the embeddings creation in the created vector store instance.
+        Embedding model used for embeddings creation.
 
-    reuse_collection_name : str | None, default=None
-        Name of the collection that will be created in the vector database.
+    config : ChromaConfig | MilvusConfig | PGVectorConfig
+        Connection config for the chosen backend.
 
-    client : OgxClient | None, default=None
-        Instance of the OGX client to communicate with registered vector databases.
-
-    ogx_vector_io_provider_id : str | None, default=None
-        Provider ID for OGX vector store (e.g., ``"milvus"``, ``"qdrant"``).
-        Required when ``vs_type="ogx"``.
+    collection_name : str | None, default=None
+        Name of an existing collection to reuse. When omitted, a new name
+        is generated following the ai4rag naming convention (see
+        :func:`ai4rag.rag.vector_store.utils.generate_collection_name`).
 
     Returns
     -------
     BaseVectorStore
         Instance of the vector store.
+
+    Raises
+    ------
+    TypeError
+        If ``config`` is not the config class matching its ``provider`` (e.g. a
+        ``provider="milvus"`` config that is not a :class:`MilvusConfig`).
+    ValueError
+        If ``config.provider`` names an unsupported backend.
     """
 
-    match vs_type:
+    match config.provider:
         case "chroma":
-            vs = ChromaVectorStore(
+            if not isinstance(config, ChromaConfig):
+                raise TypeError("ChromaConfig is required when provider='chroma'.")
+
+            return ChromaVectorStore(
                 embedding_model=embedding_model,
-                reuse_collection_name=reuse_collection_name,
+                config=config,
+                collection_name=collection_name,
             )
 
-        case "ogx":
-            if not ogx_vector_io_provider_id:
-                raise ValueError("ogx_vector_io_provider_id is required when vector_store_type is 'ogx'.")
-            vs = OGXVectorStore(
+        case "milvus":
+            if not isinstance(config, MilvusConfig):
+                raise TypeError("MilvusConfig is required when provider='milvus'.")
+
+            return MilvusVectorStore(
                 embedding_model=embedding_model,
-                reuse_collection_name=reuse_collection_name,
-                distance_metric="cosine",
-                client=client,
-                provider_id=ogx_vector_io_provider_id,
+                config=config,
+                collection_name=collection_name,
+            )
+
+        case "pgvector":
+            if not isinstance(config, PGVectorConfig):
+                raise TypeError("PGVectorConfig is required when provider='pgvector'.")
+
+            return PGVectorStore(
+                embedding_model=embedding_model,
+                config=config,
+                collection_name=collection_name,
             )
 
         case _:
-            raise ValueError(f"Vector store of type {vs_type} is not supported.")
-
-    return vs
+            raise ValueError(f"Vector store provider '{config.provider}' is not supported.")

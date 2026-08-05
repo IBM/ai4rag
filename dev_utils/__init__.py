@@ -7,6 +7,6 @@ from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 
 print("Loading local .env settings")
-load_dotenv(find_dotenv(".env"))
+load_dotenv(find_dotenv(".env.local"))
 
 BASE_DIR = Path(__file__).parents[1]

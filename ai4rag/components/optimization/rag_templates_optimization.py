@@ -14,7 +14,7 @@ import pandas as pd
 from ogx_client import OgxClient
 
 from ai4rag import handler
-from ai4rag.components.assets_generator import build_pattern_json, generate_notebook_from_template
+from ai4rag.components.assets_generator import generate_notebook_from_template
 from ai4rag.components.utils.docling_io import load_docling_documents
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
@@ -26,6 +26,7 @@ from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler.event_handler import KFPEventHandler
@@ -68,7 +69,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     search_space_report_path: str | Path,
     output_dir: str | Path,
     ogx_client: OgxClient,
-    vector_io_provider_id: str,
+    vector_store_config: ChromaConfig | MilvusConfig | PGVectorConfig,
     test_data_key: str = "",
     input_data_key: str = "",
     optimization_settings: dict | None = None,
@@ -93,9 +94,12 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     output_dir
         Root directory where per-pattern output folders are written.
     ogx_client
-        An authenticated :class:`OgxClient` instance.
-    vector_io_provider_id
-        Vector I/O provider identifier registered in OGX.
+        An authenticated :class:`OgxClient` instance (still needed for model
+        deserialization).
+    vector_store_config
+        Connection config for the vector store backend. Its type (via
+        ``config.provider``) determines whether Chroma, Milvus, or PGVector
+        is used.
     test_data_key
         Object-storage key for the test data file, embedded into generated
         notebooks.
@@ -125,19 +129,14 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     Raises
     ------
     ValueError
-        If ``test_data_key`` does not point to a JSON file,
-        ``vector_io_provider_id`` is empty, or the optimization metric is
-        not supported.
+        If ``test_data_key`` does not point to a JSON file, or the
+        optimization metric is not supported.
     TypeError
         If ``optimization_settings`` has invalid types.
     """
     # --- Input validation ---
     if not isinstance(test_data_key, str) or not test_data_key.strip() or not test_data_key.lower().endswith(".json"):
         raise ValueError("test_data_key must point to a JSON file.")
-
-    if not isinstance(vector_io_provider_id, str) or not vector_io_provider_id.strip():
-        raise ValueError("vector_io_provider_id must be a non-empty string.")
-    vector_io_provider_id = vector_io_provider_id.strip()
 
     settings = _validate_optimization_settings(optimization_settings)
     optimization_metric = settings.get("metric") or DEFAULT_METRIC
@@ -194,15 +193,13 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     event_handler = KFPEventHandler()
 
     rag_exp = AI4RAGExperiment(
-        client=ogx_client,
         event_handler=event_handler,
         optimizer_settings=optimizer_settings,
         search_space=search_space,
         benchmark_data=benchmark_data,
-        vector_store_type="ogx",
+        vector_store_config=vector_store_config,
         documents=documents,
         optimization_metric=optimization_metric,
-        ogx_vector_io_provider_id=vector_io_provider_id,
         inference_max_threads=inference_max_threads,
         evaluators=evaluators,
     )
@@ -243,10 +240,36 @@ def _generate_output_artifacts(
         patt_dir = output_dir / pattern.get("payload").get("name")
         patt_dir.mkdir(parents=True, exist_ok=True)
 
-        pattern_data = build_pattern_json(
-            pattern=pattern.get("payload"),
-            indexing_pipeline_params=indexing_pipeline_params,
-        )
+        pattern_data = pattern.get("payload")
+        if indexing_pipeline_params:
+            settings = pattern_data["settings"]
+            vector_store_binding = settings["vector_store_binding"]
+            pattern_data["indexing"] = {
+                "pipeline_spec": {
+                    "pipeline_name": indexing_pipeline_params.get("pipeline_name", "documents_indexing_pipeline"),
+                    "parameters": {
+                        "ogx_secret_name": indexing_pipeline_params.get("ogx_secret_name"),
+                        "input_data_secret_name": indexing_pipeline_params.get("input_data_secret_name"),
+                        "input_data_bucket_name": indexing_pipeline_params.get("input_data_bucket_name"),
+                        "input_data_key": indexing_pipeline_params.get("input_data_key"),
+                        "batch_size": indexing_pipeline_params.get("batch_size"),
+                        "provider_type": vector_store_binding["provider_type"],
+                        "collection_name": vector_store_binding["collection_name"],
+                        "embedding_model_id": settings["embedding"]["model_id"],
+                        "embedding_params": settings["embedding"]["embedding_params"],
+                        "chunking_method": settings["chunking"]["method"],
+                        "chunk_size": settings["chunking"]["chunk_size"],
+                        "chunk_overlap": settings["chunking"]["chunk_overlap"],
+                    },
+                    "overrides_allowed": [
+                        "input_data_secret_name",
+                        "input_data_bucket_name",
+                        "input_data_key",
+                        "collection_name",
+                        "batch_size",
+                    ],
+                }
+            }
 
         generate_notebook_from_template(
             "ogx_indexing",

@@ -358,6 +358,9 @@ def benchmark_data():
 ### Example Functional Test
 
 ```python
+from ai4rag.rag.vector_store import ChromaConfig
+
+
 class TestExperimentChroma:
     """Run experiment with chroma vector store and OGX models."""
 
@@ -375,13 +378,12 @@ class TestExperimentChroma:
         optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=3)
 
         experiment = AI4RAGExperiment(
-            client=client,
             documents=documents,
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
             event_handler=LocalEventHandler(),
-            vector_store_type="chroma",
+            vector_store_config=ChromaConfig(),
         )
 
         experiment.search(skip_mps=True)

@@ -45,21 +45,26 @@ classDiagram
     class BaseVectorStore {
         <<abstract>>
         +embedding_model: BaseEmbeddingModel
+        +config: BaseVectorStoreConfig
         +distance_metric: str
         +collection_name: str
-        +search(query, k)* AI4RAGChunk[]
+        +search(query, k, **kwargs)* AI4RAGChunk[]
         +add_documents(AI4RAGChunk[])* void
     }
 
-    class OGXVectorStore {
-        +client: OgxClient
+    class ChromaVectorStore {
+        +search(query, k, include_scores) AI4RAGChunk[]
+        +window_search(query, k, window_size) AI4RAGChunk[]
+        +add_documents(AI4RAGChunk[]) void
+    }
+
+    class MilvusVectorStore {
         +search(query, k, search_mode, ranker_*) AI4RAGChunk[]
         +add_documents(AI4RAGChunk[]) void
     }
 
-    class ChromaVectorStore {
-        +search(query, k) AI4RAGChunk[]
-        +window_search(query, k, window_size) AI4RAGChunk[]
+    class PGVectorStore {
+        +search(query, k, search_mode, ranker_*) AI4RAGChunk[]
         +add_documents(AI4RAGChunk[]) void
     }
 
@@ -115,8 +120,9 @@ classDiagram
 
     BaseFoundationModel <|-- OGXFoundationModel
     BaseEmbeddingModel <|-- OGXEmbeddingModel
-    BaseVectorStore <|-- OGXVectorStore
     BaseVectorStore <|-- ChromaVectorStore
+    BaseVectorStore <|-- MilvusVectorStore
+    BaseVectorStore <|-- PGVectorStore
     BaseChunker <|-- DoclingChunker
     BaseChunker <|-- LangChainChunker
     BaseRAGTemplate <|-- SimpleRAG
@@ -439,10 +445,34 @@ class BaseVectorStore(ABC):
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
+        config: BaseVectorStoreConfig,
         distance_metric: str,
-        reuse_collection_name: str | None = None
+        collection_name: str | None = None
     ):
 ```
+
+**Configuration:**
+
+Every concrete store is constructed from a typed, frozen `config` dataclass (`ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"chroma"`, `"milvus"`, `"pgvector"`). Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
+
+**Collection naming (shared across all backends):**
+
+The base class resolves `collection_name` once, in one place, via
+`ai4rag.rag.vector_store.utils.resolve_collection_name`, so every backend
+behaves identically:
+
+- **Auto-generation** — when `collection_name` is `None`, a unique name of the
+  form `ai4rag_<UTC timestamp>_<8 random chars>` is generated.
+- **Mandatory `ai4rag` prefix** — a caller-supplied name **must** start with
+  `ai4rag`. This prefix is the cross-backend isolation guard: because every
+  collection (and, for pgvector, the physical table it maps to one-to-one)
+  starts with it, ai4rag never creates, reuses, or drops a table/collection it
+  does not own. A non-compliant name raises `ValueError` rather than being
+  silently coerced.
+- **Identifier safety** — the name is sanitized into a valid identifier
+  (non-alphanumeric characters become underscores) and bounded to 63 characters
+  (the tightest limit across PostgreSQL and Chroma), so it is usable verbatim as
+  a backend collection name *and* as a physical SQL table name.
 
 **Interface Methods:**
 
@@ -456,22 +486,70 @@ def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
     """Add chunks to the collection."""
 
 @property
-@abstractmethod
 def collection_name(self) -> str:
-    """Returns collection name (reused or newly created)."""
+    """The resolved collection name (reused or auto-generated).
+
+    Concrete on the base class — guaranteed to start with ``ai4rag`` and to be a
+    valid, length-bounded identifier usable as both a collection name and a SQL
+    table name.
+    """
+```
+
+### Choosing a Backend
+
+`ai4rag.rag.vector_store.get_vector_store` is the recommended entry point for constructing a vector store: it inspects `config.provider` and instantiates the matching concrete class, so callers do not need to import or branch on individual store classes.
+
+```python
+from ai4rag.rag.vector_store import get_vector_store, MilvusConfig
+
+vector_store = get_vector_store(
+    embedding_model=embedding_model,
+    config=MilvusConfig.from_env(),
+    collection_name=None,  # omit to auto-generate; pass an existing name to reuse it
+)
+```
+
+**Signature:**
+
+```python
+def get_vector_store(
+    embedding_model: BaseEmbeddingModel,
+    config: ChromaConfig | MilvusConfig | PGVectorConfig,
+    collection_name: str | None = None,
+) -> BaseVectorStore:
+    """Backend selected by ``config.provider``; raises TypeError on a
+    config/provider mismatch, ValueError for an unsupported provider."""
+```
+
+**Available Configs:**
+
+| Config | `provider` | Key Fields | Env Vars |
+|--------|------------|------------|----------|
+| `ChromaConfig` | `"chroma"` | `persist_directory`, `host`, `port` | `CHROMA_HOST`, `CHROMA_PORT`, `CHROMA_PERSIST_DIR` |
+| `MilvusConfig` | `"milvus"` | `uri` (required), `token`, `server_cert` | `MILVUS_URI` (required), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
+
+`get_vector_store_config(provider)` and `get_vector_store_env_vars(provider)` complement `get_vector_store` when only a provider string is available (e.g. when building a config from the `vector_store_type` selected on the search space):
+
+```python
+from ai4rag.rag.vector_store import get_vector_store_config, get_vector_store_env_vars
+
+config = get_vector_store_config("milvus")           # MilvusConfig.from_env()
+env_vars = get_vector_store_env_vars("milvus")        # (("MILVUS_URI", "..."), ...)
 ```
 
 ### ChromaVectorStore
 
-In-memory ChromaDB implementation for development and testing:
+In-memory ChromaDB implementation for development and testing. Chroma is **vector-only** — it does not support hybrid (dense + keyword) search:
 
 ```python
 class ChromaVectorStore(BaseVectorStore):
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        reuse_collection_name: str | None = None,
+        config: ChromaConfig | None = None,
         distance_metric: str = "cosine",
+        collection_name: str | None = None,
         **kwargs
     ):
 ```
@@ -559,56 +637,38 @@ results = vector_store.window_search(query="What is X?", k=5, window_size=2)
 # Returns: [merged_chunk_1, merged_chunk_2, ...]
 ```
 
-### OGXVectorStore
+### MilvusVectorStore
 
-OGX integration supporting any vector store provider and hybrid search:
+Vector store backed by a remote Milvus instance via `pymilvus`, supporting both pure dense vector search and hybrid search (dense + BM25 sparse) with **server-side** fusion:
 
 ```python
-class OGXVectorStore(BaseVectorStore):
+class MilvusVectorStore(BaseVectorStore):
     def __init__(
         self,
-        embedding_model: OGXEmbeddingModel,
-        client: OgxClient,
-        provider_id: str,
-        reuse_collection_name: str | None = None,
-        distance_metric: str | None = None,
+        embedding_model: BaseEmbeddingModel,
+        config: MilvusConfig,
+        distance_metric: str = "cosine",
+        collection_name: str | None = None,
     ):
 ```
 
-**Provider-Agnostic Design:**
+**Connection Configuration:**
 
-The `provider_id` parameter determines the backend vector store:
-
-```python
-# Milvus
-vector_store = OGXVectorStore(
-    embedding_model=embedding_model,
-    client=client,
-    provider_id="milvus"
-)
-
-# Qdrant
-vector_store = OGXVectorStore(
-    embedding_model=embedding_model,
-    client=client,
-    provider_id="qdrant"
-)
-
-# Any provider supported by OGX server
-```
-
-**Collection Creation:**
+TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `server_cert`.
 
 ```python
-vs = client.vector_stores.create(
-    extra_body={
-        "provider_id": provider_id,
-        "embedding_model": embedding_model.model_id,
-        "embedding_dimension": embedding_model.params.embedding_dimension,
-    }
-)
-collection_name = vs.id  # Unique collection identifier
+from ai4rag.rag.vector_store import MilvusConfig
+
+# From environment: MILVUS_URI (required), MILVUS_TOKEN, MILVUS_SERVER_CERT
+config = MilvusConfig.from_env()
+
+# Or explicit
+config = MilvusConfig(uri="https://localhost:19530", token="user:pass")
 ```
+
+**Collection Schema:**
+
+For a new collection, `MilvusVectorStore` creates a schema with a primary `chunk_id`, an analyzed `content` field, a dense `vector` field sized to the embedding model's dimension, a `chunk_content` JSON payload, and a `sparse` BM25 vector — with a FLAT/COSINE index on `vector`, a sparse inverted BM25 index on `sparse`, and a BM25 function deriving `sparse` from `content`. When `collection_name` names an existing collection, it is reused unchanged.
 
 **Hybrid Search Support:**
 
@@ -616,13 +676,14 @@ collection_name = vs.id  # Unique collection identifier
 def search(
     self,
     query: str,
-    k: int,
+    k: int = 5,
+    include_scores: bool = False,
     search_mode: str = "vector",
     ranker_strategy: str | None = None,
     ranker_k: int | None = None,
     ranker_alpha: float | None = None,
-    **kwargs
-) -> list[AI4RAGChunk]:
+    **kwargs,
+) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
 ```
 
 **Search Modes:**
@@ -651,44 +712,47 @@ results = vector_store.search(
 )
 ```
 
-Combines dense vector search with sparse keyword search (e.g., BM25).
+Issues a dense `AnnSearchRequest` on `vector` and a sparse `AnnSearchRequest` on `sparse`, fused **on the Milvus server** with a native `RRFRanker` or `WeightedRanker`.
 
 **Ranker Strategies:**
 
 | Strategy | Description | Parameters |
 |----------|-------------|------------|
-| `"rrf"` | Reciprocal Rank Fusion | `ranker_k`: smoothing constant (30-100) |
-| `"weighted"` | Weighted combination | `ranker_alpha`: dense weight (0.0-1.0) |
-| `"normalized"` | Score normalization | Strategy-specific |
+| `"rrf"` | Reciprocal Rank Fusion (default fallback) | `ranker_k`: smoothing constant (30-100), default 60 |
+| `"weighted"` | Weighted combination | `ranker_alpha`: dense weight (0.0-1.0), default 0.5; sparse weight is `1 - ranker_alpha` |
+| `"normalized"` | Falls through to RRF fusion | Strategy-specific |
 
 **RRF Example:**
 
 ```python
-# Combines dense and sparse rankings
-params = {
-    "mode": "hybrid",
-    "reranker_type": "rrf",
-    "reranker_params": {"impact_factor": 60}  # ranker_k
-}
+results = vector_store.search(
+    query="What is X?",
+    k=5,
+    search_mode="hybrid",
+    ranker_strategy="rrf",
+    ranker_k=60,
+)
 ```
 
 **Weighted Example:**
 
 ```python
 # 70% dense (semantic), 30% sparse (keyword)
-params = {
-    "mode": "hybrid",
-    "reranker_type": "weighted",
-    "reranker_params": {"alpha": 0.7}  # ranker_alpha
-}
+results = vector_store.search(
+    query="What is X?",
+    k=5,
+    search_mode="hybrid",
+    ranker_strategy="weighted",
+    ranker_alpha=0.7,
+)
 ```
 
 **Validation:**
 
-OGXVectorStore validates hybrid search parameters:
+`MilvusVectorStore` and `PGVectorStore` both validate their hybrid search parameters through the shared `ai4rag.rag.vector_store.utils.validate_search_params`:
 
 ```python
-def _validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha):
+def validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha):
     # When search_mode != "hybrid":
     #   - ranker_strategy must be None or ""
     #   - ranker_k must be None or 0
@@ -703,35 +767,34 @@ def _validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha
 **Document Addition:**
 
 ```python
-def add_documents(self, documents: list[AI4RAGChunk], batch_size: int = 2048):
-    """Add chunks with embeddings to OGX vector store."""
-    chunks = [
+def add_documents(self, documents: list[AI4RAGChunk], **kwargs) -> None:
+    """Embed, deduplicate by chunk_id, and upsert chunks into Milvus."""
+    embeddings = self.embedding_model.embed_documents([doc.text for doc in documents])
+
+    data = [
         {
-            "content": chunk.text,
-            "chunk_metadata": chunk.metadata,
-            "chunk_id": chunk.chunk_id,
-            "embedding_model": self.embedding_model.model_id,
-            "embedding_dimension": self.embedding_model.params.embedding_dimension,
-            "embedding": embedding_vector,
+            "chunk_id": doc.chunk_id,
+            "content": doc.text,
+            "vector": embedding,
+            "chunk_content": {"content": doc.text, "metadata": doc.metadata, "chunk_id": doc.chunk_id},
         }
-        for doc, embedding_vector in zip(documents, embeddings)
+        for doc, embedding in iter_unique_chunks(documents, embeddings)
     ]
 
-    for idx in range(0, len(chunks), batch_size):
-        self.client.vector_io.insert(
-            vector_store_id=self.collection_name,
-            chunks=chunks[idx : idx + batch_size]
-        )
+    batch_size = kwargs.get("batch_size", self._BATCH_SIZE)  # default 2048
+    for idx in range(0, len(data), batch_size):
+        self._client.upsert(self._collection_name, data=data[idx : idx + batch_size])
 ```
 
 **Usage:**
 
 ```python
-# Create vector store
-vector_store = OGXVectorStore(
+from ai4rag.rag.vector_store import MilvusVectorStore, MilvusConfig
+
+# Create vector store (omit collection_name to auto-generate a new collection)
+vector_store = MilvusVectorStore(
     embedding_model=ogx_embedding_model,
-    client=ogx_client,
-    provider_id="milvus"
+    config=MilvusConfig.from_env(),
 )
 
 # Index documents
@@ -757,7 +820,108 @@ results = vector_store.search(
     ranker_strategy="weighted",
     ranker_alpha=0.7
 )
+
+# Reuse an existing collection instead of creating a new one
+vector_store = MilvusVectorStore(
+    embedding_model=ogx_embedding_model,
+    config=MilvusConfig.from_env(),
+    collection_name="ai4rag_20260701120000_ab12cd34",
+)
 ```
+
+### PGVectorStore
+
+Vector store backed by PostgreSQL with the `pgvector` extension, supporting pure dense vector search and hybrid search (dense vector + `tsvector` full-text) with **in-memory** fusion:
+
+```python
+class PGVectorStore(BaseVectorStore):
+    def __init__(
+        self,
+        embedding_model: BaseEmbeddingModel,
+        config: PGVectorConfig,
+        distance_metric: str = "cosine",
+        collection_name: str | None = None,
+    ):
+```
+
+**Connection Configuration:**
+
+```python
+from ai4rag.rag.vector_store import PGVectorConfig
+
+# From environment: PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
+config = PGVectorConfig.from_env()
+
+# Or explicit
+config = PGVectorConfig(host="localhost", port=5432, dbname="ai4rag", user="ai4rag", password="secret")
+```
+
+**Table Mapping:**
+
+The resolved `collection_name` is used verbatim as the physical PostgreSQL table name — created with an `id` primary key, a `document` JSONB payload, an `embedding` vector column, `content_text`, and a `tokenized_content` `tsvector` column feeding full-text search. Supported `distance_metric` values are `"cosine"`, `"l2"`, `"l1"`, and `"inner_product"`.
+
+!!! warning "Embedding dimension limit"
+    pgvector caps HNSW indexes on the `vector` type at 2000 dimensions. `PGVectorStore.__init__` raises `ValueError` up front if the embedding model's dimension exceeds this limit, rather than failing later on the first indexed search — use `MilvusVectorStore` for higher-dimensional embedding models.
+
+**Hybrid Search:**
+
+`PGVectorStore.search` accepts the same `search_mode`, `ranker_strategy`, `ranker_k`, and `ranker_alpha` parameters as `MilvusVectorStore` (see the **Ranker Strategies** table under [MilvusVectorStore](#milvusvectorstore) above). The fusion mechanics differ, however: the dense search orders rows by the configured pgvector distance operator, the keyword search ranks rows by `ts_rank` against a `plainto_tsquery`, and the two independent score maps are combined **in Python** via `WeightedInMemoryAggregator` (see [Reranker](#reranker) below) before the top `k` results are returned.
+
+**Usage:**
+
+```python
+from ai4rag.rag.vector_store import PGVectorStore, PGVectorConfig
+
+vector_store = PGVectorStore(
+    embedding_model=ogx_embedding_model,
+    config=PGVectorConfig.from_env(),
+)
+
+vector_store.add_documents(chunked_documents)
+
+# Hybrid search with RRF
+results = vector_store.search(
+    query="What is X?",
+    k=5,
+    search_mode="hybrid",
+    ranker_strategy="rrf",
+    ranker_k=60,
+)
+```
+
+### Reranker
+
+`ai4rag.rag.vector_store.reranker.WeightedInMemoryAggregator` implements the in-memory score fusion used by `PGVectorStore`'s hybrid search (Milvus fuses server-side instead, via its native rankers). It exposes three static methods:
+
+```python
+class WeightedInMemoryAggregator:
+    @staticmethod
+    def weighted_rerank(
+        vector_scores: dict[str, float],
+        keyword_scores: dict[str, float],
+        alpha: float = 0.5,
+    ) -> dict[str, float]:
+        """Weighted average of min-max normalized vector and keyword scores."""
+
+    @staticmethod
+    def rrf_rerank(
+        vector_scores: dict[str, float],
+        keyword_scores: dict[str, float],
+        k: float = 60.0,
+    ) -> dict[str, float]:
+        """Reciprocal Rank Fusion of vector and keyword result rankings."""
+
+    @staticmethod
+    def combine_search_results(
+        vector_scores: dict[str, float],
+        keyword_scores: dict[str, float],
+        reranker_type: str = "rrf",
+        reranker_params: dict[str, Any] | None = None,
+    ) -> dict[str, float]:
+        """Dispatch to weighted_rerank or rrf_rerank based on reranker_type."""
+```
+
+`combine_search_results` is the single entry point: it dispatches to `weighted_rerank` (reading `reranker_params["alpha"]`) when `reranker_type == "weighted"`, and to `rrf_rerank` (reading `reranker_params["k"]`) otherwise — including for `"normalized"`, which currently falls through to RRF.
 
 ---
 
@@ -981,7 +1145,7 @@ def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
 
 The `method` parameter determines retrieval strategy but actual implementation depends on vector store:
 
-- **OGXVectorStore**: Always returns simple chunks (no window expansion)
+- **MilvusVectorStore** / **PGVectorStore**: Always return simple chunks (no window expansion)
 - **ChromaVectorStore**:
   - `method="simple"`: Returns top-k chunks
   - `method="window"`: Returns top-k chunks expanded with adjacent chunks
@@ -1000,9 +1164,9 @@ retriever = Retriever(
 docs = retriever.retrieve("What is X?")
 # Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]  (5 chunks)
 
-# Hybrid retrieval with RRF
+# Hybrid retrieval with RRF (Milvus or PGVector; Chroma is vector-only)
 retriever = Retriever(
-    vector_store=ogx_vector_store,
+    vector_store=milvus_vector_store,
     number_of_chunks=5,
     method="simple",
     search_mode="hybrid",
@@ -1134,7 +1298,7 @@ rag = SimpleRAG(
     retriever=retriever,
     chunker=chunker,
     embedding_model=ogx_embedding_model,
-    vector_store=ogx_vector_store
+    vector_store=vector_store
 )
 
 # Index documents (if building index manually)
@@ -1172,12 +1336,12 @@ Full RAG pipeline with all components:
 from ogx_client import OgxClient
 from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
-from ai4rag.rag.vector_store.ogx import OGXVectorStore
+from ai4rag.rag.vector_store import get_vector_store, MilvusConfig
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 
-# 1. Initialize client
+# 1. Initialize the OGX client (still the foundation-model + embedding provider)
 client = OgxClient(base_url="http://localhost:8000", api_key="...")
 
 # 2. Create foundation model
@@ -1194,11 +1358,11 @@ embedding_model = OGXEmbeddingModel(
     params={"embedding_dimension": 768, "context_length": 8192}
 )
 
-# 4. Create vector store
-vector_store = OGXVectorStore(
+# 4. Create vector store — a direct-client store selected by config.provider
+#    (swap MilvusConfig for ChromaConfig/PGVectorConfig to change backend)
+vector_store = get_vector_store(
     embedding_model=embedding_model,
-    client=client,
-    provider_id="milvus"
+    config=MilvusConfig.from_env(),
 )
 
 # 5. Create chunker
@@ -1315,9 +1479,9 @@ class CustomRAG(BaseRAGTemplate):
 
 **Vector Stores:**
 
-1. **Use OGXVectorStore with Milvus/Qdrant** for production (better performance, hybrid search)
+1. **Use Milvus or PGVector for production** hybrid search (server-side fusion for Milvus, in-memory fusion for PGVector); Chroma is vector-only
 2. **Use ChromaVectorStore** for development/testing (in-memory, simpler setup)
-3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical)
+3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical) — not supported on Chroma
 4. **Tune ranker parameters** (ranker_k, ranker_alpha) via optimization
 
 **Chunking:**

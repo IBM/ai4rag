@@ -2,8 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from __future__ import annotations
-
+import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -12,9 +11,11 @@ from ai4rag.components.optimization.rag_templates_optimization import (
     DEFAULT_MAX_RAG_PATTERNS,
     MIN_MAX_RAG_PATTERNS_RANGE,
     SUPPORTED_OPTIMIZATION_METRICS,
+    _generate_output_artifacts,
     _validate_optimization_settings,
     run_rag_optimization,
 )
+from ai4rag.rag.vector_store.config import ChromaConfig
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -130,32 +131,6 @@ class TestRunRagOptimizationValidation:
     reaching any heavy I/O or OGX calls.
     """
 
-    def test_empty_vector_io_provider_id_raises(self, mock_ogx_client):
-        """An empty vector_io_provider_id must raise ValueError."""
-        with pytest.raises(ValueError, match="non-empty string"):
-            run_rag_optimization(
-                extracted_text_path="dummy",
-                test_data_path="dummy.json",
-                search_space_report_path="dummy.json",
-                output_dir="out",
-                ogx_client=mock_ogx_client,
-                vector_io_provider_id="",
-                test_data_key="data.json",
-            )
-
-    def test_whitespace_vector_io_provider_id_raises(self, mock_ogx_client):
-        """A whitespace-only vector_io_provider_id must raise ValueError."""
-        with pytest.raises(ValueError, match="non-empty string"):
-            run_rag_optimization(
-                extracted_text_path="dummy",
-                test_data_path="dummy.json",
-                search_space_report_path="dummy.json",
-                output_dir="out",
-                ogx_client=mock_ogx_client,
-                vector_io_provider_id="   ",
-                test_data_key="data.json",
-            )
-
     def test_test_data_key_not_json_raises(self, mock_ogx_client):
         """A test_data_key not ending in .json must raise ValueError."""
         with pytest.raises(ValueError, match="JSON file"):
@@ -165,7 +140,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="data.csv",
             )
 
@@ -178,7 +153,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="",
             )
 
@@ -191,7 +166,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings={"metric": "nonexistent_metric"},
             )
@@ -213,7 +188,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings="bad",  # type: ignore[arg-type]
             )
@@ -227,7 +202,7 @@ class TestRunRagOptimizationValidation:
                 search_space_report_path="dummy.json",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="provider-1",
+                vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings={"max_number_of_rag_patterns": 50},
             )
@@ -252,15 +227,15 @@ class TestRunRagOptimizationInferenceMaxThreads:
     def test_inference_max_threads_is_accepted(self, mock_ogx_client):
         """Passing inference_max_threads alongside an invalid input must still raise
         the expected validation error (not a TypeError from an unknown param)."""
-        with pytest.raises(ValueError, match="non-empty string"):
+        with pytest.raises(ValueError, match="JSON file"):
             run_rag_optimization(
                 extracted_text_path="dummy",
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.yaml",
                 output_dir="out",
                 ogx_client=mock_ogx_client,
-                vector_io_provider_id="",
-                test_data_key="bench.json",
+                vector_store_config=ChromaConfig(),
+                test_data_key="bench.csv",
                 inference_max_threads=4,
             )
 
@@ -282,3 +257,109 @@ class TestRunRagOptimizationEvaluation:
         from ai4rag.components.optimization import rag_templates_optimization as module
 
         assert module.DEFAULT_METRIC == "overall_score"
+
+
+# ---------------------------------------------------------------------------
+# _generate_output_artifacts -- indexing pipeline_spec enrichment
+# ---------------------------------------------------------------------------
+
+
+def _make_pattern(name: str = "pattern_001") -> dict:
+    """Return a minimal but complete raw pattern for artefact generation."""
+    return {
+        "payload": {
+            "name": name,
+            "settings": {
+                "vector_store_binding": {
+                    "provider_type": "milvus",
+                    "collection_name": "pattern_001_collection",
+                },
+                "embedding": {
+                    "model_id": "ibm/slate-125m-english-rtrvr",
+                    "embedding_params": {"embedding_dimension": 768},
+                },
+                "chunking": {
+                    "method": "recursive",
+                    "chunk_size": 512,
+                    "chunk_overlap": 50,
+                },
+            },
+        },
+        "evaluation_results": [{"question": "q?", "answer": "a"}],
+    }
+
+
+class TestGenerateOutputArtifactsIndexingSpec:
+    """Cover the ``indexing_pipeline_params`` enrichment path (direct-client schema)."""
+
+    @pytest.fixture(autouse=True)
+    def _stub_notebook_generation(self, mocker):
+        """Isolate pipeline-spec logic from real notebook rendering."""
+        return mocker.patch("ai4rag.components.optimization.rag_templates_optimization.generate_notebook_from_template")
+
+    def test_pipeline_spec_uses_provider_type_and_collection_name(self, tmp_path):
+        """The indexing spec must source the vector store from the new binding schema."""
+        patterns = _generate_output_artifacts(
+            patterns_raw=[_make_pattern()],
+            output_dir=tmp_path,
+            input_data_key="s3://bucket/docs/",
+            test_data_key="s3://bucket/test.json",
+            indexing_pipeline_params={
+                "ogx_secret_name": "ogx-secret",
+                "input_data_secret_name": "s3-secret",
+                "input_data_bucket_name": "docs-bucket",
+                "input_data_key": "docs/",
+                "batch_size": 64,
+            },
+        )
+
+        params = patterns[0]["indexing"]["pipeline_spec"]["parameters"]
+        assert params["provider_type"] == "milvus"
+        assert params["collection_name"] == "pattern_001_collection"
+        assert params["embedding_model_id"] == "ibm/slate-125m-english-rtrvr"
+        assert params["chunk_size"] == 512
+
+        # Old OGX vector-store parameters must be gone.
+        assert "vector_store_id" not in params
+        assert "vector_io_provider_id" not in params
+
+    def test_overrides_allow_collection_name_not_vector_store_id(self, tmp_path):
+        """``overrides_allowed`` must expose the collection name, not the stale store id."""
+        patterns = _generate_output_artifacts(
+            patterns_raw=[_make_pattern()],
+            output_dir=tmp_path,
+            input_data_key="",
+            test_data_key="",
+            indexing_pipeline_params={"batch_size": 32},
+        )
+
+        overrides = patterns[0]["indexing"]["pipeline_spec"]["overrides_allowed"]
+        assert "collection_name" in overrides
+        assert "vector_store_id" not in overrides
+
+    def test_no_indexing_spec_when_params_absent(self, tmp_path):
+        """Without ``indexing_pipeline_params`` no indexing spec must be added."""
+        patterns = _generate_output_artifacts(
+            patterns_raw=[_make_pattern()],
+            output_dir=tmp_path,
+            input_data_key="",
+            test_data_key="",
+            indexing_pipeline_params=None,
+        )
+
+        assert "indexing" not in patterns[0]
+
+    def test_pattern_json_written_to_disk(self, tmp_path):
+        """The enriched pattern must be persisted as ``pattern.json``."""
+        _generate_output_artifacts(
+            patterns_raw=[_make_pattern()],
+            output_dir=tmp_path,
+            input_data_key="",
+            test_data_key="",
+            indexing_pipeline_params={"batch_size": 16},
+        )
+
+        pattern_json = tmp_path / "pattern_001" / "pattern.json"
+        assert pattern_json.exists()
+        persisted = json.loads(pattern_json.read_text(encoding="utf-8"))
+        assert persisted["indexing"]["pipeline_spec"]["parameters"]["provider_type"] == "milvus"

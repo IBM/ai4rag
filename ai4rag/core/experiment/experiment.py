@@ -3,12 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from typing import Any, Sequence
 
 import pandas as pd
 from docling_core.types.doc import DoclingDocument
-from ogx_client import OgxClient
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -42,6 +41,7 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -74,27 +74,20 @@ class AI4RAGExperiment:
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimization.
 
-    vector_store_type : str
-        Specific type of Vector Data Base that will be used during the experiment.
-        Supported values: ``"ogx"`` and ``"chroma"``.
-
-    ogx_vector_io_provider_id : str | None
-        Provider ID for OGX vector store (e.g., ``"milvus"``, ``"qdrant"``).
-        Required when ``vector_store_type="ogx"``.
-
     optimizer_settings : OptimizerSettings
         Settings for the optimizer to be used during the experiment.
 
-    client : OgxClient | Any
-        Instance of the OGX client or other client allowing to communicate
-        with the available vector store providers.
+    vector_store_config : BaseVectorStoreConfig
+        Connection config for the vector store backend. Its type (via
+        ``config.provider``) determines which vector store implementation
+        is used for indexing and retrieval.
 
     event_handler : BaseEventHandler
         Instance satisfying BaseEventHandler's interface to stream pattern evaluation
         results and intermediate status updates. EventHandler is an entrypoint to configure
         custom logging and assets handling.
 
-    optimization_metric : RAGMetric | str, default=Metrics.FAITHFULNESS
+    optimization_metric : RAGMetric | str, default=Metrics.OVERALL_SCORE
         Metric used for calculating the final score that drives optimization.
 
     Other Parameters
@@ -133,22 +126,18 @@ class AI4RAGExperiment:
         documents: list[DoclingDocument],
         benchmark_data: pd.DataFrame,
         search_space: AI4RAGSearchSpace,
-        vector_store_type: str,
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
-        client: OgxClient | Any = None,
-        ogx_vector_io_provider_id: str | None = None,
+        vector_store_config: BaseVectorStoreConfig,
         optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.documents = documents
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.search_space = search_space
-        self.vector_store_type = vector_store_type
-        self.ogx_vector_io_provider_id = ogx_vector_io_provider_id
+        self.vector_store_config = vector_store_config
         self.optimizer_settings = optimizer_settings
         self.event_handler = event_handler
-        self.client = client
         self.optimization_metric = optimization_metric
 
         self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
@@ -379,7 +368,7 @@ class AI4RAGExperiment:
 
         return selected_models
 
-    # pylint: disable=too-many-locals, too-many-statements
+    # pylint: disable=too-many-locals, too-many-statements, too-many-branches
     def run_single_evaluation(self, rag_params: RAGParamsType) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
@@ -421,7 +410,7 @@ class AI4RAGExperiment:
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
-        if search_mode != "vector" and self.vector_store_type == "chroma":
+        if search_mode != "vector" and self.vector_store_config.provider == "chroma":
             raise RAGExperimentError(
                 f"Search mode '{search_mode}' is not supported with chroma vector store. "
                 "Only 'vector' mode is supported for chroma."
@@ -455,98 +444,129 @@ class AI4RAGExperiment:
         pattern_name = self._create_pattern_name()
         logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
+        collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
+
+        vector_store_config = self.vector_store_config
+        if isinstance(vector_store_config, PGVectorConfig):
+            # Size the connection pool to this run's actual query concurrency so a
+            # fully concurrent query_rag() call never queues for a slot (see
+            # PGVectorConfig.pool_max_size). Never shrink below a user-set ceiling:
+            # a caller who deliberately raised pool_max_size (e.g. to share the store
+            # with other concurrent work) must keep that headroom, so take the larger
+            # of the configured size and this run's inference concurrency.
+            pool_max_size = max(vector_store_config.pool_max_size, self.inference_max_threads)
+            if pool_max_size != vector_store_config.pool_max_size:
+                logger.info(
+                    "Raising PGVector pool_max_size from %d to %d to match inference_max_threads (%d).",
+                    vector_store_config.pool_max_size,
+                    pool_max_size,
+                    self.inference_max_threads,
+                )
+            else:
+                logger.info(
+                    "Keeping configured PGVector pool_max_size %d (>= inference_max_threads %d).",
+                    vector_store_config.pool_max_size,
+                    self.inference_max_threads,
+                )
+            vector_store_config = replace(vector_store_config, pool_max_size=pool_max_size)
 
         try:
             vector_store = get_vector_store(
-                vs_type=self.vector_store_type,
                 embedding_model=embedding_model,
-                reuse_collection_name=reuse_collection_name,
-                client=self.client,
-                ogx_vector_io_provider_id=self.ogx_vector_io_provider_id,
+                collection_name=collection_name,
+                config=vector_store_config,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(
                 exc,
                 embedding_model_id=embedding_model.model_id,
-                vector_store_provider_id=self.ogx_vector_io_provider_id or "local_chroma",
+                vector_store_provider_id=self.vector_store_config.provider,
             ) from exc
 
         collection_name = vector_store.collection_name
 
-        if not self._collection_exists(collection_name=collection_name):
-            chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
-            chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
-            chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
+        # The store's connection/client is only needed for indexing and retrieval,
+        # both of which finish before scoring; closing it deterministically here
+        # (rather than waiting on garbage collection) keeps a long HPO search from
+        # accumulating one open connection per evaluated pattern, including on
+        # trials that fail and get caught by search()'s objective_function.
+        with vector_store:
+            if not self._collection_exists(collection_name=collection_name):
+                chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
+                chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
+                chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
 
-            if chunking_method == "hybrid":
-                chunker = DoclingChunker(max_tokens=chunk_size)
-            else:
-                chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            chunked_documents = chunker.split_documents(self.documents)
+                if chunking_method == "hybrid":
+                    chunker = DoclingChunker(max_tokens=chunk_size)
+                else:
+                    chunker = LangChainChunker(
+                        method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+                    )
+                chunked_documents = chunker.split_documents(self.documents)
 
-            if self.event_handler:
+                if self.event_handler:
+                    self.event_handler.on_status_change(
+                        level=LogLevel.INFO,
+                        message=(
+                            f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
+                            f"and chunk_overlap: {chunk_overlap}."
+                        ),
+                        step=ExperimentStep.CHUNKING,
+                    )
+
                 self.event_handler.on_status_change(
                     level=LogLevel.INFO,
                     message=(
-                        f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
-                        f"and chunk_overlap: {chunk_overlap}."
+                        f"Embedding chunks using the {embedding_model.model_id} model. "
+                        f"Building index: {collection_name}."
                     ),
-                    step=ExperimentStep.CHUNKING,
+                    step=ExperimentStep.EMBEDDING,
                 )
 
-            self.event_handler.on_status_change(
-                level=LogLevel.INFO,
-                message=(
-                    f"Embedding chunks using the {embedding_model.model_id} model. "
-                    f"Building index: {collection_name}."
-                ),
-                step=ExperimentStep.EMBEDDING,
+                try:
+                    vector_store.add_documents(chunked_documents)
+                except Exception as exc:
+                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
+
+            else:
+                self.event_handler.on_status_change(
+                    level=LogLevel.INFO,
+                    message=f"Using index {collection_name}.",
+                    step=ExperimentStep.EMBEDDING,
+                )
+
+            logger.info("Using retriever with parameters: %s", retrieval_params)
+
+            retriever = Retriever(
+                vector_store=vector_store,
+                number_of_chunks=number_of_chunks,
+                method=retrieval_method,
+                search_mode=search_mode,
+                ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
+                ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
+                ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
             )
 
-            try:
-                vector_store.add_documents(chunked_documents)
-            except Exception as exc:
-                raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
-
-        else:
-            self.event_handler.on_status_change(
-                level=LogLevel.INFO,
-                message=f"Using index {collection_name}.",
-                step=ExperimentStep.EMBEDDING,
+            rag_pattern = SimpleRAG(
+                foundation_model=foundation_model,
+                retriever=retriever,
             )
 
-        logger.info("Using retriever with parameters: %s", retrieval_params)
+            _rag_log = (
+                f"Retrieval and generation using collection: '{collection_name}' and "
+                f"foundation model: '{foundation_model.model_id}'."
+            )
+            logger.info(_rag_log)
+            self.event_handler.on_status_change(
+                level=LogLevel.INFO,
+                message=_rag_log,
+                step=ExperimentStep.GENERATION,
+            )
 
-        retriever = Retriever(
-            vector_store=vector_store,
-            number_of_chunks=number_of_chunks,
-            method=retrieval_method,
-            search_mode=search_mode,
-            ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
-            ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
-            ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
-        )
+            inference_response = query_rag(
+                rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
+            )
 
-        rag_pattern = SimpleRAG(
-            foundation_model=foundation_model,
-            retriever=retriever,
-        )
-
-        _rag_log = (
-            f"Retrieval and generation using collection: '{collection_name}' and "
-            f"foundation model: '{foundation_model.model_id}'."
-        )
-        logger.info(_rag_log)
-        self.event_handler.on_status_change(
-            level=LogLevel.INFO,
-            message=_rag_log,
-            step=ExperimentStep.GENERATION,
-        )
-
-        inference_response = query_rag(
-            rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
-        )
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,
             pattern_name=pattern_name,
@@ -575,7 +595,6 @@ class AI4RAGExperiment:
             scores=result_scores,
             execution_time=execution_time,
             final_score=final_score,
-            rag_pattern=rag_pattern,
         )
 
         evaluation_results_json = self.results.create_evaluation_results_json(
@@ -707,20 +726,9 @@ class AI4RAGExperiment:
                 )
 
         vector_store_payload = {
-            "provider_id": self.ogx_vector_io_provider_id or "local_chroma",
-            "vector_store_id": evaluation_result.collection,
+            "provider_type": self.vector_store_config.provider,
+            "collection_name": evaluation_result.collection,
         }
-        if self.vector_store_type == "ogx":
-            try:
-                provider = self.client.providers.retrieve(self.ogx_vector_io_provider_id)
-                provider_type = getattr(provider, "provider_type", "unknown")
-            except Exception as exc:
-                provider_type = "unknown"
-                logger.warning(
-                    "Could not retrieve provider_type attribute of vector store in use...",
-                    exc_info=exc,
-                )
-            vector_store_payload["provider_type"] = provider_type
 
         indexing_payload = {
             "chunking": {
@@ -843,8 +851,8 @@ class AI4RAGExperiment:
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method returns name of the collection / vector_store_id (for OGX)
-        if chosen indexing params have already been used to create an index / collection.
+        This method returns the name of the collection if the chosen indexing
+        params have already been used to create an index / collection.
 
         Parameters
         ----------

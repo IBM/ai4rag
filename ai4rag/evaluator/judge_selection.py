@@ -197,7 +197,7 @@ def _run_reference_rag(
     """
     chunker = LangChainChunker(chunk_size=512, method="recursive", chunk_overlap=128)
     chunks = chunker.split_documents(documents)
-    vector_store = ChromaVectorStore(embedding_model=embedding_model, collection_name="judge_calibration")
+    vector_store = ChromaVectorStore(embedding_model=embedding_model, collection_name="ai4rag_judge_calibration")
     vector_store.add_documents(chunks)
     retriever = Retriever(vector_store=vector_store, number_of_chunks=3, method="simple", search_mode="vector")
     rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)

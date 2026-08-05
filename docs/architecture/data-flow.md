@@ -24,8 +24,9 @@ sequenceDiagram
     participant Exp as AI4RAGExperiment
     participant LC as BaseChunker
     participant EM as OGXEmbeddingModel
-    participant VS as OGXVectorStore
+    participant VS as VectorStore
     participant OGXClient as OGX Client
+    participant DB as Vector DB (Milvus/Chroma/PGVector)
 
     Exp->>Exp: check if collection exists
     alt Collection exists
@@ -49,9 +50,9 @@ sequenceDiagram
         EM-->>VS: all embeddings
         deactivate EM
 
-        loop Batches of 2048 chunks
-            VS->>OGXClient: vector_io.insert(chunks + embeddings)
-            OGXClient-->>VS: success
+        loop Batches (backend-specific size: Milvus/Chroma 2048, PGVector 1024)
+            VS->>DB: upsert(chunks + embeddings)
+            DB-->>VS: success
         end
         VS-->>Exp: indexing complete
         deactivate VS
@@ -154,43 +155,40 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
 
 ### Vector Store Insertion
 
-**OGXVectorStore** stores chunks and embeddings in OGX vector database:
+The backend is selected by `vector_store_config` (a `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) passed to `AI4RAGExperiment`. The experiment resolves the concrete store once via `get_vector_store`, which talks **directly** to the configured backend (Milvus, Chroma, or PostgreSQL/pgvector) — there is no intermediary API server between ai4rag and the vector database.
 
-**Collection Creation:**
+**Vector Store Selection:**
 
 ```python
-vs = client.vector_stores.create(
-    extra_body={
-        "provider_id": "milvus",  # From ogx_vector_io_provider_id="milvus"
-        "embedding_model": "ollama/nomic-embed-text:latest",
-        "embedding_dimension": 768,
-    }
+from ai4rag.rag.vector_store import get_vector_store
+
+vector_store = get_vector_store(
+    embedding_model=embedding_model,
+    config=vector_store_config,        # e.g. MilvusConfig.from_env(); provider="milvus"
+    collection_name=collection_name,   # None to auto-generate a new "ai4rag_..." name
 )
-collection_name = vs.id  # Unique collection ID
+collection_name = vector_store.collection_name  # Resolved, ai4rag-prefixed name
 ```
 
-**Batch Insertion:**
+**Batch Insertion (Milvus example):**
 
-Chunks inserted in batches of 2048:
+Chunks are embedded once, then upserted directly into the backend in batches (Milvus/Chroma: 2048, PGVector: 1024):
 
 ```python
-chunks = [
+embeddings = embedding_model.embed_documents([chunk.text for chunk in chunks])
+
+data = [
     {
+        "chunk_id": chunk.chunk_id,
         "content": chunk.text,
-        "chunk_metadata": chunk.metadata,
-        "chunk_id": chunk.metadata["document_id"],
-        "embedding_model": embedding_model.model_id,
-        "embedding_dimension": 768,
-        "embedding": embedding_vector,
+        "vector": embedding,
+        "chunk_content": {"content": chunk.text, "metadata": chunk.metadata, "chunk_id": chunk.chunk_id},
     }
-    for chunk, embedding_vector in zip(chunks, embeddings)
+    for chunk, embedding in zip(chunks, embeddings)
 ]
 
-for idx in range(0, len(chunks), 2048):
-    client.vector_io.insert(
-        vector_store_id=collection_name,
-        chunks=chunks[idx : idx + 2048]
-    )
+for idx in range(0, len(data), 2048):
+    vector_store._client.upsert(collection_name, data=data[idx : idx + 2048])
 ```
 
 ### Collection Reuse
@@ -236,10 +234,11 @@ sequenceDiagram
     participant QR as query_rag()
     participant RAG as SimpleRAG
     participant Ret as Retriever
-    participant VS as OGXVectorStore
+    participant VS as VectorStore
     participant EM as OGXEmbeddingModel
     participant FM as OGXFoundationModel
     participant OGXClient as OGX Client
+    participant DB as Vector DB (Milvus/Chroma/PGVector)
 
     Note over QR: Parallel execution (ThreadPoolExecutor)
     par Question 1
@@ -253,22 +252,25 @@ sequenceDiagram
     activate RAG
     RAG->>Ret: retrieve(question)
     activate Ret
-    Ret->>EM: embed_query(question)
+    Ret->>VS: search(question, k, search_mode, ranker_*)
+    activate VS
+    VS->>EM: embed_query(question)
+    activate EM
     EM->>OGXClient: embeddings.create(question)
     OGXClient-->>EM: query_embedding
-    EM-->>Ret: query_embedding
+    EM-->>VS: query_embedding
+    deactivate EM
 
     alt search_mode == "vector"
-        Ret->>VS: search(query_embedding, k, mode="vector")
-        VS->>OGXClient: vector_io.query(vector_store_id, params)
-        OGXClient-->>VS: ranked chunks
+        VS->>DB: dense vector query
+        DB-->>VS: ranked chunks
     else search_mode == "hybrid"
-        Ret->>VS: search(query_embedding, k, mode="hybrid", ranker_*)
-        VS->>OGXClient: vector_io.query(vector_store_id, params + reranker_params)
-        OGXClient-->>VS: re-ranked chunks (dense + sparse)
+        VS->>DB: dense + sparse/keyword query (+ fusion)
+        DB-->>VS: re-ranked chunks (dense + sparse)
     end
 
     VS-->>Ret: retrieved documents
+    deactivate VS
     Ret-->>RAG: reference_documents
     deactivate Ret
 
@@ -311,61 +313,49 @@ def query_rag(
 
 ### Retrieval
 
-**Retriever** fetches relevant chunks from the vector store:
+**Retriever** delegates directly to the vector store's `search()` method, passing the raw query text — embedding and backend querying both happen **inside** the store:
 
-**Step 1: Embed Query**
+**Step 1: Delegate to the Vector Store**
 
 ```python
-query_embedding = embedding_model.embed_query(question)
+reference_documents = vector_store.search(
+    question,
+    k=number_of_chunks,
+    search_mode=search_mode,        # "vector" or "hybrid"
+    ranker_strategy=ranker_strategy,
+    ranker_k=ranker_k,
+    ranker_alpha=ranker_alpha,
+)
+# reference_documents: list[AI4RAGChunk] — returned directly, no separate conversion step
+```
+
+**Step 2: Query Embedding (internal to the vector store)**
+
+Every concrete store's `search()` embeds the raw query on entry:
+
+```python
+query_embedding = self.embedding_model.embed_query(query)
 # Returns: [0.123, -0.456, 0.789, ...]  (same dimension as document embeddings)
 ```
 
-**Step 2: Vector Search**
-
 **Vector Mode (semantic search only):**
 
-```python
-params = {
-    "max_chunks": 5,  # number_of_chunks
-    "mode": "vector"
-}
-response = client.vector_io.query(
-    query=question,
-    vector_store_id=collection_name,
-    params=params
-)
-```
-
-Returns top-k chunks by cosine similarity (or other distance metric).
+Each backend then runs its native similarity search against `query_embedding` — e.g. `MilvusClient.search` on the dense `vector` field, or PGVector's `<=>`-style distance query — returning the top-k chunks by the configured distance metric.
 
 **Hybrid Mode (semantic + keyword):**
 
 ```python
-params = {
-    "max_chunks": 5,
-    "mode": "hybrid",
-    "reranker_type": "rrf",  # or "weighted", "normalized"
-    "reranker_params": {
-        "impact_factor": 60  # ranker_k for RRF
-        # or "alpha": 0.7 for weighted
-    }
-}
-response = client.vector_io.query(...)
+reference_documents = vector_store.search(
+    question,
+    k=5,
+    search_mode="hybrid",
+    ranker_strategy="rrf",   # or "weighted", "normalized"
+    ranker_k=60,             # applies to "rrf"
+    # ranker_alpha=0.7,      # applies to "weighted"
+)
 ```
 
-Combines dense vector search with sparse keyword search (e.g., BM25), then re-ranks using specified strategy.
-
-**Step 3: Convert to AI4RAGChunks**
-
-```python
-reference_documents = [
-    AI4RAGChunk(
-        text=chunk.content,
-        metadata=chunk.chunk_metadata.to_dict()
-    )
-    for chunk in response.chunks
-]
-```
+Combines the dense vector search with a backend-native sparse/keyword search — Milvus's server-side BM25 field fused via `RRFRanker`/`WeightedRanker`, or PGVector's `tsvector` full-text search fused in-memory via `WeightedInMemoryAggregator` — then returns the fused top-k chunks. Chroma does not support `search_mode="hybrid"`.
 
 ### Context Formatting
 
@@ -816,7 +806,10 @@ event_handler.on_pattern_creation(
             "embedding": {...},
             "retrieval": {...},
             "generation": {...},
-            "vector_store_binding": {...},
+            "vector_store_binding": {
+                "provider_type": "milvus",  # From vector_store_config.provider
+                "collection_name": "ai4rag_20260701120000_ab12cd34",
+            },
         },
     },
     evaluation_results=[
@@ -927,23 +920,17 @@ DoclingDocument(name="doc1", ...)
 
 ```python
 [{"content": "Chunk 1", "embedding": [0.1, ...], "metadata": {...}}, ...]
-↓ (OGXVectorStore.add_documents)
-Collection "xyz" in OGX vector DB
+↓ (MilvusVectorStore.add_documents / ChromaVectorStore.add_documents / PGVectorStore.add_documents)
+Collection "xyz" in the configured backend (Milvus, Chroma, or PGVector)
 ```
 
-**Question → Query Embedding:**
+**Question → Retrieved Chunks:**
 
 ```python
 "What is the capital of France?"
-↓ (OGXEmbeddingModel.embed_query)
-[0.05, -0.12, 0.34, ...]  # 768-dim vector
-```
-
-**Query → Retrieved Chunks:**
-
-```python
-[0.05, -0.12, ...]
-↓ (OGXVectorStore.search via vector_io.query)
+↓ (MilvusVectorStore.search — embeds via OGXEmbeddingModel.embed_query internally,
+   then queries Milvus directly; ChromaVectorStore/PGVectorStore follow the same
+   embed-then-query pattern against their own backend)
 [
     AI4RAGChunk(text="Paris is the capital...", metadata={...}),
     AI4RAGChunk(text="France's capital city...", metadata={...}),

@@ -2,10 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Tests for :mod:`ai4rag.components.utils.ogx_client` -- OGX client factory with SSL fallback."""
-
-from __future__ import annotations
-
 import ssl
 
 import pytest

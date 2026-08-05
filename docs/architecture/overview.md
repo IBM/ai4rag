@@ -10,7 +10,8 @@ ai4rag is designed as a modular RAG optimization engine with clear separation of
 
 ai4rag is **LLM and Vector Database provider agnostic**. It integrates with various backends through:
 
-- **OGX**: Primary integration for models and vector stores
+- **OGX**: Foundation-model and embedding provider
+- **Direct Vector Store Clients**: Chroma, Milvus, and PGVector are integrated directly (no OGX dependency)
 - **Pluggable Components**: Foundation models, embeddings, and vector stores are abstracted
 
 ### Template-Based Approach
@@ -118,7 +119,7 @@ graph TB
 **Vector Stores** (`ai4rag/rag/vector_store/`)
 
 - Stores and retrieves document embeddings
-- Supports Milvus (via OGX) and ChromaDB
+- Supports Milvus, PostgreSQL/pgvector, and ChromaDB via direct clients
 - Provides similarity search capabilities
 
 **Retrieval** (`ai4rag/rag/retrieval/`)
@@ -199,7 +200,7 @@ Chunking (chunk_size, chunk_overlap)
     ↓
 Embedding Model (embedding_model)
     ↓
-Vector Store (ogx + ogx_vector_io_provider_id, or chroma)
+Vector Store (Milvus / PGVector / Chroma via vector_store_config)
 ```
 
 ### Query Phase (Per Configuration)
@@ -256,7 +257,7 @@ ai4rag is designed for extensibility:
 ## Technology Stack
 
 - **Python**: 3.12 & 3.13
-- **OGX**: Model and vector store integration
+- **OGX**: Foundation-model & embedding integration
 - **Docling Core**: Document representation and structure-aware chunking
 - **LangChain**: Token-based text splitting
 - **Unitxt**: Evaluation metrics
