@@ -275,5 +275,3 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         search_space=verbose_repr,
         selected_models=selected_models,
     )
-
-
