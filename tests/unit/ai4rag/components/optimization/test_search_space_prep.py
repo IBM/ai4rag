@@ -12,10 +12,10 @@ from ai4rag.components.optimization.search_space_preparation import (
     _validate_model_list,
     prepare_search_space_report,
 )
-from ai4rag.utils.validators import validate_model_list
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
+from ai4rag.utils.validators import validate_model_list
 
 # ---------------------------------------------------------------------------
 # Fixtures
