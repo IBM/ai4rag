@@ -19,12 +19,9 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.validators import validate_model_list
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
-
-_validate_model_list = validate_model_list
 
 _DEFAULT_METRIC = "faithfulness"
 _DEFAULT_TOP_N_GENERATION = 3
@@ -121,8 +118,8 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
-    Builds an :class:`AI4RAGSearchSpace` from the given model lists, runs
-    :class:`ModelsPreSelector` when the number of models exceeds the
+    Builds an ``AI4RAGSearchSpace`` from the given model lists, runs
+    ``ModelsPreSelector`` when the number of models exceeds the
     configured caps, detects the benchmark language, and returns a
     structured report.
 
@@ -135,7 +132,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         Path to a single DoclingDocument JSON file or a directory of such
         files.
     ogx_client
-        An authenticated :class:`OgxClient` instance.
+        An authenticated ``OgxClient`` instance.
     embedding_models
         Embedding model identifiers.  ``None`` uses the server defaults.
     generation_models
@@ -169,7 +166,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     pre_validated_search_space
         When provided, the function skips model-list validation,
         payload construction, and the
-        :func:`prepare_search_space_with_ogx` call and uses this
+        ``prepare_search_space_with_ogx`` call and uses this
         search space directly.  Pass the result of an earlier
         validation step to avoid redundant OGX API calls.
         ``None`` (default) preserves the original behaviour.
@@ -191,7 +188,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         validation (wrong type, empty list, or invalid element types).
     SearchSpaceValueError
         If *chunking_methods* contains values not in
-        :attr:`~ai4rag.utils.constants.ChunkingConstraints.METHODS`, or
+        ``ChunkingConstraints.METHODS``, or
         *chunk_sizes* contains values outside
         ``[ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE]``,
         or *chunk_overlaps* contains values outside
@@ -275,3 +272,14 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         search_space=verbose_repr,
         selected_models=selected_models,
     )
+
+
+def _validate_model_list(models: list[str] | None, name: str) -> None:
+    """Validate that a model list, if provided, contains only non-empty strings."""
+    if models is None:
+        return
+    if not isinstance(models, list):
+        raise TypeError(f"{name} must be a list.")
+    for i, m in enumerate(models):
+        if not m:
+            raise TypeError(f"{name}[{i}] must be a non-empty string.")

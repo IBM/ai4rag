@@ -17,7 +17,6 @@ from ai4rag.components.optimization.search_space_preparation import (
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
-from ai4rag.utils.validators import validate_model_list
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -217,19 +216,6 @@ class TestPrepareSearchSpaceReportFiltering:
         assert result.search_space["chunk_size"] == []
         assert result.search_space["chunk_overlap"] == []
         assert result.search_space["chunking_method"] == []
-
-
-# ---------------------------------------------------------------------------
-# validate_model_list shared location
-# ---------------------------------------------------------------------------
-
-
-class TestValidateModelListShared:
-    """Verify that the shared validator is accessible from both locations."""
-
-    def test_shared_validator_is_same_function(self):
-        """The alias in search_space_preparation must point to the shared function."""
-        assert _validate_model_list is validate_model_list
 
 
 # ---------------------------------------------------------------------------

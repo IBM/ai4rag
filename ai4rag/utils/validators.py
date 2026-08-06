@@ -66,14 +66,3 @@ class OneOf(Validator[T]):
                 f"on attribute {self.private_name[1:]}."
             )
         return value
-
-
-def validate_model_list(models: list[str] | None, name: str) -> None:
-    """Validate that a model list, if provided, contains only non-empty strings."""
-    if models is None:
-        return
-    if not isinstance(models, list):
-        raise TypeError(f"{name} must be a list.")
-    for i, m in enumerate(models):
-        if not m:
-            raise TypeError(f"{name}[{i}] must be a non-empty string.")
