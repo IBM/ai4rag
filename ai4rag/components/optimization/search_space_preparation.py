@@ -18,6 +18,7 @@ from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
@@ -29,7 +30,7 @@ _DEFAULT_SAMPLE_SIZE = 5
 _DEFAULT_SEED = 17
 
 
-def _serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
+def serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
     """Convert a model instance to a plain dictionary with all its settings.
 
     Captures model identifier, type discriminator, inference parameters,
@@ -113,11 +114,12 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     chunk_sizes: list[int] | None = None,
     chunk_overlaps: list[int] | None = None,
     inference_max_threads: int = 10,
+    pre_validated_search_space: AI4RAGSearchSpace | None = None,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
-    Builds an :class:`AI4RAGSearchSpace` from the given model lists, runs
-    :class:`ModelsPreSelector` when the number of models exceeds the
+    Builds an ``AI4RAGSearchSpace`` from the given model lists, runs
+    ``ModelsPreSelector`` when the number of models exceeds the
     configured caps, detects the benchmark language, and returns a
     structured report.
 
@@ -130,7 +132,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         Path to a single DoclingDocument JSON file or a directory of such
         files.
     ogx_client
-        An authenticated :class:`OgxClient` instance.
+        An authenticated ``OgxClient`` instance.
     embedding_models
         Embedding model identifiers.  ``None`` uses the server defaults.
     generation_models
@@ -161,6 +163,13 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         RAG service during benchmark evaluation.  Lower values reduce
         per-request concurrency (useful when each request carries more
         retrieved context).  Defaults to ``10``.
+    pre_validated_search_space
+        When provided, the function skips model-list validation,
+        payload construction, and the
+        ``prepare_search_space_with_ogx`` call and uses this
+        search space directly.  Pass the result of an earlier
+        validation step to avoid redundant OGX API calls.
+        ``None`` (default) preserves the original behaviour.
 
     Returns
     -------
@@ -179,38 +188,41 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         validation (wrong type, empty list, or invalid element types).
     SearchSpaceValueError
         If *chunking_methods* contains values not in
-        :attr:`~ai4rag.utils.constants.ChunkingConstraints.METHODS`, or
+        ``ChunkingConstraints.METHODS``, or
         *chunk_sizes* contains values outside
         ``[ChunkingConstraints.MIN_CHUNK_SIZE, ChunkingConstraints.MAX_CHUNK_SIZE]``,
         or *chunk_overlaps* contains values outside
         ``[ChunkingConstraints.MIN_CHUNK_OVERLAP, ChunkingConstraints.MAX_CHUNK_OVERLAP]``.
     """
-    _validate_model_list(embedding_models, "embedding_models")
-    _validate_model_list(generation_models, "generation_models")
+    if pre_validated_search_space is not None:
+        search_space = pre_validated_search_space
+    else:
+        _validate_model_list(embedding_models, "embedding_models")
+        _validate_model_list(generation_models, "generation_models")
 
-    # Build payload and create search space via OGX
-    payload: dict[str, Any] = {}
-    if generation_models:
-        payload["foundation_models"] = [{"model_id": gm} for gm in generation_models]
-    if embedding_models:
-        payload["embedding_models"] = [{"model_id": em} for em in embedding_models]
-    if chunking_methods is not None:
-        payload["chunking_methods"] = chunking_methods
-    if chunk_sizes is not None:
-        payload["chunk_sizes"] = chunk_sizes
-    if chunk_overlaps is not None:
-        payload["chunk_overlaps"] = chunk_overlaps
+        payload: dict[str, Any] = {}
+        if generation_models:
+            payload["foundation_models"] = [{"model_id": gm} for gm in generation_models]
+        if embedding_models:
+            payload["embedding_models"] = [{"model_id": em} for em in embedding_models]
+        if chunking_methods is not None:
+            payload["chunking_methods"] = chunking_methods
+        if chunk_sizes is not None:
+            payload["chunk_sizes"] = chunk_sizes
+        if chunk_overlaps is not None:
+            payload["chunk_overlaps"] = chunk_overlaps
 
-    # Load benchmark data and documents
+        benchmark_df = pd.read_json(Path(test_data_path))
+        search_space = prepare_search_space_with_ogx(
+            payload,
+            client=ogx_client,
+            benchmark_data=benchmark_df,
+        )
+
     benchmark_df = pd.read_json(Path(test_data_path))
     benchmark_data = BenchmarkData(benchmark_df)
     documents = load_docling_documents(extracted_text_path)
 
-    search_space = prepare_search_space_with_ogx(
-        payload,
-        client=ogx_client,
-        benchmark_data=benchmark_df,
-    )
     _logger.info(
         "Search space chunking_method=%s chunk_size=%s chunk_overlap=%s",
         list(search_space["chunking_method"].values),
@@ -253,8 +265,8 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     verbose_repr: dict[str, Any] = {
         key: list(dict.fromkeys(combo[key] for combo in valid_combinations)) for key in non_model_keys
     }
-    verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
-    verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
+    verbose_repr["foundation_model"] = [serialize_model(m) for m in selected_models["foundation_model"]]
+    verbose_repr["embedding_model"] = [serialize_model(m) for m in selected_models["embedding_model"]]
 
     return SearchSpaceReport(
         search_space=verbose_repr,

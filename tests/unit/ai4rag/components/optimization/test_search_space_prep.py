@@ -201,7 +201,7 @@ class TestPrepareSearchSpaceReportFiltering:
         )
         mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
         mocker.patch(
-            "ai4rag.components.optimization.search_space_preparation._serialize_model",
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
             return_value={"model_id": "mock"},
         )
 
@@ -216,3 +216,108 @@ class TestPrepareSearchSpaceReportFiltering:
         assert result.search_space["chunk_size"] == []
         assert result.search_space["chunk_overlap"] == []
         assert result.search_space["chunking_method"] == []
+
+
+# ---------------------------------------------------------------------------
+# pre_validated_search_space parameter
+# ---------------------------------------------------------------------------
+
+
+class TestPrepareSearchSpaceReportPreValidated:
+    """Test the pre_validated_search_space bypass path."""
+
+    def _make_search_space(self) -> AI4RAGSearchSpace:
+        mock_em = MagicMock()
+        mock_em.params.context_length = None
+        return AI4RAGSearchSpace(
+            params=[
+                Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=(MagicMock(),)),
+                Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=(mock_em,)),
+                Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=("recursive",)),
+                Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=(512,)),
+                Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=(128,)),
+            ]
+        )
+
+    def test_skips_ogx_call_when_pre_validated(self, mocker):
+        """prepare_search_space_with_ogx must not be called when pre_validated_search_space is given."""
+        search_space = self._make_search_space()
+        mock_prepare = mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.prepare_search_space_with_ogx",
+        )
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.pd.read_json",
+            return_value=MagicMock(),
+        )
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.load_docling_documents",
+            return_value=[],
+        )
+        mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
+            return_value={"model_id": "mock"},
+        )
+
+        prepare_search_space_report(
+            test_data_path="dummy.json",
+            extracted_text_path="dummy_dir",
+            ogx_client=MagicMock(),
+            pre_validated_search_space=search_space,
+        )
+
+        mock_prepare.assert_not_called()
+
+    def test_uses_provided_search_space(self, mocker):
+        """The report must reflect parameters from the pre-validated search space."""
+        search_space = self._make_search_space()
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.pd.read_json",
+            return_value=MagicMock(),
+        )
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.load_docling_documents",
+            return_value=[],
+        )
+        mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
+            return_value={"model_id": "mock"},
+        )
+
+        result = prepare_search_space_report(
+            test_data_path="dummy.json",
+            extracted_text_path="dummy_dir",
+            ogx_client=MagicMock(),
+            pre_validated_search_space=search_space,
+        )
+
+        assert result.search_space["chunk_size"] == [512]
+        assert result.search_space["chunk_overlap"] == [128]
+        assert result.search_space["chunking_method"] == ["recursive"]
+
+    def test_still_loads_documents(self, mocker):
+        """Documents must still be loaded even when pre_validated_search_space is given (needed for MPS)."""
+        search_space = self._make_search_space()
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.pd.read_json",
+            return_value=MagicMock(),
+        )
+        mock_load_docs = mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.load_docling_documents",
+            return_value=[],
+        )
+        mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
+        mocker.patch(
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
+            return_value={"model_id": "mock"},
+        )
+
+        prepare_search_space_report(
+            test_data_path="dummy.json",
+            extracted_text_path="dummy_dir",
+            ogx_client=MagicMock(),
+            pre_validated_search_space=search_space,
+        )
+
+        mock_load_docs.assert_called_once_with("dummy_dir")
