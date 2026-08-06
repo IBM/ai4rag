@@ -840,7 +840,9 @@ class TestGetStratifiedCombinations:
             {"search_mode": "vector", "chunk_size": 512},
         ]
         # "hybrid" already covered by warm-start; stratification should pull vector first.
-        result = GAMOptimizer._get_stratified_combinations(combinations, already_seen={"search_mode": {"hybrid"}})
+        result = GAMOptimizer._get_stratified_combinations(
+            combinations, already_seen={"search_mode": {"hybrid"}}
+        )
         assert result[0]["search_mode"] == "vector"
 
     def test_already_seen_all_values_skips_stratification(self):
