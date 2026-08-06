@@ -18,9 +18,13 @@ from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.validators import validate_model_list
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
+
+_validate_model_list = validate_model_list
 
 _DEFAULT_METRIC = "faithfulness"
 _DEFAULT_TOP_N_GENERATION = 3
@@ -113,6 +117,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     chunk_sizes: list[int] | None = None,
     chunk_overlaps: list[int] | None = None,
     inference_max_threads: int = 10,
+    pre_validated_search_space: AI4RAGSearchSpace | None = None,
 ) -> SearchSpaceReport:
     """Run model pre-selection and prepare a search-space report.
 
@@ -161,6 +166,13 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         RAG service during benchmark evaluation.  Lower values reduce
         per-request concurrency (useful when each request carries more
         retrieved context).  Defaults to ``10``.
+    pre_validated_search_space
+        When provided, the function skips model-list validation,
+        payload construction, and the
+        :func:`prepare_search_space_with_ogx` call and uses this
+        search space directly.  Pass the result of an earlier
+        validation step to avoid redundant OGX API calls.
+        ``None`` (default) preserves the original behaviour.
 
     Returns
     -------
@@ -185,32 +197,35 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
         or *chunk_overlaps* contains values outside
         ``[ChunkingConstraints.MIN_CHUNK_OVERLAP, ChunkingConstraints.MAX_CHUNK_OVERLAP]``.
     """
-    _validate_model_list(embedding_models, "embedding_models")
-    _validate_model_list(generation_models, "generation_models")
+    if pre_validated_search_space is not None:
+        search_space = pre_validated_search_space
+    else:
+        _validate_model_list(embedding_models, "embedding_models")
+        _validate_model_list(generation_models, "generation_models")
 
-    # Build payload and create search space via OGX
-    payload: dict[str, Any] = {}
-    if generation_models:
-        payload["foundation_models"] = [{"model_id": gm} for gm in generation_models]
-    if embedding_models:
-        payload["embedding_models"] = [{"model_id": em} for em in embedding_models]
-    if chunking_methods is not None:
-        payload["chunking_methods"] = chunking_methods
-    if chunk_sizes is not None:
-        payload["chunk_sizes"] = chunk_sizes
-    if chunk_overlaps is not None:
-        payload["chunk_overlaps"] = chunk_overlaps
+        payload: dict[str, Any] = {}
+        if generation_models:
+            payload["foundation_models"] = [{"model_id": gm} for gm in generation_models]
+        if embedding_models:
+            payload["embedding_models"] = [{"model_id": em} for em in embedding_models]
+        if chunking_methods is not None:
+            payload["chunking_methods"] = chunking_methods
+        if chunk_sizes is not None:
+            payload["chunk_sizes"] = chunk_sizes
+        if chunk_overlaps is not None:
+            payload["chunk_overlaps"] = chunk_overlaps
 
-    # Load benchmark data and documents
+        benchmark_df = pd.read_json(Path(test_data_path))
+        search_space = prepare_search_space_with_ogx(
+            payload,
+            client=ogx_client,
+            benchmark_data=benchmark_df,
+        )
+
     benchmark_df = pd.read_json(Path(test_data_path))
     benchmark_data = BenchmarkData(benchmark_df)
     documents = load_docling_documents(extracted_text_path)
 
-    search_space = prepare_search_space_with_ogx(
-        payload,
-        client=ogx_client,
-        benchmark_data=benchmark_df,
-    )
     _logger.info(
         "Search space chunking_method=%s chunk_size=%s chunk_overlap=%s",
         list(search_space["chunking_method"].values),
@@ -262,12 +277,3 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     )
 
 
-def _validate_model_list(models: list[str] | None, name: str) -> None:
-    """Validate that a model list, if provided, contains only non-empty strings."""
-    if models is None:
-        return
-    if not isinstance(models, list):
-        raise TypeError(f"{name} must be a list.")
-    for i, m in enumerate(models):
-        if not m:
-            raise TypeError(f"{name}[{i}] must be a non-empty string.")
