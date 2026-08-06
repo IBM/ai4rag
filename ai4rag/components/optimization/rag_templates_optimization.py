@@ -161,10 +161,10 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     for param_name, values in search_space_raw.items():
         if param_name == "foundation_model":
-            values = [_deserialize_model(m, ogx_client) for m in values]
+            values = [deserialize_model(m, ogx_client) for m in values]
             foundation_models = values
         elif param_name == "embedding_model":
-            values = [_deserialize_model(m, ogx_client) for m in values]
+            values = [deserialize_model(m, ogx_client) for m in values]
             embedding_models = values
         params.append(Parameter(param_name, "C", values=values))
 
@@ -274,13 +274,13 @@ def _generate_output_artifacts(
     return patterns
 
 
-def _deserialize_model(data: dict[str, Any], ogx_client: OgxClient) -> OGXEmbeddingModel | OGXFoundationModel:
+def deserialize_model(data: dict[str, Any], ogx_client: OgxClient) -> OGXEmbeddingModel | OGXFoundationModel:
     """Reconstruct a model instance from its serialized dictionary.
 
     Parameters
     ----------
     data
-        Dictionary produced by :func:`_serialize_model` in the search-space
+        Dictionary produced by ``serialize_model`` in the search-space
         preparation step.
     ogx_client
         Client bound to the reconstructed model instance.

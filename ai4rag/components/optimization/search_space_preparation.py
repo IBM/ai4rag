@@ -30,7 +30,7 @@ _DEFAULT_SAMPLE_SIZE = 5
 _DEFAULT_SEED = 17
 
 
-def _serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
+def serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
     """Convert a model instance to a plain dictionary with all its settings.
 
     Captures model identifier, type discriminator, inference parameters,
@@ -265,8 +265,8 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     verbose_repr: dict[str, Any] = {
         key: list(dict.fromkeys(combo[key] for combo in valid_combinations)) for key in non_model_keys
     }
-    verbose_repr["foundation_model"] = [_serialize_model(m) for m in selected_models["foundation_model"]]
-    verbose_repr["embedding_model"] = [_serialize_model(m) for m in selected_models["embedding_model"]]
+    verbose_repr["foundation_model"] = [serialize_model(m) for m in selected_models["foundation_model"]]
+    verbose_repr["embedding_model"] = [serialize_model(m) for m in selected_models["embedding_model"]]
 
     return SearchSpaceReport(
         search_space=verbose_repr,

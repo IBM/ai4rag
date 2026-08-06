@@ -201,7 +201,7 @@ class TestPrepareSearchSpaceReportFiltering:
         )
         mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
         mocker.patch(
-            "ai4rag.components.optimization.search_space_preparation._serialize_model",
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
             return_value={"model_id": "mock"},
         )
 
@@ -255,7 +255,7 @@ class TestPrepareSearchSpaceReportPreValidated:
         )
         mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
         mocker.patch(
-            "ai4rag.components.optimization.search_space_preparation._serialize_model",
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
             return_value={"model_id": "mock"},
         )
 
@@ -281,7 +281,7 @@ class TestPrepareSearchSpaceReportPreValidated:
         )
         mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
         mocker.patch(
-            "ai4rag.components.optimization.search_space_preparation._serialize_model",
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
             return_value={"model_id": "mock"},
         )
 
@@ -309,7 +309,7 @@ class TestPrepareSearchSpaceReportPreValidated:
         )
         mocker.patch("ai4rag.components.optimization.search_space_preparation.BenchmarkData")
         mocker.patch(
-            "ai4rag.components.optimization.search_space_preparation._serialize_model",
+            "ai4rag.components.optimization.search_space_preparation.serialize_model",
             return_value={"model_id": "mock"},
         )
 
