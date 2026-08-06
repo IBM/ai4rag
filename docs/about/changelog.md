@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.1](https://github.com/IBM/ai4rag/releases/tag/v0.11.1)
+
+### Added
+- **Search space preparation** — added `pre_validated_search_space` parameter to `prepare_search_space_report()`, letting callers pass an already-validated `AI4RAGSearchSpace` (e.g. produced by an earlier fail-fast validation step) to skip model-list validation, payload construction, and the redundant `prepare_search_space_with_ogx()` OGX call; omitting it preserves the existing behaviour
+
+### Changed
+- **RAG optimization component** — `_serialize_model()`/`_deserialize_model()` in `search_space_preparation` and `rag_templates_optimization` renamed to `serialize_model()`/`deserialize_model()`, exposing them as reusable public helpers
+
+---
+
 ## [0.11.0](https://github.com/IBM/ai4rag/releases/tag/v0.11.0)
 
 ### Added

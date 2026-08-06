@@ -86,7 +86,6 @@ test = [
 requires-dist = [
     { name = "ai4rag", extras = ["code-check"], marker = "extra == 'dev'" },
     { name = "ai4rag", extras = ["docs"], marker = "extra == 'dev'" },
-    { name = "ai4rag", extras = ["llm-judge"], marker = "extra == 'dev'" },
     { name = "ai4rag", extras = ["test"], marker = "extra == 'dev'" },
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },

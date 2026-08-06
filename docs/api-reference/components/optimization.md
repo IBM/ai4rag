@@ -4,7 +4,7 @@ Search space preparation and RAG optimization functions for the AutoRAG pipeline
 
 ## Language Detection
 
-::: ai4rag.components.optimization.search_space_preparation
+::: ai4rag.search_space.prepare.language_detection
     options:
       members:
         - LANGUAGE_MAP
