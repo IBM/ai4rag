@@ -38,8 +38,8 @@ def simple_report() -> SearchSpaceReport:
 
 
 @pytest.fixture()
-def mock_ogx_client() -> MagicMock:
-    """Return a bare MagicMock standing in for OgxClient."""
+def mock_maas_client() -> MagicMock:
+    """Return a bare MagicMock standing in for a MaaS OpenAI client."""
     return MagicMock()
 
 
@@ -122,36 +122,36 @@ class TestPrepareSearchSpaceReportValidation:
     """Test input validation in prepare_search_space_report.
 
     These tests verify that the function rejects bad inputs before
-    reaching any heavy I/O or OGX calls.
+    reaching any heavy I/O or MaaS calls.
     """
 
-    def test_invalid_embedding_models_raises_type_error(self, mock_ogx_client):
+    def test_invalid_embedding_models_raises_type_error(self, mock_maas_client):
         """An empty string in embedding_models must raise TypeError."""
         with pytest.raises(TypeError, match="non-empty string"):
             prepare_search_space_report(
                 test_data_path="dummy.json",
                 extracted_text_path="dummy_dir",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 embedding_models=["good-model", ""],
             )
 
-    def test_invalid_generation_models_raises_type_error(self, mock_ogx_client):
+    def test_invalid_generation_models_raises_type_error(self, mock_maas_client):
         """An empty string in generation_models must raise TypeError."""
         with pytest.raises(TypeError, match="non-empty string"):
             prepare_search_space_report(
                 test_data_path="dummy.json",
                 extracted_text_path="dummy_dir",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 generation_models=["", "model-b"],
             )
 
-    def test_non_list_models_raises_type_error(self, mock_ogx_client):
+    def test_non_list_models_raises_type_error(self, mock_maas_client):
         """A non-list value for model lists must raise TypeError."""
         with pytest.raises(TypeError, match="must be a list"):
             prepare_search_space_report(
                 test_data_path="dummy.json",
                 extracted_text_path="dummy_dir",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 embedding_models="not-a-list",  # type: ignore[arg-type]
             )
 
@@ -186,7 +186,7 @@ class TestPrepareSearchSpaceReportFiltering:
         search_space = self._make_search_space(["recursive"], [128, 256])
 
         mocker.patch(
-            "ai4rag.components.optimization.search_space_preparation.prepare_search_space_with_ogx",
+            "ai4rag.components.optimization.search_space_preparation.prepare_search_space_with_maas",
             return_value=search_space,
         )
         mocker.patch(
@@ -206,7 +206,7 @@ class TestPrepareSearchSpaceReportFiltering:
         result = prepare_search_space_report(
             test_data_path="dummy.json",
             extracted_text_path="dummy_dir",
-            ogx_client=MagicMock(),
+            maas_client=MagicMock(),
             chunking_methods=["recursive"],
             chunk_sizes=[128, 256],
         )

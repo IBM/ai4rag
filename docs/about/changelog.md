@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+- **Model provider** — replaced OGX integration with any model handled via OpenAI client
+- **Search space preparation** — renamed `prepare_search_space_with_ogx` to `prepare_search_space_with_maas`, now accepting an `openai.OpenAI` client. Because MaaS `models.list()` carries no metadata (model type, embedding dimension, context length), the payload must declare foundation and embedding model IDs explicitly; embedding dimension and context length are auto-detected at construction time
+- **Client factory** — replaced `create_ogx_client` with `create_maas_client` (the general listing client) plus `create_maas_model_client` and `maas_model_base_url` helpers for building per-model clients
+- **Notebook templates** — renamed the generated `ogx_{indexing,inference}` templates to `maas_{indexing,inference}`, building per-model `OpenAI` clients from `FM_BASE_URL` / `EMBEDDING_BASE_URL` and `MAAS_API_KEY`
+
+### Removed
+- **OGX** — removed all OGX support: the `ogx-client` dependency, `OGXFoundationModel`, `OGXEmbeddingModel`, `OGXModelParameters`, `OGXEmbeddingParams`, `create_ogx_client`, the `ogx_utils` module, the `ogx_inference_base_url` helper, and the `OGX_CLIENT_BASE_URL` / `OGX_CLIENT_API_KEY` environment variables (replaced by `MAAS_BASE` / `MAAS_API_KEY`)
+
+### Added
+- **Dependencies** — added `openai` as the model-access SDK, replacing `ogx-client`
+
+---
+
 ## [0.11.0](https://github.com/IBM/ai4rag/releases/tag/v0.11.0)
 
 ### Added

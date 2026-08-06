@@ -18,13 +18,13 @@ from .base_template import BaseRAGTemplate, RAGTemplateError
 
 class SimpleRAG(BaseRAGTemplate):
     """
-    RAG template using OGX components for embedding, vector store,
-    retrieval, and foundation model.
+    RAG template composing embedding, vector store, retrieval, and
+    foundation model components.
 
     Parameters
     ----------
     foundation_model : BaseFoundationModel
-        Initialized OGX foundation model for text generation.
+        Initialized foundation model for text generation.
 
     retriever : Retriever
         Initialized retriever for document retrieval.
@@ -123,7 +123,7 @@ class SimpleRAG(BaseRAGTemplate):
         Generate a streaming answer for a question using RAG pipeline.
 
         Note: This is a placeholder implementation. Full streaming support
-        would require streaming capabilities in the OGXFoundationModel.
+        would require streaming capabilities in the OpenAIFoundationModel.
 
         Parameters
         ----------

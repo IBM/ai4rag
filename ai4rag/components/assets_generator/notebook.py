@@ -199,7 +199,7 @@ class Notebook:
         Parameters
         ----------
         notebook_name : str
-            Name of the template file (e.g. ``"ogx_indexing_template.ipynb"``).
+            Name of the template file (e.g. ``"maas_indexing_template.ipynb"``).
         templates_dir : str | Path | None, default=None
             Directory containing the template notebooks.  When *None*,
             templates are loaded from the ``notebook_templates/`` sub-package
@@ -212,7 +212,7 @@ class Notebook:
 
         Examples
         --------
-        >>> nb = Notebook.load("ogx_indexing_template.ipynb")
+        >>> nb = Notebook.load("maas_indexing_template.ipynb")
         >>> nb = Notebook.load("custom.ipynb", templates_dir="/data/templates")
         """
         if templates_dir is not None:

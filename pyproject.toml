@@ -33,7 +33,7 @@ dependencies = [
   "docling-slim[standard,feat-chunking,format-opendocument]~=2.107.0",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
-  "ogx-client>=1.1.0,<=1.1.3",
+  "openai>=2,<3",
   "pandas==2.2.*",
   "pgvector>=0.3.0",
   "psycopg[binary,pool]>=3.1",

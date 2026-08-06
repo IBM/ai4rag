@@ -5,7 +5,7 @@
 """Functional semantic-retrieval test for :class:`PGVectorStore`.
 
 Runs against a live PostgreSQL + pgvector server (skipped unless ``PGVECTOR_HOST``
-is set) using a real OGX embedding model. pgvector is strongly consistent, so
+is set) using a real MaaS embedding model. pgvector is strongly consistent, so
 reads need no retry; the store holds an open connection, which teardown closes.
 
 This module is where pgvector-specific retrieval tests (e.g. future lexical /

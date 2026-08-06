@@ -4,18 +4,18 @@
 # -----------------------------------------------------------------------------
 import json
 import logging
-import os
 from dataclasses import dataclass
 from json import dump as json_dump
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from ogx_client import OgxClient
+from openai import OpenAI
 
 from ai4rag import handler
 from ai4rag.components.assets_generator import generate_notebook_from_template
 from ai4rag.components.utils.docling_io import load_docling_documents
+from ai4rag.components.utils.maas_client import create_maas_model_client
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -23,9 +23,9 @@ from ai4rag.evaluator.judge_selection import select_judge_model
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import Language
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -68,7 +68,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     test_data_path: str | Path,
     search_space_report_path: str | Path,
     output_dir: str | Path,
-    ogx_client: OgxClient,
+    maas_client: OpenAI,
     vector_store_config: ChromaConfig | MilvusConfig | PGVectorConfig,
     test_data_key: str = "",
     input_data_key: str = "",
@@ -93,9 +93,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         Path to the JSON report produced by the search-space preparation step.
     output_dir
         Root directory where per-pattern output folders are written.
-    ogx_client
-        An authenticated :class:`OgxClient` instance (still needed for model
-        deserialization).
+    maas_client
+        An authenticated general MaaS :class:`~openai.OpenAI` client (its API key
+        is reused to rebuild per-model clients during deserialization).
     vector_store_config
         Connection config for the vector store backend. Its type (via
         ``config.provider``) determines whether Chroma, Milvus, or PGVector
@@ -154,16 +154,16 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     with open(search_space_report_path, "r", encoding="utf-8") as f:
         search_space_raw: dict[str, Any] = json.load(f)
 
-    foundation_models: list[OGXFoundationModel] = []
-    embedding_models: list[OGXEmbeddingModel] = []
+    foundation_models: list[OpenAIFoundationModel] = []
+    embedding_models: list[OpenAIEmbeddingModel] = []
     params: list[Parameter] = []
 
     for param_name, values in search_space_raw.items():
         if param_name == "foundation_model":
-            values = [_deserialize_model(m, ogx_client) for m in values]
+            values = [_deserialize_model(m, maas_client) for m in values]
             foundation_models = values
         elif param_name == "embedding_model":
-            values = [_deserialize_model(m, ogx_client) for m in values]
+            values = [_deserialize_model(m, maas_client) for m in values]
             embedding_models = values
         params.append(Parameter(param_name, "C", values=values))
 
@@ -233,7 +233,6 @@ def _generate_output_artifacts(
     indexing_pipeline_params: dict | None,
 ) -> list[dict]:
     """Write per-pattern artefacts (JSON, notebooks, evaluation results)."""
-    ogx_base_url = (os.environ.get("OGX_CLIENT_BASE_URL") or "").strip()
     patterns: list[dict] = []
 
     for pattern in patterns_raw:
@@ -248,7 +247,7 @@ def _generate_output_artifacts(
                 "pipeline_spec": {
                     "pipeline_name": indexing_pipeline_params.get("pipeline_name", "documents_indexing_pipeline"),
                     "parameters": {
-                        "ogx_secret_name": indexing_pipeline_params.get("ogx_secret_name"),
+                        "maas_secret_name": indexing_pipeline_params.get("maas_secret_name"),
                         "input_data_secret_name": indexing_pipeline_params.get("input_data_secret_name"),
                         "input_data_bucket_name": indexing_pipeline_params.get("input_data_bucket_name"),
                         "input_data_key": indexing_pipeline_params.get("input_data_key"),
@@ -272,18 +271,16 @@ def _generate_output_artifacts(
             }
 
         generate_notebook_from_template(
-            "ogx_indexing",
+            "maas_indexing",
             pattern_data,
             patt_dir / "indexing.ipynb",
             input_data_key=input_data_key,
-            ogx_base_url=ogx_base_url,
         )
         generate_notebook_from_template(
-            "ogx_inference",
+            "maas_inference",
             pattern_data,
             patt_dir / "inference.ipynb",
             test_data_key=test_data_key,
-            ogx_base_url=ogx_base_url,
         )
 
         with (patt_dir / "pattern.json").open("w", encoding="utf-8") as f:
@@ -297,26 +294,31 @@ def _generate_output_artifacts(
     return patterns
 
 
-def _deserialize_model(data: dict[str, Any], ogx_client: OgxClient) -> OGXEmbeddingModel | OGXFoundationModel:
+def _deserialize_model(data: dict[str, Any], maas_client: OpenAI) -> OpenAIEmbeddingModel | OpenAIFoundationModel:
     """Reconstruct a model instance from its serialized dictionary.
+
+    Each model is rebuilt behind its own per-model MaaS client, using the
+    serialized ``base_url`` and the general client's API key.
 
     Parameters
     ----------
     data
         Dictionary produced by :func:`_serialize_model` in the search-space
         preparation step.
-    ogx_client
-        Client bound to the reconstructed model instance.
+    maas_client
+        General MaaS client whose API key is reused for the per-model client.
     """
     model_id = data["model_id"]
     params = data.get("params", {})
 
+    per_model_client = create_maas_model_client(base_url=data["base_url"], api_key=maas_client.api_key)
+
     if data["type"] == "embedding":
-        return OGXEmbeddingModel(client=ogx_client, model_id=model_id, params=params)
+        return OpenAIEmbeddingModel(client=per_model_client, model_id=model_id, params=params)
 
     language = Language(**data["language"]) if data.get("language") else None
-    return OGXFoundationModel(
-        client=ogx_client,
+    return OpenAIFoundationModel(
+        client=per_model_client,
         model_id=model_id,
         params=params,
         language=language,

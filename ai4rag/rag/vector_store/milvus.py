@@ -2,8 +2,9 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import atexit
 import tempfile
-import weakref
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -25,6 +26,61 @@ from ai4rag.rag.vector_store.config import MilvusConfig
 from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension, validate_search_params
 
 __all__ = ["MilvusVectorStore"]
+
+# Process-lifetime cache of PEM text -> materialized file path.
+#
+# ``MilvusClient`` takes a certificate *path* (``server_pem_path``), not bytes, so
+# an inline PEM must be written to disk. Crucially, pymilvus re-reads that path
+# not only at connect time but also from a background thread when it transparently
+# reconnects an idle gRPC channel (``GrpcHandler.check_state_and_reconnect_later``
+# -> ``reconnect`` -> ``_create_grpc_channel``). That thread can outlive the store,
+# so the file must live for as long as any connection might reconnect — i.e. the
+# whole process. Deleting it on ``close()`` or garbage collection races the
+# reconnect and raises ``FileNotFoundError``. We therefore materialize each
+# distinct certificate exactly once, keep it until interpreter exit, and share it
+# across stores; an HPO run over one ``MILVUS_SERVER_CERT`` creates a single file
+# rather than one per evaluated pattern.
+_CERT_CACHE: dict[str, str] = {}
+_CERT_CACHE_LOCK = threading.Lock()
+
+
+def _materialize_server_cert(cert: str) -> str:
+    """Return a filesystem path to *cert*, writing it to a process-lifetime tempfile once.
+
+    Identical certificate text reuses the same file. ``NamedTemporaryFile`` creates
+    it with owner-only permissions; :func:`_cleanup_server_certs` removes every
+    cached file at interpreter exit.
+
+    Parameters
+    ----------
+    cert : str
+        PEM-encoded server/CA certificate text.
+
+    Returns
+    -------
+    str
+        Path to the temporary certificate file.
+    """
+    with _CERT_CACHE_LOCK:
+        path = _CERT_CACHE.get(cert)
+        if path is not None and Path(path).exists():
+            return path
+        with tempfile.NamedTemporaryFile(
+            mode="w", prefix="ai4rag-milvus-cert-", suffix=".pem", delete=False
+        ) as cert_file:
+            cert_file.write(cert)
+            path = cert_file.name
+        _CERT_CACHE[cert] = path
+        return path
+
+
+@atexit.register
+def _cleanup_server_certs() -> None:
+    """Remove every materialized certificate file at interpreter exit."""
+    with _CERT_CACHE_LOCK:
+        for path in _CERT_CACHE.values():
+            Path(path).unlink(missing_ok=True)
+        _CERT_CACHE.clear()
 
 
 class MilvusVectorStore(BaseVectorStore):
@@ -62,10 +118,10 @@ class MilvusVectorStore(BaseVectorStore):
         """Initialize the store, open a client, and ensure the collection exists.
 
         A ``MilvusClient`` is built from *config*; when ``config.server_cert`` is
-        set, its PEM text is materialized to a temporary file and passed as
-        ``server_pem_path`` for TLS verification. The target collection — with
-        its dense, sparse/BM25, and JSON fields — is created only when it does
-        not already exist.
+        set, its PEM text is materialized to a temporary file (see
+        :func:`_materialize_server_cert`) and passed as ``server_pem_path`` for
+        TLS verification. The target collection — with its dense, sparse/BM25, and
+        JSON fields — is created only when it does not already exist.
 
         Parameters
         ----------
@@ -86,42 +142,11 @@ class MilvusVectorStore(BaseVectorStore):
         if config.token:
             connect_kwargs["token"] = config.token
         if config.server_cert:
-            connect_kwargs["server_pem_path"] = self._write_cert_tempfile(config.server_cert)
+            connect_kwargs["server_pem_path"] = _materialize_server_cert(config.server_cert)
         self._client = MilvusClient(**connect_kwargs)
 
         if not self._client.has_collection(self._collection_name):
             self._create_collection()
-
-    def _write_cert_tempfile(self, cert: str) -> str:
-        """Materialize a PEM certificate to a temporary file for pymilvus TLS.
-
-        ``MilvusClient`` accepts a filesystem path (``server_pem_path``) rather
-        than raw certificate bytes, so an in-memory PEM must be written to disk.
-        ``NamedTemporaryFile`` creates the file with owner-only permissions, and
-        a :func:`weakref.finalize` hook removes it once this store is
-        garbage-collected (or at interpreter exit), so no certificate material
-        lingers in the temp directory.
-
-        Parameters
-        ----------
-        cert : str
-            PEM-encoded server/CA certificate text.
-
-        Returns
-        -------
-        str
-            Path to the temporary certificate file.
-        """
-        # delete=False keeps the file after the context manager closes it; a
-        # weakref.finalize hook removes it when this store is garbage-collected.
-        with tempfile.NamedTemporaryFile(
-            mode="w", prefix="ai4rag-milvus-cert-", suffix=".pem", delete=False
-        ) as cert_file:
-            cert_file.write(cert)
-            cert_path = Path(cert_file.name)
-
-        weakref.finalize(self, cert_path.unlink, missing_ok=True)
-        return str(cert_path)
 
     def _create_collection(self) -> None:
         """Create the Milvus collection with its schema, indexes, and BM25 function.
@@ -369,5 +394,12 @@ class MilvusVectorStore(BaseVectorStore):
         self._client.drop_collection(self._collection_name)
 
     def close(self) -> None:
-        """Close the underlying Milvus client connection."""
+        """Close the underlying Milvus client connection.
+
+        The temporary TLS certificate file (when one was materialized) is
+        intentionally *not* removed here: pymilvus can reconnect an idle channel
+        from a background thread and re-read ``server_pem_path`` after ``close()``,
+        so the file is kept for the process lifetime and cleaned at interpreter
+        exit by :func:`_cleanup_server_certs`.
+        """
         self._client.close()

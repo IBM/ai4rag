@@ -20,9 +20,9 @@ classDiagram
         +chat(messages, **kwargs)* list
     }
 
-    class OGXFoundationModel {
-        +client: OgxClient
-        +params: OGXModelParameters
+    class OpenAIFoundationModel {
+        +client: OpenAI
+        +params: OpenAIModelParameters
         +chat(messages, **kwargs) list
     }
 
@@ -35,9 +35,9 @@ classDiagram
         +embed_query(query)* list
     }
 
-    class OGXEmbeddingModel {
-        +client: OgxClient
-        +params: OGXEmbeddingParams
+    class OpenAIEmbeddingModel {
+        +client: OpenAI
+        +params: OpenAIEmbeddingParams
         +embed_documents(texts) list
         +embed_query(query) list
     }
@@ -118,8 +118,8 @@ classDiagram
         +generate_stream(question) iterator
     }
 
-    BaseFoundationModel <|-- OGXFoundationModel
-    BaseEmbeddingModel <|-- OGXEmbeddingModel
+    BaseFoundationModel <|-- OpenAIFoundationModel
+    BaseEmbeddingModel <|-- OpenAIEmbeddingModel
     BaseVectorStore <|-- ChromaVectorStore
     BaseVectorStore <|-- MilvusVectorStore
     BaseVectorStore <|-- PGVectorStore
@@ -204,7 +204,7 @@ Placeholder:
 **Customization Example:**
 
 ```python
-foundation_model = OGXFoundationModel(
+foundation_model = OpenAIFoundationModel(
     model_id="ollama/llama3.2:3b",
     client=client,
     system_message_text="You are a technical documentation assistant specialized in software APIs.",
@@ -233,17 +233,17 @@ class MessageTyped(TypedDict):
     content: str   # Message text
 ```
 
-### OGXFoundationModel
+### OpenAIFoundationModel
 
-OGX integration for foundation models:
+OpenShift MaaS (and any OpenAI-compatible API) integration for foundation models:
 
 ```python
-class OGXFoundationModel(BaseFoundationModel[OgxClient, OGXModelParameters]):
+class OpenAIFoundationModel(BaseFoundationModel[OpenAI, OpenAIModelParameters]):
     def __init__(
         self,
-        client: OgxClient,
+        client: OpenAI,
         model_id: str,
-        params: dict | OGXModelParameters | None = None,
+        params: dict | OpenAIModelParameters | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
@@ -255,7 +255,7 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, OGXModelParameters]):
 
 ```python
 @dataclass
-class OGXModelParameters:
+class OpenAIModelParameters:
     max_completion_tokens: int = 1024  # Max tokens in response
     temperature: float = 0.1            # Sampling temperature (0.0-1.0)
 ```
@@ -276,9 +276,9 @@ def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
 **Usage:**
 
 ```python
-foundation_model = OGXFoundationModel(
+foundation_model = OpenAIFoundationModel(
     model_id="ollama/llama3.2:3b",
-    client=ogx_client,
+    client=maas_client,
     params={"max_completion_tokens": 512, "temperature": 0.0}
 )
 
@@ -323,17 +323,17 @@ def embed_query(self, query: str) -> list[float]:
     """Embed a single query (used during retrieval)."""
 ```
 
-### OGXEmbeddingModel
+### OpenAIEmbeddingModel
 
-OGX integration with auto-detection of model capabilities:
+OpenShift MaaS (and any OpenAI-compatible API) integration with auto-detection of model capabilities:
 
 ```python
-class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
+class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     def __init__(
         self,
-        client: OgxClient,
+        client: OpenAI,
         model_id: str,
-        params: dict | OGXEmbeddingParams | None = None
+        params: dict | OpenAIEmbeddingParams | None = None
     ):
 ```
 
@@ -341,13 +341,9 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
 
 ```python
 @dataclass
-class OGXEmbeddingParams:
+class OpenAIEmbeddingParams:
     embedding_dimension: int | None = None    # Auto-detected if None
     context_length: int | None = None         # Auto-detected if None
-    timeout: float | Timeout | None = None
-    model_type: str | None = None
-    provider_id: str | None = None
-    provider_resource_id: str | None = None
 ```
 
 **Auto-Detection:**
@@ -356,7 +352,7 @@ When `embedding_dimension` or `context_length` not provided, the model auto-dete
 
 **Chunk Truncation:**
 
-When a chunk exceeds the embedding model's context length, `OGXEmbeddingModel` automatically truncates it using a progressive margin strategy (5%, then 10%) before retrying. This prevents embedding failures for oversized chunks while preserving as much content as possible.
+When a chunk exceeds the embedding model's context length, `OpenAIEmbeddingModel` automatically truncates it using a progressive margin strategy (5%, then 10%) before retrying. This prevents embedding failures for oversized chunks while preserving as much content as possible.
 
 **Embedding Dimension Detection:**
 
@@ -406,18 +402,18 @@ def embed_documents(self, texts: list[str]) -> list[list[float]]:
 
 ```python
 # Auto-detect parameters
-embedding_model = OGXEmbeddingModel(
+embedding_model = OpenAIEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=ogx_client,
+    client=maas_client,
 )
 # First call triggers detection:
 # - embedding_dimension = 768 (detected)
 # - context_length = 8192 (detected)
 
 # Or explicitly provide parameters
-embedding_model = OGXEmbeddingModel(
+embedding_model = OpenAIEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=ogx_client,
+    client=maas_client,
     params={"embedding_dimension": 768, "context_length": 8192}
 )
 
@@ -793,7 +789,7 @@ from ai4rag.rag.vector_store import MilvusVectorStore, MilvusConfig
 
 # Create vector store (omit collection_name to auto-generate a new collection)
 vector_store = MilvusVectorStore(
-    embedding_model=ogx_embedding_model,
+    embedding_model=embedding_model,
     config=MilvusConfig.from_env(),
 )
 
@@ -823,7 +819,7 @@ results = vector_store.search(
 
 # Reuse an existing collection instead of creating a new one
 vector_store = MilvusVectorStore(
-    embedding_model=ogx_embedding_model,
+    embedding_model=embedding_model,
     config=MilvusConfig.from_env(),
     collection_name="ai4rag_20260701120000_ab12cd34",
 )
@@ -873,7 +869,7 @@ The resolved `collection_name` is used verbatim as the physical PostgreSQL table
 from ai4rag.rag.vector_store import PGVectorStore, PGVectorConfig
 
 vector_store = PGVectorStore(
-    embedding_model=ogx_embedding_model,
+    embedding_model=embedding_model,
     config=PGVectorConfig.from_env(),
 )
 
@@ -1217,7 +1213,7 @@ def generate_stream(self, question: str, **kwargs):
 
 ### SimpleRAG
 
-Complete RAG implementation using OGX and LangChain:
+Complete RAG implementation using OpenAI-compatible models and LangChain:
 
 ```python
 class SimpleRAG(BaseRAGTemplate):
@@ -1294,10 +1290,10 @@ def generate_stream(self, question: str, **kwargs):
 ```python
 # Create RAG template
 rag = SimpleRAG(
-    foundation_model=ogx_foundation_model,
+    foundation_model=foundation_model,
     retriever=retriever,
     chunker=chunker,
-    embedding_model=ogx_embedding_model,
+    embedding_model=embedding_model,
     vector_store=vector_store
 )
 
@@ -1333,29 +1329,40 @@ rag_pattern = SimpleRAG(
 Full RAG pipeline with all components:
 
 ```python
-from ogx_client import OgxClient
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+import os
+from ai4rag.components.utils import create_maas_client, create_maas_model_client, maas_model_base_url
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.vector_store import get_vector_store, MilvusConfig
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 
-# 1. Initialize the OGX client (still the foundation-model + embedding provider)
-client = OgxClient(base_url="http://localhost:8000", api_key="...")
+# 1. General client — lists available models and derives per-model endpoints
+maas_client = create_maas_client(
+    base_url=f"{os.getenv('MAAS_BASE')}/maas-api/v1",
+    api_key=os.getenv("MAAS_API_KEY"),
+)
 
-# 2. Create foundation model
-foundation_model = OGXFoundationModel(
-    model_id="ollama/llama3.2:3b",
-    client=client,
+# 2. Create foundation model — MaaS serves each model at its own endpoint,
+#    so every wrapper gets its own per-model client
+foundation_model = OpenAIFoundationModel(
+    model_id="qwen3-8b-fp8-dynamic",
+    client=create_maas_model_client(
+        base_url=maas_model_base_url(maas_client.base_url, "ai-eng-cracow/qwen3-8b-fp8-dynamic"),
+        api_key=maas_client.api_key,
+    ),
     params={"max_completion_tokens": 512, "temperature": 0.1}
 )
 
 # 3. Create embedding model
-embedding_model = OGXEmbeddingModel(
-    model_id="ollama/nomic-embed-text:latest",
-    client=client,
-    params={"embedding_dimension": 768, "context_length": 8192}
+embedding_model = OpenAIEmbeddingModel(
+    model_id="bge-m3",
+    client=create_maas_model_client(
+        base_url=maas_model_base_url(maas_client.base_url, "ai-eng-cracow/bge-m3"),
+        api_key=maas_client.api_key,
+    ),
+    params={"embedding_dimension": 1024, "context_length": 8192}
 )
 
 # 4. Create vector store — a direct-client store selected by config.provider

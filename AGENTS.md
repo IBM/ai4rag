@@ -9,7 +9,7 @@ pip install -e ".[dev]"                          # Install with all dev dependen
 pytest tests/unit/                               # Unit tests (fast, no external deps)
 pytest tests/unit/path/to/test_file.py           # Single test file
 pytest tests/unit/ --cov=ai4rag --cov-report=term --cov-fail-under=90  # With coverage (CI target: 90%)
-pytest tests/functional/                         # Functional tests (requires live OGX + env vars)
+pytest tests/functional/                         # Functional tests (requires live OpenShift MaaS + env vars)
 
 # Formatting & Linting
 bash scripts/format.sh                           # Run isort + black + copyright fix on ai4rag/
@@ -41,7 +41,7 @@ mkdocs serve                                     # Local docs at http://127.0.0.
 - `ai4rag/utils/` — Event handlers, validators, constants
 - `tests/unit/` — Mirrors source structure, uses mocks. `tests/functional/` — End-to-end with live services
 
-Provider-agnostic design: components use abstract bases (`BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`). OGX is the current provider.
+Provider-agnostic design: components use abstract bases (`BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`). OpenShift AI Models-as-a-Service (MaaS), accessed via the `openai` SDK, is the current provider.
 
 ## CI Checks (PR)
 

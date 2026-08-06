@@ -163,9 +163,9 @@ class TestNotebookSave:
 class TestNotebookLoadBundled:
     """Verify ``Notebook.load()`` from the bundled package templates."""
 
-    def test_load_ogx_indexing_template(self):
+    def test_load_maas_indexing_template(self):
         """Loading the real bundled template must produce a Notebook with cells."""
-        nb = Notebook.load("ogx_indexing_template.ipynb")
+        nb = Notebook.load("maas_indexing_template.ipynb")
 
         assert isinstance(nb, Notebook)
         assert len(nb.cells) > 0
@@ -173,14 +173,14 @@ class TestNotebookLoadBundled:
 
     def test_loaded_template_preserves_cell_types(self):
         """Each loaded cell must have a valid cell_type of 'code' or 'markdown'."""
-        nb = Notebook.load("ogx_indexing_template.ipynb")
+        nb = Notebook.load("maas_indexing_template.ipynb")
 
         for cell in nb.cells:
             assert cell.cell_type in ("code", "markdown")
 
     def test_loaded_code_cells_have_execution_fields(self):
         """Code cells loaded from a template must carry execution_count and outputs."""
-        nb = Notebook.load("ogx_indexing_template.ipynb")
+        nb = Notebook.load("maas_indexing_template.ipynb")
         code_cells = [c for c in nb.cells if c.cell_type == "code"]
 
         assert len(code_cells) > 0
@@ -190,7 +190,7 @@ class TestNotebookLoadBundled:
 
     def test_round_trip_preserves_content(self, tmp_path: Path):
         """Load a bundled template, save it, reload it, and verify cells match."""
-        original = Notebook.load("ogx_indexing_template.ipynb")
+        original = Notebook.load("maas_indexing_template.ipynb")
         path = tmp_path / "round_trip.ipynb"
         original.save(path)
 

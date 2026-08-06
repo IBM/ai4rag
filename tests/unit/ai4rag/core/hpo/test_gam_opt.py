@@ -765,7 +765,7 @@ class TestGetStratifiedCombinations:
 
     def test_skewed_search_space_stratifies_minority_first(self):
         """Minority categorical values are moved ahead of the majority."""
-        # 4 hybrid, 2 vector — mirrors the real OGX imbalance
+        # 4 hybrid, 2 vector — mirrors the real MaaS imbalance
         combinations = [
             {"search_mode": "hybrid", "chunk_size": 256},
             {"search_mode": "hybrid", "chunk_size": 512},

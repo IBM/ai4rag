@@ -5,14 +5,14 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from ogx_client import APITimeoutError, BadRequestError, OgxClient
+from openai import APITimeoutError, BadRequestError, OpenAI
 
 from ai4rag import logger
 from ai4rag.utils.constants import TokenEstimation
 
 from .base_model import BaseEmbeddingModel
 
-__all__ = ["OGXEmbeddingModel", "OGXEmbeddingParams"]
+__all__ = ["OpenAIEmbeddingModel", "OpenAIEmbeddingParams"]
 
 
 MIN_CONTEXT_LENGTH = 700
@@ -21,35 +21,35 @@ _FALLBACK_TIMEOUT = 1200.0
 
 
 @dataclass
-class OGXEmbeddingParams:
-    """OGX parameters to be used to create embeddings."""
+class OpenAIEmbeddingParams:
+    """Parameters to be used to create embeddings."""
 
     embedding_dimension: Optional[int] = None
     context_length: Optional[int] = None
 
 
-class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
-    """Creates embeddings for OGX client."""
+class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
+    """Creates embeddings via an OpenAI-compatible client."""
 
     _BATCH_SIZE = 1024
 
-    def __init__(self, client: OgxClient, model_id: str, params: dict | OGXEmbeddingParams | None = None):
+    def __init__(self, client: OpenAI, model_id: str, params: dict | OpenAIEmbeddingParams | None = None):
         super().__init__(client=client, model_id=model_id, params=params)
 
     @property
-    def params(self) -> OGXEmbeddingParams:
+    def params(self) -> OpenAIEmbeddingParams:
         """Get model params."""
         return self._params
 
     @params.setter
-    def params(self, params: dict | OGXEmbeddingParams | None) -> None:
+    def params(self, params: dict | OpenAIEmbeddingParams | None) -> None:
         """Set model params and validate context length."""
         if params is None:
-            self._params = OGXEmbeddingParams()
-        elif isinstance(params, OGXEmbeddingParams):
+            self._params = OpenAIEmbeddingParams()
+        elif isinstance(params, OpenAIEmbeddingParams):
             self._params = params
         elif isinstance(params, dict):
-            self._params = OGXEmbeddingParams(**params)
+            self._params = OpenAIEmbeddingParams(**params)
         else:
             raise TypeError(f"Incorrect type of 'params' parameter: {type(params)}.")
         if self._params.embedding_dimension is None:
@@ -67,8 +67,8 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         """Detect embedding dimension by making a minimal embedding call.
 
         Note: This method is called during initialization when ``embedding_dimension``
-        is not explicitly provided.  It issues a real API request to the OGX
-        server, so the server must be reachable at construction time.
+        is not explicitly provided.  It issues a real API request to the
+        embedding server, so the server must be reachable at construction time.
 
         Raises
         ------
@@ -126,7 +126,7 @@ class OGXEmbeddingModel(BaseEmbeddingModel[OgxClient, OGXEmbeddingParams]):
         )
 
     def _call_embedding_api(self, text_input: list[str] | str) -> list[list[float]]:
-        """Send an embedding request to the OGX server.
+        """Send an embedding request to the embedding server.
 
         On ``APITimeoutError``, retries once with a 20-minute timeout
         and no client-level retries to accommodate slow (CPU-deployed)

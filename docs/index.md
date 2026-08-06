@@ -137,14 +137,14 @@ graph TB
 
 ## Requirements
 
-!!! warning "OGX Integration"
-    `ai4rag` works with an [OGX](https://github.com/ogx-ai/ogx) server as its foundation model and embedding model provider.
-    To run an experiment based on OGX you will need:
+!!! warning "OpenShift MaaS Integration"
+    `ai4rag` works with an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment as its foundation model and embedding model provider, accessed through the stock [`openai`](https://github.com/openai/openai-python) SDK.
+    To run an experiment against MaaS you will need:
 
     - At least one foundation model (for text generation)
     - At least one embedding model (for document embeddings)
 
-    The vector store is independent of OGX: connect directly to Chroma, Milvus, or PostgreSQL/pgvector via `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`.
+    The vector store is independent of MaaS: connect directly to Chroma, Milvus, or PostgreSQL/pgvector via `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`.
 
 ---
 
