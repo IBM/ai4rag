@@ -17,7 +17,7 @@ load_dotenv(find_dotenv(".env.local"))
 
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("MAAS_BASE") is None,
+    os.environ.get("MAAS_BASE_URL") is None,
     reason="MAAS_BASE environment variable not set",
 )
 

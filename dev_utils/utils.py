@@ -28,7 +28,7 @@ def create_dev_maas_client() -> OpenAI:
     OpenAI
         A connected general MaaS client.
     """
-    base_url = f"{os.environ['MAAS_BASE']}/maas-api/v1"
+    base_url = f"{os.environ['MAAS_BASE_URL']}/maas-api/v1"
     return create_maas_client(base_url=base_url, api_key=os.environ["MAAS_API_KEY"])
 
 
