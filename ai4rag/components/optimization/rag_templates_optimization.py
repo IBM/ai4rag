@@ -287,10 +287,10 @@ def _generate_output_artifacts(
         )
 
         with (patt_dir / "pattern.json").open("w", encoding="utf-8") as f:
-            json_dump(pattern_data, f, indent=2)
+            json_dump(pattern_data, f, indent=2, ensure_ascii=False)
 
         with (patt_dir / "evaluation_results.json").open("w", encoding="utf-8") as f:
-            json_dump(pattern.get("evaluation_results", []), f, indent=2)
+            json_dump(pattern.get("evaluation_results", []), f, indent=2, ensure_ascii=False)
 
         patterns.append(pattern_data)
 
