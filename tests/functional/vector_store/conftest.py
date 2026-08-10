@@ -87,7 +87,7 @@ T = TypeVar("T")
 
 def _maas_credentials_present() -> bool:
     """Return whether both MaaS connection variables are set."""
-    return bool(os.environ.get("MAAS_BASE") and os.environ.get("MAAS_API_KEY"))
+    return bool(os.environ.get("MAAS_BASE_URL") and os.environ.get("MAAS_API_KEY"))
 
 
 @pytest.fixture(scope="session")
@@ -100,7 +100,7 @@ def embedding_model() -> OpenAIEmbeddingModel:
     to satisfy the model's minimum; it never triggers truncation.
     """
     if not _maas_credentials_present():
-        pytest.skip("MAAS_BASE / MAAS_API_KEY not set; semantic retrieval needs a real embedding model.")
+        pytest.skip("MAAS_BASE_URL / MAAS_API_KEY not set; semantic retrieval needs a real embedding model.")
 
     client = create_dev_maas_client()
     model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "bge-m3")

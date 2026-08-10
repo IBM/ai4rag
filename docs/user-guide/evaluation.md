@@ -475,7 +475,7 @@ from dev_utils.utils import build_maas_model, create_dev_maas_client, read_bench
 
 # Setup
 load_dotenv()
-client = create_dev_maas_client()  # reads MAAS_BASE / MAAS_API_KEY
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 # Load data
 documents = FileStore(Path("./knowledge_base")).load_as_documents()

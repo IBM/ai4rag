@@ -17,7 +17,7 @@ Before starting, ensure you have:
 
 - [x] Installed ai4rag ([Installation Guide](installation.md))
 - [x] Access to an OpenShift MaaS deployment (or any OpenAI-compatible models) that can be used for the experiment
-- [x] Environment variables set (`MAAS_BASE`, `MAAS_API_KEY`) to communicate with MaaS
+- [x] Environment variables set (`MAAS_BASE_URL`, `MAAS_API_KEY`) to communicate with MaaS
 
 ---
 
@@ -26,11 +26,11 @@ Before starting, ensure you have:
 ### 1. Prepare the MaaS Client
 
 OpenShift MaaS serves each model at its own OpenAI-compatible endpoint. A single
-*general* client (pointing at `{MAAS_BASE}/maas-api/v1`) is used to discover the
+*general* client (pointing at `{MAAS_BASE_URL}/maas-api/v1`) is used to discover the
 available models; each model wrapper then talks to its model's own endpoint.
 
 The `dev_utils` helpers wrap this two-step setup — `create_dev_maas_client()`
-reads `MAAS_BASE` / `MAAS_API_KEY`, and `build_maas_model()` resolves a model's
+reads `MAAS_BASE_URL` / `MAAS_API_KEY`, and `build_maas_model()` resolves a model's
 per-model endpoint and binds it to the correct wrapper:
 
 ```python
@@ -40,7 +40,7 @@ from dev_utils.utils import create_dev_maas_client
 load_dotenv(find_dotenv())
 
 # General client, used to discover models and derive per-model endpoints.
-client = create_dev_maas_client()  # reads MAAS_BASE / MAAS_API_KEY
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 ```
 
 !!! tip "Public API"
@@ -260,7 +260,7 @@ from dev_utils.utils import build_maas_model, create_dev_maas_client, read_bench
 
 # 1. Setup client
 load_dotenv()
-client = create_dev_maas_client()  # reads MAAS_BASE / MAAS_API_KEY
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 # 2. Load documents
 documents = FileStore(Path("./knowledge_base")).load_as_documents()

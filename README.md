@@ -38,7 +38,7 @@ ai4RAG can run experiments using an [OpenShift AI Models-as-a-Service (MaaS)](ht
 
 - **SDK:** [openai](https://pypi.org/project/openai/) >= 2, < 3 (Python package used by ai4RAG; installs with this project).
 - **Deployment:** an OpenShift AI MaaS instance exposing at least one foundation model and one embedding model.
-- **Endpoints:** MaaS serves **one OpenAI-compatible endpoint per model**. A single *general* client (pointing at `{MAAS_BASE}/maas-api/v1`) lists the available models, and each model then gets its own per-model client at `{scheme}://{host}/{owned_by}/v1`. A single API key is reused for every client.
+- **Endpoints:** MaaS serves **one OpenAI-compatible endpoint per model**. A single *general* client (pointing at `{MAAS_BASE_URL}/maas-api/v1`) lists the available models, and each model then gets its own per-model client at `{scheme}://{host}/{owned_by}/v1`. A single API key is reused for every client.
 
 **Features used by ai4rag**
 
@@ -76,7 +76,7 @@ ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) fo
 ### Prepare the MaaS client
 To enable full integration with MaaS, build a *general* client that lists the available models.
 `ai4rag` then wraps each model with its own per-model client, since MaaS serves one OpenAI-compatible endpoint per model.
-The `dev_utils` helper `create_dev_maas_client()` reads `MAAS_BASE` / `MAAS_API_KEY` and builds the general client for you.
+The `dev_utils` helper `create_dev_maas_client()` reads `MAAS_BASE_URL` / `MAAS_API_KEY` and builds the general client for you.
 
 > [!tip]
 > Store your credentials securely in a `.env` file.
@@ -87,7 +87,7 @@ from dev_utils.utils import create_dev_maas_client
 
 load_dotenv(find_dotenv())
 
-client = create_dev_maas_client()  # reads MAAS_BASE / MAAS_API_KEY
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 ```
 
 > [!note]

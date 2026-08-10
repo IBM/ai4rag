@@ -94,14 +94,14 @@ Obtain access to an OpenShift AI MaaS deployment that exposes:
 - At least one **embedding model** (e.g., `bge-m3`)
 
 MaaS serves **one OpenAI-compatible endpoint per model**, discovered through a shared
-`{MAAS_BASE}/maas-api/v1` listing endpoint. No extra package is required — the `openai`
+`{MAAS_BASE_URL}/maas-api/v1` listing endpoint. No extra package is required — the `openai`
 SDK ships with `ai4rag` as a core dependency.
 
 ### 2. Note Your Credentials
 
 Record the MaaS base URL and API key for use in `ai4rag`:
 
-- **`MAAS_BASE`** — the deployment base URL (the model-listing endpoint is `{MAAS_BASE}/maas-api/v1`)
+- **`MAAS_BASE_URL`** — the deployment base URL (the model-listing endpoint is `{MAAS_BASE_URL}/maas-api/v1`)
 - **`MAAS_API_KEY`** — a single API key, reused for the listing client and every per-model client
 
 ---
@@ -138,7 +138,7 @@ Store your MaaS credentials securely in a `.env` file:
 
 ```bash
 # .env
-MAAS_BASE="<maas_deployment_base_url>"
+MAAS_BASE_URL="<maas_deployment_base_url>"
 MAAS_API_KEY="<maas_api_key>"
 ```
 
@@ -153,7 +153,7 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-base_url = os.getenv("MAAS_BASE")
+base_url = os.getenv("MAAS_BASE_URL")
 api_key = os.getenv("MAAS_API_KEY")
 ```
 
@@ -176,7 +176,7 @@ from ai4rag.components.utils import create_maas_client
 
 # General client — points at the shared model-listing endpoint.
 client = create_maas_client(
-    base_url=f"{os.getenv('MAAS_BASE')}/maas-api/v1",
+    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
     api_key=os.getenv("MAAS_API_KEY"),
 )
 

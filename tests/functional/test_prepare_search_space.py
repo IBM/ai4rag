@@ -18,13 +18,13 @@ load_dotenv(find_dotenv(".env.local"))
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("MAAS_BASE_URL") is None,
-    reason="MAAS_BASE environment variable not set",
+    reason="MAAS_BASE_URL environment variable not set",
 )
 
 #: MaaS carries no metadata to distinguish model types, so the caller must
 #: declare foundation and embedding model ids explicitly.
 FOUNDATION_MODEL_ID = os.environ.get("AI4RAG_TEST_FOUNDATION_MODEL", "qwen3-8b-fp8-dynamic")
-EMBEDDING_MODEL_ID = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "bge-m3")
+EMBEDDING_MODEL_ID = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "redhataibge-m3")
 
 
 @pytest.fixture(scope="module")

@@ -28,7 +28,7 @@ Concrete implementations for different providers — OpenShift MaaS (accessed th
 - **Foundation Models**: Any chat/completion model deployed on your MaaS instance
 - **Embedding Models**: Any embedding model deployed on your MaaS instance
 
-**How it works**: MaaS serves **one endpoint per model**. A single *general* client (pointing at `{MAAS_BASE}/maas-api/v1`) lists the available models, and each model wrapper then gets its own client pointing at that model's per-model URL (`{scheme}://{host}/{owned_by}/v1`). A single API key is reused for every client.
+**How it works**: MaaS serves **one endpoint per model**. A single *general* client (pointing at `{MAAS_BASE_URL}/maas-api/v1`) lists the available models, and each model wrapper then gets its own client pointing at that model's per-model URL (`{scheme}://{host}/{owned_by}/v1`). A single API key is reused for every client.
 
 !!! note "No model metadata"
     Unlike some registries, MaaS `models.list()` carries no metadata (model type, embedding dimension, context length). So embedding dimension and context length are auto-detected by `OpenAIEmbeddingModel` at construction time (or supplied via `params`), and the caller declares which model ids are foundation vs. embedding.
@@ -43,7 +43,7 @@ from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 
 # 1. General client — lists available models from the /maas-api/v1 endpoint.
 maas_client = create_maas_client(
-    base_url=f"{os.getenv('MAAS_BASE')}/maas-api/v1",
+    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
     api_key=os.getenv("MAAS_API_KEY"),
 )
 

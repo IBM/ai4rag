@@ -291,7 +291,7 @@ Functional tests require these environment variables:
 
 ```bash
 # Required for all functional tests
-export MAAS_BASE="http://localhost:5001"
+export MAAS_BASE_URL="http://localhost:5001"
 export MAAS_API_KEY="your-api-key"
 
 # Required for test data

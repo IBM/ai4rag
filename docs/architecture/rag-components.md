@@ -1340,7 +1340,7 @@ from ai4rag.rag.template.simple_rag_template import SimpleRAG
 
 # 1. General client — lists available models and derives per-model endpoints
 maas_client = create_maas_client(
-    base_url=f"{os.getenv('MAAS_BASE')}/maas-api/v1",
+    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
     api_key=os.getenv("MAAS_API_KEY"),
 )
 

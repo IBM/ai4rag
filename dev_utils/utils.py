@@ -18,9 +18,9 @@ from ai4rag.search_space.prepare.maas_utils import _list_maas_models, _model_own
 
 
 def create_dev_maas_client() -> OpenAI:
-    """Create a general MaaS client from the ``MAAS_BASE`` / ``MAAS_API_KEY`` env vars.
+    """Create a general MaaS client from the ``MAAS_BASE_URL`` / ``MAAS_API_KEY`` env vars.
 
-    The general (list) endpoint lives at ``{MAAS_BASE}/maas-api/v1`` and is used
+    The general (list) endpoint lives at ``{MAAS_BASE_URL}/maas-api/v1`` and is used
     to discover available models; per-model endpoints are derived from it.
 
     Returns
