@@ -184,7 +184,7 @@ class Notebook:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         with path.open("w+", encoding="utf-8") as f:
-            json_dump(self.to_dict(), f, indent=indent)
+            json_dump(self.to_dict(), f, indent=indent, ensure_ascii=False)
 
         return self
 

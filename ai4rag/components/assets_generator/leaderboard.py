@@ -447,7 +447,7 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
             val = _get_config_value(merged, col) if merged else None
             if val is not None and (val != "" or col != "retrieval.ranker_strategy"):
                 if isinstance(val, dict):
-                    cells.append(json.dumps(val, sort_keys=True))
+                    cells.append(json.dumps(val, sort_keys=True, ensure_ascii=False))
                 else:
                     cells.append(str(val))
             elif col == "retrieval.ranker_strategy":

@@ -97,7 +97,7 @@ class SearchSpaceReport:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.search_space, f, indent=2)
+            json.dump(self.search_space, f, indent=2, ensure_ascii=False)
 
 
 def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
