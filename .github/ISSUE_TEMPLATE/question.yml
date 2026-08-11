@@ -19,7 +19,7 @@ body:
         - Usage/How-to
         - Search Space Definition
         - Hyperparameter Optimization
-        - OGX Integration
+        - OpenShift MaaS Integration
         - Other Provider Integration
         - Vector Store Setup / Integration
         - Evaluation

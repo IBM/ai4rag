@@ -74,17 +74,24 @@ Parameter(
 **Example 3: Model objects**
 
 ```python
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from dev_utils.utils import build_maas_model
 
 Parameter(
     name="foundation_model",
     param_type="C",
     values=[
-        OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-        OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+        build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm"),
+        build_maas_model(client, model_id="granite-3-3-8b-instruct", model_type="llm"),
     ]
 )
 ```
+
+!!! note "Building MaaS models"
+    `client` is the *general* MaaS client (e.g. from `create_dev_maas_client()`), and
+    `build_maas_model` resolves each model's own per-model endpoint before wrapping it in
+    `OpenAIFoundationModel` / `OpenAIEmbeddingModel`. See [Quick Start](../getting-started/quick-start.md)
+    for the `dev_utils` helpers and [Provider-Agnostic Design](provider-agnostic.md) for the
+    public-API equivalent (`create_maas_client` / `create_maas_model_client`).
 
 !!! tip "Categorical for Discrete Numerics"
     Even for numeric parameters like `chunk_size`, use Categorical (`"C"`) when you want to test specific values rather than a continuous range. This gives you more control over which values are tested.
@@ -191,16 +198,16 @@ Two parameters are **always required** in an `AI4RAGSearchSpace`:
 
 The LLM used for text generation.
 
-**Example (OGX)**:
+**Example (MaaS)**:
 
 ```python
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from dev_utils.utils import build_maas_model
 
 Parameter(
     name="foundation_model",
     param_type="C",
     values=[
-        OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+        build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")
     ]
 )
 ```
@@ -211,28 +218,33 @@ Parameter(
 
 The model used for generating document and query embeddings.
 
-**Example (OGX)**:
+**Example (MaaS)**:
 
 ```python
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from dev_utils.utils import build_maas_model
 
 Parameter(
     name="embedding_model",
     param_type="C",
     values=[
-        OGXEmbeddingModel(
-            model_id="ollama/nomic-embed-text:latest",
-            client=client,
-            params={"embedding_dimension": 768, "context_length": 8192}
+        build_maas_model(
+            client,
+            model_id="bge-m3",
+            model_type="embedding",
+            embedding_params={"embedding_dimension": 1024, "context_length": 8192},
         )
     ]
 )
 ```
 
-!!! note "Embedding Model params"
-    The `params` dict should include:
-    - `embedding_dimension`: Vector size (e.g., 768, 1536)
+!!! note "Embedding model params"
+    `embedding_params` (forwarded to the model's `params`) may include:
+
+    - `embedding_dimension`: Vector size (e.g., 1024, 1536)
     - `context_length`: Maximum tokens the model can process (used for validation)
+
+    When omitted, both are **auto-detected** at construction — MaaS `models.list()` carries no
+    metadata, so this is the only source for these values.
 
 ---
 
@@ -375,17 +387,18 @@ context_length = 8192
 **Example**:
 
 ```python
-# Embedding model with context_length = 512
-embedding = OGXEmbeddingModel(
+# Embedding model with context_length = 1024
+embedding = OpenAIEmbeddingModel(
     model_id="small-embedder",
-    params={"context_length": 512, "embedding_dimension": 384}
+    client=client,
+    params={"context_length": 1024, "embedding_dimension": 384},
 )
 
 # Valid
-{"chunk_size": 256, "embedding_model": embedding}   # 256 <= 460.8 ✓
+{"chunk_size": 512, "embedding_model": embedding}    # 512 <= 921.6 ✓
 
 # Invalid (filtered out)
-{"chunk_size": 512, "embedding_model": embedding}    # 512 <= 460.8 ✗
+{"chunk_size": 1024, "embedding_model": embedding}   # 1024 <= 921.6 ✗
 ```
 
 ---
@@ -546,8 +559,7 @@ Optimize chunking and retrieval with fixed models:
 ```python
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.search_space.src.parameter import Parameter
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from dev_utils.utils import build_maas_model
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -555,16 +567,17 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
+            values=[build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")]
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=client,
-                    params={"embedding_dimension": 768, "context_length": 8192}
+                build_maas_model(
+                    client,
+                    model_id="bge-m3",
+                    model_type="embedding",
+                    embedding_params={"embedding_dimension": 1024, "context_length": 8192},
                 )
             ]
         ),
@@ -631,9 +644,9 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-                OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
-                OGXFoundationModel(model_id="ollama/mistral:7b", client=client),
+                build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm"),
+                build_maas_model(client, model_id="granite-3-3-8b-instruct", model_type="llm"),
+                build_maas_model(client, model_id="mistral-small-3-1-24b", model_type="llm"),
             ]
         ),
 
@@ -669,8 +682,8 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-                OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+                build_maas_model(client, model_id="granite-3-3-2b-instruct", model_type="llm"),
+                build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm"),
             ]
         ),
         Parameter(name="embedding_model", param_type="C", values=[embedding]),

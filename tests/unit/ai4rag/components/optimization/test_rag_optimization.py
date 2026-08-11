@@ -23,8 +23,8 @@ from ai4rag.rag.vector_store.config import ChromaConfig
 
 
 @pytest.fixture()
-def mock_ogx_client() -> MagicMock:
-    """Return a bare MagicMock standing in for OgxClient."""
+def mock_maas_client() -> MagicMock:
+    """Return a bare MagicMock standing in for a MaaS OpenAI client."""
     return MagicMock()
 
 
@@ -128,10 +128,10 @@ class TestRunRagOptimizationValidation:
     """Test input validation in run_rag_optimization.
 
     These tests verify that the function rejects bad inputs before
-    reaching any heavy I/O or OGX calls.
+    reaching any heavy I/O or MaaS calls.
     """
 
-    def test_test_data_key_not_json_raises(self, mock_ogx_client):
+    def test_test_data_key_not_json_raises(self, mock_maas_client):
         """A test_data_key not ending in .json must raise ValueError."""
         with pytest.raises(ValueError, match="JSON file"):
             run_rag_optimization(
@@ -139,12 +139,12 @@ class TestRunRagOptimizationValidation:
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.json",
                 output_dir="out",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 vector_store_config=ChromaConfig(),
                 test_data_key="data.csv",
             )
 
-    def test_empty_test_data_key_raises(self, mock_ogx_client):
+    def test_empty_test_data_key_raises(self, mock_maas_client):
         """An empty test_data_key must raise ValueError."""
         with pytest.raises(ValueError, match="JSON file"):
             run_rag_optimization(
@@ -152,12 +152,12 @@ class TestRunRagOptimizationValidation:
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.json",
                 output_dir="out",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 vector_store_config=ChromaConfig(),
                 test_data_key="",
             )
 
-    def test_invalid_optimization_metric_raises(self, mock_ogx_client):
+    def test_invalid_optimization_metric_raises(self, mock_maas_client):
         """An unsupported metric in optimization_settings must raise ValueError."""
         with pytest.raises(ValueError, match="is not supported"):
             run_rag_optimization(
@@ -165,7 +165,7 @@ class TestRunRagOptimizationValidation:
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.json",
                 output_dir="out",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings={"metric": "nonexistent_metric"},
@@ -179,7 +179,7 @@ class TestRunRagOptimizationValidation:
         assert "overall_score" in SUPPORTED_OPTIMIZATION_METRICS
         assert "answer_relevance" not in SUPPORTED_OPTIMIZATION_METRICS
 
-    def test_invalid_optimization_settings_type_raises(self, mock_ogx_client):
+    def test_invalid_optimization_settings_type_raises(self, mock_maas_client):
         """Non-dict optimization_settings must raise TypeError."""
         with pytest.raises(TypeError, match="must be a dictionary"):
             run_rag_optimization(
@@ -187,13 +187,13 @@ class TestRunRagOptimizationValidation:
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.json",
                 output_dir="out",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings="bad",  # type: ignore[arg-type]
             )
 
-    def test_out_of_range_max_patterns_raises(self, mock_ogx_client):
+    def test_out_of_range_max_patterns_raises(self, mock_maas_client):
         """max_number_of_rag_patterns outside the allowed range must raise ValueError."""
         with pytest.raises(ValueError, match="must be in range"):
             run_rag_optimization(
@@ -201,7 +201,7 @@ class TestRunRagOptimizationValidation:
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.json",
                 output_dir="out",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 vector_store_config=ChromaConfig(),
                 test_data_key="bench.json",
                 optimization_settings={"max_number_of_rag_patterns": 50},
@@ -224,7 +224,7 @@ class TestRunRagOptimizationInferenceMaxThreads:
         param = sig.parameters["inference_max_threads"]
         assert param.default == 10
 
-    def test_inference_max_threads_is_accepted(self, mock_ogx_client):
+    def test_inference_max_threads_is_accepted(self, mock_maas_client):
         """Passing inference_max_threads alongside an invalid input must still raise
         the expected validation error (not a TypeError from an unknown param)."""
         with pytest.raises(ValueError, match="JSON file"):
@@ -233,7 +233,7 @@ class TestRunRagOptimizationInferenceMaxThreads:
                 test_data_path="dummy.json",
                 search_space_report_path="dummy.yaml",
                 output_dir="out",
-                ogx_client=mock_ogx_client,
+                maas_client=mock_maas_client,
                 vector_store_config=ChromaConfig(),
                 test_data_key="bench.csv",
                 inference_max_threads=4,
@@ -305,7 +305,7 @@ class TestGenerateOutputArtifactsIndexingSpec:
             input_data_key="s3://bucket/docs/",
             test_data_key="s3://bucket/test.json",
             indexing_pipeline_params={
-                "ogx_secret_name": "ogx-secret",
+                "maas_secret_name": "maas-secret",
                 "input_data_secret_name": "s3-secret",
                 "input_data_bucket_name": "docs-bucket",
                 "input_data_key": "docs/",
@@ -319,7 +319,7 @@ class TestGenerateOutputArtifactsIndexingSpec:
         assert params["embedding_model_id"] == "ibm/slate-125m-english-rtrvr"
         assert params["chunk_size"] == 512
 
-        # Old OGX vector-store parameters must be gone.
+        # Old vector-store parameters must be gone.
         assert "vector_store_id" not in params
         assert "vector_io_provider_id" not in params
 

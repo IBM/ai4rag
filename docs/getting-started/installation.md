@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) OGX Server** >= 1.1.0: With at least one foundation model and one embedding model configured
+- **A model provider**: a foundation model and an embedding model reachable over any OpenAI-compatible endpoint (a hosted API, a self-managed vLLM/TGI/Ollama server, or an OpenShift MaaS deployment), accessed through the `openai` SDK — or your own `BaseFoundationModel` / `BaseEmbeddingModel` implementation
 - **A vector store**: Chroma (in-memory by default, no setup required), or a running Milvus/PostgreSQL (pgvector) instance for hybrid retrieval
 
 
@@ -79,40 +79,41 @@ uv sync --extra docs        # documentation tools only
 
 ---
 
-## OGX Setup
+## Model Provider Setup (OpenShift MaaS)
 
-`ai4rag` can be used with OGX server as the foundation model and embedding model provider.
-The vector store is configured independently, via direct clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
-Follow these steps:
+`ai4rag` reaches foundation and embedding models through the stock
+[`openai`](https://github.com/openai/openai-python) SDK (installed automatically as a core
+dependency), so it works with **any OpenAI-compatible endpoint** — a hosted API, a
+self-managed server (vLLM, TGI, Ollama, …), or an
+[OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment.
+The steps below use MaaS, the provider `ai4rag` ships helpers for; to use a different endpoint,
+point the same `openai` client at its URL (or supply your own `BaseFoundationModel` /
+`BaseEmbeddingModel` implementation). The vector store is configured independently, via direct
+clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
 
-### 1. Install OGX
+### 1. Get Access to a MaaS Deployment
 
-```bash
-pip install "ogx>=1.1.0"
-```
+Obtain access to an OpenShift AI MaaS deployment that exposes:
 
-### 2. Configure Your Stack
+- At least one **foundation model** (e.g., `qwen3-8b-fp8-dynamic`)
+- At least one **embedding model** (e.g., `bge-m3`)
 
-Create an OGX configuration with:
+MaaS serves **one OpenAI-compatible endpoint per model**, discovered through a shared
+`{MAAS_BASE_URL}/maas-api/v1` listing endpoint. No extra package is required — the `openai`
+SDK ships with `ai4rag` as a core dependency.
 
-- At least one **foundation model** (e.g., `ollama/llama3.2:3b`)
-- At least one **embedding model** (e.g., `ollama/nomic-embed-text:latest`)
+### 2. Note Your Credentials
 
-Refer to the [OGX documentation](https://ogx-ai.github.io/docs/) for detailed setup instructions.
+Record the MaaS base URL and API key for use in `ai4rag`:
 
-### 3. Start the Server
-
-```bash
-ogx run <your-CONFIG.yaml>
-```
-
-Note the server URL and API key for use in `ai4rag`.
+- **`MAAS_BASE_URL`** — the deployment base URL (the model-listing endpoint is `{MAAS_BASE_URL}/maas-api/v1`)
+- **`MAAS_API_KEY`** — a single API key, reused for the listing client and every per-model client
 
 ---
 
 ## Vector Store Setup
 
-`ai4rag` connects to the vector store directly — no OGX server is required for this part.
+`ai4rag` connects to the vector store directly — no MaaS deployment is required for this part.
 Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
 
 | Provider | Config | Hybrid search (dense + keyword) | Setup |
@@ -136,14 +137,14 @@ Each config class exposes the environment variables it reads via its `env_vars` 
 
 ---
 
-## OGX Environment Configuration
+## MaaS Environment Configuration
 
-Store your OGX credentials securely in a `.env` file:
+Store your MaaS credentials securely in a `.env` file:
 
 ```bash
 # .env
-BASE_URL="<ogx_server_url>"
-APIKEY="<ogx_server_api_key>"
+MAAS_BASE_URL="<maas_deployment_base_url>"
+MAAS_API_KEY="<maas_api_key>"
 ```
 
 !!! warning "Security"
@@ -157,8 +158,8 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-base_url = os.getenv("BASE_URL")
-api_key = os.getenv("APIKEY")
+base_url = os.getenv("MAAS_BASE_URL")
+api_key = os.getenv("MAAS_API_KEY")
 ```
 
 ---
@@ -172,19 +173,20 @@ import ai4rag
 print(ai4rag.__version__)
 ```
 
-Test OGX connectivity:
+Test MaaS connectivity:
 
 ```python
-from ogx_client import OgxClient
 import os
+from ai4rag.components.utils import create_maas_client
 
-client = OgxClient(
-    base_url=os.getenv("BASE_URL"),
-    api_key=os.getenv("APIKEY")
+# General client — points at the shared model-listing endpoint.
+client = create_maas_client(
+    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
+    api_key=os.getenv("MAAS_API_KEY"),
 )
 
 # List available models
-models = client.models.list()
+models = client.models.list().data
 print(f"Available models: {[m.id for m in models]}")
 ```
 

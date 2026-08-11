@@ -5,13 +5,13 @@
 
 import httpx
 import pytest
-from ogx_client import BadRequestError
+from openai import BadRequestError
 
-from ai4rag.rag.embedding.ogx import (
+from ai4rag.rag.embedding.openai_model import (
     _TRUNCATION_MARGINS,
     MIN_CONTEXT_LENGTH,
-    OGXEmbeddingModel,
-    OGXEmbeddingParams,
+    OpenAIEmbeddingModel,
+    OpenAIEmbeddingParams,
 )
 from ai4rag.utils.constants import TokenEstimation
 
@@ -25,8 +25,8 @@ def _make_bad_request_error():
     )
 
 
-def _make_mock_ogx_embedding_response(mocker, embeddings):
-    """Helper to create a mock OGX embedding response."""
+def _make_mock_openai_embedding_response(mocker, embeddings):
+    """Helper to create a mock OpenAI embedding response."""
     mock_response = mocker.MagicMock()
     mock_response.data = []
     for emb in embeddings:
@@ -36,64 +36,66 @@ def _make_mock_ogx_embedding_response(mocker, embeddings):
     return mock_response
 
 
-class TestOGXEmbeddingModel:
-    """Test suite for OGXEmbeddingModel class."""
+class TestOpenAIEmbeddingModel:
+    """Test suite for OpenAIEmbeddingModel class."""
 
     @pytest.fixture
-    def mock_ogx_client(self, mocker):
-        """Create a mock OGX client with default embedding response for auto-detection."""
+    def mock_openai_client(self, mocker):
+        """Create a mock OpenAI client with default embedding response for auto-detection."""
         mock_client = mocker.MagicMock()
-        mock_client.embeddings.create.return_value = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3, 0.4]])
+        mock_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
+            mocker, [[0.1, 0.2, 0.3, 0.4]]
+        )
         return mock_client
 
-    def test_init_with_explicit_dimension(self, mock_ogx_client):
+    def test_init_with_explicit_dimension(self, mock_openai_client):
         """Test initialization with explicit embedding_dimension and context_length does not trigger auto-detection."""
-        params = OGXEmbeddingParams(embedding_dimension=768, context_length=1024)
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params=params)
+        params = OpenAIEmbeddingParams(embedding_dimension=768, context_length=1024)
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
 
         assert model.params.embedding_dimension == 768
         assert model.params.context_length == 1024
-        mock_ogx_client.embeddings.create.assert_not_called()
+        mock_openai_client.embeddings.create.assert_not_called()
 
-    def test_init_with_dict_params_with_dimension(self, mock_ogx_client):
+    def test_init_with_dict_params_with_dimension(self, mock_openai_client):
         """Test initialization with dict params containing embedding_dimension and context_length."""
-        model = OGXEmbeddingModel(
-            client=mock_ogx_client,
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
             model_id="all-MiniLM-L6-v2",
             params={"embedding_dimension": 384, "context_length": 1024},
         )
 
         assert model.params.embedding_dimension == 384
         assert model.params.context_length == 1024
-        mock_ogx_client.embeddings.create.assert_not_called()
+        mock_openai_client.embeddings.create.assert_not_called()
 
-    def test_init_without_params_auto_detects_dimension(self, mock_ogx_client):
+    def test_init_without_params_auto_detects_dimension(self, mock_openai_client):
         """Test initialization without params triggers auto-detection of embedding_dimension and context_length."""
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2")
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2")
 
         assert model.params.embedding_dimension == 4
         # Binary search converges near upper bound when all probes succeed
         assert model.params.context_length > 0
 
-    def test_init_with_none_params_auto_detects_dimension(self, mock_ogx_client):
+    def test_init_with_none_params_auto_detects_dimension(self, mock_openai_client):
         """Test initialization with params=None triggers auto-detection."""
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params=None)
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=None)
 
         assert model.params.embedding_dimension == 4
         assert model.params.context_length > 0
 
-    def test_init_with_params_missing_dimension_auto_detects(self, mock_ogx_client):
-        """Test that auto-detection triggers when OGXEmbeddingParams has no dimension."""
-        params = OGXEmbeddingParams()  # embedding_dimension and context_length default to None
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params=params)
+    def test_init_with_params_missing_dimension_auto_detects(self, mock_openai_client):
+        """Test that auto-detection triggers when OpenAIEmbeddingParams has no dimension."""
+        params = OpenAIEmbeddingParams()  # embedding_dimension and context_length default to None
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
 
         assert model.params.embedding_dimension == 4
         assert model.params.context_length > 0
 
-    def test_init_with_invalid_params_type(self, mock_ogx_client):
+    def test_init_with_invalid_params_type(self, mock_openai_client):
         """Test initialization with invalid params type raises TypeError."""
         with pytest.raises(TypeError, match="Incorrect type of 'params' parameter"):
-            OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params="invalid")
+            OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params="invalid")
 
     def test_detect_embedding_dimension_api_failure(self, mocker):
         """Test that _detect_embedding_dimension raises RuntimeError on API failure."""
@@ -101,7 +103,7 @@ class TestOGXEmbeddingModel:
         mock_client.embeddings.create.side_effect = ConnectionError("Service unavailable")
 
         with pytest.raises(RuntimeError, match="Failed to auto-detect embedding dimension"):
-            OGXEmbeddingModel(client=mock_client, model_id="all-MiniLM-L6-v2", params=None)
+            OpenAIEmbeddingModel(client=mock_client, model_id="all-MiniLM-L6-v2", params=None)
 
     def test_detect_embedding_dimension_preserves_original_exception(self, mocker):
         """Test that the original exception is chained in the RuntimeError."""
@@ -110,14 +112,14 @@ class TestOGXEmbeddingModel:
         mock_client.embeddings.create.side_effect = original_error
 
         with pytest.raises(RuntimeError) as exc_info:
-            OGXEmbeddingModel(client=mock_client, model_id="test-model", params=None)
+            OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=None)
 
         assert exc_info.value.__cause__ is original_error
 
-    def test_detect_context_length_all_probes_succeed(self, mock_ogx_client):
+    def test_detect_context_length_all_probes_succeed(self, mock_openai_client):
         """Test that context_length detection converges near upper bound when all probes succeed."""
-        params = OGXEmbeddingParams(embedding_dimension=384)
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params=params)
+        params = OpenAIEmbeddingParams(embedding_dimension=384)
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
 
         # Binary search converges near 8192 when all probes succeed
         assert model.params.context_length > 4096
@@ -125,7 +127,7 @@ class TestOGXEmbeddingModel:
     def test_detect_context_length_binary_search_finds_limit(self, mocker):
         """Test that binary search finds the correct context_length limit."""
         mock_client = mocker.MagicMock()
-        response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         def side_effect(**kwargs):
             text = kwargs.get("input", "")
@@ -137,8 +139,8 @@ class TestOGXEmbeddingModel:
 
         mock_client.embeddings.create.side_effect = side_effect
 
-        params = OGXEmbeddingParams(embedding_dimension=384)
-        model = OGXEmbeddingModel(client=mock_client, model_id="test-model", params=params)
+        params = OpenAIEmbeddingParams(embedding_dimension=384)
+        model = OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=params)
 
         # Binary search should find a value close to 2048
         assert 1792 <= model.params.context_length <= 2048
@@ -146,7 +148,7 @@ class TestOGXEmbeddingModel:
     def test_detect_context_length_all_probes_fail(self, mocker):
         """Test that RuntimeError is raised when all context_length probes fail."""
         mock_client = mocker.MagicMock()
-        dim_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        dim_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         call_count = [0]
 
@@ -159,15 +161,17 @@ class TestOGXEmbeddingModel:
         mock_client.embeddings.create.side_effect = side_effect
 
         with pytest.raises(RuntimeError, match="Failed to auto-detect 'context_length'"):
-            OGXEmbeddingModel(client=mock_client, model_id="test-model", params=None)
+            OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=None)
 
     def test_detect_context_length_disables_server_truncation(self, mocker):
         """Test that context_length probes send truncate_prompt_tokens=None to override server defaults."""
         mock_client = mocker.MagicMock()
-        response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
         mock_client.embeddings.create.return_value = response
 
-        OGXEmbeddingModel(client=mock_client, model_id="test-model", params=OGXEmbeddingParams(embedding_dimension=384))
+        OpenAIEmbeddingModel(
+            client=mock_client, model_id="test-model", params=OpenAIEmbeddingParams(embedding_dimension=384)
+        )
 
         probe_calls = [
             call
@@ -176,22 +180,22 @@ class TestOGXEmbeddingModel:
         ]
         assert len(probe_calls) > 0, "Detection probes must explicitly disable server-side truncation"
 
-    def test_detect_context_length_skipped_when_explicit(self, mock_ogx_client):
+    def test_detect_context_length_skipped_when_explicit(self, mock_openai_client):
         """Test that context_length detection is skipped when explicitly provided."""
-        params = OGXEmbeddingParams(embedding_dimension=384, context_length=1024)
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="all-MiniLM-L6-v2", params=params)
+        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=1024)
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
 
         assert model.params.context_length == 1024
-        mock_ogx_client.embeddings.create.assert_not_called()
+        mock_openai_client.embeddings.create.assert_not_called()
 
-    def test_embed_documents(self, mock_ogx_client, mocker):
+    def test_embed_documents(self, mock_openai_client, mocker):
         """Test embed_documents method."""
-        model = OGXEmbeddingModel(
-            client=mock_ogx_client,
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=1024),
+            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
-        mock_ogx_client.embeddings.create.return_value = _make_mock_ogx_embedding_response(
+        mock_openai_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
             mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
         )
 
@@ -201,60 +205,62 @@ class TestOGXEmbeddingModel:
         assert embeddings[0] == [0.1, 0.2, 0.3]
         assert embeddings[1] == [0.4, 0.5, 0.6]
 
-    def test_embed_documents_batches_large_input(self, mock_ogx_client, mocker):
+    def test_embed_documents_batches_large_input(self, mock_openai_client, mocker):
         """Test embed_documents batches inputs exceeding _BATCH_SIZE texts."""
-        model = OGXEmbeddingModel(
-            client=mock_ogx_client,
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=1024),
+            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
 
-        batch_size = OGXEmbeddingModel._BATCH_SIZE
+        batch_size = OpenAIEmbeddingModel._BATCH_SIZE
         remainder = 100
         total = 2 * batch_size + remainder
 
-        batch1_response = _make_mock_ogx_embedding_response(mocker, [[0.1] for _ in range(batch_size)])
-        batch2_response = _make_mock_ogx_embedding_response(mocker, [[0.2] for _ in range(batch_size)])
-        batch3_response = _make_mock_ogx_embedding_response(mocker, [[0.3] for _ in range(remainder)])
-        mock_ogx_client.embeddings.create.side_effect = [batch1_response, batch2_response, batch3_response]
+        batch1_response = _make_mock_openai_embedding_response(mocker, [[0.1] for _ in range(batch_size)])
+        batch2_response = _make_mock_openai_embedding_response(mocker, [[0.2] for _ in range(batch_size)])
+        batch3_response = _make_mock_openai_embedding_response(mocker, [[0.3] for _ in range(remainder)])
+        mock_openai_client.embeddings.create.side_effect = [batch1_response, batch2_response, batch3_response]
 
         texts = [f"text{i}" for i in range(total)]
         embeddings = model.embed_documents(texts)
 
         assert len(embeddings) == total
-        assert mock_ogx_client.embeddings.create.call_count == 3
+        assert mock_openai_client.embeddings.create.call_count == 3
 
-    def test_embed_query(self, mock_ogx_client, mocker):
+    def test_embed_query(self, mock_openai_client, mocker):
         """Test embed_query method."""
-        model = OGXEmbeddingModel(
-            client=mock_ogx_client,
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=1024),
+            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
-        mock_ogx_client.embeddings.create.return_value = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        mock_openai_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
+            mocker, [[0.1, 0.2, 0.3]]
+        )
 
         embedding = model.embed_query("test query")
 
         assert embedding == [0.1, 0.2, 0.3]
 
-    def test_explicit_context_length_below_minimum_raises(self, mock_ogx_client):
+    def test_explicit_context_length_below_minimum_raises(self, mock_openai_client):
         """Test that explicit context_length below MIN_CONTEXT_LENGTH raises ValueError."""
-        params = OGXEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH - 1)
+        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH - 1)
         with pytest.raises(ValueError, match="Minimal required value is"):
-            OGXEmbeddingModel(client=mock_ogx_client, model_id="small-ctx-model", params=params)
+            OpenAIEmbeddingModel(client=mock_openai_client, model_id="small-ctx-model", params=params)
 
-    def test_explicit_context_length_at_minimum_succeeds(self, mock_ogx_client):
+    def test_explicit_context_length_at_minimum_succeeds(self, mock_openai_client):
         """Test that context_length exactly at MIN_CONTEXT_LENGTH is accepted."""
-        params = OGXEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH)
-        model = OGXEmbeddingModel(client=mock_ogx_client, model_id="boundary-model", params=params)
+        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH)
+        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="boundary-model", params=params)
 
         assert model.params.context_length == MIN_CONTEXT_LENGTH
 
-    def test_dict_params_context_length_below_minimum_raises(self, mock_ogx_client):
+    def test_dict_params_context_length_below_minimum_raises(self, mock_openai_client):
         """Test that dict params with context_length below minimum raises ValueError."""
         with pytest.raises(ValueError, match="Minimal required value is"):
-            OGXEmbeddingModel(
-                client=mock_ogx_client,
+            OpenAIEmbeddingModel(
+                client=mock_openai_client,
                 model_id="small-ctx-model",
                 params={"embedding_dimension": 384, "context_length": 200},
             )
@@ -262,7 +268,7 @@ class TestOGXEmbeddingModel:
     def test_auto_detected_context_length_below_minimum_raises(self, mocker):
         """Test that auto-detected context_length below MIN_CONTEXT_LENGTH raises ValueError."""
         mock_client = mocker.MagicMock()
-        dim_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        dim_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         call_count = [0]
 
@@ -278,27 +284,27 @@ class TestOGXEmbeddingModel:
         mock_client.embeddings.create.side_effect = side_effect
 
         with pytest.raises(ValueError, match="Minimal required value is"):
-            OGXEmbeddingModel(client=mock_client, model_id="tiny-ctx-model", params=None)
+            OpenAIEmbeddingModel(client=mock_client, model_id="tiny-ctx-model", params=None)
 
-    def test_context_length_error_message_contains_model_id_and_values(self, mock_ogx_client):
+    def test_context_length_error_message_contains_model_id_and_values(self, mock_openai_client):
         """Test that the ValueError message includes model_id, actual value, and minimum."""
         ctx_len = 300
         model_id = "test-model-xyz"
-        params = OGXEmbeddingParams(embedding_dimension=384, context_length=ctx_len)
+        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=ctx_len)
 
         with pytest.raises(ValueError, match=model_id) as exc_info:
-            OGXEmbeddingModel(client=mock_ogx_client, model_id=model_id, params=params)
+            OpenAIEmbeddingModel(client=mock_openai_client, model_id=model_id, params=params)
 
         message = str(exc_info.value)
         assert str(ctx_len) in message
         assert str(MIN_CONTEXT_LENGTH) in message
 
-    def test_model_repr(self, mock_ogx_client):
+    def test_model_repr(self, mock_openai_client):
         """Test string representation."""
-        model = OGXEmbeddingModel(
-            client=mock_ogx_client,
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
             model_id="all-MiniLM-L6-v2",
-            params=OGXEmbeddingParams(embedding_dimension=384, context_length=1024),
+            params=OpenAIEmbeddingParams(embedding_dimension=384, context_length=1024),
         )
 
         assert repr(model) == "all-MiniLM-L6-v2"
@@ -313,15 +319,15 @@ class TestEmbeddingTruncationFallback:
     @pytest.fixture
     def model(self, mocker):
         mock_client = mocker.MagicMock()
-        return OGXEmbeddingModel(
+        return OpenAIEmbeddingModel(
             client=mock_client,
             model_id="test-model",
-            params=OGXEmbeddingParams(embedding_dimension=3, context_length=self.CONTEXT_LENGTH),
+            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=self.CONTEXT_LENGTH),
         )
 
     def test_batch_success_no_fallback(self, model, mocker):
         """When the batch call succeeds, no fallback is triggered."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
         model.client.embeddings.create.return_value = ok_response
 
         result = model.embed_documents(["short text", "another"])
@@ -331,7 +337,7 @@ class TestEmbeddingTruncationFallback:
 
     def test_first_truncation_retries_entire_batch(self, model, mocker):
         """When batch fails, the entire batch is retried with 5% truncation."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
 
         model.client.embeddings.create.side_effect = [
             _make_bad_request_error(),  # original batch fails
@@ -345,7 +351,7 @@ class TestEmbeddingTruncationFallback:
 
     def test_first_truncation_margin_truncates_oversized(self, model, mocker):
         """5% truncation clips oversized texts to the expected character limit."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
         oversized_text = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
 
         model.client.embeddings.create.side_effect = [
@@ -362,7 +368,7 @@ class TestEmbeddingTruncationFallback:
 
     def test_second_truncation_margin_succeeds(self, model, mocker):
         """When 5% truncation also fails, 10% truncation is attempted as a batch."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
         oversized_text = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
 
         model.client.embeddings.create.side_effect = [
@@ -388,7 +394,7 @@ class TestEmbeddingTruncationFallback:
 
     def test_short_texts_unchanged_after_truncation(self, model, mocker):
         """Short texts are not affected by the truncation slice."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
         short_text = "short"
 
         model.client.embeddings.create.side_effect = [
@@ -405,7 +411,7 @@ class TestEmbeddingTruncationFallback:
 
     def test_truncation_preserves_document_order(self, model, mocker):
         """Embeddings maintain 1:1 correspondence with input texts after fallback."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
 
         model.client.embeddings.create.side_effect = [
             _make_bad_request_error(),
@@ -418,7 +424,7 @@ class TestEmbeddingTruncationFallback:
 
     def test_embed_query_fallback(self, model, mocker):
         """embed_query also benefits from the truncation fallback."""
-        ok_response = _make_mock_ogx_embedding_response(mocker, [[0.1, 0.2, 0.3]])
+        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
         oversized_query = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
 
         model.client.embeddings.create.side_effect = [

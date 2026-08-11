@@ -23,9 +23,9 @@ The indexing phase transforms raw documents into searchable vector embeddings st
 sequenceDiagram
     participant Exp as AI4RAGExperiment
     participant LC as BaseChunker
-    participant EM as OGXEmbeddingModel
+    participant EM as OpenAIEmbeddingModel
     participant VS as VectorStore
-    participant OGXClient as OGX Client
+    participant MaaSClient as MaaS Client
     participant DB as Vector DB (Milvus/Chroma/PGVector)
 
     Exp->>Exp: check if collection exists
@@ -44,8 +44,8 @@ sequenceDiagram
         VS->>EM: embed_documents([chunk.text])
         activate EM
         loop Batches of 1024 chunks
-            EM->>OGXClient: embeddings.create(batch)
-            OGXClient-->>EM: embeddings
+            EM->>MaaSClient: embeddings.create(batch)
+            MaaSClient-->>EM: embeddings
         end
         EM-->>VS: all embeddings
         deactivate EM
@@ -110,14 +110,14 @@ AI4RAGChunk(
 
 ### Embedding
 
-**OGXEmbeddingModel** converts chunk text to vector embeddings:
+**OpenAIEmbeddingModel** converts chunk text to vector embeddings:
 
 **Auto-detection (on first use):**
 
 ```python
-embedding_model = OGXEmbeddingModel(
+embedding_model = OpenAIEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=ogx_client,
+    client=maas_client,
     params={"embedding_dimension": 768, "context_length": 8192}  # Optional
 )
 ```
@@ -235,9 +235,9 @@ sequenceDiagram
     participant RAG as SimpleRAG
     participant Ret as Retriever
     participant VS as VectorStore
-    participant EM as OGXEmbeddingModel
-    participant FM as OGXFoundationModel
-    participant OGXClient as OGX Client
+    participant EM as OpenAIEmbeddingModel
+    participant FM as OpenAIFoundationModel
+    participant MaaSClient as MaaS Client
     participant DB as Vector DB (Milvus/Chroma/PGVector)
 
     Note over QR: Parallel execution (ThreadPoolExecutor)
@@ -256,8 +256,8 @@ sequenceDiagram
     activate VS
     VS->>EM: embed_query(question)
     activate EM
-    EM->>OGXClient: embeddings.create(question)
-    OGXClient-->>EM: query_embedding
+    EM->>MaaSClient: embeddings.create(question)
+    MaaSClient-->>EM: query_embedding
     EM-->>VS: query_embedding
     deactivate EM
 
@@ -278,8 +278,8 @@ sequenceDiagram
     RAG->>RAG: format user message using user_message_text
     RAG->>FM: chat(messages)
     activate FM
-    FM->>OGXClient: chat.completions.create(model, messages, params)
-    OGXClient-->>FM: response
+    FM->>MaaSClient: chat.completions.create(model, messages, params)
+    MaaSClient-->>FM: response
     FM-->>RAG: answer
     deactivate FM
 
@@ -382,7 +382,7 @@ According to the document: "Second retrieved chunk text..."
 **Customization:**
 
 ```python
-foundation_model = OGXFoundationModel(
+foundation_model = OpenAIFoundationModel(
     model_id="ollama/llama3.2:3b",
     client=client,
     context_template_text="Source {document}\n---\n"  # Custom format
@@ -416,7 +416,7 @@ Answer:
 
 ### Generation
 
-**OGXFoundationModel** generates answer via chat completion:
+**OpenAIFoundationModel** generates answer via chat completion:
 
 ```python
 messages = [
@@ -853,7 +853,7 @@ for idx in range(0, len(texts), 1024):
 ```
 
 **Constraints:**
-- OGX max batch size: 1024 chunks
+- MaaS max batch size: 1024 chunks
 - Smaller batches = more API calls = slower
 
 ### 3. Collection Reuse
@@ -912,7 +912,7 @@ DoclingDocument(name="doc1", ...)
 
 ```python
 ["Chunk 1 text", "Chunk 2 text", ...]
-↓ (OGXEmbeddingModel)
+↓ (OpenAIEmbeddingModel)
 [[0.1, -0.2, ...], [0.3, 0.1, ...], ...]  # 768-dim vectors
 ```
 
@@ -928,7 +928,7 @@ Collection "xyz" in the configured backend (Milvus, Chroma, or PGVector)
 
 ```python
 "What is the capital of France?"
-↓ (MilvusVectorStore.search — embeds via OGXEmbeddingModel.embed_query internally,
+↓ (MilvusVectorStore.search — embeds via OpenAIEmbeddingModel.embed_query internally,
    then queries Milvus directly; ChromaVectorStore/PGVectorStore follow the same
    embed-then-query pattern against their own backend)
 [
@@ -943,7 +943,7 @@ Collection "xyz" in the configured backend (Milvus, Chroma, or PGVector)
 ```python
 contexts = ["Paris is the capital...", "France's capital city..."]
 question = "What is the capital of France?"
-↓ (SimpleRAG.generate via OGXFoundationModel.chat)
+↓ (SimpleRAG.generate via OpenAIFoundationModel.chat)
 "Based on the provided documents, Paris is the capital of France."
 ```
 

@@ -18,12 +18,14 @@ _SAMPLE_PATTERN_DATA: dict = {
     "settings": {
         "generation": {
             "model_id": "ibm/granite-3.1-8b-instruct",
+            "base_url": "https://maas.example.com/ns/granite/v1",
             "system_message_text": "Answer the question.",
             "user_message_text": "Context: {reference_documents}\nQuestion: {question}",
             "context_template_text": "{document}",
         },
         "embedding": {
             "model_id": "ibm/slate-125m-english-rtrvr",
+            "base_url": "https://maas.example.com/ns/slate/v1",
             "embedding_params": {"embedding_dimension": 768},
         },
         "vector_store_binding": {
@@ -57,7 +59,6 @@ class TestCreatePlaceholderMapping:
             _SAMPLE_PATTERN_DATA,
             test_data_key="s3://bucket/test.jsonl",
             input_data_key="s3://bucket/docs/",
-            ogx_base_url="  https://ogx.example.com  ",
         )
 
     def test_pattern_name(self, mapping: dict):
@@ -65,11 +66,13 @@ class TestCreatePlaceholderMapping:
 
     def test_generation_fields(self, mapping: dict):
         assert mapping["FM_MODEL_ID"] == "ibm/granite-3.1-8b-instruct"
+        assert mapping["FM_BASE_URL"] == "https://maas.example.com/ns/granite/v1"
         assert mapping["SYSTEM_MESSAGE"] == "Answer the question."
         assert mapping["CONTEXT_TEXT"] == "{document}"
 
     def test_embedding_fields(self, mapping: dict):
         assert mapping["EMBEDDING_MODEL_ID"] == "ibm/slate-125m-english-rtrvr"
+        assert mapping["EMBEDDING_BASE_URL"] == "https://maas.example.com/ns/slate/v1"
         assert mapping["EMBEDDING_PARAMS"] == {"embedding_dimension": 768}
 
     def test_vector_store_fields(self, mapping: dict):
@@ -102,10 +105,6 @@ class TestCreatePlaceholderMapping:
         assert mapping["TEST_DATA_KEY"] == "s3://bucket/test.jsonl"
         assert mapping["INPUT_DATA_KEY"] == "s3://bucket/docs/"
 
-    def test_ogx_url_stripped(self, mapping: dict):
-        """Leading/trailing whitespace must be stripped from ogx_base_url."""
-        assert mapping["OGX_CLIENT_BASE_URL"] == "https://ogx.example.com"
-
     def test_all_expected_keys_present(self, mapping: dict):
         """All documented placeholder names must appear in the mapping."""
         expected_keys = {
@@ -114,7 +113,9 @@ class TestCreatePlaceholderMapping:
             "SYSTEM_MESSAGE",
             "USER_MESSAGE",
             "CONTEXT_TEXT",
+            "FM_BASE_URL",
             "EMBEDDING_MODEL_ID",
+            "EMBEDDING_BASE_URL",
             "EMBEDDING_PARAMS",
             "PROVIDER_TYPE",
             "COLLECTION_NAME",
@@ -130,7 +131,6 @@ class TestCreatePlaceholderMapping:
             "CHUNK_OVERLAP",
             "TEST_DATA_KEY",
             "INPUT_DATA_KEY",
-            "OGX_CLIENT_BASE_URL",
         }
         assert expected_keys.issubset(set(mapping.keys()))
 
@@ -144,10 +144,11 @@ class TestCreatePlaceholderMapping:
         assert mapping["CHUNK_OVERLAP"] == 50
         assert mapping["NUMBER_OF_CHUNKS"] == 5
 
-    def test_ogx_url_empty_when_not_provided(self):
-        """When ogx_base_url is not given, the placeholder must be an empty string."""
+    def test_base_urls_empty_when_not_provided(self):
+        """When the pattern carries no model base URLs, the placeholders must be empty strings."""
         mapping = create_placeholder_mapping({})
-        assert mapping["OGX_CLIENT_BASE_URL"] == ""
+        assert mapping["FM_BASE_URL"] == ""
+        assert mapping["EMBEDDING_BASE_URL"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -174,19 +175,19 @@ class TestGenerateNotebookFromTemplate:
 
         output_path = tmp_path / "output.ipynb"
         generate_notebook_from_template(
-            notebook_template="ogx_indexing",
+            notebook_template="maas_indexing",
             output_data=_SAMPLE_PATTERN_DATA,
             output_notebook_path=output_path,
         )
 
         mock_load.assert_called_once_with(
-            notebook_name="ogx_indexing_template.ipynb",
+            notebook_name="maas_indexing_template.ipynb",
         )
         mock_cell.format_source.assert_called_once()
         mock_save.assert_called_once_with(output_path)
 
-    def test_passes_s3_keys_and_url(self, mocker, tmp_path: Path):
-        """S3 keys and OGX URL must propagate into the placeholder mapping."""
+    def test_passes_s3_keys(self, mocker, tmp_path: Path):
+        """S3 keys must propagate into the placeholder mapping."""
         mock_cell = mocker.MagicMock()
         mock_cell.format_source.return_value = mock_cell
         mock_notebook = mocker.MagicMock()
@@ -200,19 +201,17 @@ class TestGenerateNotebookFromTemplate:
         )
 
         generate_notebook_from_template(
-            notebook_template="ogx_inference",
+            notebook_template="maas_inference",
             output_data={},
             output_notebook_path=tmp_path / "out.ipynb",
             test_data_key="key/test",
             input_data_key="key/input",
-            ogx_base_url="https://ogx.local",
         )
 
         mock_create.assert_called_once_with(
             {},
             test_data_key="key/test",
             input_data_key="key/input",
-            ogx_base_url="https://ogx.local",
         )
 
 
@@ -224,7 +223,7 @@ def _read_notebook_text(path: Path) -> str:
     )
 
 
-@pytest.mark.parametrize("template", ["ogx_indexing", "ogx_inference"])
+@pytest.mark.parametrize("template", ["maas_indexing", "maas_inference"])
 class TestGeneratedNotebookUsesDirectClients:
     """End-to-end checks that generated notebooks target the direct-client vector store API."""
 

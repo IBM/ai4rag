@@ -5,7 +5,7 @@
 """Functional semantic-retrieval test for :class:`ChromaVectorStore`.
 
 Chroma runs fully in-memory here (an ephemeral :class:`ChromaConfig`), so this
-test needs no Chroma server — only OGX credentials for the real embedding model,
+test needs no Chroma server — only MaaS credentials for the real embedding model,
 which the shared ``embedding_model`` fixture enforces by skipping when they are
 absent. Chroma has no lexical search, so — unlike the Milvus and pgvector
 modules — this one covers dense semantic retrieval only.

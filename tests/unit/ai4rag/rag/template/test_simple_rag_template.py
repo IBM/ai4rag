@@ -19,7 +19,7 @@ def _make_docling_doc(name: str, text: str) -> DoclingDocument:
     return doc
 
 
-class TestOGXRAGInitialization:
+class TestSimpleRAGInitialization:
     """Test suite for SimpleRAG initialization."""
 
     @pytest.fixture
@@ -146,7 +146,7 @@ class TestOGXRAGInitialization:
         assert hasattr(rag, "vector_store")
 
 
-class TestOGXRAGBuildIndex:
+class TestSimpleRAGBuildIndex:
     """Test suite for SimpleRAG.build_index method."""
 
     @pytest.fixture
@@ -335,7 +335,7 @@ class TestOGXRAGBuildIndex:
         assert len(added_chunks) == 500
 
 
-class TestOGXRAGGenerate:
+class TestSimpleRAGGenerate:
     """Test suite for SimpleRAG.generate method."""
 
     @pytest.fixture
@@ -650,7 +650,7 @@ class TestOGXRAGGenerate:
         mock_retriever.retrieve.assert_called_once_with("What is AI?", **retrieval_kwargs)
 
 
-class TestOGXRAGGenerateStream:
+class TestSimpleRAGGenerateStream:
     """Test suite for SimpleRAG.generate_stream method."""
 
     @pytest.fixture
@@ -788,7 +788,7 @@ class TestOGXRAGGenerateStream:
             assert result[0] == "This is the generated answer."
 
 
-class TestOGXRAGIntegration:
+class TestSimpleRAGIntegration:
     """Integration tests for SimpleRAG full workflow."""
 
     @pytest.fixture
@@ -903,7 +903,7 @@ class TestOGXRAGIntegration:
         assert complete_rag_system["foundation_model"].chat.call_count == 3
 
 
-class TestOGXRAGEdgeCases:
+class TestSimpleRAGEdgeCases:
     """Test suite for edge cases and error scenarios."""
 
     @pytest.fixture

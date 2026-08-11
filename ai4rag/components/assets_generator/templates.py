@@ -39,7 +39,6 @@ def create_placeholder_mapping(
     output_data: dict[str, Any],
     test_data_key: str = "",
     input_data_key: str = "",
-    ogx_base_url: str = "",
 ) -> dict[str, Any]:
     """Create a mapping from placeholder names to their values from a pattern definition.
 
@@ -55,9 +54,6 @@ def create_placeholder_mapping(
         S3 key of the test data file used as input to AI4RAG.
     input_data_key : str, default=""
         S3 key of the documents directory used as input to AI4RAG.
-    ogx_base_url : str, default=""
-        Base URL for the OGX API.  Falls back to an empty string when not
-        provided, allowing the generated notebook to prompt users for the URL.
 
     Returns
     -------
@@ -71,12 +67,14 @@ def create_placeholder_mapping(
     settings = output_data.get("settings", {})
     fm = settings.get("generation", {})
     mapping["FM_MODEL_ID"] = fm.get("model_id", "")
+    mapping["FM_BASE_URL"] = fm.get("base_url", "")
     mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")
     mapping["USER_MESSAGE"] = fm.get("user_message_text", "")
     mapping["CONTEXT_TEXT"] = fm.get("context_template_text", "")
 
     em = settings.get("embedding", {})
     mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
+    mapping["EMBEDDING_BASE_URL"] = em.get("base_url", "")
     mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
     vs = settings.get("vector_store_binding", {})
     provider_type = vs.get("provider_type", "")
@@ -100,8 +98,6 @@ def create_placeholder_mapping(
     mapping["TEST_DATA_KEY"] = test_data_key
     mapping["INPUT_DATA_KEY"] = input_data_key
 
-    mapping["OGX_CLIENT_BASE_URL"] = ogx_base_url.strip() if ogx_base_url else ""
-
     return mapping
 
 
@@ -111,7 +107,6 @@ def generate_notebook_from_template(
     output_notebook_path: str | Path,
     test_data_key: str = "",
     input_data_key: str = "",
-    ogx_base_url: str = "",
 ) -> None:
     """Generate a filled notebook from a template and pattern configuration.
 
@@ -122,7 +117,7 @@ def generate_notebook_from_template(
     ----------
     notebook_template : str
         Template base name without the ``_template.ipynb`` suffix
-        (e.g. ``"ogx_inference"`` or ``"ogx_indexing"``).
+        (e.g. ``"maas_inference"`` or ``"maas_indexing"``).
     output_data : dict[str, Any]
         The parsed ``pattern.json`` data.
     output_notebook_path : str | Path
@@ -131,14 +126,11 @@ def generate_notebook_from_template(
         S3 key of the test data file used as input to AI4RAG.
     input_data_key : str, default=""
         S3 key of the documents directory used as input to AI4RAG.
-    ogx_base_url : str, default=""
-        Base URL for the OGX API.
     """
     placeholder_mapping = create_placeholder_mapping(
         output_data,
         test_data_key=test_data_key,
         input_data_key=input_data_key,
-        ogx_base_url=ogx_base_url,
     )
     notebook = Notebook.load(
         notebook_name=f"{notebook_template}_template.ipynb",

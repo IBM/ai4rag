@@ -426,9 +426,9 @@ By default, `AI4RAGExperiment` uses only the `UnitxtEvaluator`. To enable LLM-as
 ```python
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from dev_utils.utils import build_maas_model
 
-judge_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+judge_model = build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")
 
 experiment = AI4RAGExperiment(
     # ... other parameters
@@ -457,16 +457,12 @@ experiment = AI4RAGExperiment(
 Here's a complete example showing how evaluation is used in the experiment loop:
 
 ```python
-import os
 from pathlib import Path
 from dotenv import load_dotenv
-from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
 from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.metric import Metrics
@@ -475,11 +471,11 @@ from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
-from dev_utils.utils import read_benchmark_from_json
+from dev_utils.utils import build_maas_model, create_dev_maas_client, read_benchmark_from_json
 
 # Setup
 load_dotenv()
-client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 # Load data
 documents = FileStore(Path("./knowledge_base")).load_as_documents()
@@ -491,16 +487,17 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")],
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=client,
-                    params={"embedding_dimension": 768, "context_length": 8192},
+                build_maas_model(
+                    client,
+                    model_id="bge-m3",
+                    model_type="embedding",
+                    embedding_params={"embedding_dimension": 1024, "context_length": 8192},
                 )
             ],
         ),
@@ -510,7 +507,7 @@ search_space = AI4RAGSearchSpace(
 )
 
 # Configure evaluators — Unitxt for reference-based metrics, LLMaJ for judge-based
-judge_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+judge_model = build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")
 
 # Run optimization (optimizes for overall_score by default)
 experiment = AI4RAGExperiment(

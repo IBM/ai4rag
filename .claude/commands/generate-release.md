@@ -41,7 +41,7 @@ Omit categories that have no entries. Each bullet should be concrete and user-fa
 - `**RAG optimization component** — renamed max_threads to inference_max_threads...`
 - `**Dependencies** — removed the langchain meta-package...`
 - `**Chunker** — DoclingChunker now supports...`
-- `**Vector store** — OGXVectorStore.search() returns...`
+- `**Vector store** — MilvusVectorStore.search() returns...`
 
 If a single change spans multiple components, pick the one most relevant to the user; if genuinely cross-cutting, use a broad label like **Core** or **API**. Use existing labels from prior changelog entries when applicable for consistency. Review older entries in `docs/about/changelog.md` to align with established conventions.
 

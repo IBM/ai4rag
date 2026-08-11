@@ -221,7 +221,7 @@ from typing import Any, Callable, Literal, Sequence
 import numpy as np
 import pandas as pd
 from langchain_core.documents import Document
-from ogx_client import OgxClient
+from openai import OpenAI
 from pydantic import BaseModel
 
 # 3. Local/project imports

@@ -2,25 +2,22 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Functional tests for AI4RAG experiment runs against a live OGX server."""
+"""Functional tests for AI4RAG experiment runs against a live MaaS deployment."""
 
 import os
 from pathlib import Path
 
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
 from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
 from dev_utils.file_store import FileStore
-from dev_utils.utils import read_benchmark_from_json
+from dev_utils.utils import build_maas_model, create_dev_maas_client, read_benchmark_from_json
 
 load_dotenv(find_dotenv(".env.local"))
 
@@ -37,10 +34,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(scope="module")
 def client():
-    return OgxClient(
-        base_url=os.environ["OGX_CLIENT_BASE_URL"],
-        api_key=os.environ["OGX_CLIENT_API_KEY"],
-    )
+    return create_dev_maas_client()
 
 
 @pytest.fixture(scope="module")
@@ -58,19 +52,20 @@ def benchmark_data():
 
 @pytest.fixture(scope="module")
 def foundation_model(client):
-    model_id = os.environ.get("AI4RAG_TEST_FOUNDATION_MODEL", "vllm-inference-llama-3-1/redhataillama-31-8b-instruct")
-    return OGXFoundationModel(model_id=model_id, client=client)
+    model_id = os.environ.get("AI4RAG_TEST_FOUNDATION_MODEL", "qwen3-8b-fp8-dynamic")
+    return build_maas_model(client, model_id=model_id, model_type="llm")
 
 
 @pytest.fixture(scope="module")
 def embedding_model(client):
-    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "vllm-embedding/granite-278m-multilingual-1")
-    dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "768"))
-    context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "512"))
-    return OGXEmbeddingModel(
+    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "bge-m3")
+    dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "1024"))
+    context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "8192"))
+    return build_maas_model(
+        client,
         model_id=model_id,
-        client=client,
-        params={"embedding_dimension": dimension, "context_length": context_length},
+        model_type="embedding",
+        embedding_params={"embedding_dimension": dimension, "context_length": context_length},
     )
 
 
@@ -81,9 +76,9 @@ def _make_event_handler(test_name):
 
 
 class TestExperimentChroma:
-    """Run experiment with chroma vector store and OGX models."""
+    """Run experiment with chroma vector store and MaaS models."""
 
-    def test_experiment_chroma_ogx_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_chroma_maas_models(self, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
             vector_store_type="chroma",
             params=[
@@ -95,12 +90,11 @@ class TestExperimentChroma:
         optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=3)
 
         experiment = AI4RAGExperiment(
-            client=client,
             documents=documents,
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("chroma_ogx_models"),
+            event_handler=_make_event_handler("chroma_maas_models"),
             vector_store_config=ChromaConfig(),
         )
 
@@ -117,9 +111,9 @@ class TestExperimentChroma:
 
 
 class TestExperimentMilvus:
-    """Run experiment with a direct Milvus vector store client and OGX models."""
+    """Run experiment with a direct Milvus vector store client and MaaS models."""
 
-    def test_experiment_milvus_ogx_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_milvus_maas_models(self, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
             vector_store_type="milvus",
             params=[
@@ -131,12 +125,11 @@ class TestExperimentMilvus:
         optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=3)
 
         experiment = AI4RAGExperiment(
-            client=client,
             documents=documents,
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("milvus_ogx_models"),
+            event_handler=_make_event_handler("milvus_maas_models"),
             vector_store_config=MilvusConfig.from_env(),
         )
 
@@ -153,9 +146,9 @@ class TestExperimentMilvus:
 
 
 class TestExperimentPGVector:
-    """Run experiment with PG vector store and OGX models."""
+    """Run experiment with PG vector store and MaaS models."""
 
-    def test_experiment_pgvector_ogx_models(self, client, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_pgvector_maas_models(self, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
             vector_store_type="pgvector",
             params=[
@@ -167,12 +160,11 @@ class TestExperimentPGVector:
         optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=3)
 
         experiment = AI4RAGExperiment(
-            client=client,
             documents=documents,
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("pgvector_ogx_models"),
+            event_handler=_make_event_handler("pgvector_maas_models"),
             vector_store_config=PGVectorConfig.from_env(),
         )
 
@@ -189,11 +181,9 @@ class TestExperimentPGVector:
 
 
 class TestExperimentChromaWithKnownObservations:
-    """Run experiment with chroma, OGX models, and known observations."""
+    """Run experiment with chroma, MaaS models, and known observations."""
 
-    def test_experiment_chroma_known_observations(
-        self, client, documents, benchmark_data, foundation_model, embedding_model
-    ):
+    def test_experiment_chroma_known_observations(self, documents, benchmark_data, foundation_model, embedding_model):
         known_observations = [
             {
                 "foundation_model": foundation_model,
@@ -244,7 +234,6 @@ class TestExperimentChromaWithKnownObservations:
         optimizer_settings = GAMOptSettings(max_evals=4, n_random_nodes=3)
 
         experiment = AI4RAGExperiment(
-            client=client,
             documents=documents,
             benchmark_data=benchmark_data,
             search_space=search_space,

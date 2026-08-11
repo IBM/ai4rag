@@ -5,7 +5,7 @@
 """Functional semantic-retrieval test for :class:`MilvusVectorStore`.
 
 Runs against a live Milvus server (skipped unless ``MILVUS_URI`` is set) using a
-real OGX embedding model. Milvus serves searches under bounded-staleness
+real MaaS embedding model. Milvus serves searches under bounded-staleness
 consistency, so freshly upserted rows may not be immediately visible; reads are
 therefore wrapped in the shared ``retry`` helper.
 

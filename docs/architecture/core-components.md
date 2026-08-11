@@ -378,7 +378,7 @@ Parameter(
 Parameter(
     name=AI4RAGParamNames.FOUNDATION_MODEL,
     param_type="C",
-    values=[OGXFoundationModel(...), OGXFoundationModel(...)]
+    values=[OpenAIFoundationModel(...), OpenAIFoundationModel(...)]
 )
 ```
 
@@ -625,7 +625,7 @@ The `ExperimentExceptionHandler` can be extended to customize error handling beh
 - Configurable via `max_threads` in `query_rag()`
 
 **Batch Embedding:**
-- OGXEmbeddingModel processes documents in batches of 1024 chunks
+- OpenAIEmbeddingModel processes documents in batches of 1024 chunks
 - Prevents API request size limits
 - Applied in both indexing and query phases
 

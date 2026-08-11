@@ -91,11 +91,10 @@ class TestMilvusVectorStoreInit:
     def test_writes_server_cert_to_tempfile(self, MockClient, mock_embedding):
         client = MockClient.return_value
         client.has_collection.return_value = True
-        cert_pem = "-----BEGIN CERTIFICATE-----\nMIICert\n-----END CERTIFICATE-----\n"
+        cert_pem = "-----BEGIN CERTIFICATE-----\nMIICert-unique-A\n-----END CERTIFICATE-----\n"
         cfg = MilvusConfig(uri="https://host:19530", token="root:pw", server_cert=cert_pem)
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
-        # Keep a reference: the temp cert is removed once the store is collected.
         store = MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
 
         _, kwargs = MockClient.call_args
@@ -107,19 +106,61 @@ class TestMilvusVectorStoreInit:
         assert cert_path.read_text() == cert_pem
         assert store.collection_name == "ai4rag_col"
 
-    def test_cert_tempfile_removed_on_gc(self, MockClient, mock_embedding):
+    def test_cert_tempfile_survives_close_and_gc(self, MockClient, mock_embedding):
+        """The cert file must outlive close()/GC: pymilvus may reconnect and re-read it."""
         client = MockClient.return_value
         client.has_collection.return_value = True
-        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA")
+        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA-survive")
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
         store = MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
         cert_path = Path(MockClient.call_args[1]["server_pem_path"])
         assert cert_path.exists()
 
+        store.close()
+        assert cert_path.exists()  # close() must not remove it
+
         del store
         gc.collect()
+        assert cert_path.exists()  # nor may garbage collection
+
+    def test_identical_cert_reuses_single_tempfile(self, MockClient, mock_embedding):
+        """Two stores sharing the same PEM must share one file (no per-store accumulation)."""
+        client = MockClient.return_value
+        client.has_collection.return_value = True
+        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA-shared")
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_a")
+        path_a = MockClient.call_args[1]["server_pem_path"]
+        MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_b")
+        path_b = MockClient.call_args[1]["server_pem_path"]
+
+        assert path_a == path_b
+
+    def test_cert_cache_cleaned_at_exit(self, MockClient, mock_embedding):
+        """The atexit hook must remove every materialized cert file."""
+        client = MockClient.return_value
+        client.has_collection.return_value = True
+        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA-atexit")
+        from ai4rag.rag.vector_store import milvus as milvus_mod
+
+        milvus_mod.MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
+        cert_path = Path(MockClient.call_args[1]["server_pem_path"])
+        assert cert_path.exists()
+
+        milvus_mod._cleanup_server_certs()
         assert not cert_path.exists()
+
+    def test_close_without_cert_is_safe(self, MockClient, mock_embedding, milvus_config):
+        """close() must not fail when no TLS certificate tempfile was created."""
+        client = MockClient.return_value
+        client.has_collection.return_value = True
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        store = MilvusVectorStore(mock_embedding, milvus_config, collection_name="ai4rag_col")
+        store.close()
+        client.close.assert_called_once()
 
 
 @patch("ai4rag.rag.vector_store.milvus.MilvusClient")

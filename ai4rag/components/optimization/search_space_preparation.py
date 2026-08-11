@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from ogx_client import OgxClient
+from openai import OpenAI
 
 from ai4rag import handler
 from ai4rag.components.utils.docling_io import load_docling_documents
@@ -17,7 +17,7 @@ from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
-from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_ogx
+from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_maas
 
 _logger = logging.getLogger("search-space-preparation")
 _logger.addHandler(handler)
@@ -55,6 +55,7 @@ def _serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[st
         "model_id": model.model_id,
         "type": "embedding" if is_embedding else "generation",
         "params": params_dict,
+        "base_url": str(model.client.base_url),
     }
 
     if not is_embedding:
@@ -102,7 +103,7 @@ class SearchSpaceReport:
 def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
     test_data_path: str | Path,
     extracted_text_path: str | Path,
-    ogx_client: OgxClient,
+    maas_client: OpenAI,
     embedding_models: list[str] | None = None,
     generation_models: list[str] | None = None,
     top_n_generation: int = _DEFAULT_TOP_N_GENERATION,
@@ -129,12 +130,12 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     extracted_text_path
         Path to a single DoclingDocument JSON file or a directory of such
         files.
-    ogx_client
-        An authenticated :class:`OgxClient` instance.
+    maas_client
+        An authenticated general MaaS :class:`~openai.OpenAI` client.
     embedding_models
-        Embedding model identifiers.  ``None`` uses the server defaults.
+        Embedding model identifiers.  Required: MaaS cannot infer model type.
     generation_models
-        Generation model identifiers.  ``None`` uses the server defaults.
+        Generation model identifiers.  Required: MaaS cannot infer model type.
     top_n_generation
         Maximum number of generation models to retain.
     top_k_embedding
@@ -188,7 +189,7 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     _validate_model_list(embedding_models, "embedding_models")
     _validate_model_list(generation_models, "generation_models")
 
-    # Build payload and create search space via OGX
+    # Build payload and create search space via MaaS
     payload: dict[str, Any] = {}
     if generation_models:
         payload["foundation_models"] = [{"model_id": gm} for gm in generation_models]
@@ -206,9 +207,9 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
     benchmark_data = BenchmarkData(benchmark_df)
     documents = load_docling_documents(extracted_text_path)
 
-    search_space = prepare_search_space_with_ogx(
+    search_space = prepare_search_space_with_maas(
         payload,
-        client=ogx_client,
+        client=maas_client,
         benchmark_data=benchmark_df,
     )
     _logger.info(

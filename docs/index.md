@@ -126,8 +126,8 @@ graph TB
 
 ### RAG Components
 
-- **Foundation Model**: LLM integration via `BaseFoundationModel` interface
-- **Embedding Model**: embedding model integration via `BaseEmbeddingModel`
+- **Foundation Model**: any OpenAI-compatible chat endpoint via `OpenAIFoundationModel` — or bring your own via the `BaseFoundationModel` interface
+- **Embedding Model**: any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` — or bring your own via the `BaseEmbeddingModel` interface
 - **Vector Store**: Milvus, PostgreSQL/pgvector, or Chroma via direct clients — or bring your own via the `BaseVectorStore` interface
 - **Chunking**: document splitting into smaller chunks
 - **Retrieval**: simple and window-based retrieval strategies
@@ -137,14 +137,12 @@ graph TB
 
 ## Requirements
 
-!!! warning "OGX Integration"
-    `ai4rag` works with an [OGX](https://github.com/ogx-ai/ogx) server as its foundation model and embedding model provider.
-    To run an experiment based on OGX you will need:
+To run an optimization you need a **foundation model** (for text generation) and an **embedding model** (for document embeddings). `ai4rag` reaches both through the stock [`openai`](https://github.com/openai/openai-python) SDK, so **any OpenAI-compatible endpoint works** — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box.
 
-    - At least one foundation model (for text generation)
-    - At least one embedding model (for document embeddings)
+!!! tip "Bring your own models"
+    Not using an OpenAI-compatible endpoint? Provide your own model classes instead: any implementation of `BaseFoundationModel` / `BaseEmbeddingModel` plugs straight into an experiment. See [Provider-Agnostic Design](user-guide/provider-agnostic.md).
 
-    The vector store is independent of OGX: connect directly to Chroma, Milvus, or PostgreSQL/pgvector via `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`.
+The vector store is independent of the model provider: connect directly to Chroma, Milvus, or PostgreSQL/pgvector via `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`.
 
 ---
 

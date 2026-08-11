@@ -63,7 +63,7 @@ Contributors must sign off their commits using the [Developer Certificate of Ori
 ai4rag depends on several open-source projects, each with its own license:
 
 - **LangChain**: MIT License
-- **OGX Client**: Apache License 2.0
+- **OpenAI Python SDK**: Apache License 2.0
 - **Pandas**: BSD 3-Clause License
 - **Unitxt**: Apache License 2.0
 - **Pydantic**: MIT License

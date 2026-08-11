@@ -350,8 +350,8 @@ Explore hybrid search using Reciprocal Rank Fusion:
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -359,13 +359,13 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name=AI4RAGParamNames.FOUNDATION_MODEL,
             param_type="C",
-            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[OpenAIFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
         ),
         Parameter(
             name=AI4RAGParamNames.EMBEDDING_MODEL,
             param_type="C",
             values=[
-                OGXEmbeddingModel(
+                OpenAIEmbeddingModel(
                     model_id="ollama/nomic-embed-text:latest",
                     client=client,
                     params={"embedding_dimension": 768, "context_length": 8192},

@@ -100,9 +100,9 @@ from ai4rag.components.optimization import prepare_search_space_report
 report = prepare_search_space_report(
     test_data_path="/tmp/test_data.json",
     extracted_text_path="/tmp/extracted/",
-    ogx_client=client,
-    embedding_models=["ibm/slate-125m-english-rtrvr"],
-    generation_models=["ibm/granite-3.1-8b-instruct"],
+    maas_client=client,
+    embedding_models=["bge-m3"],
+    generation_models=["qwen3-8b-fp8-dynamic"],
     chunking_methods=["recursive"],   # optional: constrain chunking methods
     chunk_sizes=[256, 512, 1024],     # optional: constrain chunk sizes
     chunk_overlaps=[0, 128],          # optional: constrain chunk overlaps
@@ -123,7 +123,7 @@ result = run_rag_optimization(
     test_data_path="/tmp/test_data.json",
     search_space_report_path="/tmp/search_space.yaml",
     output_dir="/tmp/rag_patterns/",
-    ogx_client=client,
+    maas_client=client,
     vector_store_config=MilvusConfig.from_env(),
     test_data_key="benchmarks/test_data.json",
     input_data_key="documents/",
@@ -138,18 +138,24 @@ The `ai4rag.components` package provides three shared utility modules used acros
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `utils.ogx_client` | `create_ogx_client()` | OGX client with SSL self-signed cert fallback |
+| `utils.maas_client` | `create_maas_client()` | General MaaS listing client (`/maas-api/v1`) with SSL self-signed cert fallback |
 | `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
 These are importable from `ai4rag.components` or `ai4rag.components.utils`:
 
 ```python
-from ai4rag.components import create_s3_client, create_ogx_client, load_docling_documents
+from ai4rag.components import create_s3_client, create_maas_client, load_docling_documents
 ```
+
+!!! note "Per-model clients"
+    MaaS serves one OpenAI-compatible endpoint per model. `create_maas_client()` builds the
+    *general* listing client; each model wrapper additionally needs its own client, built with
+    `create_maas_model_client()` and `maas_model_base_url()` (also exported from
+    `ai4rag.components.utils`). See [Provider-Agnostic Design](provider-agnostic.md) for the full pattern.
 
 ## Design Principles
 
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
-- **Dependency injection**: All functions accept pre-configured clients (S3, OGX) as optional parameters — when omitted, clients are created from environment variables.
+- **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
 - **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
-- **SSL fallback**: All S3 and OGX operations automatically retry with `verify=False` when self-signed certificate errors are detected.
+- **SSL fallback**: S3 operations and the general MaaS listing client automatically retry with `verify=False` when self-signed certificate errors are detected.

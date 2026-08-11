@@ -15,7 +15,7 @@ diverge:
 
 Per-backend modules keep each backend's setup, teardown, and future
 backend-specific tests isolated, while everything the backends *share* lives
-here: the story data, the real OGX embedding model, the semantic-retrieval
+here: the story data, the real MaaS embedding model, the semantic-retrieval
 assertion, and a staleness-tolerant retry helper.
 
 Why a real embedding model (and why this is a *functional*, not *integration*,
@@ -24,9 +24,9 @@ answers it is only meaningful with a model that captures meaning. The
 ``tests/integration`` suite, by contrast, uses local deterministic embeddings
 and asserts the storage-and-search contract against a real database. The
 dividing line is the external dependency: integration needs only a database;
-functional additionally needs the OGX model service.
+functional additionally needs the MaaS model service.
 
-The embedding model is gated on OGX credentials — any test that requests it is
+The embedding model is gated on MaaS credentials — any test that requests it is
 skipped when they are absent. Each backend module adds its own skip for the
 database connection settings it requires. Connection settings are read from
 environment variables loaded from ``.env.local`` at the repository root.
@@ -39,12 +39,12 @@ from typing import TypeVar
 
 import pytest
 from dotenv import find_dotenv, load_dotenv
-from ogx_client import OgxClient
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+from dev_utils.utils import build_maas_model, create_dev_maas_client
 
-# Load OGX + backend connection settings before any skip guard is evaluated.
+# Load MaaS + backend connection settings before any skip guard is evaluated.
 load_dotenv(find_dotenv(".env.local"))
 
 #: Identifier shared by every passage: the story is one document, chunked into
@@ -85,36 +85,32 @@ STORY_QUESTIONS = (
 T = TypeVar("T")
 
 
-def _ogx_credentials_present() -> bool:
-    """Return whether both OGX connection variables are set."""
-    return bool(os.environ.get("OGX_CLIENT_BASE_URL") and os.environ.get("OGX_CLIENT_API_KEY"))
+def _maas_credentials_present() -> bool:
+    """Return whether both MaaS connection variables are set."""
+    return bool(os.environ.get("MAAS_BASE_URL") and os.environ.get("MAAS_API_KEY"))
 
 
 @pytest.fixture(scope="session")
-def embedding_model() -> OGXEmbeddingModel:
-    """Provide the shared, real OGX embedding model; skip if OGX is not configured.
+def embedding_model() -> OpenAIEmbeddingModel:
+    """Provide the shared, real MaaS embedding model; skip if MaaS is not configured.
 
     ``embedding_dimension`` and ``context_length`` are supplied explicitly so the
     model performs no auto-detection API calls at construction time. The story
     passages are far shorter than any context length, so the exact value only has
     to satisfy the model's minimum; it never triggers truncation.
     """
-    if not _ogx_credentials_present():
-        pytest.skip(
-            "OGX_CLIENT_BASE_URL / OGX_CLIENT_API_KEY not set; semantic retrieval needs a real embedding model."
-        )
+    if not _maas_credentials_present():
+        pytest.skip("MAAS_BASE_URL / MAAS_API_KEY not set; semantic retrieval needs a real embedding model.")
 
-    client = OgxClient(
-        base_url=os.environ["OGX_CLIENT_BASE_URL"],
-        api_key=os.environ["OGX_CLIENT_API_KEY"],
-    )
-    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "vllm-embedding/granite-278m-multilingual-1")
-    dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "768"))
-    context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "2048"))
-    return OGXEmbeddingModel(
+    client = create_dev_maas_client()
+    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "bge-m3")
+    dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "1024"))
+    context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "8192"))
+    return build_maas_model(
+        client,
         model_id=model_id,
-        client=client,
-        params={"embedding_dimension": dimension, "context_length": context_length},
+        model_type="embedding",
+        embedding_params={"embedding_dimension": dimension, "context_length": context_length},
     )
 
 
