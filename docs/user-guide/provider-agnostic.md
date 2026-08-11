@@ -13,15 +13,17 @@ Rather than locking you into a specific vendor or technology stack, `ai4rag` def
 2. **Embedding Models** (for document and query embeddings)
 3. **Vector Stores** (for storing and retrieving document chunks)
 
-Concrete implementations for different providers — OpenShift MaaS (accessed through the OpenAI SDK) for foundation and embedding models; Chroma, Milvus, and PGVector for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
+Concrete implementations for different providers — an OpenAI-compatible endpoint (OpenShift MaaS out of the box, accessed through the OpenAI SDK) for foundation and embedding models; Chroma, Milvus, and PGVector for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
 
 ---
 
 ## Supported Providers
 
+For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint works — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or OpenShift MaaS (the integration shipped out of the box, detailed below). Not OpenAI-compatible? Implement `BaseFoundationModel` / `BaseEmbeddingModel` (see [Extending with Custom Providers](#extending-with-custom-providers)). For **vector stores**, pick from the built-in Chroma / Milvus / PGVector backends or add your own via `BaseVectorStore`.
+
 ### OpenShift MaaS Integration
 
-**What it is**: [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) exposes each deployed model as its own OpenAI-compatible endpoint, so `ai4rag` talks to it with the stock [`openai`](https://github.com/openai/openai-python) SDK.
+**What it is**: [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) exposes each deployed model as its own OpenAI-compatible endpoint, so `ai4rag` talks to it with the stock [`openai`](https://github.com/openai/openai-python) SDK. It is one example of an OpenAI-compatible provider; the setup below applies to any of them — point the client at your endpoint's URL.
 
 **What `ai4rag` supports**:
 

@@ -4,7 +4,7 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) OpenShift MaaS deployment**: With at least one foundation model and one embedding model available, accessed through the `openai` SDK
+- **A model provider**: a foundation model and an embedding model reachable over any OpenAI-compatible endpoint (a hosted API, a self-managed vLLM/TGI/Ollama server, or an OpenShift MaaS deployment), accessed through the `openai` SDK — or your own `BaseFoundationModel` / `BaseEmbeddingModel` implementation
 - **A vector store**: Chroma (in-memory by default, no setup required), or a running Milvus/PostgreSQL (pgvector) instance for hybrid retrieval
 
 
@@ -79,12 +79,17 @@ uv sync --extra docs        # documentation tools only
 
 ---
 
-## MaaS Setup
+## Model Provider Setup (OpenShift MaaS)
 
-`ai4rag` uses [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai)
-as the foundation model and embedding model provider, accessed through the stock
-[`openai`](https://github.com/openai/openai-python) SDK (installed automatically as a core dependency).
-The vector store is configured independently, via direct clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
+`ai4rag` reaches foundation and embedding models through the stock
+[`openai`](https://github.com/openai/openai-python) SDK (installed automatically as a core
+dependency), so it works with **any OpenAI-compatible endpoint** — a hosted API, a
+self-managed server (vLLM, TGI, Ollama, …), or an
+[OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment.
+The steps below use MaaS, the provider `ai4rag` ships helpers for; to use a different endpoint,
+point the same `openai` client at its URL (or supply your own `BaseFoundationModel` /
+`BaseEmbeddingModel` implementation). The vector store is configured independently, via direct
+clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
 
 ### 1. Get Access to a MaaS Deployment
 

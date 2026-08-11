@@ -12,9 +12,9 @@ from openai import OpenAI
 
 from ai4rag.components.utils import create_maas_client, create_maas_model_client
 from ai4rag.components.utils.maas_client import maas_model_base_url
+from ai4rag.components.utils.models import _list_maas_models, _model_owned_by
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.search_space.prepare.maas_utils import _list_maas_models, _model_owned_by
 
 
 def create_dev_maas_client() -> OpenAI:

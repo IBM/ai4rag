@@ -28,13 +28,14 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 
 > [!IMPORTANT]
-> `ai4rag` is designed to be provider-agnostic: user may provide his own implementation for foundation model, embedding model or vector store and use them for the experiment.
-> Out of the box `ai4rag` is designed to work with [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) as its foundation model and embedding model provider, accessed through the stock [`openai`](https://github.com/openai/openai-python) SDK.
-> To use the full capabilities of `ai4rag`, you'll need access to a MaaS deployment exposing at least one foundation model and one embedding model, plus a vector store (Chroma, Milvus, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
+> `ai4rag` is **provider-agnostic**. It reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so any **OpenAI-compatible endpoint** works — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box. You can also plug in your **own** foundation model, embedding model, or vector store by implementing the matching `Base*` interface.
+> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (Chroma, Milvus, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
 
-## OpenShift MaaS
+## Model providers
 
-ai4RAG can run experiments using an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment as its foundation model and embedding provider, accessed through the stock [`openai`](https://github.com/openai/openai-python) SDK:
+`ai4rag` reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so it works with **any OpenAI-compatible endpoint** — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment. Prefer something else entirely? Implement `BaseFoundationModel` / `BaseEmbeddingModel` and pass your own models straight into an experiment.
+
+MaaS is the integration `ai4rag` ships helpers for, so the walkthrough below uses it:
 
 - **SDK:** [openai](https://pypi.org/project/openai/) >= 2, < 3 (Python package used by ai4RAG; installs with this project).
 - **Deployment:** an OpenShift AI MaaS instance exposing at least one foundation model and one embedding model.

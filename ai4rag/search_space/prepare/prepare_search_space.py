@@ -8,13 +8,10 @@ import pandas as pd
 from openai import OpenAI
 
 from ai4rag import logger
+from ai4rag.components.utils.models import get_embedding_models, get_foundation_models
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
 from ai4rag.search_space.prepare.language_detection import detect_language_with_llm
-from ai4rag.search_space.prepare.maas_utils import (
-    _list_maas_models,
-    _validate_availability_and_create_models,
-)
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -27,10 +24,12 @@ def _resolve_models_from_payload(
     validated_payload: AI4RAGConstraints,
     client: OpenAI,
 ) -> tuple[list, list]:
-    """Retrieve and validate foundation and embedding models from MaaS.
+    """Discover and validate foundation and embedding models from the payload.
 
     MaaS carries no metadata distinguishing foundation from embedding models, so
-    the payload must declare the model ids for both types explicitly.
+    the payload must declare the model ids for both types explicitly. Endpoint
+    discovery, instantiation and responsiveness checks are delegated to the
+    shared :mod:`ai4rag.components.utils.models` helpers.
 
     Parameters
     ----------
@@ -38,7 +37,7 @@ def _resolve_models_from_payload(
         Validated constraint payload specifying which models to include. Both
         ``foundation_models`` and ``embedding_models`` are required.
     client : OpenAI
-        General MaaS client used for model discovery and per-model endpoint
+        General serving client used for model discovery and per-model endpoint
         derivation.
 
     Returns
@@ -49,34 +48,19 @@ def _resolve_models_from_payload(
     Raises
     ------
     SearchSpaceValueError
-        When ``client`` is not an :class:`~openai.OpenAI` instance, or when the
+        When ``client`` is not an :class:`~openai.OpenAI` instance, when the
         payload omits foundation or embedding model ids (type cannot be inferred
-        from MaaS metadata).
+        from MaaS metadata), or when a requested model is unavailable or does not
+        respond.
     """
-    if not isinstance(client, OpenAI):
-        raise SearchSpaceValueError(f"Unrecognized client type: '{client.__class__.__name__}'")
-
     if not validated_payload.foundation_models or not validated_payload.embedding_models:
         raise SearchSpaceValueError(
             "MaaS exposes no metadata to distinguish model types, so model ids must be provided per type. "
             "Provide both 'foundation_models' and 'embedding_models' in the payload."
         )
 
-    registry = _list_maas_models(client)
-
-    foundation_models = _validate_availability_and_create_models(
-        registered_models=registry,
-        models_type="llm",
-        client=client,
-        provided_models_ids=[m.model_id for m in validated_payload.foundation_models],
-    )
-
-    embedding_models = _validate_availability_and_create_models(
-        registered_models=registry,
-        models_type="embedding",
-        client=client,
-        provided_models_ids=[m.model_id for m in validated_payload.embedding_models],
-    )
+    foundation_models = get_foundation_models(client, [m.model_id for m in validated_payload.foundation_models])
+    embedding_models = get_embedding_models(client, [m.model_id for m in validated_payload.embedding_models])
 
     return foundation_models, embedding_models
 

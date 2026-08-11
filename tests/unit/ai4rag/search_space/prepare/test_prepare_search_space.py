@@ -51,13 +51,13 @@ def _setup_client(mocker, registered_short_ids, *, foundation_valid=True, embedd
     client.models.list.return_value.data = [_make_model(sid) for sid in registered_short_ids]
 
     mocker.patch(
-        "ai4rag.search_space.prepare.maas_utils.create_maas_model_client",
+        "ai4rag.components.utils.models.create_maas_model_client",
         return_value=_capable_model_client(),
     )
     fm_kwarg = {"side_effect": foundation_valid} if callable(foundation_valid) else {"return_value": foundation_valid}
     em_kwarg = {"side_effect": embedding_valid} if callable(embedding_valid) else {"return_value": embedding_valid}
-    mocker.patch("ai4rag.search_space.prepare.maas_utils._validate_foundation_model", **fm_kwarg)
-    mocker.patch("ai4rag.search_space.prepare.maas_utils._validate_embedding_model", **em_kwarg)
+    mocker.patch("ai4rag.components.utils.models._validate_foundation_model", **fm_kwarg)
+    mocker.patch("ai4rag.components.utils.models._validate_embedding_model", **em_kwarg)
     return client
 
 
@@ -186,10 +186,10 @@ class TestPrepareSearchSpaceWithMaas:
             prepare_search_space_with_maas(_payload(embedding_ids=["emb-bad"]), client)
 
     def test_user_specifies_unavailable_foundation_model(self, mocker):
-        """Error when a requested foundation model is not available in MaaS."""
+        """Error when a requested foundation model is not available on the serving endpoint."""
         client = _setup_client(mocker, ["llm-ok", "default-embedding"])
 
-        with pytest.raises(SearchSpaceValueError, match=r"not available in MaaS.*llm-unknown"):
+        with pytest.raises(SearchSpaceValueError, match=r"not available.*llm-unknown"):
             prepare_search_space_with_maas(_payload(foundation_ids=["llm-unknown"]), client)
 
     def test_user_picks_available_model_while_others_fail(self, mocker):

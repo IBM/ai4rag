@@ -10,9 +10,9 @@ ai4rag is designed as a modular RAG optimization engine with clear separation of
 
 ai4rag is **LLM and Vector Database provider agnostic**. It integrates with various backends through:
 
-- **OpenShift MaaS**: Foundation-model and embedding provider, accessed through the stock `openai` SDK
-- **Direct Vector Store Clients**: Chroma, Milvus, and PGVector are integrated directly (no MaaS dependency)
-- **Pluggable Components**: Foundation models, embeddings, and vector stores are abstracted
+- **OpenAI-compatible model endpoints**: Foundation and embedding models are reached through the stock `openai` SDK, so any OpenAI-compatible endpoint works (OpenShift MaaS is the built-in integration)
+- **Direct Vector Store Clients**: Chroma, Milvus, and PGVector are integrated directly
+- **Pluggable Components**: Foundation models, embeddings, and vector stores are all defined by abstract base classes — implement one to plug in your own provider
 
 ### Template-Based Approach
 
@@ -113,7 +113,7 @@ graph TB
 **Embedding** (`ai4rag/rag/embedding/`)
 
 - Generates text embeddings
-- Integrates with OpenShift MaaS embedding models
+- Integrates with any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` (e.g. OpenShift MaaS)
 - Handles batching and error recovery
 
 **Vector Stores** (`ai4rag/rag/vector_store/`)
@@ -131,7 +131,7 @@ graph TB
 **Foundation Models** (`ai4rag/rag/foundation_models/`)
 
 - Generates answers using LLMs
-- Integrates with OpenShift MaaS foundation models
+- Integrates with any OpenAI-compatible chat endpoint via `OpenAIFoundationModel` (e.g. OpenShift MaaS)
 - Formats prompts with retrieved context
 
 **Templates** (`ai4rag/rag/template/`)
@@ -158,7 +158,7 @@ graph TB
 
 - Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
-- Provider-agnostic — accepts injected S3 clients and MaaS clients
+- Provider-agnostic — accepts injected S3 clients and OpenAI-compatible model clients
 
 **Optimization Components** (`ai4rag/components/optimization/`)
 
@@ -257,7 +257,7 @@ ai4rag is designed for extensibility:
 ## Technology Stack
 
 - **Python**: 3.12 & 3.13
-- **OpenShift MaaS**: Foundation-model & embedding integration, via the `openai` SDK
+- **OpenAI SDK**: Foundation-model & embedding integration over any OpenAI-compatible endpoint (e.g. OpenShift MaaS)
 - **Docling Core**: Document representation and structure-aware chunking
 - **LangChain**: Token-based text splitting
 - **Unitxt**: Evaluation metrics

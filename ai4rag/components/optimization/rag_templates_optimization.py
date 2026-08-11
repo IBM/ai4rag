@@ -15,7 +15,7 @@ from openai import OpenAI
 from ai4rag import handler
 from ai4rag.components.assets_generator import generate_notebook_from_template
 from ai4rag.components.utils.docling_io import load_docling_documents
-from ai4rag.components.utils.maas_client import create_maas_model_client
+from ai4rag.components.utils.models import get_embedding_models, get_foundation_models
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -24,7 +24,6 @@ from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
 from ai4rag.search_space.src.parameter import Parameter
@@ -94,8 +93,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     output_dir
         Root directory where per-pattern output folders are written.
     maas_client
-        An authenticated general MaaS :class:`~openai.OpenAI` client (its API key
-        is reused to rebuild per-model clients during deserialization).
+        An authenticated general OpenAI-compatible :class:`~openai.OpenAI` client.
+        Only its API key is reused, to rebuild per-model clients when restoring
+        the models recorded in the search-space report.
     vector_store_config
         Connection config for the vector store backend. Its type (via
         ``config.provider``) determines whether Chroma, Milvus, or PGVector
@@ -154,17 +154,23 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     with open(search_space_report_path, "r", encoding="utf-8") as f:
         search_space_raw: dict[str, Any] = json.load(f)
 
-    foundation_models: list[OpenAIFoundationModel] = []
-    embedding_models: list[OpenAIEmbeddingModel] = []
-    params: list[Parameter] = []
+    # Restore the models exactly as selected during search-space preparation.
+    # Each serialized spec carries its per-model endpoint, inference params,
+    # detected language and prompts, all reused verbatim (validate=False); only
+    # the client's API key is taken from `maas_client`.
+    foundation_models: list[OpenAIFoundationModel] = get_foundation_models(
+        maas_client, search_space_raw.get("foundation_model", []), validate=False
+    )
+    embedding_models: list[OpenAIEmbeddingModel] = get_embedding_models(
+        maas_client, search_space_raw.get("embedding_model", []), validate=False
+    )
 
+    params: list[Parameter] = []
     for param_name, values in search_space_raw.items():
         if param_name == "foundation_model":
-            values = [_deserialize_model(m, maas_client) for m in values]
-            foundation_models = values
+            values = foundation_models
         elif param_name == "embedding_model":
-            values = [_deserialize_model(m, maas_client) for m in values]
-            embedding_models = values
+            values = embedding_models
         params.append(Parameter(param_name, "C", values=values))
 
     search_space = AI4RAGSearchSpace(params=params)
@@ -292,40 +298,6 @@ def _generate_output_artifacts(
         patterns.append(pattern_data)
 
     return patterns
-
-
-def _deserialize_model(data: dict[str, Any], maas_client: OpenAI) -> OpenAIEmbeddingModel | OpenAIFoundationModel:
-    """Reconstruct a model instance from its serialized dictionary.
-
-    Each model is rebuilt behind its own per-model MaaS client, using the
-    serialized ``base_url`` and the general client's API key.
-
-    Parameters
-    ----------
-    data
-        Dictionary produced by :func:`_serialize_model` in the search-space
-        preparation step.
-    maas_client
-        General MaaS client whose API key is reused for the per-model client.
-    """
-    model_id = data["model_id"]
-    params = data.get("params", {})
-
-    per_model_client = create_maas_model_client(base_url=data["base_url"], api_key=maas_client.api_key)
-
-    if data["type"] == "embedding":
-        return OpenAIEmbeddingModel(client=per_model_client, model_id=model_id, params=params)
-
-    language = Language(**data["language"]) if data.get("language") else None
-    return OpenAIFoundationModel(
-        client=per_model_client,
-        model_id=model_id,
-        params=params,
-        language=language,
-        system_message_text=data.get("system_message_text"),
-        user_message_text=data.get("user_message_text"),
-        context_template_text=data.get("context_template_text"),
-    )
 
 
 def _evaluation_result_fallback(eval_data_list: list, evaluation_result: Any) -> list[dict[str, Any]]:
