@@ -39,7 +39,7 @@ MaaS is the integration `ai4rag` ships helpers for, so the walkthrough below use
 
 - **SDK:** [openai](https://pypi.org/project/openai/) >= 2, < 3 (Python package used by ai4RAG; installs with this project).
 - **Deployment:** an OpenShift AI MaaS instance exposing at least one foundation model and one embedding model.
-- **Endpoints:** MaaS serves **one OpenAI-compatible endpoint per model**. A single *general* client (pointing at `{MAAS_BASE_URL}/maas-api/v1`) lists the available models, and each model then gets its own per-model client at `{scheme}://{host}/{owned_by}/v1`. A single API key is reused for every client.
+- **Endpoints:** MaaS serves **everything from a single OpenAI-compatible endpoint** (`{MAAS_BASE_URL}/maas-api/v1`). One client lists the available models (`models.list()`) and serves chat/completions and embeddings for all of them. Model ids are used verbatim, exactly as `models.list()` reports them.
 
 **Features used by ai4rag**
 
@@ -75,9 +75,8 @@ ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) fo
 
 
 ### Prepare the MaaS client
-To enable full integration with MaaS, build a *general* client that lists the available models.
-`ai4rag` then wraps each model with its own per-model client, since MaaS serves one OpenAI-compatible endpoint per model.
-The `dev_utils` helper `create_dev_maas_client()` reads `MAAS_BASE_URL` / `MAAS_API_KEY` and builds the general client for you.
+To enable full integration with MaaS, build a single client that lists the available models and serves them all — `ai4rag` reuses it for every foundation and embedding model wrapper.
+The `dev_utils` helper `create_dev_maas_client()` reads `MAAS_BASE_URL` / `MAAS_API_KEY` and builds that client for you.
 
 > [!tip]
 > Store your credentials securely in a `.env` file.
@@ -93,7 +92,7 @@ client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 > [!note]
 > `dev_utils` is only available when cloning the repository. For the equivalent setup using the
-> public API (per-model `OpenAI` clients built with `create_maas_client` / `create_maas_model_client`),
+> public API (the single `OpenAI` client built with `create_maas_client`),
 > see the [Provider-Agnostic Design](https://ibm.github.io/ai4rag/latest/user-guide/provider-agnostic/) guide.
 
 ### Prepare knowledge base documents
@@ -199,7 +198,7 @@ search_space = AI4RAGSearchSpace(
 > When omitted, both methods are included by default.
 
 > [!tip]
-> To validate model IDs and build a search space from a MaaS deployment in one call, use `prepare_search_space_with_maas()` from `ai4rag.search_space.prepare_search_space`, passing the general MaaS client and the foundation/embedding model IDs per type.
+> To validate model IDs and build a search space from a MaaS deployment in one call, use `prepare_search_space_with_maas()` from `ai4rag.search_space.prepare_search_space`, passing the MaaS client and the foundation/embedding model IDs per type.
 
 
 ### Configure optimizer

@@ -103,7 +103,8 @@ def embedding_model() -> OpenAIEmbeddingModel:
         pytest.skip("MAAS_BASE_URL / MAAS_API_KEY not set; semantic retrieval needs a real embedding model.")
 
     client = create_dev_maas_client()
-    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "bge-m3")
+    # The id is used verbatim, exactly as models.list() reports it; override per deployment.
+    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "redhataibge-m3")
     dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "1024"))
     context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "8192"))
     return build_maas_model(

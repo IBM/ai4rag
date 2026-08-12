@@ -17,15 +17,14 @@ _SAMPLE_PATTERN_DATA: dict = {
     "name": "pattern_001",
     "settings": {
         "generation": {
-            "model_id": "ibm/granite-3.1-8b-instruct",
-            "base_url": "https://maas.example.com/ns/granite/v1",
+            "model_id": "publishers/ibm/models/granite-3.1-8b-instruct",
             "system_message_text": "Answer the question.",
             "user_message_text": "Context: {reference_documents}\nQuestion: {question}",
             "context_template_text": "{document}",
+            "language": {"code": "en", "name": "English"},
         },
         "embedding": {
-            "model_id": "ibm/slate-125m-english-rtrvr",
-            "base_url": "https://maas.example.com/ns/slate/v1",
+            "model_id": "publishers/ibm/models/slate-125m-english-rtrvr",
             "embedding_params": {"embedding_dimension": 768},
         },
         "vector_store_binding": {
@@ -65,14 +64,14 @@ class TestCreatePlaceholderMapping:
         assert mapping["PATTERN_NAME"] == "pattern_001"
 
     def test_generation_fields(self, mapping: dict):
-        assert mapping["FM_MODEL_ID"] == "ibm/granite-3.1-8b-instruct"
-        assert mapping["FM_BASE_URL"] == "https://maas.example.com/ns/granite/v1"
+        # The full '/'-containing id is carried through verbatim.
+        assert mapping["FM_MODEL_ID"] == "publishers/ibm/models/granite-3.1-8b-instruct"
         assert mapping["SYSTEM_MESSAGE"] == "Answer the question."
         assert mapping["CONTEXT_TEXT"] == "{document}"
+        assert mapping["LANGUAGE"] == {"code": "en", "name": "English"}
 
     def test_embedding_fields(self, mapping: dict):
-        assert mapping["EMBEDDING_MODEL_ID"] == "ibm/slate-125m-english-rtrvr"
-        assert mapping["EMBEDDING_BASE_URL"] == "https://maas.example.com/ns/slate/v1"
+        assert mapping["EMBEDDING_MODEL_ID"] == "publishers/ibm/models/slate-125m-english-rtrvr"
         assert mapping["EMBEDDING_PARAMS"] == {"embedding_dimension": 768}
 
     def test_vector_store_fields(self, mapping: dict):
@@ -113,9 +112,8 @@ class TestCreatePlaceholderMapping:
             "SYSTEM_MESSAGE",
             "USER_MESSAGE",
             "CONTEXT_TEXT",
-            "FM_BASE_URL",
+            "LANGUAGE",
             "EMBEDDING_MODEL_ID",
-            "EMBEDDING_BASE_URL",
             "EMBEDDING_PARAMS",
             "PROVIDER_TYPE",
             "COLLECTION_NAME",
@@ -140,15 +138,10 @@ class TestCreatePlaceholderMapping:
 
         assert mapping["PATTERN_NAME"] == ""
         assert mapping["FM_MODEL_ID"] == ""
+        assert mapping["LANGUAGE"] == {"code": "", "name": "auto"}
         assert mapping["CHUNK_SIZE"] == 512
         assert mapping["CHUNK_OVERLAP"] == 50
         assert mapping["NUMBER_OF_CHUNKS"] == 5
-
-    def test_base_urls_empty_when_not_provided(self):
-        """When the pattern carries no model base URLs, the placeholders must be empty strings."""
-        mapping = create_placeholder_mapping({})
-        assert mapping["FM_BASE_URL"] == ""
-        assert mapping["EMBEDDING_BASE_URL"] == ""
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +241,25 @@ class TestGeneratedNotebookUsesDirectClients:
         assert "provider_id" not in text
         assert "reuse_collection_name" not in text
 
+    def test_generated_notebook_uses_single_maas_client(self, template: str, tmp_path: Path):
+        """Both templates build exactly one MaaS client from ``MAAS_BASE_URL`` and reuse it."""
+        output_path = tmp_path / f"{template}.ipynb"
+        generate_notebook_from_template(
+            notebook_template=template,
+            output_data=_SAMPLE_PATTERN_DATA,
+            output_notebook_path=output_path,
+        )
+        text = _read_notebook_text(output_path)
+
+        # A single OpenAI client is built from the env-provided base URL, once.
+        assert "client = OpenAI(base_url=MAAS_BASE_URL, api_key=MAAS_API_KEY)" in text
+        assert text.count("OpenAI(base_url=MAAS_BASE_URL") == 1
+        assert 'MAAS_BASE_URL = os.getenv("MAAS_BASE_URL")' in text
+
+        # Per-model endpoints are gone entirely.
+        assert "FM_BASE_URL" not in text
+        assert "EMBEDDING_BASE_URL" not in text
+
     def test_generated_notebook_lists_required_env_vars(self, template: str, tmp_path: Path):
         """The provider's required environment variables must be documented in the notebook."""
         output_path = tmp_path / f"{template}.ipynb"
@@ -275,3 +287,24 @@ class TestGeneratedNotebookUsesDirectClients:
         # Escaped literal braces ({{ }}) are intentional; only single-brace ALL-CAPS tokens are placeholders.
         leftover = sorted(set(re.findall(r"(?<!\{)\{[A-Z_]+\}(?!\})", text)))
         assert leftover == [], f"Unresolved placeholders: {leftover}"
+
+
+def test_inference_notebook_passes_detected_language(tmp_path: Path):
+    """The inference notebook must rebuild the detected language and pass it to the foundation model.
+
+    Indexing has no foundation model, so this is inference-specific: the language
+    detected during optimisation is serialised into ``settings.generation`` and
+    must flow into ``OpenAIFoundationModel`` so answers keep the benchmark's language.
+    """
+    output_path = tmp_path / "maas_inference.ipynb"
+    generate_notebook_from_template(
+        notebook_template="maas_inference",
+        output_data=_SAMPLE_PATTERN_DATA,
+        output_notebook_path=output_path,
+    )
+    text = _read_notebook_text(output_path)
+
+    assert "from ai4rag.rag.foundation_models.base_model import Language" in text
+    # The detected language dict is rebuilt into a Language and passed to the model.
+    assert "language = Language(**{'code': 'en', 'name': 'English'})" in text
+    assert "language=language," in text

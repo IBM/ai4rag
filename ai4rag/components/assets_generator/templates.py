@@ -67,14 +67,15 @@ def create_placeholder_mapping(
     settings = output_data.get("settings", {})
     fm = settings.get("generation", {})
     mapping["FM_MODEL_ID"] = fm.get("model_id", "")
-    mapping["FM_BASE_URL"] = fm.get("base_url", "")
     mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")
     mapping["USER_MESSAGE"] = fm.get("user_message_text", "")
     mapping["CONTEXT_TEXT"] = fm.get("context_template_text", "")
+    # Detected generation language ({"code", "name"}); defaults mirror
+    # BaseFoundationModel's "auto" so the notebook restores the same behaviour.
+    mapping["LANGUAGE"] = fm.get("language", {"code": "", "name": "auto"})
 
     em = settings.get("embedding", {})
     mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
-    mapping["EMBEDDING_BASE_URL"] = em.get("base_url", "")
     mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
     vs = settings.get("vector_store_binding", {})
     provider_type = vs.get("provider_type", "")

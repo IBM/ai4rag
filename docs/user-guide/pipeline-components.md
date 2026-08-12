@@ -138,7 +138,7 @@ The `ai4rag.components` package provides three shared utility modules used acros
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `utils.maas_client` | `create_maas_client()` | General MaaS listing client (`/maas-api/v1`) with SSL self-signed cert fallback |
+| `utils.maas_client` | `create_maas_client()` | Single MaaS client (`/maas-api/v1`) for listing, chat, and embeddings, with SSL self-signed cert fallback |
 | `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
 These are importable from `ai4rag.components` or `ai4rag.components.utils`:
@@ -147,15 +147,14 @@ These are importable from `ai4rag.components` or `ai4rag.components.utils`:
 from ai4rag.components import create_s3_client, create_maas_client, load_docling_documents
 ```
 
-!!! note "Per-model clients"
-    MaaS serves one OpenAI-compatible endpoint per model. `create_maas_client()` builds the
-    *general* listing client; each model wrapper additionally needs its own client, built with
-    `create_maas_model_client()` and `maas_model_base_url()` (also exported from
-    `ai4rag.components.utils`). See [Provider-Agnostic Design](provider-agnostic.md) for the full pattern.
+!!! note "Single client for everything"
+    `create_maas_client()` builds the one client MaaS needs: it lists available models
+    (`models.list()`) and is reused, unchanged, to serve `chat.completions` and `embeddings`
+    for every model wrapper. See [Provider-Agnostic Design](provider-agnostic.md) for the full pattern.
 
 ## Design Principles
 
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
 - **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
 - **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
-- **SSL fallback**: S3 operations and the general MaaS listing client automatically retry with `verify=False` when self-signed certificate errors are detected.
+- **SSL fallback**: S3 operations and the MaaS client automatically retry with `verify=False` when self-signed certificate errors are detected.

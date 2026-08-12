@@ -25,13 +25,14 @@ Before starting, ensure you have:
 
 ### 1. Prepare the MaaS Client
 
-OpenShift MaaS serves each model at its own OpenAI-compatible endpoint. A single
-*general* client (pointing at `{MAAS_BASE_URL}/maas-api/v1`) is used to discover the
-available models; each model wrapper then talks to its model's own endpoint.
+OpenShift MaaS serves every model from a single OpenAI-compatible endpoint
+(`{MAAS_BASE_URL}/maas-api/v1`). One client discovers the available models
+and is reused, unchanged, to serve every model wrapper.
 
-The `dev_utils` helpers wrap this two-step setup — `create_dev_maas_client()`
-reads `MAAS_BASE_URL` / `MAAS_API_KEY`, and `build_maas_model()` resolves a model's
-per-model endpoint and binds it to the correct wrapper:
+The `dev_utils` helpers wrap this setup — `create_dev_maas_client()`
+reads `MAAS_BASE_URL` / `MAAS_API_KEY` and builds that client, and
+`build_maas_model()` checks that a model id is available and binds it
+to the correct wrapper on the same client:
 
 ```python
 from dotenv import load_dotenv, find_dotenv
@@ -39,14 +40,14 @@ from dev_utils.utils import create_dev_maas_client
 
 load_dotenv(find_dotenv())
 
-# General client, used to discover models and derive per-model endpoints.
+# Single client, used both to discover models and to serve every wrapper.
 client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 ```
 
 !!! tip "Public API"
     `dev_utils` is only available when cloning the repository. For the equivalent
-    setup using the public API (per-model `OpenAI` clients built with
-    `create_maas_client` / `create_maas_model_client`), see
+    setup using the public API (the single `OpenAI` client built with
+    `create_maas_client`), see
     [Provider-Agnostic Design](../user-guide/provider-agnostic.md).
 
 ---

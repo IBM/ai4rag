@@ -22,7 +22,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 #: MaaS carries no metadata to distinguish model types, so the caller must
-#: declare foundation and embedding model ids explicitly.
+#: declare foundation and embedding model ids explicitly. Ids are used verbatim,
+#: exactly as ``models.list()`` reports them; override per deployment via env vars.
 FOUNDATION_MODEL_ID = os.environ.get("AI4RAG_TEST_FOUNDATION_MODEL", "qwen3-8b-fp8-dynamic")
 EMBEDDING_MODEL_ID = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "redhataibge-m3")
 

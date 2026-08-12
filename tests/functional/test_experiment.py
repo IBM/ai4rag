@@ -52,13 +52,15 @@ def benchmark_data():
 
 @pytest.fixture(scope="module")
 def foundation_model(client):
+    # The id is used verbatim, exactly as models.list() reports it; override per deployment.
     model_id = os.environ.get("AI4RAG_TEST_FOUNDATION_MODEL", "qwen3-8b-fp8-dynamic")
     return build_maas_model(client, model_id=model_id, model_type="llm")
 
 
 @pytest.fixture(scope="module")
 def embedding_model(client):
-    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "bge-m3")
+    # The id is used verbatim, exactly as models.list() reports it; override per deployment.
+    model_id = os.environ.get("AI4RAG_TEST_EMBEDDING_MODEL", "redhataibge-m3")
     dimension = int(os.environ.get("AI4RAG_TEST_EMBEDDING_DIMENSION", "1024"))
     context_length = int(os.environ.get("AI4RAG_TEST_EMBEDDING_CONTEXT_LENGTH", "8192"))
     return build_maas_model(

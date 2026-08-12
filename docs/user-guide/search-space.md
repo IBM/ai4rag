@@ -87,11 +87,12 @@ Parameter(
 ```
 
 !!! note "Building MaaS models"
-    `client` is the *general* MaaS client (e.g. from `create_dev_maas_client()`), and
-    `build_maas_model` resolves each model's own per-model endpoint before wrapping it in
-    `OpenAIFoundationModel` / `OpenAIEmbeddingModel`. See [Quick Start](../getting-started/quick-start.md)
-    for the `dev_utils` helpers and [Provider-Agnostic Design](provider-agnostic.md) for the
-    public-API equivalent (`create_maas_client` / `create_maas_model_client`).
+    `client` is the single MaaS client (e.g. from `create_dev_maas_client()`), and
+    `build_maas_model` checks that the model id is available before wrapping it, on that
+    same client, in `OpenAIFoundationModel` / `OpenAIEmbeddingModel`. See
+    [Quick Start](../getting-started/quick-start.md) for the `dev_utils` helpers and
+    [Provider-Agnostic Design](provider-agnostic.md) for the public-API equivalent
+    (`create_maas_client`).
 
 !!! tip "Categorical for Discrete Numerics"
     Even for numeric parameters like `chunk_size`, use Categorical (`"C"`) when you want to test specific values rather than a continuous range. This gives you more control over which values are tested.
