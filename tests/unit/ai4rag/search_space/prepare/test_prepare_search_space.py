@@ -14,50 +14,48 @@ from ai4rag.search_space.prepare import prepare_search_space_with_maas
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
-def _make_model(short_id: str, namespace: str = "ai-eng-cracow") -> Mock:
-    """Build a MaaS ``Model``-like mock with the fully-qualified id and owned_by shape."""
+def _make_model(model_id: str) -> Mock:
+    """Build a MaaS ``Model``-like mock reporting its id verbatim.
+
+    Ids are used exactly as the registry reports them, so the availability check
+    matches the payload's ``model_id`` directly (no path stripping).
+    """
     m = Mock()
-    m.id = f"publishers/{namespace}/models/{short_id}"
-    m.owned_by = f"{namespace}/{short_id}"
+    m.id = model_id
     return m
 
 
-def _capable_model_client(dim: int = 768) -> MagicMock:
-    """A per-model client mock supporting foundation chat and embedding auto-detection."""
-    client = MagicMock()
-    emb_response = Mock()
-    emb_response.data = [Mock(embedding=[0.0] * dim)]
-    client.embeddings.create.return_value = emb_response
-    client.chat.completions.create.return_value = Mock(choices=[])
-    return client
+def _setup_client(mocker, registered_ids, *, foundation_valid=True, embedding_valid=True, dim: int = 768) -> MagicMock:
+    """Build the single MaaS client mock and patch the validation helpers.
 
-
-def _setup_client(mocker, registered_short_ids, *, foundation_valid=True, embedding_valid=True) -> MagicMock:
-    """Build a MaaS general client mock and patch per-model client creation + validation.
+    One client now backs everything, so the same mock lists models *and* serves
+    chat/embeddings — mirroring the real single-endpoint MaaS deployment.
 
     Parameters
     ----------
     mocker
         pytest-mock fixture.
-    registered_short_ids : list[str]
-        Short ids of models the MaaS registry should report.
+    registered_ids : list[str]
+        Ids of the models the MaaS registry should report, verbatim.
     foundation_valid, embedding_valid : bool | callable
         Return value (or ``side_effect``) for the corresponding validation function.
+    dim : int, default=768
+        Length of the embedding vector returned during auto-detection.
     """
     client = MagicMock(spec=OpenAI)
     # spec=OpenAI does not expose instance attributes set in __init__, so set them explicitly.
     client.base_url = "https://maas.example.com/maas-api/v1"
     client.api_key = "secret-key"
-    client.models.list.return_value.data = [_make_model(sid) for sid in registered_short_ids]
+    client.models.list.return_value.data = [_make_model(mid) for mid in registered_ids]
+    emb_response = Mock()
+    emb_response.data = [Mock(embedding=[0.0] * dim)]
+    client.embeddings.create.return_value = emb_response
+    client.chat.completions.create.return_value = Mock(choices=[])
 
-    mocker.patch(
-        "ai4rag.components.utils.models.create_maas_model_client",
-        return_value=_capable_model_client(),
-    )
     fm_kwarg = {"side_effect": foundation_valid} if callable(foundation_valid) else {"return_value": foundation_valid}
     em_kwarg = {"side_effect": embedding_valid} if callable(embedding_valid) else {"return_value": embedding_valid}
-    mocker.patch("ai4rag.components.utils.models._validate_foundation_model", **fm_kwarg)
-    mocker.patch("ai4rag.components.utils.models._validate_embedding_model", **em_kwarg)
+    mocker.patch("ai4rag.search_space.prepare.models._validate_foundation_model", **fm_kwarg)
+    mocker.patch("ai4rag.search_space.prepare.models._validate_embedding_model", **em_kwarg)
     return client
 
 

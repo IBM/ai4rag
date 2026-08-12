@@ -1330,7 +1330,7 @@ Full RAG pipeline with all components:
 
 ```python
 import os
-from ai4rag.components.utils import create_maas_client, create_maas_model_client, maas_model_base_url
+from ai4rag.components.utils import create_maas_client
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.vector_store import get_vector_store, MilvusConfig
@@ -1338,30 +1338,25 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 
-# 1. General client — lists available models and derives per-model endpoints
+# 1. A single client serves everything: it lists available models and serves
+#    chat/completions and embeddings for all of them at the one MaaS endpoint.
 maas_client = create_maas_client(
-    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
+    base_url=os.getenv("MAAS_BASE_URL"),
     api_key=os.getenv("MAAS_API_KEY"),
 )
 
-# 2. Create foundation model — MaaS serves each model at its own endpoint,
-#    so every wrapper gets its own per-model client
+# 2. Create foundation model — model ids are used verbatim, exactly as
+#    models.list() reports them, on the shared client.
 foundation_model = OpenAIFoundationModel(
     model_id="qwen3-8b-fp8-dynamic",
-    client=create_maas_model_client(
-        base_url=maas_model_base_url(maas_client.base_url, "ai-eng-cracow/qwen3-8b-fp8-dynamic"),
-        api_key=maas_client.api_key,
-    ),
+    client=maas_client,
     params={"max_completion_tokens": 512, "temperature": 0.1}
 )
 
-# 3. Create embedding model
+# 3. Create embedding model — same shared client
 embedding_model = OpenAIEmbeddingModel(
     model_id="bge-m3",
-    client=create_maas_model_client(
-        base_url=maas_model_base_url(maas_client.base_url, "ai-eng-cracow/bge-m3"),
-        api_key=maas_client.api_key,
-    ),
+    client=maas_client,
     params={"embedding_dimension": 1024, "context_length": 8192}
 )
 

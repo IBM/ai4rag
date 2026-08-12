@@ -15,7 +15,6 @@ from openai import OpenAI
 from ai4rag import handler
 from ai4rag.components.assets_generator import generate_notebook_from_template
 from ai4rag.components.utils.docling_io import load_docling_documents
-from ai4rag.components.utils.models import get_embedding_models, get_foundation_models
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -26,6 +25,7 @@ from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.search_space.prepare.models import get_embedding_models, get_foundation_models
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler.event_handler import KFPEventHandler
@@ -93,9 +93,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     output_dir
         Root directory where per-pattern output folders are written.
     maas_client
-        An authenticated general OpenAI-compatible :class:`~openai.OpenAI` client.
-        Only its API key is reused, to rebuild per-model clients when restoring
-        the models recorded in the search-space report.
+        An authenticated OpenAI-compatible :class:`~openai.OpenAI` client shared
+        by every model restored from the search-space report; it serves chat and
+        embeddings for all of them.
     vector_store_config
         Connection config for the vector store backend. Its type (via
         ``config.provider``) determines whether Chroma, Milvus, or PGVector
@@ -155,9 +155,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         search_space_raw: dict[str, Any] = json.load(f)
 
     # Restore the models exactly as selected during search-space preparation.
-    # Each serialized spec carries its per-model endpoint, inference params,
-    # detected language and prompts, all reused verbatim (validate=False); only
-    # the client's API key is taken from `maas_client`.
+    # Each serialized spec carries its inference params, detected language and
+    # prompts, all reused verbatim (validate=False); every model is bound to the
+    # single shared `maas_client`.
     foundation_models: list[OpenAIFoundationModel] = get_foundation_models(
         maas_client, search_space_raw.get("foundation_model", []), validate=False
     )

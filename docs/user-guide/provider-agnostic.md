@@ -23,14 +23,14 @@ For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint w
 
 ### OpenShift MaaS Integration
 
-**What it is**: [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) exposes each deployed model as its own OpenAI-compatible endpoint, so `ai4rag` talks to it with the stock [`openai`](https://github.com/openai/openai-python) SDK. It is one example of an OpenAI-compatible provider; the setup below applies to any of them — point the client at your endpoint's URL.
+**What it is**: [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) exposes all deployed models through a single OpenAI-compatible endpoint, so `ai4rag` talks to it with the stock [`openai`](https://github.com/openai/openai-python) SDK. It is one example of an OpenAI-compatible provider; the setup below applies to any of them — point the client at your endpoint's URL.
 
 **What `ai4rag` supports**:
 
 - **Foundation Models**: Any chat/completion model deployed on your MaaS instance
 - **Embedding Models**: Any embedding model deployed on your MaaS instance
 
-**How it works**: MaaS serves **one endpoint per model**. A single *general* client (pointing at `{MAAS_BASE_URL}/maas-api/v1`) lists the available models, and each model wrapper then gets its own client pointing at that model's per-model URL (`{scheme}://{host}/{owned_by}/v1`). A single API key is reused for every client.
+**How it works**: a single client, pointing at `MAAS_BASE_URL` (used verbatim), serves everything — it lists the available models (`models.list()`) and is reused, unchanged, to serve `chat.completions` and `embeddings` for every model. Model ids are used verbatim, exactly as `models.list()` reports them (ids may contain `/`).
 
 !!! note "No model metadata"
     Unlike some registries, MaaS `models.list()` carries no metadata (model type, embedding dimension, context length). So embedding dimension and context length are auto-detected by `OpenAIEmbeddingModel` at construction time (or supplied via `params`), and the caller declares which model ids are foundation vs. embedding.
@@ -39,31 +39,25 @@ For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint w
 
 ```python
 import os
-from ai4rag.components.utils import create_maas_client, create_maas_model_client, maas_model_base_url
+from ai4rag.components.utils import create_maas_client
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 
-# 1. General client — lists available models from the /maas-api/v1 endpoint.
+# A single client serves everything: it lists available models and serves
+# chat/completions and embeddings for all of them at the one MaaS endpoint.
 maas_client = create_maas_client(
-    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
+    base_url=os.getenv("MAAS_BASE_URL"),
     api_key=os.getenv("MAAS_API_KEY"),
 )
 
-# 2. MaaS serves each model at its own endpoint, so every wrapper gets its own
-#    per-model client. `owned_by` (from the listed model) is the URL path prefix.
+# Model ids are used verbatim — exactly as models.list() reports them.
 foundation_model = OpenAIFoundationModel(
     model_id="qwen3-8b-fp8-dynamic",
-    client=create_maas_model_client(
-        base_url=maas_model_base_url(maas_client.base_url, "ai-eng-cracow/qwen3-8b-fp8-dynamic"),
-        api_key=maas_client.api_key,
-    ),
+    client=maas_client,
 )
 embedding_model = OpenAIEmbeddingModel(
     model_id="bge-m3",
-    client=create_maas_model_client(
-        base_url=maas_model_base_url(maas_client.base_url, "ai-eng-cracow/bge-m3"),
-        api_key=maas_client.api_key,
-    ),
+    client=maas_client,
     params={"embedding_dimension": 1024, "context_length": 8192},
 )
 
@@ -74,7 +68,7 @@ vector_store_config = MilvusConfig.from_env()
 ```
 
 !!! tip "Discovering models automatically"
-    To validate model ids and build a full search space from a MaaS deployment in one call, use [`prepare_search_space_with_maas`](search-space.md), passing the general `maas_client` and the foundation/embedding model ids per type.
+    To validate model ids and build a full search space from a MaaS deployment in one call, use [`prepare_search_space_with_maas`](search-space.md), passing the `maas_client` and the foundation/embedding model ids per type.
 
 ---
 
@@ -225,7 +219,7 @@ class BaseVectorStore(ABC):
 
 The beauty of the provider-agnostic design is that you can **mix and match** components from different providers.
 
-The `foundation_model` and `embedding_model` below are the per-model wrappers built in the [OpenShift MaaS Integration](#openshift-maas-integration) usage snippet above — only the `vector_store_config` differs between the examples.
+The `foundation_model` and `embedding_model` below are the model wrappers built in the [OpenShift MaaS Integration](#openshift-maas-integration) usage snippet above — only the `vector_store_config` differs between the examples.
 
 ### Example 1: MaaS Models with Milvus
 

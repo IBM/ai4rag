@@ -301,6 +301,8 @@ export AI4RAG_TEST_DATA_PATH="/path/to/test/data"
 export AI4RAG_TEST_OUTPUT_PATH="/path/to/test/output"
 
 # Optional: model configuration
+# AI4RAG_TEST_FOUNDATION_MODEL / AI4RAG_TEST_EMBEDDING_MODEL must be the model id
+# verbatim, exactly as returned by models.list() (may include a "/").
 export AI4RAG_TEST_FOUNDATION_MODEL="vllm-inference-llama-3-1/model-id"
 export AI4RAG_TEST_EMBEDDING_MODEL="vllm-embedding/embedding-model-id"
 export AI4RAG_TEST_EMBEDDING_DIMENSION="768"

@@ -6,35 +6,41 @@
 
 This module is the single place that turns *model identifiers* (or serialized
 model specs) into ready-to-use :class:`OpenAIFoundationModel` /
-:class:`OpenAIEmbeddingModel` instances. It supports two complementary modes,
-both exposed through the same :func:`get_foundation_models` /
-:func:`get_embedding_models` entry points:
+:class:`OpenAIEmbeddingModel` instances. A **single** :class:`~openai.OpenAI`
+client serves everything — it lists models and serves ``chat.completions`` and
+``embeddings`` for every model at the same endpoint — so all instantiated
+wrappers share that one client. Model ids are used **verbatim**, exactly as
+returned by ``models.list()`` (including any ``/`` characters).
 
-* **Discovery** — given a client and plain model ids, each model's endpoint is
-  discovered from the serving registry (OpenShift MaaS lists one endpoint per
-  model), the model is instantiated and, by default, validated for
-  responsiveness. This backs the search-space preparation step and the
-  generated notebooks.
-* **Restore** — given serialized specs from a search-space report (each already
-  carrying its per-model ``base_url``, inference ``params``, detected
-  ``language`` and prompt templates), models are rebuilt verbatim, reusing every
-  stored parameter and taking only the API key/token from the client. No
+Two complementary modes are exposed through the same
+:func:`get_foundation_models` / :func:`get_embedding_models` entry points:
+
+* **Discovery** — given plain model ids, each id is checked against the serving
+  registry, the model is instantiated on the shared client and, by default,
+  validated for responsiveness (embedding dimension/context length are
+  auto-detected against the live endpoint). This backs the search-space
+  preparation step and the generated notebooks.
+* **Restore** — given serialized specs from a search-space report (each carrying
+  its ``model_id``, inference ``params``, detected ``language`` and prompt
+  templates), models are rebuilt verbatim, reusing every stored parameter. No
   registry listing or re-detection is performed. This backs the optimization run.
 
-Although the endpoint-discovery path is tailored to OpenShift MaaS, any
-OpenAI-compatible serving stack works: pass an :class:`~openai.OpenAI` client
-and the ids it serves. Callers that need bespoke behaviour can instantiate the
-model wrappers directly instead of going through these helpers.
+This code lives in :mod:`ai4rag.search_space.prepare` — alongside its primary
+consumer, :func:`prepare_search_space_with_maas` — because building the models
+that populate a search space *is* search-space preparation. The optimization
+component imports the same helpers directly for its restore path.
+
+Any OpenAI-compatible serving stack works: pass an :class:`~openai.OpenAI`
+client and the ids it serves. Callers that need bespoke behaviour can
+instantiate the model wrappers directly instead of going through these helpers.
 """
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 
 from openai import OpenAI
-from openai.types import Model
 
 from ai4rag import logger
-from ai4rag.components.utils.maas_client import create_maas_model_client, maas_model_base_url
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
@@ -52,55 +58,29 @@ _EMBEDDING = "embedding"
 ModelEntry = str | Mapping[str, Any]
 
 
-def _short_model_id(model_id: str) -> str:
-    """Return the short, usable model id (last path segment).
+def _list_maas_model_ids(client: OpenAI) -> set[str]:
+    """List the ids of every model available on the serving client.
 
-    MaaS lists models with fully-qualified ids such as
-    ``publishers/ai-eng-cracow/models/qwen3-8b-fp8-dynamic``; the segment used
-    when calling ``chat``/``embeddings`` is the final one.
-    """
-    return model_id.rsplit("/", 1)[-1]
-
-
-def _model_owned_by(model: Model) -> str:
-    """Return the ``owned_by`` path prefix used to build the per-model endpoint.
-
-    Falls back to deriving ``<namespace>/<short-id>`` from the model id when the
-    ``owned_by`` attribute is missing, so a per-model URL can still be built.
-    """
-    owned_by = getattr(model, "owned_by", None)
-    if owned_by:
-        return owned_by
-    # id shape: publishers/<namespace>/models/<short-id>
-    parts = model.id.split("/")
-    if len(parts) >= 4:
-        return f"{parts[1]}/{parts[-1]}"
-    return model.id
-
-
-def _list_maas_models(client: OpenAI) -> dict[str, Model]:
-    """List models available on the serving client, keyed by their short id.
-
-    MaaS carries no metadata distinguishing foundation from embedding models, so
-    this returns every listed model; the caller decides the type by which helper
-    it invokes.
+    Ids are returned **verbatim** (exactly as ``models.list()`` reports them,
+    including any ``/`` characters), since those are the ids passed to
+    ``chat``/``embeddings``. MaaS carries no metadata distinguishing foundation
+    from embedding models, so every listed model is returned; the caller decides
+    the type by which helper it invokes.
 
     Parameters
     ----------
     client : OpenAI
-        General serving client pointing at the model-list endpoint (for MaaS,
-        ``/maas-api/v1``).
+        Serving client pointing at the OpenAI-compatible model-list endpoint.
 
     Returns
     -------
-    dict[str, Model]
-        Mapping of short model id to its :class:`~openai.types.Model` object.
+    set[str]
+        The full ids of every available model.
     """
     logger.info("Listing available models on the serving endpoint...")
-    available_models = client.models.list().data
-    registry = {_short_model_id(model.id): model for model in available_models}
-    logger.info("Found models: %s.", list(registry))
-    return registry
+    model_ids = {model.id for model in client.models.list().data}
+    logger.info("Found models: %s.", sorted(model_ids))
+    return model_ids
 
 
 def _validate_foundation_model(model: OpenAIFoundationModel) -> bool:
@@ -151,25 +131,12 @@ def _normalize_entry(entry: ModelEntry) -> dict[str, Any]:
     raise SearchSpaceValueError(f"Unsupported model entry type: '{type(entry).__name__}'.")
 
 
-def _resolve_base_url(spec: dict[str, Any], client: OpenAI, registry: dict[str, Model]) -> str:
-    """Resolve a model's per-endpoint base URL.
-
-    In restore mode the spec already carries a ``base_url``; in discovery mode it
-    is derived from the model's ``owned_by`` prefix in the serving registry.
-    """
-    base_url = spec.get("base_url")
-    if base_url:
-        return str(base_url)
-    owned_by = _model_owned_by(registry[spec["model_id"]])
-    return maas_model_base_url(client.base_url, owned_by)
-
-
 def _instantiate(
     spec: dict[str, Any],
-    per_model_client: OpenAI,
+    client: OpenAI,
     model_type: str,
 ) -> OpenAIFoundationModel | OpenAIEmbeddingModel:
-    """Build a single model wrapper from its spec behind an already-built client.
+    """Build a single model wrapper from its spec on the shared serving client.
 
     Stored ``params`` are passed through verbatim; for embedding models this
     means auto-detection (dimension/context length) is skipped when the values
@@ -179,11 +146,11 @@ def _instantiate(
     params = spec.get("params") or None
 
     if model_type == _EMBEDDING:
-        return OpenAIEmbeddingModel(client=per_model_client, model_id=model_id, params=params)
+        return OpenAIEmbeddingModel(client=client, model_id=model_id, params=params)
 
     language = Language(**spec["language"]) if spec.get("language") else None
     return OpenAIFoundationModel(
-        client=per_model_client,
+        client=client,
         model_id=model_id,
         params=params,
         language=language,
@@ -216,18 +183,24 @@ def _get_models(
     if not isinstance(client, OpenAI):
         raise SearchSpaceValueError(f"Unrecognized client type: '{type(client).__name__}'.")
 
-    specs = [_normalize_entry(entry) for entry in models]
-    if not specs:
+    # Record the discovery flag *before* normalization: a bare id string is a
+    # discovery request (verify availability against the registry), whereas a
+    # spec mapping is a restore request (rebuilt verbatim). _normalize_entry
+    # collapses both into a dict, so the distinction must be captured up front.
+    parsed = [(isinstance(entry, str), _normalize_entry(entry)) for entry in models]
+    if not parsed:
         return []
 
-    # Only hit the serving registry when at least one endpoint must be discovered
-    # (i.e. a spec without a stored base_url). Restore-only calls avoid the round-trip.
-    needs_registry = any(not spec.get("base_url") for spec in specs)
-    registry = _list_maas_models(client) if needs_registry else {}
+    # Only hit the serving registry when at least one id must be discovered.
+    # Restore-only calls avoid the round-trip.
+    needs_registry = any(is_discovery for is_discovery, _ in parsed)
+    available_ids = _list_maas_model_ids(client) if needs_registry else set()
 
     error_messages: list[str] = []
 
-    unavailable = [spec["model_id"] for spec in specs if not spec.get("base_url") and spec["model_id"] not in registry]
+    unavailable = [
+        spec["model_id"] for is_discovery, spec in parsed if is_discovery and spec["model_id"] not in available_ids
+    ]
     if unavailable:
         error_messages.append(
             f"Provided models of type '{model_type}' are not available on the serving endpoint: '{unavailable}'."
@@ -235,15 +208,11 @@ def _get_models(
 
     instances: list[OpenAIFoundationModel | OpenAIEmbeddingModel] = []
     not_responding: list[str] = []
-    for spec in specs:
+    for _, spec in parsed:
         if spec["model_id"] in unavailable:
             continue
-        per_model_client = create_maas_model_client(
-            base_url=_resolve_base_url(spec, client, registry),
-            api_key=client.api_key,
-        )
         try:
-            model = _instantiate(spec, per_model_client, model_type)
+            model = _instantiate(spec, client, model_type)
         except RuntimeError:
             # Only reachable in discovery mode, where embedding params are
             # auto-detected against a live endpoint; a failure means the model
@@ -279,19 +248,20 @@ def get_foundation_models(
 
     Each entry in *models* is either:
 
-    * a **model id** (``str``) — the model's endpoint is discovered from the
-      client's serving registry, the model is instantiated, and (when *validate*
-      is ``True``) checked for responsiveness; or
+    * a **model id** (``str``) — its availability is checked against the client's
+      serving registry, the model is instantiated on the shared client, and (when
+      *validate* is ``True``) checked for responsiveness; or
     * a **spec mapping** — a serialized search-space report entry carrying
-      ``model_id``, ``base_url``, ``params``, ``language`` and prompt templates;
-      the model is restored verbatim and only the client's API key/token is used.
+      ``model_id``, ``params``, ``language`` and prompt templates; the model is
+      restored verbatim without any registry round-trip.
+
+    Ids are used exactly as provided (including any ``/`` characters).
 
     Parameters
     ----------
     client : OpenAI
-        Authenticated OpenAI-compatible client. Its API key is reused for every
-        per-model endpoint; its ``base_url`` is used only when an endpoint must
-        be discovered.
+        Authenticated OpenAI-compatible client shared by every instantiated
+        model; it lists models and serves chat/embeddings for all of them.
     models : Sequence[str | Mapping[str, Any]]
         Model ids and/or serialized specs to instantiate.
     validate : bool, default=True

@@ -55,7 +55,6 @@ def _serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[st
         "model_id": model.model_id,
         "type": "embedding" if is_embedding else "generation",
         "params": params_dict,
-        "base_url": str(model.client.base_url),
     }
 
     if not is_embedding:
