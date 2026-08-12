@@ -1341,7 +1341,7 @@ from ai4rag.rag.template.simple_rag_template import SimpleRAG
 # 1. A single client serves everything: it lists available models and serves
 #    chat/completions and embeddings for all of them at the one MaaS endpoint.
 maas_client = create_maas_client(
-    base_url=f"{os.getenv('MAAS_BASE_URL')}/maas-api/v1",
+    base_url=os.getenv("MAAS_BASE_URL"),
     api_key=os.getenv("MAAS_API_KEY"),
 )
 

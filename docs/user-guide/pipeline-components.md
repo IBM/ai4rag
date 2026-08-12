@@ -138,7 +138,7 @@ The `ai4rag.components` package provides three shared utility modules used acros
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `utils.maas_client` | `create_maas_client()` | Single MaaS client (`/maas-api/v1`) for listing, chat, and embeddings, with SSL self-signed cert fallback |
+| `utils.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, used verbatim) for listing, chat, and embeddings, with SSL self-signed cert fallback |
 | `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
 These are importable from `ai4rag.components` or `ai4rag.components.utils`:

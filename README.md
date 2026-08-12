@@ -39,7 +39,7 @@ MaaS is the integration `ai4rag` ships helpers for, so the walkthrough below use
 
 - **SDK:** [openai](https://pypi.org/project/openai/) >= 2, < 3 (Python package used by ai4RAG; installs with this project).
 - **Deployment:** an OpenShift AI MaaS instance exposing at least one foundation model and one embedding model.
-- **Endpoints:** MaaS serves **everything from a single OpenAI-compatible endpoint** (`{MAAS_BASE_URL}/maas-api/v1`). One client lists the available models (`models.list()`) and serves chat/completions and embeddings for all of them. Model ids are used verbatim, exactly as `models.list()` reports them.
+- **Endpoints:** MaaS serves **everything from a single OpenAI-compatible endpoint** — `MAAS_BASE_URL`, used verbatim. One client lists the available models (`models.list()`) and serves chat/completions and embeddings for all of them. Model ids are used verbatim, exactly as `models.list()` reports them.
 
 **Features used by ai4rag**
 
