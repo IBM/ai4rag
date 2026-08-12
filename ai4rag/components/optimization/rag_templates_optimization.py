@@ -254,6 +254,7 @@ def _generate_output_artifacts(
                     "pipeline_name": indexing_pipeline_params.get("pipeline_name", "documents_indexing_pipeline"),
                     "parameters": {
                         "maas_secret_name": indexing_pipeline_params.get("maas_secret_name"),
+                        "vector_db_secret_name": indexing_pipeline_params.get("vector_db_secret_name"),
                         "input_data_secret_name": indexing_pipeline_params.get("input_data_secret_name"),
                         "input_data_bucket_name": indexing_pipeline_params.get("input_data_bucket_name"),
                         "input_data_key": indexing_pipeline_params.get("input_data_key"),
