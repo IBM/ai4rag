@@ -590,22 +590,7 @@ class AI4RAGExperiment:
         stop_time = time.time()
         execution_time = stop_time - start_time
 
-        # Match on both name and evaluator: a metric name (e.g. "faithfulness")
-        # can be produced by more than one evaluator, and the ``evaluator`` field
-        # is what disambiguates them.
-        final_score = next(
-            (
-                r["scores"]["mean"]
-                for r in result_scores["metrics"]
-                if r["name"] == self.optimization_metric.name and r["evaluator"] == self.optimization_metric.evaluator
-            ),
-            None,
-        )
-        if final_score is None:
-            raise RAGExperimentError(
-                f"Optimization metric '{self.optimization_metric.name}' not found in evaluation results. "
-                f"Available: {[m['name'] for m in result_scores['metrics']]}."
-            )
+        final_score = self._resolve_optimization_score(result_scores, pattern_name)
 
         logger.info("Calculated optimization score for '%s': %s", pattern_name, final_score)
 
@@ -641,6 +626,63 @@ class AI4RAGExperiment:
             evaluation_result=evaluation_result,
         )
 
+        return final_score
+
+    def _resolve_optimization_score(self, result_scores: EvaluationMetricsResult, pattern_name: str) -> float | None:
+        """Extract the optimization metric's mean score from a pattern's results.
+
+        Matches on both name and evaluator: a metric name (e.g. ``"faithfulness"``)
+        can be produced by more than one evaluator (unitxt and ragas), and the
+        ``evaluator`` field is what disambiguates them.
+
+        Parameters
+        ----------
+        result_scores : EvaluationMetricsResult
+            Aggregated metrics produced for the evaluated pattern.
+        pattern_name : str
+            Name of the evaluated pattern, used for logging.
+
+        Returns
+        -------
+        float | None
+            The optimization metric's mean, or ``None`` when the metric was
+            produced but could not be scored for this pattern (a failed — not
+            fatal — iteration).
+
+        Raises
+        ------
+        RAGExperimentError
+            If no metric matching the optimization metric's name and evaluator is
+            present in the results at all (a configuration error).
+        """
+        optimization_metric_result = next(
+            (
+                r
+                for r in result_scores["metrics"]
+                if r["name"] == self.optimization_metric.name and r["evaluator"] == self.optimization_metric.evaluator
+            ),
+            None,
+        )
+        if optimization_metric_result is None:
+            available = [f"{m['name']} ({m['evaluator']})" for m in result_scores["metrics"]]
+            raise RAGExperimentError(
+                f"Optimization metric '{self.optimization_metric.name}' "
+                f"({self.optimization_metric.evaluator}) not found in evaluation results. "
+                f"Available: {available}."
+            )
+
+        # A ``None`` mean means the metric was produced but could not be scored for
+        # this pattern (e.g. a reference-based metric whose records all lacked
+        # references). That is a failed — not fatal — iteration: return ``None`` so
+        # the optimizer skips it rather than aborting the whole run.
+        final_score = optimization_metric_result["scores"]["mean"]
+        if final_score is None:
+            logger.warning(
+                "Optimization metric '%s' (%s) has no score for pattern '%s'; treating as a failed iteration.",
+                self.optimization_metric.name,
+                self.optimization_metric.evaluator,
+                pattern_name,
+            )
         return final_score
 
     def search(self, **kwargs) -> None:
@@ -766,8 +808,14 @@ class AI4RAGExperiment:
 
         n_known = len(self.known_observations) if self.known_observations else 0
 
+        # Match on name and evaluator so a colliding metric name (e.g. unitxt vs
+        # ragas "faithfulness") only flags the actual optimization target.
         metrics_payload = [
-            {**m, "optimization_metric": True} if m["name"] == self.optimization_metric.name else m
+            (
+                {**m, "optimization_metric": True}
+                if m["name"] == self.optimization_metric.name and m["evaluator"] == self.optimization_metric.evaluator
+                else m
+            )
             for m in evaluation_result.scores["metrics"]
         ]
 

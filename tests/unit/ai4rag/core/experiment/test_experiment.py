@@ -186,6 +186,66 @@ class TestMetricEvaluatorValidation:
         _build_experiment(evaluators=evals, optimization_metric=Metrics.JUDGE_ANSWER_RELEVANCE)
 
 
+class TestResolveOptimizationScore:
+    """Selecting the optimization metric's score from a pattern's results."""
+
+    @staticmethod
+    def _scores(*metrics) -> EvaluationMetricsResult:
+        """Build a result-scores dict from ``(name, evaluator, mean)`` tuples."""
+        return EvaluationMetricsResult(
+            metrics=[
+                AggregateMetric(
+                    name=name,
+                    evaluator=evaluator,
+                    description="",
+                    scores=ConfidenceInterval(mean=mean, ci_low=None, ci_high=None),
+                )
+                for name, evaluator, mean in metrics
+            ],
+            question_scores=[],
+        )
+
+    def test_returns_mean_of_matching_metric(self):
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "unitxt", 0.8))
+
+        assert experiment._resolve_optimization_score(scores, "pattern_1") == 0.8
+
+    def test_disambiguates_colliding_names_by_evaluator(self):
+        """Both unitxt and ragas emit 'faithfulness'; the unitxt one must be chosen."""
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "ragas", 0.2), ("faithfulness", "unitxt", 0.9))
+
+        assert experiment._resolve_optimization_score(scores, "pattern_1") == 0.9
+
+    def test_none_mean_returns_none_not_error(self):
+        """A produced-but-unscored metric is a failed iteration, not a fatal error."""
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "unitxt", None))
+
+        assert experiment._resolve_optimization_score(scores, "pattern_1") is None
+
+    def test_absent_metric_raises(self):
+        """A metric that is not produced at all is a configuration error."""
+        from ai4rag.core.experiment.utils import RAGExperimentError
+
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("answer_correctness", "unitxt", 0.7))
+
+        with pytest.raises(RAGExperimentError, match="not found in evaluation results"):
+            experiment._resolve_optimization_score(scores, "pattern_1")
+
+    def test_wrong_evaluator_only_raises(self):
+        """A matching name under a different evaluator does not satisfy the target."""
+        from ai4rag.core.experiment.utils import RAGExperimentError
+
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "ragas", 0.5))
+
+        with pytest.raises(RAGExperimentError, match="not found in evaluation results"):
+            experiment._resolve_optimization_score(scores, "pattern_1")
+
+
 class TestMergeEvaluationResults:
     def test_empty_list_returns_empty_result(self):
         merged = merge_evaluation_results([])
