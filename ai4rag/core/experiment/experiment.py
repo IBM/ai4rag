@@ -253,7 +253,13 @@ class AI4RAGExperiment:
             self._metrics = None
             return
 
-        available = {m.name: m for m in Metrics}
+        # A metric name is not unique across evaluators (e.g. both the unitxt and
+        # RAGAS evaluators expose "faithfulness"); resolving a bare string keeps
+        # the first-defined metric so behaviour stays stable and back-compatible.
+        # Pass a RAGMetric instance to select a specific evaluator's variant.
+        available: dict[str, RAGMetric] = {}
+        for m in Metrics:
+            available.setdefault(m.name, m)
         resolved: list[RAGMetric] = []
 
         for item in val:
@@ -293,6 +299,15 @@ class AI4RAGExperiment:
             evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
             if "judge" in evaluator_types:
                 base.append(Metrics.JUDGE_ANSWER_RELEVANCE)
+            if "ragas" in evaluator_types:
+                base.extend(
+                    [
+                        Metrics.RAGAS_FAITHFULNESS,
+                        Metrics.RAGAS_ANSWER_RELEVANCY,
+                        Metrics.RAGAS_CONTEXT_PRECISION,
+                        Metrics.RAGAS_CONTEXT_RECALL,
+                    ]
+                )
             self._metrics = tuple(base)
             logger.info("Using default metrics: %s.", [m.name for m in self._metrics])
 
@@ -575,8 +590,15 @@ class AI4RAGExperiment:
         stop_time = time.time()
         execution_time = stop_time - start_time
 
+        # Match on both name and evaluator: a metric name (e.g. "faithfulness")
+        # can be produced by more than one evaluator, and the ``evaluator`` field
+        # is what disambiguates them.
         final_score = next(
-            (r["scores"]["mean"] for r in result_scores["metrics"] if r["name"] == self.optimization_metric.name),
+            (
+                r["scores"]["mean"]
+                for r in result_scores["metrics"]
+                if r["name"] == self.optimization_metric.name and r["evaluator"] == self.optimization_metric.evaluator
+            ),
             None,
         )
         if final_score is None:

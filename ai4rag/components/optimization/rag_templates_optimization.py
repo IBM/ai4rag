@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from json import dump as json_dump
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 import pandas as pd
 from openai import OpenAI
@@ -21,6 +21,7 @@ from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.judge_selection import select_judge_model
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics
+from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
@@ -35,6 +36,16 @@ _logger.addHandler(handler)
 
 DEFAULT_MAX_RAG_PATTERNS = 8
 MIN_MAX_RAG_PATTERNS_RANGE = (4, 20)
+
+# LLM-as-a-judge evaluator selection for the optimization run. The
+# reference-based ``UnitxtEvaluator`` always runs; this only controls the
+# LLM-as-a-judge evaluators:
+#   "base"  -> in-house LLM judge (LLMaJEvaluator)
+#   "ragas" -> RagasEvaluator (RAGAS LLM-as-a-judge metrics)
+#   "all"  -> judge + ragas
+#   "none"  -> Unitxt only
+LLMJudgeMode = Literal["base", "ragas", "all", "none"]
+DEFAULT_LLM_JUDGE_MODE: LLMJudgeMode = "base"
 DEFAULT_METRIC = Metrics.OVERALL_SCORE.name
 SUPPORTED_OPTIMIZATION_METRICS = frozenset(
     {
@@ -74,7 +85,7 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     optimization_settings: dict | None = None,
     inference_max_threads: int = 10,
     indexing_pipeline_params: dict | None = None,
-    judge_enabled: bool = True,
+    llm_judge_mode: LLMJudgeMode = DEFAULT_LLM_JUDGE_MODE,
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -117,8 +128,18 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     indexing_pipeline_params : dict | None, default=None
         Parameters required to enhance pattern.json with indexing pipeline
         settings.
-    judge_enabled : bool, default=True
-        Whether LLM as a Judge metrics should be calculated.
+    llm_judge_mode : {"base", "ragas", "all", "none"}, default="base"
+        Which LLM-as-a-judge evaluators to run in addition to the always-present
+        reference-based ``UnitxtEvaluator``:
+
+        - ``"base"``  — the in-house LLM judge (``answer_relevance``).
+        - ``"ragas"`` — the RAGAS LLM-as-a-judge metrics (faithfulness, answer
+          relevancy, context precision/recall).
+        - ``"all"``  — the LLM judge and RAGAS together.
+        - ``"none"``  — no LLM-as-a-judge evaluators; Unitxt metrics only.
+
+        Any mode other than ``"none"`` requires at least one foundation model
+        and one embedding model in the search space.
 
     Returns
     -------
@@ -129,12 +150,17 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     Raises
     ------
     ValueError
-        If ``test_data_key`` does not point to a JSON file, or the
-        optimization metric is not supported.
+        If ``test_data_key`` does not point to a JSON file,
+        ``llm_judge_mode`` is invalid, or the optimization metric is not
+        supported.
     TypeError
         If ``optimization_settings`` has invalid types.
     """
     # --- Input validation ---
+    valid_modes = list(get_args(LLMJudgeMode))
+    if llm_judge_mode not in valid_modes:
+        raise ValueError(f"llm_judge_mode {llm_judge_mode!r} is not supported. Select one of {valid_modes}.")
+
     if not isinstance(test_data_key, str) or not test_data_key.strip() or not test_data_key.lower().endswith(".json"):
         raise ValueError("test_data_key must point to a JSON file.")
 
@@ -175,20 +201,14 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     search_space = AI4RAGSearchSpace(params=params)
 
-    if judge_enabled:
-        # --- Select judge model and build evaluators ---
-        judge_model = select_judge_model(
-            generation_models=foundation_models,
-            embedding_models=embedding_models,
-            benchmark_data=benchmark_data_obj,
-            documents=documents,
-            max_threads=inference_max_threads,
-        )
-        _logger.info("Judge model selected: %s", judge_model.model_id)
-
-        evaluators = [UnitxtEvaluator(), LLMaJEvaluator(model=judge_model)]
-    else:
-        evaluators = [UnitxtEvaluator()]
+    evaluators = _build_evaluators(
+        llm_judge_mode=llm_judge_mode,
+        foundation_models=foundation_models,
+        embedding_models=embedding_models,
+        benchmark_data=benchmark_data_obj,
+        documents=documents,
+        inference_max_threads=inference_max_threads,
+    )
 
     # --- Configure experiment ---
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
@@ -229,6 +249,78 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         patterns=patterns,
         evaluations=list(rag_exp.results.evaluations),
     )
+
+
+def _build_evaluators(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    llm_judge_mode: LLMJudgeMode,
+    foundation_models: list[OpenAIFoundationModel],
+    embedding_models: list[OpenAIEmbeddingModel],
+    benchmark_data: BenchmarkData,
+    documents: list,
+    inference_max_threads: int,
+) -> list:
+    """Build the evaluator list for the given ``llm_judge_mode``.
+
+    The reference-based :class:`UnitxtEvaluator` always runs; the mode only
+    controls which LLM-as-a-judge evaluators are added on top (see
+    :data:`LLMJudgeMode`).
+
+    Parameters
+    ----------
+    llm_judge_mode : LLMJudgeMode
+        One of ``"base"``, ``"ragas"``, ``"all"`` or ``"none"``.
+    foundation_models : list[OpenAIFoundationModel]
+        Foundation models from the search space; the first is used by RAGAS and
+        the judge selection considers all of them.
+    embedding_models : list[OpenAIEmbeddingModel]
+        Embedding models from the search space; the first is used by RAGAS.
+    benchmark_data : BenchmarkData
+        Benchmark data used when selecting the judge model.
+    documents : list
+        Parsed documents used when selecting the judge model.
+    inference_max_threads : int
+        Concurrency used during judge-model selection.
+
+    Returns
+    -------
+    list
+        The configured evaluator instances.
+
+    Raises
+    ------
+    ValueError
+        If an LLM-based evaluator is requested but no foundation or embedding
+        model is available.
+    """
+    use_judge = llm_judge_mode in ("base", "all")
+    use_ragas = llm_judge_mode in ("ragas", "all")
+
+    evaluators: list = [UnitxtEvaluator()]
+
+    if (use_judge or use_ragas) and (not foundation_models or not embedding_models):
+        raise ValueError(
+            f"llm_judge_mode={llm_judge_mode!r} requires at least one foundation model and one embedding model."
+        )
+
+    if use_judge:
+        judge_model = select_judge_model(
+            generation_models=foundation_models,
+            embedding_models=embedding_models,
+            benchmark_data=benchmark_data,
+            documents=documents,
+            max_threads=inference_max_threads,
+        )
+        _logger.info("Judge model selected: %s", judge_model.model_id)
+        evaluators.append(LLMaJEvaluator(model=judge_model))
+
+    if use_ragas:
+        # RAGAS runs as an independent cross-check on its own generation model
+        # rather than reusing the selected judge model.
+        ragas_model = foundation_models[0]
+        evaluators.append(RagasEvaluator(model=ragas_model, embedding_model=embedding_models[0]))
+        _logger.info("RAGAS evaluator enabled with model: %s", ragas_model.model_id)
+
+    return evaluators
 
 
 def _generate_output_artifacts(

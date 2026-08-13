@@ -40,6 +40,8 @@ dependencies = [
   "pydantic==2.11.*",
   "pygam~=0.12.0",
   "pymilvus~=3.0.1",
+  "ragas>=0.3,<0.5",
+  "langchain-community<0.4.2",
   "scikit-learn==1.8.*",
   "unitxt~=1.26.1",
 ]
