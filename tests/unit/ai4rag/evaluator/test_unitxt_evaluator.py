@@ -293,11 +293,12 @@ class TestBuildQuestionScores:
 
         assert result[0]["metrics"][0]["value"] == 0.1235
 
-    def test_with_empty_strings(self, sample_metric_lookup):
+    def test_unevaluable_values_are_omitted(self, sample_metric_lookup):
+        """Empty strings and NaN mark unevaluable records: they get no metric entry."""
         scores_df = pd.DataFrame(
             {
-                "question_id": ["q1", "q2"],
-                "metrics.rag.external_rag.answer_correctness": [0.95, ""],
+                "question_id": ["q1", "q2", "q3"],
+                "metrics.rag.external_rag.answer_correctness": [0.95, "", np.nan],
             }
         )
 
@@ -306,8 +307,10 @@ class TestBuildQuestionScores:
 
         q1 = next(e for e in result if e["question_id"] == "q1")
         q2 = next(e for e in result if e["question_id"] == "q2")
+        q3 = next(e for e in result if e["question_id"] == "q3")
         assert q1["metrics"][0]["value"] == 0.95
-        assert pd.isna(q2["metrics"][0]["value"])
+        assert q2["metrics"] == []
+        assert q3["metrics"] == []
 
     def test_filters_irrelevant_columns(self, sample_metric_lookup):
         scores_df = pd.DataFrame(
@@ -461,6 +464,90 @@ class TestUnitxtEvaluatorEvaluateMetrics:
 
         assert len(result["metrics"]) == 3
         assert len(result["question_scores"]) == 2
+
+
+class TestUnitxtEvaluatorEmptyReferences:
+    """Records lacking a metric's references must be excluded, not crash the run.
+
+    These exercise the *real* unitxt ``evaluate`` (reference-based token-overlap
+    metrics need no LLM, so they run offline). They reproduce the production
+    ``TokenOverlap`` failure (``max() iterable argument is empty``) that occurred
+    when a record had no ``contexts``/``ground_truths`` for a metric.
+    """
+
+    @staticmethod
+    def _data() -> list[EvaluationData]:
+        return [
+            EvaluationData(
+                question="What is Python?",
+                answer="Python is a programming language.",
+                contexts=["Python is a high-level programming language."],
+                context_ids=["doc1"],
+                ground_truths=["Python is a programming language."],
+                ground_truths_context_ids=["doc1"],
+                question_id="q1",
+            ),
+            # No contexts and no ground_truths: faithfulness/answer_correctness
+            # cannot be computed for this record and used to crash unitxt.
+            EvaluationData(
+                question="What is AI?",
+                answer="AI is Artificial Intelligence.",
+                contexts=[],
+                context_ids=[],
+                ground_truths=[],
+                ground_truths_context_ids=[],
+                question_id="q2",
+            ),
+        ]
+
+    def test_missing_references_excluded_without_crash(self):
+        evaluator = UnitxtEvaluator()
+        result = evaluator.evaluate_metrics(
+            self._data(),
+            [Metrics.FAITHFULNESS, Metrics.ANSWER_CORRECTNESS, Metrics.CONTEXT_CORRECTNESS],
+        )
+
+        names = {m["name"] for m in result["metrics"]}
+        assert names == {
+            Metrics.FAITHFULNESS.name,
+            Metrics.ANSWER_CORRECTNESS.name,
+            Metrics.CONTEXT_CORRECTNESS.name,
+        }
+
+        # The reference-bearing record still produces a mean for both
+        # reference-based metrics (computed over q1 alone).
+        by_name = {m["name"]: m for m in result["metrics"]}
+        assert by_name[Metrics.FAITHFULNESS.name]["scores"]["mean"] is not None
+        assert by_name[Metrics.ANSWER_CORRECTNESS.name]["scores"]["mean"] is not None
+
+        # The record without references gets no faithfulness/answer_correctness
+        # per-question score, while q1 does.
+        scores_by_qid = {q["question_id"]: {m["name"] for m in q["metrics"]} for q in result["question_scores"]}
+        assert Metrics.FAITHFULNESS.name in scores_by_qid["q1"]
+        assert Metrics.ANSWER_CORRECTNESS.name in scores_by_qid["q1"]
+        assert Metrics.FAITHFULNESS.name not in scores_by_qid["q2"]
+        assert Metrics.ANSWER_CORRECTNESS.name not in scores_by_qid["q2"]
+
+    def test_all_records_missing_references_yield_none_mean(self):
+        data = [
+            EvaluationData(
+                question="What is AI?",
+                answer="AI is Artificial Intelligence.",
+                contexts=[],
+                context_ids=[],
+                ground_truths=[],
+                ground_truths_context_ids=[],
+                question_id="q1",
+            )
+        ]
+
+        evaluator = UnitxtEvaluator()
+        result = evaluator.evaluate_metrics(data, [Metrics.FAITHFULNESS])
+
+        faith = result["metrics"][0]
+        assert faith["name"] == Metrics.FAITHFULNESS.name
+        assert faith["scores"]["mean"] is None
+        assert result["question_scores"][0]["metrics"] == []
 
 
 class TestUnitxtEvaluatorIntegration:
