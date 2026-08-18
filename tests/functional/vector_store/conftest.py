@@ -137,8 +137,8 @@ def check_retrieval(story_chunks) -> Callable[[Callable[[str], list]], None]:
     question — where ``search`` maps a question to the store's ranked results —
     and asserts the top-ranked result is the passage that answers it. Taking
     ``search`` (rather than the store) lets a backend wrap the call, e.g. in
-    :func:`retry` for eventually-consistent reads, without duplicating the
-    assertion logic.
+    :func:`retry` as a defensive net against transient hiccups, without
+    duplicating the assertion logic.
     """
 
     def _check(search: Callable[[str], list]) -> None:
@@ -159,10 +159,12 @@ def check_retrieval(story_chunks) -> Callable[[Callable[[str], list]], None]:
 def retry() -> Callable[..., T]:
     """Provide a helper that polls a callable until it returns a truthy value.
 
-    Milvus serves searches under bounded-staleness consistency by default, so
-    freshly upserted rows may not be immediately visible. Wrapping the read in
-    this helper makes such assertions robust without penalising the
-    strongly-consistent backends, for which the first attempt already succeeds.
+    Every backend exercised here now provides read-your-writes consistency —
+    :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore` requests
+    ``consistency_level="Strong"`` on every search rather than relying on
+    Milvus's Bounded-staleness default — so the first attempt is expected to
+    succeed. This helper is kept as a defensive net against transient
+    server-side hiccups, not as a consistency workaround.
 
     Returns
     -------

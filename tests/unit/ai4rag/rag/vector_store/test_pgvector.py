@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import json
 import threading
 import time
 from dataclasses import replace
@@ -272,7 +273,7 @@ class TestPGVectorStoreSearch:
         store = self._make_store(mock_pool_cls, mock_embedding, pgvector_config)
 
         conn.execute.return_value.fetchall.return_value = [
-            ({"content": "hello", "metadata": {}, "chunk_id": "c1"}, 0.5),
+            ("hello", {}, 0.5),
         ]
 
         results = store.search("query", k=1)
@@ -285,7 +286,7 @@ class TestPGVectorStoreSearch:
         store = self._make_store(mock_pool_cls, mock_embedding, pgvector_config)
 
         conn.execute.return_value.fetchall.return_value = [
-            ({"content": "hello", "metadata": {}, "chunk_id": "c1"}, 0.5),
+            ("hello", {}, 0.5),
         ]
 
         results = store.search("query", k=1, include_scores=True)
@@ -293,6 +294,27 @@ class TestPGVectorStoreSearch:
         chunk, score = results[0]
         assert chunk.text == "hello"
         assert score == pytest.approx(2.0)  # 1/0.5
+
+    def test_vector_search_metadata_as_json_string_is_parsed(self, mock_pool_cls, mock_embedding, pgvector_config):
+        """Defensive fallback: some drivers/paths may hand back the JSONB column as raw text."""
+        conn = _conn_from(mock_pool_cls)
+        store = self._make_store(mock_pool_cls, mock_embedding, pgvector_config)
+
+        conn.execute.return_value.fetchall.return_value = [
+            ("hello", '{"document_id": "d1"}', 0.5),
+        ]
+
+        results = store.search("query", k=1)
+        assert results[0].metadata == {"document_id": "d1"}
+
+    def test_vector_search_null_metadata_defaults_to_empty_dict(self, mock_pool_cls, mock_embedding, pgvector_config):
+        conn = _conn_from(mock_pool_cls)
+        store = self._make_store(mock_pool_cls, mock_embedding, pgvector_config)
+
+        conn.execute.return_value.fetchall.return_value = [("hello", None, 0.5)]
+
+        results = store.search("query", k=1)
+        assert results[0].metadata == {}
 
     def test_inner_product_scores_preserve_ranking(self, mock_pool_cls, mock_embedding):
         """The ``<#>`` operator returns the *negative* inner product (a signed value):
@@ -308,8 +330,8 @@ class TestPGVectorStoreSearch:
 
         # Rows arrive already ordered by distance ASC: -0.9 (most similar) before -0.2.
         conn.execute.return_value.fetchall.return_value = [
-            ({"content": "closer", "metadata": {}, "chunk_id": "c1"}, -0.9),
-            ({"content": "farther", "metadata": {}, "chunk_id": "c2"}, -0.2),
+            ("closer", {}, -0.9),
+            ("farther", {}, -0.2),
         ]
 
         results = store.search("query", k=2, include_scores=True)
@@ -361,6 +383,12 @@ class TestPGVectorStoreAddDocuments:
 
         cursor = conn.cursor.return_value.__enter__.return_value
         cursor.executemany.assert_called_once()
+        batch = cursor.executemany.call_args[0][1]
+        chunk_id, metadata_json, embedding, content_text, tokenize_text = batch[0]
+        assert chunk_id == docs[0].chunk_id
+        assert content_text == "hello"
+        assert tokenize_text == "hello"
+        assert json.loads(metadata_json) == {"document_id": "d1"}
 
     def test_add_empty_documents(self, mock_pool_cls, mock_embedding, pgvector_config):
         conn = _conn_from(mock_pool_cls)

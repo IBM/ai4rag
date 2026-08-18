@@ -152,7 +152,7 @@ class MilvusVectorStore(BaseVectorStore):
         """Create the Milvus collection with its schema, indexes, and BM25 function.
 
         Defines the schema (primary ``chunk_id``, analyzed ``content``, dense
-        ``vector``, raw ``chunk_content`` JSON, and a ``sparse`` BM25 vector),
+        ``vector``, a ``metadata`` JSON field, and a ``sparse`` BM25 vector),
         attaches a FLAT/COSINE index on the dense field and a sparse inverted
         BM25 index on the sparse field, and registers the BM25 function that
         derives the sparse vector from ``content``.
@@ -161,7 +161,7 @@ class MilvusVectorStore(BaseVectorStore):
         schema.add_field(field_name="chunk_id", datatype=DataType.VARCHAR, is_primary=True, max_length=100)
         schema.add_field(field_name="content", datatype=DataType.VARCHAR, max_length=65535, enable_analyzer=True)
         schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=self._embedding_dimension)
-        schema.add_field(field_name="chunk_content", datatype=DataType.JSON)
+        schema.add_field(field_name="metadata", datatype=DataType.JSON)
         schema.add_field(field_name="sparse", datatype=DataType.SPARSE_FLOAT_VECTOR)
 
         index_params = self._client.prepare_index_params()
@@ -252,12 +252,19 @@ class MilvusVectorStore(BaseVectorStore):
             Matched chunks, optionally paired with their scores.
         """
         embedding = self.embedding_model.embed_query(query)
+        # Without an explicit consistency_level, pymilvus defaults to "Bounded" and
+        # this query's guarantee timestamp can be satisfied by a query node that
+        # hasn't yet caught up with the immediately-preceding add_documents() upsert,
+        # returning zero hits for a collection that does have matching data. "Strong"
+        # forces the query node to wait for the latest write; the added latency is
+        # negligible for these small, short-lived, per-evaluation collections.
         search_res = self._client.search(
             collection_name=self._collection_name,
             data=[embedding],
             anns_field="vector",
             limit=k,
-            output_fields=["chunk_content"],
+            output_fields=["content", "metadata"],
+            consistency_level="Strong",
         )
 
         return self._parse_milvus_results(search_res[0], include_scores)
@@ -311,12 +318,15 @@ class MilvusVectorStore(BaseVectorStore):
         else:
             ranker = RRFRanker(k=ranker_k if ranker_k is not None and ranker_k > 0 else 60)
 
+        # See the matching comment in _search_vector: forces a read-your-writes
+        # guarantee against the collection's most recent upsert.
         search_res = self._client.hybrid_search(
             collection_name=self._collection_name,
             reqs=[dense_req, sparse_req],
             ranker=ranker,
             limit=k,
-            output_fields=["chunk_content"],
+            output_fields=["content", "metadata"],
+            consistency_level="Strong",
         )
 
         return self._parse_milvus_results(search_res[0], include_scores)
@@ -331,8 +341,8 @@ class MilvusVectorStore(BaseVectorStore):
         Parameters
         ----------
         results : list[dict]
-            Per-hit result dictionaries from a (hybrid) search, each carrying an
-            ``entity.chunk_content`` payload and a ``distance`` score.
+            Per-hit result dictionaries from a (hybrid) search, each carrying
+            ``entity.content``, ``entity.metadata``, and a ``distance`` score.
         include_scores : bool
             Whether to pair each chunk with its score.
 
@@ -343,8 +353,9 @@ class MilvusVectorStore(BaseVectorStore):
         """
         chunks_and_scores: list[tuple[AI4RAGChunk, float]] = []
         for res in results:
-            chunk_data = res["entity"]["chunk_content"]
-            chunk = AI4RAGChunk(text=chunk_data["content"], metadata=chunk_data.get("metadata", {}))
+            chunk_data = res["entity"]
+            metadata = chunk_data.get("metadata") or {}
+            chunk = AI4RAGChunk(text=chunk_data["content"], metadata=metadata)
             chunks_and_scores.append((chunk, res["distance"]))
 
         if include_scores:
@@ -377,11 +388,7 @@ class MilvusVectorStore(BaseVectorStore):
                     "chunk_id": doc.chunk_id,
                     "content": doc.text,
                     "vector": embedding,
-                    "chunk_content": {
-                        "content": doc.text,
-                        "metadata": doc.metadata,
-                        "chunk_id": doc.chunk_id,
-                    },
+                    "metadata": doc.metadata,
                 }
             )
 

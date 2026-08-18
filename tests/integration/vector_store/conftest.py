@@ -138,11 +138,12 @@ def sample_chunks() -> list[AI4RAGChunk]:
 def retry() -> Callable[..., T]:
     """Provide a helper that polls a callable until it returns a truthy value.
 
-    Some backends (notably Milvus under bounded-staleness consistency) do not
-    guarantee that freshly upserted rows are immediately visible to a search.
-    Wrapping the read in this helper makes such assertions robust without
-    penalising the strongly-consistent backends, for which the first attempt
-    already succeeds.
+    Every backend exercised here now provides read-your-writes consistency —
+    :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore` requests
+    ``consistency_level="Strong"`` on every search rather than relying on
+    Milvus's Bounded-staleness default — so the first attempt is expected to
+    succeed. This helper is kept as a defensive net against transient
+    server-side hiccups, not as a consistency workaround.
 
     Returns
     -------
