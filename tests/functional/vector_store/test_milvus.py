@@ -5,9 +5,11 @@
 """Functional semantic-retrieval test for :class:`MilvusVectorStore`.
 
 Runs against a live Milvus server (skipped unless ``MILVUS_URI`` is set) using a
-real MaaS embedding model. Milvus serves searches under bounded-staleness
-consistency, so freshly upserted rows may not be immediately visible; reads are
-therefore wrapped in the shared ``retry`` helper.
+real MaaS embedding model. :class:`MilvusVectorStore` requests
+``consistency_level="Strong"`` on every search, so a freshly upserted row is
+guaranteed visible on the very next search rather than relying on Milvus's
+Bounded-staleness default; reads still go through the shared ``retry`` helper
+as a defensive net against transient server-side hiccups, not staleness.
 
 This module is where Milvus-specific retrieval tests (e.g. future lexical /
 hybrid search) will live; the dense semantic check below is shared with the
