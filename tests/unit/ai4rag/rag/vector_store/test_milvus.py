@@ -179,7 +179,7 @@ class TestMilvusVectorStoreSearch:
 
         client.search.return_value = [
             [
-                {"entity": {"chunk_content": {"content": "hello", "metadata": {}, "chunk_id": "c1"}}, "distance": 0.9},
+                {"entity": {"content": "hello", "metadata": {}}, "distance": 0.9},
             ]
         ]
 
@@ -188,13 +188,35 @@ class TestMilvusVectorStoreSearch:
         assert isinstance(results[0], AI4RAGChunk)
         assert results[0].text == "hello"
 
+    def test_vector_search_requests_strong_consistency(self, MockClient, mock_embedding, milvus_config):
+        """Regression test: a query right after an upsert must not race Milvus's
+        default Bounded-staleness consistency and see stale (zero) results."""
+        store = self._make_store(MockClient, mock_embedding, milvus_config)
+        client = MockClient.return_value
+        client.search.return_value = [[]]
+
+        store.search("query", k=1)
+
+        _, kwargs = client.search.call_args
+        assert kwargs["consistency_level"] == "Strong"
+        assert kwargs["output_fields"] == ["content", "metadata"]
+
+    def test_vector_search_missing_metadata_defaults_to_empty_dict(self, MockClient, mock_embedding, milvus_config):
+        store = self._make_store(MockClient, mock_embedding, milvus_config)
+        client = MockClient.return_value
+
+        client.search.return_value = [[{"entity": {"content": "hello", "metadata": None}, "distance": 0.9}]]
+
+        results = store.search("query", k=1)
+        assert results[0].metadata == {}
+
     def test_vector_search_with_scores(self, MockClient, mock_embedding, milvus_config):
         store = self._make_store(MockClient, mock_embedding, milvus_config)
         client = MockClient.return_value
 
         client.search.return_value = [
             [
-                {"entity": {"chunk_content": {"content": "hello", "metadata": {}, "chunk_id": "c1"}}, "distance": 0.9},
+                {"entity": {"content": "hello", "metadata": {}}, "distance": 0.9},
             ]
         ]
 
@@ -210,7 +232,7 @@ class TestMilvusVectorStoreSearch:
 
         client.hybrid_search.return_value = [
             [
-                {"entity": {"chunk_content": {"content": "result", "metadata": {}, "chunk_id": "c1"}}, "distance": 0.8},
+                {"entity": {"content": "result", "metadata": {}}, "distance": 0.8},
             ]
         ]
 
@@ -223,12 +245,24 @@ class TestMilvusVectorStoreSearch:
 
         client.hybrid_search.return_value = [
             [
-                {"entity": {"chunk_content": {"content": "result", "metadata": {}, "chunk_id": "c1"}}, "distance": 0.7},
+                {"entity": {"content": "result", "metadata": {}}, "distance": 0.7},
             ]
         ]
 
         results = store.search("query", k=1, search_mode="hybrid", ranker_strategy="weighted", ranker_alpha=0.5)
         assert len(results) == 1
+
+    def test_hybrid_search_requests_strong_consistency(self, MockClient, mock_embedding, milvus_config):
+        """Same read-your-writes guard as vector search, for the hybrid_search path."""
+        store = self._make_store(MockClient, mock_embedding, milvus_config)
+        client = MockClient.return_value
+        client.hybrid_search.return_value = [[]]
+
+        store.search("query", k=1, search_mode="hybrid", ranker_strategy="rrf")
+
+        _, kwargs = client.hybrid_search.call_args
+        assert kwargs["consistency_level"] == "Strong"
+        assert kwargs["output_fields"] == ["content", "metadata"]
 
 
 @patch("ai4rag.rag.vector_store.milvus.MilvusClient")
@@ -292,8 +326,12 @@ class TestMilvusVectorStoreAddDocuments:
         client.upsert.assert_called_once()
         call_args = client.upsert.call_args
         assert call_args[0][0] == "ai4rag_test_col"
+        row = call_args[1]["data"][0]
         assert len(call_args[1]["data"]) == 1
-        assert call_args[1]["data"][0]["chunk_id"] == docs[0].chunk_id
+        assert row["chunk_id"] == docs[0].chunk_id
+        assert row["content"] == "hello"
+        assert row["metadata"] == {"document_id": "d1"}
+        assert "chunk_content" not in row
 
     def test_add_empty_documents(self, MockClient, mock_embedding, milvus_config):
         store = self._make_store(MockClient, mock_embedding, milvus_config)

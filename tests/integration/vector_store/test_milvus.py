@@ -11,9 +11,12 @@ search, drop — against a real Milvus server, and are skipped unless
 ``MILVUS_SERVER_CERT``); see ``tests/integration/conftest.py`` for how
 ``.env.local`` is loaded.
 
-Milvus serves searches under bounded-staleness consistency by default, so freshly
-upserted rows may not be immediately visible. Read assertions are therefore
-wrapped in the shared ``retry`` helper.
+:class:`MilvusVectorStore` requests ``consistency_level="Strong"`` on every
+search (see ``_search_vector``/``_search_hybrid``), so a freshly upserted row is
+guaranteed visible on the very next search — Milvus's Bounded-staleness default
+would not make that guarantee, which is why the store overrides it. Read
+assertions still go through the shared ``retry`` helper as a defensive net
+against transient server-side hiccups, not to paper over staleness.
 """
 
 import os
