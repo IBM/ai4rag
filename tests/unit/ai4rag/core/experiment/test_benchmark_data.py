@@ -75,6 +75,12 @@ class TestBenchmarkDataInitialization:
         with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answers' value: '123'"):
             BenchmarkData(benchmark_data=benchmark_data_df)
 
+    def test_init_with_empty_answers_list(self, benchmark_data_df):
+        """Test initialization fails when a record has zero correct answers."""
+        benchmark_data_df.loc[0, "correct_answers"] = []
+        with pytest.raises(BenchmarkDataValueError, match="each question must have at least one correct answer"):
+            BenchmarkData(benchmark_data=benchmark_data_df)
+
     def test_init_with_empty_document_id_string(self, benchmark_data_df):
         """Test initialization fails with empty document ID string."""
         benchmark_data_df.loc[0, "correct_answer_document_ids"] = [""]
@@ -187,6 +193,11 @@ class TestBenchmarkDataProperties:
         """Test answers property setter fails when multiple answers have issues."""
         with pytest.raises(BenchmarkDataValueError):
             benchmark_data.correct_answers = [["Valid"], [""], ["Also valid"]]
+
+    def test_answers_property_setter_empty_list(self, benchmark_data):
+        """Test answers property setter fails when a question has no correct answers at all."""
+        with pytest.raises(BenchmarkDataValueError, match="each question must have at least one correct answer"):
+            benchmark_data.correct_answers = [["Valid"], [], ["Also valid"]]
 
     def test_document_ids_property_getter(self, benchmark_data):
         """Test document_ids property getter."""

@@ -109,8 +109,13 @@ class BenchmarkData:
 
     @correct_answers.setter
     def correct_answers(self, val: list[list[str]]) -> None:
-        """Validate whether each element is a list of not empty strings"""
+        """Validate whether each element is a non-empty list of not empty strings"""
         for el in val:
+            if not el:
+                raise BenchmarkDataValueError(
+                    f"Incorrect '{self.CORRECT_ANSWERS}' value: each question must have at least one "
+                    "correct answer, got an empty list."
+                )
             _validate_list_of_strings(el, self.CORRECT_ANSWERS)
         self._correct_answers = val
 

@@ -216,15 +216,17 @@ class PGVectorStore(BaseVectorStore):
         """Create the backing table if it does not already exist.
 
         The table maps one-to-one to the collection name and holds the chunk id,
-        the raw chunk JSON (``document``), the dense ``embedding`` vector, the
-        plain ``content_text``, and a ``tokenized_content`` ``tsvector`` column
-        feeding full-text (keyword) search.
+        the dense ``embedding`` vector, the plain ``content_text``, its
+        ``tokenized_content`` ``tsvector`` column feeding full-text (keyword)
+        search, and a ``metadata`` JSONB column for the chunk's arbitrary
+        metadata. ``content_text`` is the sole source of truth for chunk text —
+        it is not also duplicated inside ``metadata``.
         """
         with self._pool.connection() as conn:
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self._quoted_table()} (
                     id TEXT PRIMARY KEY,
-                    document JSONB,
+                    metadata JSONB,
                     embedding vector({self._embedding_dimension}),
                     content_text TEXT,
                     tokenized_content TSVECTOR
@@ -427,7 +429,7 @@ class PGVectorStore(BaseVectorStore):
         with self._pool.connection() as conn:
             rows = conn.execute(
                 f"""
-                SELECT document, embedding {self._distance_operator} %s::vector AS distance
+                SELECT content_text, metadata, embedding {self._distance_operator} %s::vector AS distance
                 FROM {self._quoted_table()}
                 ORDER BY distance
                 LIMIT %s
@@ -436,12 +438,10 @@ class PGVectorStore(BaseVectorStore):
             ).fetchall()
 
         results: list[tuple[AI4RAGChunk, float]] = []
-        for row in rows:
-            doc = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-            score = self._distance_to_score(float(row[1]))
-            chunk = AI4RAGChunk(text=doc["content"], metadata=doc.get("metadata", {}))
+        for content_text, metadata, distance in rows:
+            score = self._distance_to_score(float(distance))
+            chunk = AI4RAGChunk(text=content_text, metadata=self._parse_metadata(metadata))
             results.append((chunk, score))
-
         if include_scores:
             return results
         return [chunk for chunk, _ in results]
@@ -467,7 +467,7 @@ class PGVectorStore(BaseVectorStore):
         with self._pool.connection() as conn:
             rows = conn.execute(
                 f"""
-                SELECT document, ts_rank(tokenized_content, plainto_tsquery('english', %s)) AS score
+                SELECT content_text, metadata, ts_rank(tokenized_content, plainto_tsquery('english', %s)) AS score
                 FROM {self._quoted_table()}
                 WHERE tokenized_content @@ plainto_tsquery('english', %s)
                 ORDER BY score DESC
@@ -477,12 +477,32 @@ class PGVectorStore(BaseVectorStore):
             ).fetchall()
 
         results: list[tuple[AI4RAGChunk, float]] = []
-        for row in rows:
-            doc = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-            score = float(row[1])
-            chunk = AI4RAGChunk(text=doc["content"], metadata=doc.get("metadata", {}))
-            results.append((chunk, score))
+        for content_text, metadata, score in rows:
+            chunk = AI4RAGChunk(text=content_text, metadata=self._parse_metadata(metadata))
+            results.append((chunk, float(score)))
         return results
+
+    @staticmethod
+    def _parse_metadata(metadata: dict | str | None) -> dict:
+        """Normalize a ``metadata`` column value into a plain dict.
+
+        psycopg auto-decodes ``JSONB`` into a ``dict`` on most drivers, but a
+        defensive ``json.loads`` fallback keeps this correct if a connection
+        ever returns the raw JSON string instead.
+
+        Parameters
+        ----------
+        metadata : dict | str | None
+            Raw value read from the ``metadata`` column.
+
+        Returns
+        -------
+        dict
+            The chunk's metadata, or ``{}`` when none was stored.
+        """
+        if isinstance(metadata, dict):
+            return metadata
+        return json.loads(metadata) if metadata else {}
 
     def _search_hybrid(
         self,
@@ -611,8 +631,8 @@ class PGVectorStore(BaseVectorStore):
 
         values: list[tuple[str, str, list[float], str, str]] = []
         for doc, embedding in iter_unique_chunks(documents, embeddings):
-            doc_json = json.dumps({"content": doc.text, "metadata": doc.metadata, "chunk_id": doc.chunk_id})
-            values.append((doc.chunk_id, doc_json, embedding, doc.text, doc.text))
+            metadata_json = json.dumps(doc.metadata)
+            values.append((doc.chunk_id, metadata_json, embedding, doc.text, doc.text))
 
         batch_size = kwargs.get("batch_size", self._BATCH_SIZE)
         for idx in range(0, len(values), batch_size):
@@ -627,17 +647,17 @@ class PGVectorStore(BaseVectorStore):
         Parameters
         ----------
         batch : list[tuple[str, str, list[float], str, str]]
-            Rows to upsert, each as ``(id, document JSON, embedding, content
+            Rows to upsert, each as ``(id, metadata JSON, embedding, content
             text, text to tokenize)``.
         """
         with self._pool.connection() as conn, conn.cursor() as cur:
             cur.executemany(
                 f"""
-                INSERT INTO {self._quoted_table()} (id, document, embedding, content_text, tokenized_content)
+                INSERT INTO {self._quoted_table()} (id, metadata, embedding, content_text, tokenized_content)
                 VALUES (%s, %s::jsonb, %s::vector, %s, to_tsvector('english', %s))
                 ON CONFLICT (id) DO UPDATE SET
                     embedding = EXCLUDED.embedding,
-                    document = EXCLUDED.document,
+                    metadata = EXCLUDED.metadata,
                     content_text = EXCLUDED.content_text,
                     tokenized_content = EXCLUDED.tokenized_content
                 """,
