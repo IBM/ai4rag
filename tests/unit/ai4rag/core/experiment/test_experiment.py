@@ -145,24 +145,23 @@ class TestDefaultMetrics:
         assert len(exp.metrics) == 1
         assert exp.metrics[0].name == "faithfulness"
 
-    def test_metrics_from_strings(self):
-        exp = _build_experiment(metrics=["faithfulness", "answer_correctness"])
+    def test_metrics_ragmetric_instances(self):
+        exp = _build_experiment(metrics=[Metrics.FAITHFULNESS, Metrics.ANSWER_CORRECTNESS])
         assert len(exp.metrics) == 2
         assert all(isinstance(m, RAGMetric) for m in exp.metrics)
         assert [m.name for m in exp.metrics] == ["faithfulness", "answer_correctness"]
 
-    def test_metrics_mixed_strings_and_ragmetric(self):
-        exp = _build_experiment(metrics=[Metrics.FAITHFULNESS, "context_correctness"])
-        assert len(exp.metrics) == 2
-        assert exp.metrics[0] is Metrics.FAITHFULNESS
-        assert exp.metrics[1] is Metrics.CONTEXT_CORRECTNESS
+    def test_metrics_string_raises(self):
+        with pytest.raises(TypeError, match="RAGMetric instance selected from Metrics"):
+            _build_experiment(metrics=["faithfulness"])
 
-    def test_metrics_unknown_string_raises(self):
-        with pytest.raises(ValueError, match="Unknown metric name 'nonexistent'"):
-            _build_experiment(metrics=["nonexistent"])
+    def test_metrics_unknown_ragmetric_raises(self):
+        unknown = RAGMetric(name="nonexistent", evaluator="unitxt", description="")
+        with pytest.raises(ValueError, match="Unknown RAGMetric 'nonexistent'"):
+            _build_experiment(metrics=[unknown])
 
     def test_metrics_wrong_type_element_raises(self):
-        with pytest.raises(TypeError, match="RAGMetric or str"):
+        with pytest.raises(TypeError, match="RAGMetric instance selected from Metrics"):
             _build_experiment(metrics=[42])
 
     def test_metrics_empty_list_raises(self):

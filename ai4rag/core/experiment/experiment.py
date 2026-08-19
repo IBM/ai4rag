@@ -87,16 +87,18 @@ class AI4RAGExperiment:
         results and intermediate status updates. EventHandler is an entrypoint to configure
         custom logging and assets handling.
 
-    optimization_metric : RAGMetric | str, default=Metrics.OVERALL_SCORE
+    optimization_metric : RAGMetric, default=Metrics.OVERALL_SCORE
         Metric used for calculating the final score that drives optimization.
+        Must be a ``RAGMetric`` instance selected from :class:`Metrics`.
 
     Other Parameters
     ----------------
     metrics : Sequence[RAGMetric]
-        Metrics evaluated during the AutoRAG experiment. Not all
-        of these metrics are used to calculate the final score, but they
-        are included in the evaluation results. When omitted, defaults
-        are derived from the configured evaluators.
+        Metrics evaluated during the AutoRAG experiment, each a ``RAGMetric``
+        instance selected from :class:`Metrics`. Not all of these metrics are
+        used to calculate the final score, but they are included in the
+        evaluation results. When omitted, defaults are derived from the
+        configured evaluators.
 
     evaluators : list[BaseEvaluator] | None, default=None
         Evaluator instances used to score RAG patterns during optimization.
@@ -129,7 +131,7 @@ class AI4RAGExperiment:
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
         vector_store_config: BaseVectorStoreConfig,
-        optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
+        optimization_metric: RAGMetric = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.documents = documents
@@ -141,7 +143,7 @@ class AI4RAGExperiment:
         self.optimization_metric = optimization_metric
 
         self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
-        self.metrics: Sequence[RAGMetric | str] | None = kwargs.pop(
+        self.metrics: Sequence[RAGMetric] | None = kwargs.pop(
             "metrics", None
         )  # resolved in _resolve_metrics_and_validate
         self.n_mps_foundation_models = kwargs.pop(
@@ -188,27 +190,27 @@ class AI4RAGExperiment:
         return self._optimization_metric
 
     @optimization_metric.setter
-    def optimization_metric(self, val: RAGMetric | str) -> None:
-        """Validate and set optimization metrics"""
-        available_metrics = [m.name for m in Metrics]
+    def optimization_metric(self, val: RAGMetric) -> None:
+        """Validate and set the optimization metric.
 
-        if isinstance(val, str):
-            n_val = next((metric for metric in Metrics if metric.name == val), None)
-            val_name = val
-        elif isinstance(val, RAGMetric):
-            n_val = val if val in Metrics else None
-            val_name = val.name
-        else:
+        Expects a :class:`RAGMetric` instance selected from :class:`Metrics`.
+        A metric name is not unique across evaluators (e.g. both the unitxt and
+        RAGAS evaluators expose "faithfulness"), so a bare name string is
+        ambiguous and rejected; pass the specific ``RAGMetric`` instead.
+        """
+        if not isinstance(val, RAGMetric):
             raise RAGExperimentError(
-                f"Incorrect type for optimization metric: {val}. Expected ai4rag.evaluator.metric.RAGMetric or str."
+                f"Incorrect type for optimization metric: {val!r}. "
+                "Expected an ai4rag.evaluator.metric.RAGMetric instance selected from Metrics."
             )
 
-        if not n_val:
+        if val not in Metrics:
             raise RAGExperimentError(
-                f"Provided optimization metric: '{val_name}' is not supported. Available metrics: {available_metrics}."
+                f"Provided optimization metric: '{val.name}' is not supported. "
+                f"Available metrics: {[m.name for m in Metrics]}."
             )
 
-        self._optimization_metric = n_val
+        self._optimization_metric = val
 
     @property
     def benchmark_data(self) -> BenchmarkData:
@@ -242,38 +244,28 @@ class AI4RAGExperiment:
         return self._metrics
 
     @metrics.setter
-    def metrics(self, val: Sequence[RAGMetric | str] | None) -> None:
+    def metrics(self, val: Sequence[RAGMetric] | None) -> None:
         """Validate and set evaluation metrics.
 
-        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``),
-        a sequence of ``RAGMetric`` instances, a sequence of metric name
-        strings, or a mixed sequence of both.
+        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``)
+        or a sequence of ``RAGMetric`` instances selected from :class:`Metrics`.
+        A metric name is not unique across evaluators (e.g. both the unitxt and
+        RAGAS evaluators expose "faithfulness"), so a bare name string is
+        ambiguous and rejected; pass the specific ``RAGMetric`` instead.
         """
         if val is None:
             self._metrics = None
             return
 
-        # A metric name is not unique across evaluators (e.g. both the unitxt and
-        # RAGAS evaluators expose "faithfulness"); resolving a bare string keeps
-        # the first-defined metric so behaviour stays stable and back-compatible.
-        # Pass a RAGMetric instance to select a specific evaluator's variant.
-        available: dict[str, RAGMetric] = {}
-        for m in Metrics:
-            available.setdefault(m.name, m)
         resolved: list[RAGMetric] = []
-
         for item in val:
-            if isinstance(item, RAGMetric):
-                if item not in Metrics:
-                    raise ValueError(f"Unknown RAGMetric '{item.name}'. Available: {list(available.keys())}.")
-                resolved.append(item)
-            elif isinstance(item, str):
-                metric = available.get(item)
-                if metric is None:
-                    raise ValueError(f"Unknown metric name '{item}'. Available: {list(available.keys())}.")
-                resolved.append(metric)
-            else:
-                raise TypeError(f"Each metric must be a RAGMetric or str, got {type(item).__name__}.")
+            if not isinstance(item, RAGMetric):
+                raise TypeError(
+                    f"Each metric must be a RAGMetric instance selected from Metrics, got {type(item).__name__}."
+                )
+            if item not in Metrics:
+                raise ValueError(f"Unknown RAGMetric '{item.name}'. Select a metric from Metrics.")
+            resolved.append(item)
 
         if not resolved:
             raise ValueError("Metrics sequence must not be empty.")

@@ -20,7 +20,7 @@ from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.judge_selection import select_judge_model
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
-from ai4rag.evaluator.metric import Metrics
+from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
@@ -47,14 +47,16 @@ MIN_MAX_RAG_PATTERNS_RANGE = (4, 20)
 LLMJudgeMode = Literal["base", "ragas", "all", "none"]
 DEFAULT_LLM_JUDGE_MODE: LLMJudgeMode = "base"
 DEFAULT_METRIC = Metrics.OVERALL_SCORE.name
-SUPPORTED_OPTIMIZATION_METRICS = frozenset(
-    {
-        Metrics.FAITHFULNESS.name,
-        Metrics.ANSWER_CORRECTNESS.name,
-        Metrics.CONTEXT_CORRECTNESS.name,
-        Metrics.OVERALL_SCORE.name,
-    }
-)
+# The optimization target is resolved to a concrete ``RAGMetric`` instance here.
+# By assumption only the unitxt metrics (plus the custom ``overall_score``) drive
+# optimization, so ambiguous names like "faithfulness" bind to the unitxt variant
+# rather than the RAGAS one.
+SUPPORTED_OPTIMIZATION_METRICS: dict[str, RAGMetric] = {
+    Metrics.FAITHFULNESS.name: Metrics.FAITHFULNESS,
+    Metrics.ANSWER_CORRECTNESS.name: Metrics.ANSWER_CORRECTNESS,
+    Metrics.CONTEXT_CORRECTNESS.name: Metrics.CONTEXT_CORRECTNESS,
+    Metrics.OVERALL_SCORE.name: Metrics.OVERALL_SCORE,
+}
 
 
 @dataclass
@@ -165,12 +167,15 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         raise ValueError("test_data_key must point to a JSON file.")
 
     settings = _validate_optimization_settings(optimization_settings)
-    optimization_metric = settings.get("metric") or DEFAULT_METRIC
-    if optimization_metric not in SUPPORTED_OPTIMIZATION_METRICS:
+    optimization_metric_name = settings.get("metric") or DEFAULT_METRIC
+    if optimization_metric_name not in SUPPORTED_OPTIMIZATION_METRICS:
         raise ValueError(
-            f"Optimization metric {optimization_metric} is not supported. "
+            f"Optimization metric {optimization_metric_name} is not supported. "
             f"Select one of {sorted(SUPPORTED_OPTIMIZATION_METRICS)}."
         )
+    # The experiment expects a concrete RAGMetric instance, so resolve the
+    # configured name to its (unitxt / custom) variant here.
+    optimization_metric = SUPPORTED_OPTIMIZATION_METRICS[optimization_metric_name]
 
     documents = load_docling_documents(extracted_text_path)
     benchmark_data = pd.read_json(Path(test_data_path))
