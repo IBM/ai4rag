@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Text extraction** — optional RapidOCR via Docling (`do_ocr`, `ocr_lang`, custom ONNX model paths); OCR remains off by default
+- **Document discovery / extraction** — JPEG, PNG, and TIFF image extensions supported for OCR-capable ingestion
+- **Dependencies** — added `openai` as the model-access SDK, replacing `ogx-client`
+
 ### Changed
 - **Model provider** — replaced OGX integration with any model handled via OpenAI client
 - **Search space preparation** — renamed `prepare_search_space_with_ogx` to `prepare_search_space_with_maas`, now accepting an `openai.OpenAI` client. Because MaaS `models.list()` carries no metadata (model type, embedding dimension, context length), the payload must declare foundation and embedding model IDs explicitly; embedding dimension and context length are auto-detected at construction time
@@ -19,22 +24,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **OGX** — removed all OGX support: the `ogx-client` dependency, `OGXFoundationModel`, `OGXEmbeddingModel`, `OGXModelParameters`, `OGXEmbeddingParams`, `create_ogx_client`, the `ogx_utils` module, the `ogx_inference_base_url` helper, and the `OGX_CLIENT_BASE_URL` / `OGX_CLIENT_API_KEY` environment variables (replaced by `MAAS_BASE_URL` / `MAAS_API_KEY`)
 
-### Added
-- **Dependencies** — added `openai` as the model-access SDK, replacing `ogx-client`
+### Fixed
+- **Text extraction / OCR** — fail fast with bake instructions when `DOCLING_ARTIFACTS_PATH` is set but RapidOCR ONNX models are missing; current PyPI `rapidocr` wheels no longer ship model files (bake via `tmp/Containerfile.autorag-dev`)
 
 ---
-
-## [0.11.0](https://github.com/IBM/ai4rag/releases/tag/v0.11.0)
-
-### Added
-- **Text extraction** — added support for 9 additional document formats (`.odt`, `.odp`, `.adoc`, `.tex`, `.epub`, `.eml`, `.qmd`, `.rmd`, `.xhtml`) in document discovery and text extraction, alongside existing PDF, DOCX, PPTX, Markdown, HTML, and plain-text support
-
-### Changed
-- **Data component** — `SUPPORTED_EXTENSIONS` extracted into a shared `ai4rag.components.data.constants` module, removing duplication between document discovery and text extraction
-- **Dependencies** — replaced the `docling` meta-package with `docling-slim[standard,feat-chunking,format-opendocument]`, and dropped the standalone `docling-core` dependency, now pulled in transitively via the `feat-chunking` extra
-
-### Fixed
-- **Notebooks** — updated the `ogx_inference_template.ipynb` test-data-loading example to call `ai4rag.components.data.test_data_loader.load_test_data()`, replacing a stale reference to the removed `kfp_components` pipeline API
 
 ---
 

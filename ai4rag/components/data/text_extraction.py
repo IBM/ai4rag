@@ -10,17 +10,22 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
+from docling.datamodel.pipeline_options import (
+    PaginatedPipelineOptions,
+    RapidOcrOptions,
+    ThreadedPdfPipelineOptions,
+)
 from docling.document_converter import (
     AsciiDocFormatOption,
     DocumentConverter,
     EmailFormatOption,
     EpubFormatOption,
     HTMLFormatOption,
+    ImageFormatOption,
     LatexFormatOption,
     MarkdownFormatOption,
     OdpFormatOption,
@@ -37,6 +42,7 @@ _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
 
 DOWNLOAD_MAX_THREADS = 8
+DEFAULT_OCR_LANG: tuple[str, ...] = ("english",)
 
 # Module-level global used by multiprocessing workers.  Each spawned worker
 # initializes its own ``DocumentConverter`` via the pool initializer and
@@ -63,6 +69,19 @@ class ExtractionResult:
     error_count: int
 
 
+@dataclass(frozen=True)
+class DoclingExtractionConfig:
+    """Docling converter settings shared with extraction worker processes."""
+
+    do_table_structure: bool = False
+    do_ocr: bool = False
+    ocr_lang: tuple[str, ...] = DEFAULT_OCR_LANG
+    ocr_det_model_path: str | None = None
+    ocr_cls_model_path: str | None = None
+    ocr_rec_model_path: str | None = None
+    ocr_rec_keys_path: str | None = None
+
+
 def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
     documents: list[dict],
     bucket: str,
@@ -75,6 +94,12 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
     do_table_structure: bool = False,
+    do_ocr: bool = False,
+    ocr_lang: Sequence[str] | str | None = None,
+    ocr_det_model_path: str | None = None,
+    ocr_cls_model_path: str | None = None,
+    ocr_rec_model_path: str | None = None,
+    ocr_rec_keys_path: str | None = None,
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -116,6 +141,22 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         rows and columns from detected PDF layout.  ``False`` (default)
         disables table structure parsing; ``True`` enables it to achieve
         increased accuracy of extracted data.
+    do_ocr
+        Whether Docling should run RapidOCR on pages that need OCR
+        (for example scanned PDFs or images).  ``False`` (default) keeps
+        OCR off for born-digital documents; ``True`` enables RapidOCR.
+    ocr_lang
+        RapidOCR language list (for example ``\"english\"`` or
+        ``[\"english\", \"chinese\"]``).  Defaults to ``[\"english\"]``
+        when OCR is enabled.  Ignored when ``do_ocr`` is ``False``.
+    ocr_det_model_path
+        Optional local path to a custom RapidOCR detection ONNX model.
+    ocr_cls_model_path
+        Optional local path to a custom RapidOCR classification ONNX model.
+    ocr_rec_model_path
+        Optional local path to a custom RapidOCR recognition ONNX model.
+    ocr_rec_keys_path
+        Optional local path to a custom RapidOCR recognition keys file.
 
     Returns
     -------
@@ -140,8 +181,23 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
 
     s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
     artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
+    pipeline_config = DoclingExtractionConfig(
+        do_table_structure=do_table_structure,
+        do_ocr=do_ocr,
+        ocr_lang=_normalize_ocr_lang(ocr_lang),
+        ocr_det_model_path=ocr_det_model_path,
+        ocr_cls_model_path=ocr_cls_model_path,
+        ocr_rec_model_path=ocr_rec_model_path,
+        ocr_rec_keys_path=ocr_rec_keys_path,
+    )
 
     _logger.info("Docling table structure parsing: %s", do_table_structure)
+    _logger.info(
+        "Docling OCR (RapidOCR): enabled=%s lang=%s custom_models=%s",
+        do_ocr,
+        pipeline_config.ocr_lang if do_ocr else (),
+        bool(ocr_det_model_path or ocr_cls_model_path or ocr_rec_model_path or ocr_rec_keys_path),
+    )
 
     documents = sorted(documents, key=lambda d: d.get("size_bytes", 0), reverse=True)
 
@@ -162,7 +218,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         mp_context.Pool(
             processes=effective_workers,
             initializer=_text_extraction_pool_initializer,
-            initargs=(do_table_structure,),
+            initargs=(pipeline_config,),
         ) as process_pool,
     ):
         download_start = time.perf_counter()
@@ -350,24 +406,150 @@ def _resolve_artifacts_path(explicit: str | None) -> Path | None:
     return p
 
 
-def _build_docling_format_options(do_table_structure: bool = False) -> dict:
-    """Build Docling pipeline format options for each supported input format."""
+def _normalize_ocr_lang(ocr_lang: Sequence[str] | str | None) -> tuple[str, ...]:
+    """Normalize OCR language input to a non-empty tuple of language codes."""
+    if ocr_lang is None:
+        return DEFAULT_OCR_LANG
+    if isinstance(ocr_lang, str):
+        langs = (ocr_lang.strip(),) if ocr_lang.strip() else DEFAULT_OCR_LANG
+    else:
+        langs = tuple(str(lang).strip() for lang in ocr_lang if str(lang).strip())
+    return langs or DEFAULT_OCR_LANG
+
+
+# Relative paths Docling expects under ``$DOCLING_ARTIFACTS_PATH/RapidOcr/`` for
+# the onnxruntime backend (see docling.models.stages.ocr.rapid_ocr_model).
+_ARTIFACTS_RAPIDOCR_ENGLISH = (
+    "onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx",
+    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+    "onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx",
+)
+_ARTIFACTS_RAPIDOCR_CHINESE = (
+    "onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
+    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+    "onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
+)
+# Optional small models that some rapidocr wheels still ship under ``rapidocr/models/``.
+_BUNDLED_RAPIDOCR_DET = "PP-OCRv6_det_small.onnx"
+_BUNDLED_RAPIDOCR_CLS = "ch_ppocr_mobile_v2.0_cls_mobile.onnx"
+_BUNDLED_RAPIDOCR_REC = "PP-OCRv6_rec_small.onnx"
+
+
+def _rapidocr_artifacts_rel_paths(ocr_lang: tuple[str, ...]) -> tuple[str, ...]:
+    """Pick Docling artifact-relative OCR model paths for the requested language."""
+    normalized = {lang.strip().lower() for lang in ocr_lang}
+    if normalized & {"chinese", "ch", "zh", "zho", "chi"} and not (
+        normalized & {"english", "en", "eng", "latin"}
+    ):
+        return _ARTIFACTS_RAPIDOCR_CHINESE
+    return _ARTIFACTS_RAPIDOCR_ENGLISH
+
+
+def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:
+    """Return RapidOCR wheel model paths when the installed package still ships ONNX files."""
+    try:
+        import rapidocr
+    except ImportError:
+        return None
+
+    models_dir = Path(rapidocr.__file__).resolve().parent / "models"
+    paths = {
+        "det_model_path": models_dir / _BUNDLED_RAPIDOCR_DET,
+        "cls_model_path": models_dir / _BUNDLED_RAPIDOCR_CLS,
+        "rec_model_path": models_dir / _BUNDLED_RAPIDOCR_REC,
+    }
+    if not all(path.is_file() for path in paths.values()):
+        return None
+    return {key: str(path) for key, path in paths.items()}
+
+
+def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
+    """Fail fast when Docling artifacts are configured but RapidOCR models are missing."""
+    artifacts = _resolve_artifacts_path(None)
+    if artifacts is None:
+        return
+    ocr_root = artifacts / "RapidOcr"
+    missing = [str(ocr_root / rel) for rel in _rapidocr_artifacts_rel_paths(ocr_lang) if not (ocr_root / rel).is_file()]
+    if missing:
+        raise FileNotFoundError(
+            "RapidOCR models are missing under DOCLING_ARTIFACTS_PATH. Expected files:\n  - "
+            + "\n  - ".join(missing)
+            + "\nBake them into the AutoRAG image (see tmp/Containerfile.autorag-dev) or pass "
+            "ocr_*_model_path explicitly. Current PyPI rapidocr wheels no longer ship ONNX models."
+        )
+
+
+def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
+    """Build Docling ``RapidOcrOptions`` from extraction config.
+
+    Resolution order when custom paths are omitted:
+
+    1. ONNX files shipped inside the ``rapidocr`` package (older / some local installs)
+    2. Otherwise leave paths unset so Docling loads from ``DOCLING_ARTIFACTS_PATH/RapidOcr``
+       (requires models baked into the image for disconnected clusters)
+    """
+    kwargs: dict[str, Any] = {
+        "lang": list(config.ocr_lang),
+        "force_full_page_ocr": False,
+    }
+    custom_paths = {
+        "det_model_path": config.ocr_det_model_path,
+        "cls_model_path": config.ocr_cls_model_path,
+        "rec_model_path": config.ocr_rec_model_path,
+        "rec_keys_path": config.ocr_rec_keys_path,
+    }
+    if any(custom_paths.values()):
+        for key, value in custom_paths.items():
+            if value:
+                kwargs[key] = value
+        return RapidOcrOptions(**kwargs)
+
+    wheel_paths = _try_resolve_wheel_rapidocr_model_paths()
+    if wheel_paths is not None:
+        kwargs.update(wheel_paths)
+        return RapidOcrOptions(**kwargs)
+
+    _validate_rapidocr_artifacts(config.ocr_lang)
+    return RapidOcrOptions(**kwargs)
+
+
+def _build_docling_format_options(
+    do_table_structure: bool = False,
+    config: DoclingExtractionConfig | None = None,
+) -> dict:
+    """Build Docling pipeline format options for each supported input format.
+
+    Parameters
+    ----------
+    do_table_structure
+        Legacy convenience flag used by existing unit tests.  Ignored when
+        *config* is provided.
+    config
+        Full extraction config.  When ``None``, a config is built from
+        ``do_table_structure`` with OCR disabled.
+    """
+    cfg = config or DoclingExtractionConfig(do_table_structure=do_table_structure)
     ap = _resolve_artifacts_path(None)
     accel = AcceleratorOptions(device="cpu", num_threads=2)
+    ocr_options = _build_rapidocr_options(cfg) if cfg.do_ocr else None
 
-    pdf_pipeline_options = ThreadedPdfPipelineOptions(
-        artifacts_path=ap,
-        do_ocr=False,
-        do_table_structure=do_table_structure,
-        accelerator_options=accel,
-    )
+    pdf_kwargs: dict[str, Any] = {
+        "artifacts_path": ap,
+        "do_ocr": cfg.do_ocr,
+        "do_table_structure": cfg.do_table_structure,
+        "accelerator_options": accel,
+    }
+    if ocr_options is not None:
+        pdf_kwargs["ocr_options"] = ocr_options
+
+    pdf_pipeline_options = ThreadedPdfPipelineOptions(**pdf_kwargs)
     paginated_pipeline_options = PaginatedPipelineOptions(
         artifacts_path=ap,
         generate_page_images=False,
         accelerator_options=accel,
     )
 
-    return {
+    format_options: dict = {
         InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_pipeline_options),
         InputFormat.DOCX: WordFormatOption(pipeline_options=paginated_pipeline_options),
         InputFormat.PPTX: PowerpointFormatOption(pipeline_options=paginated_pipeline_options),
@@ -380,10 +562,24 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         InputFormat.EPUB: EpubFormatOption(),
         InputFormat.EMAIL: EmailFormatOption(),
     }
+    # Images always go through the PDF/image pipeline so RapidOCR can run when enabled.
+    format_options[InputFormat.IMAGE] = ImageFormatOption(pipeline_options=pdf_pipeline_options)
+    return format_options
 
 
-def _text_extraction_pool_initializer(do_table_structure: bool = False) -> None:
-    """Pool initializer that creates a ``DocumentConverter`` per worker process."""
+def _text_extraction_pool_initializer(
+    config: DoclingExtractionConfig | bool = False,
+) -> None:
+    """Pool initializer that creates a ``DocumentConverter`` per worker process.
+
+    Accepts either a :class:`DoclingExtractionConfig` or a legacy boolean
+    ``do_table_structure`` flag for backward compatibility with older call sites.
+    """
+    if isinstance(config, bool):
+        pipeline_config = DoclingExtractionConfig(do_table_structure=config)
+    else:
+        pipeline_config = config
+
     os.environ["TQDM_DISABLE"] = "1"
     os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
     os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -404,7 +600,9 @@ def _text_extraction_pool_initializer(do_table_structure: bool = False) -> None:
 
     mod = sys.modules[__name__]
     # pylint: disable=protected-access
-    mod._mp_worker_converter = DocumentConverter(format_options=_build_docling_format_options(do_table_structure))
+    mod._mp_worker_converter = DocumentConverter(
+        format_options=_build_docling_format_options(config=pipeline_config)
+    )
     worker_log.debug(
         "Worker pid=%s: DocumentConverter ready (%.1fs)",
         worker_pid,

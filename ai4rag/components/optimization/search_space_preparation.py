@@ -170,8 +170,6 @@ def prepare_search_space_report(  # pylint: disable=too-many-locals,too-many-arg
 
     Raises
     ------
-    ValueError
-        If *metric* is not one of the supported values.
     TypeError
         If *embedding_models* or *generation_models* contain invalid entries.
     pydantic.ValidationError

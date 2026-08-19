@@ -346,7 +346,7 @@ class TestRaiseIfThresholdExceeded:
 
 
 class TestBuildDoclingFormatOptions:
-    """Tests for the ``do_table_structure`` parameter in ``_build_docling_format_options``."""
+    """Tests for Docling format options including table structure and OCR."""
 
     def test_default_disables_table_structure(self):
         """Default call should produce PDF options with ``do_table_structure=False``."""
@@ -356,6 +356,7 @@ class TestBuildDoclingFormatOptions:
 
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
+        assert pdf_option.pipeline_options.do_ocr is False
 
     def test_formats_registered_have_entries_in_options(self):
         """All newly added formats must have entries in the options dict."""
@@ -387,3 +388,102 @@ class TestBuildDoclingFormatOptions:
         options = _build_docling_format_options(do_table_structure=False)
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
+
+    def test_do_ocr_enables_rapidocr_english_default(self):
+        """OCR enabled should set RapidOCR options with English default language."""
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import RapidOcrOptions
+
+        from ai4rag.components.data.text_extraction import DoclingExtractionConfig
+
+        options = _build_docling_format_options(
+            config=DoclingExtractionConfig(do_ocr=True),
+        )
+        pdf_option = options[InputFormat.PDF]
+        assert pdf_option.pipeline_options.do_ocr is True
+        assert isinstance(pdf_option.pipeline_options.ocr_options, RapidOcrOptions)
+        assert pdf_option.pipeline_options.ocr_options.lang == ["english"]
+        assert InputFormat.IMAGE in options
+
+    def test_custom_ocr_model_paths(self):
+        """Custom RapidOCR model paths should be forwarded to Docling options."""
+        from docling.datamodel.base_models import InputFormat
+
+        from ai4rag.components.data.text_extraction import DoclingExtractionConfig
+
+        options = _build_docling_format_options(
+            config=DoclingExtractionConfig(
+                do_ocr=True,
+                ocr_lang=("chinese",),
+                ocr_det_model_path="/models/det.onnx",
+                ocr_cls_model_path="/models/cls.onnx",
+                ocr_rec_model_path="/models/rec.onnx",
+                ocr_rec_keys_path="/models/keys.txt",
+            ),
+        )
+        ocr = options[InputFormat.PDF].pipeline_options.ocr_options
+        assert ocr.lang == ["chinese"]
+        assert ocr.det_model_path == "/models/det.onnx"
+        assert ocr.cls_model_path == "/models/cls.onnx"
+        assert ocr.rec_model_path == "/models/rec.onnx"
+        assert ocr.rec_keys_path == "/models/keys.txt"
+
+    def test_missing_rapidocr_artifacts_raise_clear_error(self, monkeypatch, tmp_path):
+        """When artifacts path is set but RapidOCR models are absent, fail with bake hint."""
+        from ai4rag.components.data import text_extraction as te
+
+        artifacts = tmp_path / "docling-artifacts"
+        artifacts.mkdir()
+        (artifacts / "placeholder").write_text("x", encoding="utf-8")
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
+        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
+
+        with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
+            te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+
+    def test_uses_artifacts_when_rapidocr_models_present(self, monkeypatch, tmp_path):
+        """With RapidOCR models under DOCLING_ARTIFACTS_PATH, leave paths unset for Docling."""
+        from docling.datamodel.base_models import InputFormat
+
+        from ai4rag.components.data import text_extraction as te
+
+        artifacts = tmp_path / "models"
+        for rel in te._ARTIFACTS_RAPIDOCR_ENGLISH:
+            path = artifacts / "RapidOcr" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b"onnx")
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
+        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
+
+        options = te._build_docling_format_options(
+            config=te.DoclingExtractionConfig(do_ocr=True),
+        )
+        ocr = options[InputFormat.PDF].pipeline_options.ocr_options
+        assert ocr.det_model_path is None
+        assert ocr.lang == ["english"]
+
+    def test_image_format_option_present(self):
+        """Image formats must be registered so JPEG/PNG/TIFF can be converted."""
+        from docling.datamodel.base_models import InputFormat
+
+        options = _build_docling_format_options()
+        assert InputFormat.IMAGE in options
+
+
+class TestNormalizeOcrLang:
+    """Tests for OCR language normalization."""
+
+    def test_default_when_none(self):
+        from ai4rag.components.data.text_extraction import _normalize_ocr_lang
+
+        assert _normalize_ocr_lang(None) == ("english",)
+
+    def test_string(self):
+        from ai4rag.components.data.text_extraction import _normalize_ocr_lang
+
+        assert _normalize_ocr_lang("chinese") == ("chinese",)
+
+    def test_sequence(self):
+        from ai4rag.components.data.text_extraction import _normalize_ocr_lang
+
+        assert _normalize_ocr_lang(["english", "chinese"]) == ("english", "chinese")
