@@ -50,12 +50,12 @@
       show_root_heading: true
       show_source: true
 
-::: ai4rag.evaluator.ragas_adapters.make_ragas_llm
+::: ai4rag.evaluator.ragas_adapters.AI4RAGRagasLLM
     options:
       show_root_heading: true
       show_source: true
 
-::: ai4rag.evaluator.ragas_adapters.make_ragas_embeddings
+::: ai4rag.evaluator.ragas_adapters.AI4RAGRagasEmbeddings
     options:
       show_root_heading: true
       show_source: true
