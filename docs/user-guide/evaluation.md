@@ -134,7 +134,7 @@ ai4rag supports multiple evaluator types working together. Each evaluator handle
 - **Custom metrics** — computed from the results of other evaluators (e.g. `overall_score` is the mean of all other metrics)
 
 !!! note "Metric names are not unique across evaluators"
-    A metric name can be produced by more than one evaluator — for example both the Unitxt and RAGAS evaluators expose a `faithfulness` metric. Each result carries an `evaluator` field (`"unitxt"`, `"judge"`, `"ragas"`, or `"custom"`) that disambiguates them. When resolving a bare metric-name string (e.g. `optimization_metric="faithfulness"`), ai4rag keeps the first-defined metric; pass a `RAGMetric` instance from the `Metrics` registry (e.g. `Metrics.RAGAS_FAITHFULNESS`) to select a specific evaluator's variant.
+    A metric name can be produced by more than one evaluator — for example both the Unitxt and RAGAS evaluators expose a `faithfulness` metric. Each result carries an `evaluator` field (`"unitxt"`, `"judge"`, `"ragas"`, or `"custom"`) that disambiguates them. Because a bare name is therefore ambiguous, `metrics` and `optimization_metric` accept only `RAGMetric` instances from the `Metrics` registry (e.g. `Metrics.FAITHFULNESS` for the Unitxt variant, `Metrics.RAGAS_FAITHFULNESS` for the RAGAS one); passing a string raises an error.
 
 For each RAG configuration being tested:
 
@@ -268,7 +268,7 @@ This granular data helps you identify:
 
 ai4rag optimizes for a **single objective metric**. By default, this is **`overall_score`** (the mean of all other metrics), but you can change it when creating your experiment.
 
-The `optimization_metric` parameter accepts either a `RAGMetric` instance from the `Metrics` registry or a metric name string:
+The `optimization_metric` parameter accepts a `RAGMetric` instance from the `Metrics` registry:
 
 ### Default: Overall Score
 
@@ -293,16 +293,9 @@ You can target any metric from the `Metrics` registry:
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.evaluator.metric import Metrics
 
-# Using a RAGMetric instance
 experiment = AI4RAGExperiment(
     # ... other parameters
     optimization_metric=Metrics.FAITHFULNESS,
-)
-
-# Or using a metric name string
-experiment = AI4RAGExperiment(
-    # ... other parameters
-    optimization_metric="answer_correctness",
 )
 ```
 
