@@ -23,7 +23,7 @@ from ai4rag.evaluator.base_evaluator import (
 )
 from ai4rag.evaluator.llmaj_evaluator import compute_confidence_interval
 from ai4rag.evaluator.metric import Metrics, RAGMetric
-from ai4rag.evaluator.ragas_adapters import make_ragas_embeddings, make_ragas_llm
+from ai4rag.evaluator.ragas_adapters import AI4RAGRagasEmbeddings, AI4RAGRagasLLM
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
@@ -203,8 +203,8 @@ class RagasEvaluator(BaseEvaluator):
         result = evaluate(
             dataset=dataset,
             metrics=ragas_metrics,
-            llm=make_ragas_llm(self.model, max_completion_tokens=self.max_completion_tokens),
-            embeddings=make_ragas_embeddings(self.embedding_model),
+            llm=AI4RAGRagasLLM(self.model, max_completion_tokens=self.max_completion_tokens),
+            embeddings=AI4RAGRagasEmbeddings(self.embedding_model),
             run_config=run_config,
             raise_exceptions=False,
             show_progress=False,

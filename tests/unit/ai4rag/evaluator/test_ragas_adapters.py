@@ -16,7 +16,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ai4rag.evaluator.ragas_adapters import make_ragas_embeddings, make_ragas_llm
+from ai4rag.evaluator.ragas_adapters import AI4RAGRagasEmbeddings, AI4RAGRagasLLM
 
 
 def _make_chat_model(content: str = "hello") -> MagicMock:
@@ -27,10 +27,10 @@ def _make_chat_model(content: str = "hello") -> MagicMock:
     return model
 
 
-class TestMakeRagasLLM:
+class TestAI4RAGRagasLLM:
     def test_generate_text_delegates_with_token_cap(self):
         model = _make_chat_model("hi there")
-        llm = make_ragas_llm(model, max_completion_tokens=512)
+        llm = AI4RAGRagasLLM(model, max_completion_tokens=512)
         prompt = MagicMock()
         prompt.to_string.return_value = "the prompt"
 
@@ -43,7 +43,7 @@ class TestMakeRagasLLM:
 
     def test_n_loop_and_stop_passthrough(self):
         model = _make_chat_model()
-        llm = make_ragas_llm(model)
+        llm = AI4RAGRagasLLM(model)
         prompt = MagicMock()
         prompt.to_string.return_value = "p"
 
@@ -55,7 +55,7 @@ class TestMakeRagasLLM:
 
     def test_none_content_becomes_empty_string(self):
         model = _make_chat_model(content=None)
-        llm = make_ragas_llm(model)
+        llm = AI4RAGRagasLLM(model)
         prompt = MagicMock()
         prompt.to_string.return_value = "p"
 
@@ -64,7 +64,7 @@ class TestMakeRagasLLM:
 
     def test_agenerate_text_delegates(self):
         model = _make_chat_model("async")
-        llm = make_ragas_llm(model)
+        llm = AI4RAGRagasLLM(model)
         prompt = MagicMock()
         prompt.to_string.return_value = "p"
 
@@ -75,16 +75,16 @@ class TestMakeRagasLLM:
         assert model.chat.call_args.kwargs["temperature"] == pytest.approx(1e-2)
 
     def test_is_finished_true(self):
-        llm = make_ragas_llm(_make_chat_model())
+        llm = AI4RAGRagasLLM(_make_chat_model())
         assert llm.is_finished(None) is True
 
 
-class TestMakeRagasEmbeddings:
+class TestAI4RAGRagasEmbeddings:
     def test_sync_delegation(self):
         model = MagicMock()
         model.embed_query.return_value = [0.1, 0.2]
         model.embed_documents.return_value = [[0.1], [0.2]]
-        emb = make_ragas_embeddings(model)
+        emb = AI4RAGRagasEmbeddings(model)
 
         assert emb.embed_query("x") == [0.1, 0.2]
         assert emb.embed_documents(["a", "b"]) == [[0.1], [0.2]]
@@ -95,7 +95,7 @@ class TestMakeRagasEmbeddings:
         model = MagicMock()
         model.embed_query.return_value = [0.3]
         model.embed_documents.return_value = [[0.3]]
-        emb = make_ragas_embeddings(model)
+        emb = AI4RAGRagasEmbeddings(model)
 
         assert asyncio.run(emb.aembed_query("x")) == [0.3]
         assert asyncio.run(emb.aembed_documents(["a"])) == [[0.3]]

@@ -232,37 +232,3 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
             One embedding per input document.
         """
         return await asyncio.to_thread(self._model.embed_documents, texts)
-
-
-def make_ragas_llm(model: BaseFoundationModel, max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS) -> Any:
-    """Build a ``BaseRagasLLM`` backed by an ai4rag foundation model.
-
-    Parameters
-    ----------
-    model : BaseFoundationModel
-        The foundation model RAGAS should use as its evaluating LLM.
-    max_completion_tokens : int, default=``DEFAULT_MAX_COMPLETION_TOKENS``
-        Upper bound on tokens per completion, forwarded to the wrapper.
-
-    Returns
-    -------
-    AI4RAGRagasLLM
-        A RAGAS-compatible LLM delegating to ``model``.
-    """
-    return AI4RAGRagasLLM(model, max_completion_tokens=max_completion_tokens)
-
-
-def make_ragas_embeddings(embedding_model: BaseEmbeddingModel) -> Any:
-    """Build a ``BaseRagasEmbeddings`` backed by an ai4rag embedding model.
-
-    Parameters
-    ----------
-    embedding_model : BaseEmbeddingModel
-        The embedding model RAGAS should use for embedding-based metrics.
-
-    Returns
-    -------
-    AI4RAGRagasEmbeddings
-        A RAGAS-compatible embeddings adapter delegating to ``embedding_model``.
-    """
-    return AI4RAGRagasEmbeddings(embedding_model)
