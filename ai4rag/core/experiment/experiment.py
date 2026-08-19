@@ -87,16 +87,18 @@ class AI4RAGExperiment:
         results and intermediate status updates. EventHandler is an entrypoint to configure
         custom logging and assets handling.
 
-    optimization_metric : RAGMetric | str, default=Metrics.OVERALL_SCORE
+    optimization_metric : RAGMetric, default=Metrics.OVERALL_SCORE
         Metric used for calculating the final score that drives optimization.
+        Must be a ``RAGMetric`` instance selected from :class:`Metrics`.
 
     Other Parameters
     ----------------
     metrics : Sequence[RAGMetric]
-        Metrics evaluated during the AutoRAG experiment. Not all
-        of these metrics are used to calculate the final score, but they
-        are included in the evaluation results. When omitted, defaults
-        are derived from the configured evaluators.
+        Metrics evaluated during the AutoRAG experiment, each a ``RAGMetric``
+        instance selected from :class:`Metrics`. Not all of these metrics are
+        used to calculate the final score, but they are included in the
+        evaluation results. When omitted, defaults are derived from the
+        configured evaluators.
 
     evaluators : list[BaseEvaluator] | None, default=None
         Evaluator instances used to score RAG patterns during optimization.
@@ -129,7 +131,7 @@ class AI4RAGExperiment:
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
         vector_store_config: BaseVectorStoreConfig,
-        optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
+        optimization_metric: RAGMetric = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.documents = documents
@@ -141,7 +143,7 @@ class AI4RAGExperiment:
         self.optimization_metric = optimization_metric
 
         self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
-        self.metrics: Sequence[RAGMetric | str] | None = kwargs.pop(
+        self.metrics: Sequence[RAGMetric] | None = kwargs.pop(
             "metrics", None
         )  # resolved in _resolve_metrics_and_validate
         self.n_mps_foundation_models = kwargs.pop(
@@ -188,27 +190,27 @@ class AI4RAGExperiment:
         return self._optimization_metric
 
     @optimization_metric.setter
-    def optimization_metric(self, val: RAGMetric | str) -> None:
-        """Validate and set optimization metrics"""
-        available_metrics = [m.name for m in Metrics]
+    def optimization_metric(self, val: RAGMetric) -> None:
+        """Validate and set the optimization metric.
 
-        if isinstance(val, str):
-            n_val = next((metric for metric in Metrics if metric.name == val), None)
-            val_name = val
-        elif isinstance(val, RAGMetric):
-            n_val = val if val in Metrics else None
-            val_name = val.name
-        else:
+        Expects a :class:`RAGMetric` instance selected from :class:`Metrics`.
+        A metric name is not unique across evaluators (e.g. both the unitxt and
+        RAGAS evaluators expose "faithfulness"), so a bare name string is
+        ambiguous and rejected; pass the specific ``RAGMetric`` instead.
+        """
+        if not isinstance(val, RAGMetric):
             raise RAGExperimentError(
-                f"Incorrect type for optimization metric: {val}. Expected ai4rag.evaluator.metric.RAGMetric or str."
+                f"Incorrect type for optimization metric: {val!r}. "
+                "Expected an ai4rag.evaluator.metric.RAGMetric instance selected from Metrics."
             )
 
-        if not n_val:
+        if val not in Metrics:
             raise RAGExperimentError(
-                f"Provided optimization metric: '{val_name}' is not supported. Available metrics: {available_metrics}."
+                f"Provided optimization metric: '{val.name}' is not supported. "
+                f"Available metrics: {[m.name for m in Metrics]}."
             )
 
-        self._optimization_metric = n_val
+        self._optimization_metric = val
 
     @property
     def benchmark_data(self) -> BenchmarkData:
@@ -242,32 +244,28 @@ class AI4RAGExperiment:
         return self._metrics
 
     @metrics.setter
-    def metrics(self, val: Sequence[RAGMetric | str] | None) -> None:
+    def metrics(self, val: Sequence[RAGMetric] | None) -> None:
         """Validate and set evaluation metrics.
 
-        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``),
-        a sequence of ``RAGMetric`` instances, a sequence of metric name
-        strings, or a mixed sequence of both.
+        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``)
+        or a sequence of ``RAGMetric`` instances selected from :class:`Metrics`.
+        A metric name is not unique across evaluators (e.g. both the unitxt and
+        RAGAS evaluators expose "faithfulness"), so a bare name string is
+        ambiguous and rejected; pass the specific ``RAGMetric`` instead.
         """
         if val is None:
             self._metrics = None
             return
 
-        available = {m.name: m for m in Metrics}
         resolved: list[RAGMetric] = []
-
         for item in val:
-            if isinstance(item, RAGMetric):
-                if item not in Metrics:
-                    raise ValueError(f"Unknown RAGMetric '{item.name}'. Available: {list(available.keys())}.")
-                resolved.append(item)
-            elif isinstance(item, str):
-                metric = available.get(item)
-                if metric is None:
-                    raise ValueError(f"Unknown metric name '{item}'. Available: {list(available.keys())}.")
-                resolved.append(metric)
-            else:
-                raise TypeError(f"Each metric must be a RAGMetric or str, got {type(item).__name__}.")
+            if not isinstance(item, RAGMetric):
+                raise TypeError(
+                    f"Each metric must be a RAGMetric instance selected from Metrics, got {type(item).__name__}."
+                )
+            if item not in Metrics:
+                raise ValueError(f"Unknown RAGMetric '{item.name}'. Select a metric from Metrics.")
+            resolved.append(item)
 
         if not resolved:
             raise ValueError("Metrics sequence must not be empty.")
@@ -293,6 +291,15 @@ class AI4RAGExperiment:
             evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
             if "judge" in evaluator_types:
                 base.append(Metrics.JUDGE_ANSWER_RELEVANCE)
+            if "ragas" in evaluator_types:
+                base.extend(
+                    [
+                        Metrics.RAGAS_FAITHFULNESS,
+                        Metrics.RAGAS_ANSWER_RELEVANCY,
+                        Metrics.RAGAS_CONTEXT_PRECISION,
+                        Metrics.RAGAS_CONTEXT_RECALL,
+                    ]
+                )
             self._metrics = tuple(base)
             logger.info("Using default metrics: %s.", [m.name for m in self._metrics])
 
@@ -575,15 +582,7 @@ class AI4RAGExperiment:
         stop_time = time.time()
         execution_time = stop_time - start_time
 
-        final_score = next(
-            (r["scores"]["mean"] for r in result_scores["metrics"] if r["name"] == self.optimization_metric.name),
-            None,
-        )
-        if final_score is None:
-            raise RAGExperimentError(
-                f"Optimization metric '{self.optimization_metric.name}' not found in evaluation results. "
-                f"Available: {[m['name'] for m in result_scores['metrics']]}."
-            )
+        final_score = self._resolve_optimization_score(result_scores, pattern_name)
 
         logger.info("Calculated optimization score for '%s': %s", pattern_name, final_score)
 
@@ -619,6 +618,63 @@ class AI4RAGExperiment:
             evaluation_result=evaluation_result,
         )
 
+        return final_score
+
+    def _resolve_optimization_score(self, result_scores: EvaluationMetricsResult, pattern_name: str) -> float | None:
+        """Extract the optimization metric's mean score from a pattern's results.
+
+        Matches on both name and evaluator: a metric name (e.g. ``"faithfulness"``)
+        can be produced by more than one evaluator (unitxt and ragas), and the
+        ``evaluator`` field is what disambiguates them.
+
+        Parameters
+        ----------
+        result_scores : EvaluationMetricsResult
+            Aggregated metrics produced for the evaluated pattern.
+        pattern_name : str
+            Name of the evaluated pattern, used for logging.
+
+        Returns
+        -------
+        float | None
+            The optimization metric's mean, or ``None`` when the metric was
+            produced but could not be scored for this pattern (a failed — not
+            fatal — iteration).
+
+        Raises
+        ------
+        RAGExperimentError
+            If no metric matching the optimization metric's name and evaluator is
+            present in the results at all (a configuration error).
+        """
+        optimization_metric_result = next(
+            (
+                r
+                for r in result_scores["metrics"]
+                if r["name"] == self.optimization_metric.name and r["evaluator"] == self.optimization_metric.evaluator
+            ),
+            None,
+        )
+        if optimization_metric_result is None:
+            available = [f"{m['name']} ({m['evaluator']})" for m in result_scores["metrics"]]
+            raise RAGExperimentError(
+                f"Optimization metric '{self.optimization_metric.name}' "
+                f"({self.optimization_metric.evaluator}) not found in evaluation results. "
+                f"Available: {available}."
+            )
+
+        # A ``None`` mean means the metric was produced but could not be scored for
+        # this pattern (e.g. a reference-based metric whose records all lacked
+        # references). That is a failed — not fatal — iteration: return ``None`` so
+        # the optimizer skips it rather than aborting the whole run.
+        final_score = optimization_metric_result["scores"]["mean"]
+        if final_score is None:
+            logger.warning(
+                "Optimization metric '%s' (%s) has no score for pattern '%s'; treating as a failed iteration.",
+                self.optimization_metric.name,
+                self.optimization_metric.evaluator,
+                pattern_name,
+            )
         return final_score
 
     def search(self, **kwargs) -> None:
@@ -744,8 +800,14 @@ class AI4RAGExperiment:
 
         n_known = len(self.known_observations) if self.known_observations else 0
 
+        # Match on name and evaluator so a colliding metric name (e.g. unitxt vs
+        # ragas "faithfulness") only flags the actual optimization target.
         metrics_payload = [
-            {**m, "optimization_metric": True} if m["name"] == self.optimization_metric.name else m
+            (
+                {**m, "optimization_metric": True}
+                if m["name"] == self.optimization_metric.name and m["evaluator"] == self.optimization_metric.evaluator
+                else m
+            )
             for m in evaluation_result.scores["metrics"]
         ]
 

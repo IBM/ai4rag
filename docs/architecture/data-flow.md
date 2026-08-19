@@ -622,10 +622,13 @@ scores_df, ci_table = evaluate(
 The final optimization score is extracted from the aggregate results:
 
 ```python
-optimization_metric = "overall_score"  # Default; user-configurable
+optimization_metric = Metrics.OVERALL_SCORE  # Default; user-configurable RAGMetric
+# Match on name AND evaluator so a colliding name (e.g. unitxt vs ragas
+# "faithfulness") resolves to the intended metric.
 final_score = next(
     m["scores"]["mean"] for m in result_scores["metrics"]
-    if m["name"] == optimization_metric
+    if m["name"] == optimization_metric.name
+    and m["evaluator"] == optimization_metric.evaluator
 )
 # Example: 0.75
 ```

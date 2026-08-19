@@ -98,6 +98,20 @@ Context Correctness: Medium (1 of 2 correct documents retrieved)
 
 ---
 
+### RAGAS Metrics
+
+The optional `RagasEvaluator` adds four LLM-based metrics from the [RAGAS](https://github.com/explodinggradients/ragas) library as an independent cross-check on the reference-based and judge metrics. All are scored in [0.0, 1.0] (higher is better) and run through the same foundation and embedding models the rest of the pipeline uses.
+
+- **`faithfulness`** (evaluator `ragas`) — how well the answer is grounded in the retrieved context without hallucination.
+- **`answer_relevancy`** — how relevant and on-topic the answer is to the question. Requires an embedding model.
+- **`context_precision`** — whether the retrieved contexts relevant to the ground truth are ranked highly.
+- **`context_recall`** — how much of the ground-truth answer is covered by the retrieved contexts.
+
+!!! note "Distinct from the Unitxt `faithfulness`"
+    RAGAS `faithfulness` and Unitxt `faithfulness` share a name but are produced by different evaluators and computed differently. Select the RAGAS variant with `Metrics.RAGAS_FAITHFULNESS` rather than the bare string.
+
+---
+
 ### Overall Score
 
 **What it measures**: The mean of all other evaluated metrics.
@@ -116,7 +130,11 @@ ai4rag supports multiple evaluator types working together. Each evaluator handle
 
 - **`UnitxtEvaluator`** — wraps the [unitxt](https://github.com/IBM/unitxt) library for reference-based RAG metrics (`faithfulness`, `answer_correctness`, `context_correctness`)
 - **`LLMaJEvaluator`** — uses an LLM as a judge for `answer_relevance`
+- **`RagasEvaluator`** — wraps the [RAGAS](https://github.com/explodinggradients/ragas) library for LLM-based RAG metrics (`faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`)
 - **Custom metrics** — computed from the results of other evaluators (e.g. `overall_score` is the mean of all other metrics)
+
+!!! note "Metric names are not unique across evaluators"
+    A metric name can be produced by more than one evaluator — for example both the Unitxt and RAGAS evaluators expose a `faithfulness` metric. Each result carries an `evaluator` field (`"unitxt"`, `"judge"`, `"ragas"`, or `"custom"`) that disambiguates them. Because a bare name is therefore ambiguous, `metrics` and `optimization_metric` accept only `RAGMetric` instances from the `Metrics` registry (e.g. `Metrics.FAITHFULNESS` for the Unitxt variant, `Metrics.RAGAS_FAITHFULNESS` for the RAGAS one); passing a string raises an error.
 
 For each RAG configuration being tested:
 
@@ -162,7 +180,7 @@ Evaluation results are returned as an `EvaluationMetricsResult` TypedDict with t
 For each metric, you get:
 
 - **`name`**: Metric identifier
-- **`evaluator`**: Which evaluator produced it (`"unitxt"`, `"judge"`, or `"custom"`)
+- **`evaluator`**: Which evaluator produced it (`"unitxt"`, `"judge"`, `"ragas"`, or `"custom"`)
 - **`scores.mean`**: Average score across all questions
 - **`scores.ci_low`**: Lower bound of 95% confidence interval
 - **`scores.ci_high`**: Upper bound of 95% confidence interval
@@ -250,7 +268,7 @@ This granular data helps you identify:
 
 ai4rag optimizes for a **single objective metric**. By default, this is **`overall_score`** (the mean of all other metrics), but you can change it when creating your experiment.
 
-The `optimization_metric` parameter accepts either a `RAGMetric` instance from the `Metrics` registry or a metric name string:
+The `optimization_metric` parameter accepts a `RAGMetric` instance from the `Metrics` registry:
 
 ### Default: Overall Score
 
@@ -275,16 +293,9 @@ You can target any metric from the `Metrics` registry:
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.evaluator.metric import Metrics
 
-# Using a RAGMetric instance
 experiment = AI4RAGExperiment(
     # ... other parameters
     optimization_metric=Metrics.FAITHFULNESS,
-)
-
-# Or using a metric name string
-experiment = AI4RAGExperiment(
-    # ... other parameters
-    optimization_metric="answer_correctness",
 )
 ```
 
@@ -450,6 +461,33 @@ experiment = AI4RAGExperiment(
 )
 ```
 
+### Adding the RAGAS Evaluator
+
+To also compute the RAGAS metrics, add a `RagasEvaluator` configured with a foundation model (used as the evaluating LLM) and an embedding model:
+
+```python
+from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+
+# `maas_client` is the shared OpenAI-compatible client (see create_maas_client).
+ragas_model = OpenAIFoundationModel(model_id="qwen3-8b-fp8-dynamic", client=maas_client)
+ragas_embeddings = OpenAIEmbeddingModel(model_id="bge-m3", client=maas_client)
+
+experiment = AI4RAGExperiment(
+    # ... other parameters
+    evaluators=[
+        UnitxtEvaluator(),
+        LLMaJEvaluator(model=judge_model),
+        RagasEvaluator(model=ragas_model, embedding_model=ragas_embeddings),
+    ],
+)
+```
+
+When a `RagasEvaluator` is present, the default metrics list is extended with the four RAGAS metrics. RAGAS is a regular dependency of ai4rag, so no optional extra is required.
+
+In the high-level `run_rag_optimization` pipeline, the LLM-as-a-judge evaluators are selected via the `llm_judge_mode` parameter (`"base"`, `"ragas"`, `"all"`, or `"none"`; default `"base"`). The reference-based `UnitxtEvaluator` always runs; `llm_judge_mode` controls whether the in-house LLM judge, RAGAS, both, or neither are added on top. Any mode other than `"none"` requires at least one foundation model and one embedding model, and RAGAS runs on the first configured foundation and embedding models.
+
 ---
 
 ## Code Example
@@ -602,8 +640,8 @@ for m in best.scores["metrics"]:
 
 Evaluation in ai4rag:
 
-- **Four metrics**: Faithfulness (grounding), Answer Correctness (accuracy), Context Correctness (retrieval quality), Answer Relevance (LLM judge)
-- **Multi-evaluator architecture**: Unitxt for reference-based metrics, LLM-as-a-Judge for response quality
+- **Core metrics**: Faithfulness (grounding), Answer Correctness (accuracy), Context Correctness (retrieval quality), Answer Relevance (LLM judge), plus optional RAGAS metrics (faithfulness, answer relevancy, context precision/recall)
+- **Multi-evaluator architecture**: Unitxt for reference-based metrics, LLM-as-a-Judge for response quality, RAGAS for an independent LLM-based cross-check
 - **Overall score**: Cross-metric mean used as the default optimization target
 - **Single objective**: Optimizes for one metric, but computes all configured metrics
 - **Benchmark-driven**: Quality depends on your benchmark data
