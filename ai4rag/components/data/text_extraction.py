@@ -438,9 +438,7 @@ _BUNDLED_RAPIDOCR_REC = "PP-OCRv6_rec_small.onnx"
 def _rapidocr_artifacts_rel_paths(ocr_lang: tuple[str, ...]) -> tuple[str, ...]:
     """Pick Docling artifact-relative OCR model paths for the requested language."""
     normalized = {lang.strip().lower() for lang in ocr_lang}
-    if normalized & {"chinese", "ch", "zh", "zho", "chi"} and not (
-        normalized & {"english", "en", "eng", "latin"}
-    ):
+    if normalized & {"chinese", "ch", "zh", "zho", "chi"} and not (normalized & {"english", "en", "eng", "latin"}):
         return _ARTIFACTS_RAPIDOCR_CHINESE
     return _ARTIFACTS_RAPIDOCR_ENGLISH
 
@@ -600,9 +598,7 @@ def _text_extraction_pool_initializer(
 
     mod = sys.modules[__name__]
     # pylint: disable=protected-access
-    mod._mp_worker_converter = DocumentConverter(
-        format_options=_build_docling_format_options(config=pipeline_config)
-    )
+    mod._mp_worker_converter = DocumentConverter(format_options=_build_docling_format_options(config=pipeline_config))
     worker_log.debug(
         "Worker pid=%s: DocumentConverter ready (%.1fs)",
         worker_pid,
