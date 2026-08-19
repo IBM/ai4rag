@@ -82,7 +82,7 @@ class DoclingExtractionConfig:
     ocr_rec_keys_path: str | None = None
 
 
-def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
+def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments,too-many-statements
     documents: list[dict],
     bucket: str,
     output_dir: str | Path,
