@@ -43,6 +43,23 @@
       show_root_heading: true
       show_source: true
 
+## RAGAS Evaluator
+
+::: ai4rag.evaluator.ragas_evaluator.RagasEvaluator
+    options:
+      show_root_heading: true
+      show_source: true
+
+::: ai4rag.evaluator.ragas_adapters.AI4RAGRagasLLM
+    options:
+      show_root_heading: true
+      show_source: true
+
+::: ai4rag.evaluator.ragas_adapters.AI4RAGRagasEmbeddings
+    options:
+      show_root_heading: true
+      show_source: true
+
 ## Judge Model Selection
 
 ::: ai4rag.evaluator.judge_selection.select_judge_model

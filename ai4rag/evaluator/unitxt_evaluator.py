@@ -11,11 +11,11 @@ from ai4rag.core.experiment.exception_handler import EvaluationError
 from ai4rag.evaluator.base_evaluator import (
     AggregateMetric,
     BaseEvaluator,
-    ConfidenceInterval,
     EvaluationData,
     EvaluationMetricsResult,
     QuestionMetric,
     QuestionScore,
+    build_aggregate_metric,
 )
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 
@@ -130,15 +130,11 @@ class UnitxtEvaluator(BaseEvaluator):
             return None if x is None or pd.isna(x) else round(x, 4)
 
         return [
-            AggregateMetric(
-                name=metric_lookup[key].name,
-                evaluator=metric_lookup[key].evaluator,
-                description=metric_lookup[key].description,
-                scores=ConfidenceInterval(
-                    mean=round_or_none(val["score"]),
-                    ci_low=round_or_none(val.get("score_ci_low")),
-                    ci_high=round_or_none(val.get("score_ci_high")),
-                ),
+            build_aggregate_metric(
+                metric=metric_lookup[key],
+                values=[],
+                confidence_interval=(round_or_none(val.get("score_ci_low")), round_or_none(val.get("score_ci_high"))),
+                mean=round_or_none(val["score"]),
             )
             for key, val in ci_dict.items()
             if key in metric_lookup

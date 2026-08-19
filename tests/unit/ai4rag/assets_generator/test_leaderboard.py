@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from ai4rag.components.assets_generator import build_leaderboard_html
-from ai4rag.components.assets_generator.leaderboard import _get_nested
+from ai4rag.components.assets_generator.leaderboard import _get_aggregate_scores, _get_nested
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -130,6 +130,43 @@ class TestBuildLeaderboardHtml:
         """The number of patterns must appear in the subtitle."""
         html = build_leaderboard_html(patterns_dir)
         assert "2 pattern(s)" in html
+
+
+class TestMetricEvaluatorDisambiguation:
+    """Colliding metric names across evaluators must not overwrite each other."""
+
+    @staticmethod
+    def _pattern_with_both_faithfulness() -> dict:
+        """A pattern whose evaluation carries unitxt and RAGAS faithfulness."""
+        return {
+            "name": "p1",
+            "evaluation": {
+                "metrics": [
+                    {"name": "faithfulness", "evaluator": "unitxt", "scores": {"mean": 0.55}},
+                    {"name": "faithfulness", "evaluator": "ragas", "scores": {"mean": 0.91}},
+                    {"name": "answer_relevancy", "evaluator": "ragas", "scores": {"mean": 0.83}},
+                ]
+            },
+        }
+
+    def test_aggregate_scores_keep_both_faithfulness(self):
+        scores = _get_aggregate_scores(self._pattern_with_both_faithfulness())
+
+        assert scores["faithfulness"]["mean"] == 0.55
+        assert scores["ragas_faithfulness"]["mean"] == 0.91
+        assert scores["ragas_answer_relevancy"]["mean"] == 0.83
+
+    def test_html_shows_both_faithfulness_columns(self, tmp_path: Path):
+        subdir = tmp_path / "p1"
+        subdir.mkdir()
+        with (subdir / "pattern.json").open("w") as f:
+            json.dump(self._pattern_with_both_faithfulness(), f)
+
+        html = build_leaderboard_html(tmp_path)
+
+        assert "ragas faithfulness" in html
+        assert "0.5500" in html  # unitxt faithfulness
+        assert "0.9100" in html  # ragas faithfulness
 
 
 class TestBuildLeaderboardHtmlEmptyDir:

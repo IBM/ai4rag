@@ -8,6 +8,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from ai4rag.components.optimization.rag_templates_optimization import (
+    DEFAULT_LLM_JUDGE_MODE,
     DEFAULT_MAX_RAG_PATTERNS,
     MIN_MAX_RAG_PATTERNS_RANGE,
     SUPPORTED_OPTIMIZATION_METRICS,
@@ -363,3 +364,57 @@ class TestGenerateOutputArtifactsIndexingSpec:
         assert pattern_json.exists()
         persisted = json.loads(pattern_json.read_text(encoding="utf-8"))
         assert persisted["indexing"]["pipeline_spec"]["parameters"]["provider_type"] == "milvus"
+
+
+# ---------------------------------------------------------------------------
+# run_rag_optimization -- llm_judge_mode selection
+# ---------------------------------------------------------------------------
+
+
+class TestRunRagOptimizationLLMJudgeMode:
+    """Tests for the llm_judge_mode parameter on run_rag_optimization."""
+
+    def test_default_mode_is_base(self):
+        """llm_judge_mode must default to 'base' (in-house LLM judge)."""
+        import inspect
+
+        sig = inspect.signature(run_rag_optimization)
+        assert sig.parameters["llm_judge_mode"].default == DEFAULT_LLM_JUDGE_MODE
+        assert DEFAULT_LLM_JUDGE_MODE == "base"
+
+    def test_judge_enabled_removed(self):
+        """The old binary judge_enabled parameter must no longer exist."""
+        import inspect
+
+        sig = inspect.signature(run_rag_optimization)
+        assert "judge_enabled" not in sig.parameters
+
+    @pytest.mark.parametrize("mode", ["base", "ragas", "all", "none"])
+    def test_valid_modes_pass_validation(self, mock_maas_client, mode):
+        """Valid modes must pass the mode check and fail later on real inputs."""
+        # A non-JSON test_data_key proves we got past the llm_judge_mode check.
+        with pytest.raises(ValueError, match="JSON file"):
+            run_rag_optimization(
+                extracted_text_path="dummy",
+                test_data_path="dummy.json",
+                search_space_report_path="dummy.json",
+                output_dir="out",
+                maas_client=mock_maas_client,
+                vector_store_config=ChromaConfig(),
+                test_data_key="bench.csv",
+                llm_judge_mode=mode,
+            )
+
+    def test_invalid_mode_raises(self, mock_maas_client):
+        """An unsupported llm_judge_mode must raise ValueError before any I/O."""
+        with pytest.raises(ValueError, match="llm_judge_mode"):
+            run_rag_optimization(
+                extracted_text_path="dummy",
+                test_data_path="dummy.json",
+                search_space_report_path="dummy.json",
+                output_dir="out",
+                maas_client=mock_maas_client,
+                vector_store_config=ChromaConfig(),
+                test_data_key="bench.json",
+                llm_judge_mode="judge",  # type: ignore[arg-type]
+            )

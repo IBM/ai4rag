@@ -4,4 +4,5 @@
 # -----------------------------------------------------------------------------
 from ai4rag.evaluator.base_evaluator import BaseEvaluator
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
+from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator

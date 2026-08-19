@@ -12,11 +12,11 @@ from ai4rag import logger
 from ai4rag.evaluator.base_evaluator import (
     AggregateMetric,
     BaseEvaluator,
-    ConfidenceInterval,
     EvaluationData,
     EvaluationMetricsResult,
     QuestionMetric,
     QuestionScore,
+    build_aggregate_metric,
 )
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
@@ -138,19 +138,7 @@ class LLMaJEvaluator(BaseEvaluator):
             per_metric_scores[metric.name] = per_question
 
             ci = compute_confidence_interval(row_scores)
-            aggregate_metrics.append(
-                AggregateMetric(
-                    name=metric.name,
-                    evaluator=metric.evaluator,
-                    description=metric.description,
-                    scores=ConfidenceInterval(
-                        mean=round(float(np.mean(row_scores)), 4) if row_scores else None,
-                        ci_low=ci[0],
-                        ci_high=ci[1],
-                    ),
-                    model_id=self.model.model_id,
-                )
-            )
+            aggregate_metrics.append(build_aggregate_metric(metric, ci, row_scores, model_id=self.model.model_id))
 
         question_scores: list[QuestionScore] = [
             QuestionScore(
