@@ -29,6 +29,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.11.1](https://github.com/IBM/ai4rag/releases/tag/v0.11.1)
+
+### Added
+- **Search space preparation** — added `pre_validated_search_space` parameter to `prepare_search_space_report()`, letting callers pass an already-validated `AI4RAGSearchSpace` (e.g. produced by an earlier fail-fast validation step) to skip model-list validation, payload construction, and the redundant `prepare_search_space_with_ogx()` OGX call; omitting it preserves the existing behaviour
+
+### Changed
+- **RAG optimization component** — `_serialize_model()`/`_deserialize_model()` in `search_space_preparation` and `rag_templates_optimization` renamed to `serialize_model()`/`deserialize_model()`, exposing them as reusable public helpers
+
+---
+
+## [0.11.0](https://github.com/IBM/ai4rag/releases/tag/v0.11.0)
+
+### Added
+- **Text extraction** — added support for 9 additional document formats (`.odt`, `.odp`, `.adoc`, `.tex`, `.epub`, `.eml`, `.qmd`, `.rmd`, `.xhtml`) in document discovery and text extraction, alongside existing PDF, DOCX, PPTX, Markdown, HTML, and plain-text support
+
+### Changed
+- **Data component** — `SUPPORTED_EXTENSIONS` extracted into a shared `ai4rag.components.data.constants` module, removing duplication between document discovery and text extraction
+- **Dependencies** — replaced the `docling` meta-package with `docling-slim[standard,feat-chunking,format-opendocument]`, and dropped the standalone `docling-core` dependency, now pulled in transitively via the `feat-chunking` extra
+
+### Fixed
+- **Notebooks** — updated the `ogx_inference_template.ipynb` test-data-loading example to call `ai4rag.components.data.test_data_loader.load_test_data()`, replacing a stale reference to the removed `kfp_components` pipeline API
+
 ---
 
 ## [0.10.4](https://github.com/IBM/ai4rag/releases/tag/v0.10.4)
