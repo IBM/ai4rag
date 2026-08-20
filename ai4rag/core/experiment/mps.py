@@ -127,6 +127,7 @@ class ModelsPreSelector:
             "chunk_overlap": kwargs.get(AI4RAGParamNames.CHUNK_OVERLAP, 128),
         }
         self.evaluation_results: list[MPSEvaluationResultsTyped] = []
+        self.retrievers: dict[str, Retriever] = {}
         self._exception_handler = ExperimentExceptionHandler()
         self.max_threads = kwargs.pop("max_threads", 10)
         self._unitxt_metrics = tuple(m for m in Metrics if m.evaluator == "unitxt")
@@ -166,6 +167,7 @@ class ModelsPreSelector:
                     raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
                 retriever = Retriever(vector_store, **self.retrieval_params)
+                self.retrievers[embedding_model.model_id] = retriever
                 self._evaluate_foundation_models(retriever=retriever, embedding_model=embedding_model)
 
             except IndexingError as exc:
