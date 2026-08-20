@@ -18,7 +18,7 @@ ai4rag uses **multiple evaluator types** to detect these failures and guide opti
 
 ## Available Metrics
 
-ai4rag evaluates four complementary aspects of RAG performance using two evaluator types — **Unitxt** (reference-based) and **LLM-as-a-Judge**:
+ai4rag evaluates several complementary aspects of RAG performance. The core metrics below use two evaluator types — **Unitxt** (reference-based) and **LLM-as-a-Judge**; the optional **RAGAS** evaluator and the derived **overall score** are covered later on this page:
 
 ### Faithfulness
 
@@ -470,7 +470,7 @@ from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 
-# `maas_client` is the shared OpenAI-compatible client (see create_maas_client).
+# `maas_client` is the shared OpenAI-compatible client (see create_dev_maas_client).
 ragas_model = OpenAIFoundationModel(model_id="qwen3-8b-fp8-dynamic", client=maas_client)
 ragas_embeddings = OpenAIEmbeddingModel(model_id="bge-m3", client=maas_client)
 
@@ -598,7 +598,7 @@ for m in best.scores["metrics"]:
 - Review your ground truth answers - are they too specific?
 - Provide multiple acceptable phrasings in `correct_answers`
 - Check if the retrieved context actually contains the information needed
-- Consider optimizing for `ANSWER_CORRECTNESS` instead
+- Consider optimizing for `Metrics.ANSWER_CORRECTNESS` instead
 
 ---
 

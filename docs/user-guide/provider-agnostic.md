@@ -93,6 +93,7 @@ vector_store_config = MilvusConfig.from_env()
 ```python
 # Can use with any foundation/embedding models
 from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
     documents=documents,
@@ -100,6 +101,7 @@ experiment = AI4RAGExperiment(
     search_space=search_space,
     vector_store_config=ChromaConfig(),  # In-memory vector store
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
@@ -228,6 +230,7 @@ Use MaaS for foundation and embedding models, and Milvus (direct client) as the 
 ```python
 from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
     documents=documents,
@@ -241,6 +244,7 @@ experiment = AI4RAGExperiment(
     ),
     vector_store_config=MilvusConfig.from_env(),
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
@@ -253,6 +257,7 @@ Use MaaS for models, but ChromaDB for quick local development:
 ```python
 from ai4rag.rag.vector_store import ChromaConfig
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
     documents=documents,
@@ -266,6 +271,7 @@ experiment = AI4RAGExperiment(
     ),
     vector_store_config=ChromaConfig(),  # In-memory ChromaDB
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
@@ -286,6 +292,7 @@ No configuration needed - just pass `vector_store_config=ChromaConfig()`:
 from pathlib import Path
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
 from dev_utils.utils import read_benchmark_from_json
@@ -301,6 +308,7 @@ experiment = AI4RAGExperiment(
     search_space=search_space,
     vector_store_config=ChromaConfig(),  # In-memory, zero config
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 
 best_pattern = experiment.search()

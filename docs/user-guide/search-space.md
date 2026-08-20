@@ -158,7 +158,7 @@ Parameter(
 ```
 
 !!! note "Real Type Not Fully Supported"
-    Currently, Real parameters cannot be enumerated (no `.all_values()` method). For practical optimization, use Categorical with discrete float values instead:
+    Currently, Real parameters cannot be enumerated (`all_values()` raises `ParameterValueError` for Real params). For practical optimization, use Categorical with discrete float values instead:
     ```python
     Parameter(name="ranker_alpha", param_type="C", values=[0.0, 0.3, 0.5, 0.7, 1.0])
     ```
@@ -260,7 +260,7 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 | `chunking_method` | `("recursive", "hybrid")` | `("recursive", "hybrid")` | Categorical |
 | `chunk_size` | `(512, 1024, 2048)` | `(512, 1024, 2048)` | Categorical |
 | `chunk_overlap` | `(0, 128, 256)` | `(0, 128, 256)` | Categorical |
-| `retrieval_method` | `("simple",)` | `("simple", "window")` | Categorical |
+| `retrieval_method` | `("simple",)` | `("simple",)` | Categorical |
 | `window_size` | `(0,)` | `(0, 1, 3, 5)` | Categorical |
 | `number_of_chunks` | `(3, 5, 10)` | `(3, 5, 10)` | Categorical |
 | `search_mode` | `("vector", "hybrid")` | `("vector",)` | Categorical |
@@ -270,7 +270,7 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 
 !!! note "Why Different Defaults?"
     - **Chroma** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
-    - **Chroma** defaults include window retrieval options since it's an in-memory store (faster experimentation)
+    - **Chroma** defaults explore a wider range of `window_size` values (`(0, 1, 3, 5)` vs `(0,)`) since it's an in-memory store (faster experimentation)
     - **Milvus** and **PGVector** defaults focus on simple retrieval but include hybrid search exploration
 
 ---

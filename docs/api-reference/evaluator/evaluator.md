@@ -29,6 +29,11 @@
       show_root_heading: true
       show_source: true
 
+::: ai4rag.evaluator.base_evaluator.build_aggregate_metric
+    options:
+      show_root_heading: true
+      show_source: true
+
 ## Unitxt Evaluator
 
 ::: ai4rag.evaluator.unitxt_evaluator.UnitxtEvaluator
