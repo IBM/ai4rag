@@ -92,22 +92,28 @@ print(f"Loaded {result.record_count} records (sampled: {result.sampled})")
 
 ### Search Space Preparation
 
-Build a search space report with model pre-selection:
+Build and validate a search space, then serialize it to a report. Model
+pre-selection is a separate step (see `ModelsPreSelector`); the report written
+here is the full search space:
 
 ```python
-from ai4rag.components.optimization import prepare_search_space_report
-
-report = prepare_search_space_report(
-    test_data_path="/tmp/test_data.json",
-    extracted_text_path="/tmp/extracted/",
-    maas_client=client,
-    embedding_models=["bge-m3"],
-    generation_models=["qwen3-8b-fp8-dynamic"],
-    chunking_methods=["recursive"],   # optional: constrain chunking methods
-    chunk_sizes=[256, 512, 1024],     # optional: constrain chunk sizes
-    chunk_overlaps=[0, 128],          # optional: constrain chunk overlaps
+from ai4rag.search_space.prepare import (
+    build_search_space_report,
+    prepare_search_space_with_maas,
 )
-report.save_yaml("/tmp/search_space.yaml")
+
+search_space = prepare_search_space_with_maas(
+    payload={
+        "foundation_models": [{"model_id": "qwen3-8b-fp8-dynamic"}],
+        "embedding_models": [{"model_id": "bge-m3"}],
+        "chunking_methods": ["recursive"],  # optional: constrain chunking methods
+        "chunk_sizes": [256, 512, 1024],    # optional: constrain chunk sizes
+        "chunk_overlaps": [0, 128],         # optional: constrain chunk overlaps
+    },
+    client=client,
+    benchmark_data=benchmark_df,  # optional: used for language detection
+)
+build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
 ### RAG Optimization
@@ -121,7 +127,7 @@ from ai4rag.rag.vector_store import MilvusConfig
 result = run_rag_optimization(
     extracted_text_path="/tmp/extracted/",
     test_data_path="/tmp/test_data.json",
-    search_space_report_path="/tmp/search_space.yaml",
+    search_space_report_path="/tmp/search_space.json",
     output_dir="/tmp/rag_patterns/",
     maas_client=client,
     vector_store_config=MilvusConfig.from_env(),
