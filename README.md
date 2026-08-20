@@ -198,7 +198,7 @@ search_space = AI4RAGSearchSpace(
 > When omitted, both methods are included by default.
 
 > [!tip]
-> To validate model IDs and build a search space from a MaaS deployment in one call, use `prepare_search_space_with_maas()` from `ai4rag.search_space.prepare_search_space`, passing the MaaS client and the foundation/embedding model IDs per type.
+> To validate model IDs and build a search space from a MaaS deployment in one call, use `prepare_search_space_with_maas()` from `ai4rag.search_space.prepare`, passing the MaaS client and the foundation/embedding model IDs per type.
 
 
 ### Configure optimizer
@@ -239,8 +239,11 @@ experiment.search()
 best_eval = experiment.results.get_best_evaluations(k=1)[0]
 print(best_eval)
 
-print(best_eval.rag_pattern.generate("What ai4rag can be used for?"))
+print(f"Best pattern: {best_eval.pattern_name} (score: {best_eval.final_score})")
 ```
+
+> [!note]
+> Each trial closes its vector store once it finishes, so `EvaluationResult` no longer exposes a reusable `rag_pattern`. Read the outcome from its fields (`pattern_name`, `final_score`, `scores`, `rag_params`); rebuild the pattern from those settings if you want to run inference.
 
 > [!tip]
 > For production use, implement your own custom `EventHandler` to handle status changes and artifacts produced during the experiment.
