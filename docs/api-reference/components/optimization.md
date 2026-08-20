@@ -1,21 +1,7 @@
 # Optimization Components
 
-Search space preparation and RAG optimization functions for the AutoRAG pipeline.
-
-## Language Detection
-
-::: ai4rag.components.optimization.search_space_preparation
-    options:
-      members:
-        - LANGUAGE_MAP
-
-## Search Space Preparation
-
-::: ai4rag.components.optimization.search_space_preparation
-    options:
-      members:
-        - prepare_search_space_report
-        - SearchSpaceReport
+RAG optimization for the AutoRAG pipeline. Search-space preparation and the
+search-space report API now live under [Search Space API](../search-space/search-space.md).
 
 ## RAG Optimization
 

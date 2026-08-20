@@ -36,17 +36,19 @@ instantiate the model wrappers directly instead of going through these helpers.
 """
 
 from collections.abc import Mapping, Sequence
+from dataclasses import fields, is_dataclass
 from typing import Any
 
 from openai import OpenAI
 
 from ai4rag import logger
+from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
-from ai4rag.rag.foundation_models.base_model import Language
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, Language
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
-__all__ = ["get_embedding_models", "get_foundation_models"]
+__all__ = ["get_embedding_models", "get_foundation_models", "serialize_model"]
 
 # Discriminators for the two supported model families. Kept as plain strings so
 # they can flow straight into the user-facing error messages below.
@@ -319,3 +321,61 @@ def get_embedding_models(
         is not available on the serving endpoint, or a model does not respond.
     """
     return _get_models(client, models, model_type=_EMBEDDING, validate=validate)  # type: ignore[return-value]
+
+
+def serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str, Any]:
+    """Serialize a model instance into a plain search-space-report spec.
+
+    This is the inverse of the *restore* path above: the dict produced here is
+    exactly what :func:`get_foundation_models` / :func:`get_embedding_models`
+    consume when ``validate=False``. Keeping both directions in this module makes
+    it the single home for the model↔spec round-trip that the search-space report
+    relies on.
+
+    Captures the model identifier, a type discriminator, its inference
+    parameters, and — for foundation models — the detected language and prompt
+    templates.
+
+    Parameters
+    ----------
+    model : BaseFoundationModel | BaseEmbeddingModel
+        The instantiated model to serialize.
+
+    Returns
+    -------
+    dict[str, Any]
+        A spec mapping carrying ``model_id``, ``type`` (``"embedding"`` or
+        ``"generation"``) and ``params``; foundation models additionally carry
+        ``language`` and the ``system_message_text`` / ``user_message_text`` /
+        ``context_template_text`` prompt templates.
+    """
+    is_embedding = isinstance(model, BaseEmbeddingModel)
+
+    params = model.params
+    if is_dataclass(params):
+        params_dict = {
+            field.name: getattr(params, field.name)
+            for field in fields(params)
+            if getattr(params, field.name) is not None
+        }
+    elif hasattr(params, "model_dump"):
+        params_dict = params.model_dump()
+    elif hasattr(params, "dict"):
+        params_dict = params.dict()
+    else:
+        params_dict = {}
+
+    result: dict[str, Any] = {
+        "model_id": model.model_id,
+        "type": "embedding" if is_embedding else "generation",
+        "params": params_dict,
+    }
+
+    if not is_embedding:
+        if hasattr(model, "language") and model.language is not None:
+            result["language"] = model.language.to_dict()
+        result["system_message_text"] = model.system_message_text
+        result["user_message_text"] = model.user_message_text
+        result["context_template_text"] = model.context_template_text
+
+    return result
