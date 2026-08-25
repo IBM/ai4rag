@@ -24,9 +24,23 @@ __all__ = ["GAMOptSettings", "GAMOptimizer"]
 
 
 def _serialize_dict_col(series: pd.Series) -> pd.Series:
-    """Serialize dict-valued cells to their model_id string (or str(x) fallback)."""
-    if series.apply(lambda x: isinstance(x, dict)).any():
-        return series.apply(lambda x: x.get("model_id", str(x)) if isinstance(x, dict) else x)
+    """Serialize model-valued cells to their model_id string.
+
+    Handles both dict-valued models ({"model_id": "..."}, production) and
+    model object instances with a model_id attribute (tests / direct API use).
+    """
+    def _needs_serialization(x: object) -> bool:
+        return isinstance(x, dict) or hasattr(x, "model_id")
+
+    def _to_model_id(x: object) -> object:
+        if isinstance(x, dict):
+            return x.get("model_id", str(x))
+        if hasattr(x, "model_id"):
+            return x.model_id
+        return x
+
+    if series.apply(_needs_serialization).any():
+        return series.apply(_to_model_id)
     return series
 
 
@@ -138,6 +152,8 @@ class GAMOptimizer(BaseOptimizer):
         if known_observations:
             self._load_known_observations(known_observations)
 
+        self._validate_n_random_nodes()
+
         self.max_iterations = self.settings.max_evals
 
     @property
@@ -201,6 +217,58 @@ class GAMOptimizer(BaseOptimizer):
         """
         iterations_limit = ceil((self.max_iterations - len(self.evaluations)) / self.settings.evals_per_trial)
         return iterations_limit
+
+    def _validate_n_random_nodes(self) -> None:
+        """Raise ValueError when n_random_nodes is below the required minimum for the strategy.
+
+        Counts unique foundation_model, embedding_model, and search_mode values in
+        the search space and enforces:
+
+        - mode_balanced:       n_random_nodes >= max(4, n_llms * n_embeddings)
+          The 2-level round-robin (outer: search_mode, inner: (llm, em) pair) can
+          only guarantee every model appears at least once when there are enough
+          slots — n_llms * n_embeddings evaluations total, regardless of n_modes.
+
+        - model_mode_balanced: n_random_nodes >= max(8, n_modes * n_llms * n_embeddings)
+          Round-robins across (llm, em, mode) triples; full coverage requires one slot
+          per triple. The floor of 8 ensures all chunking methods (not part of the key)
+          appear at least once via the random shuffle within each triple's bucket.
+        """
+        combinations = self._search_space.combinations
+        if not combinations:
+            return
+
+        def _unique_ids(key: str) -> int:
+            seen: set[str] = set()
+            for c in combinations:
+                v = c.get(key)
+                if v is None:
+                    continue
+                if isinstance(v, dict):
+                    seen.add(v.get("model_id", str(v)))
+                elif hasattr(v, "model_id"):
+                    seen.add(v.model_id)
+                else:
+                    seen.add(str(v))
+            return len(seen)
+
+        n_llms = _unique_ids("foundation_model")
+        n_embeddings = _unique_ids("embedding_model")
+        n_modes = _unique_ids("search_mode") or 1
+
+        if self.settings.warm_start_strategy == "model_mode_balanced":
+            recommended = max(8, n_modes * n_llms * n_embeddings)
+        else:  # mode_balanced
+            recommended = max(4, n_llms * n_embeddings)
+
+        if self.settings.n_random_nodes < recommended:
+            raise ValueError(
+                f"n_random_nodes={self.settings.n_random_nodes} is too small for "
+                f"warm_start_strategy={self.settings.warm_start_strategy!r} with "
+                f"n_llms={n_llms}, n_embeddings={n_embeddings}, n_modes={n_modes}. "
+                f"Set n_random_nodes >= {recommended} to ensure every model appears "
+                f"at least once before GAM training."
+            )
 
     def _load_known_observations(self, known_observations: list[dict]) -> None:
         """
@@ -292,14 +360,52 @@ class GAMOptimizer(BaseOptimizer):
 
     @staticmethod
     def _get_mode_balanced_combinations(combinations: list[dict]) -> list[dict]:
-        """Order combinations by round-robin across search_mode values."""
-        return _round_robin(combinations, lambda c: c.get("search_mode", None))
+        """Order by outer round-robin across search_mode and inner round-robin across (foundation_model, embedding_model) pairs.
+
+        Within each search_mode bucket, combinations are sorted so that distinct
+        (foundation_model, embedding_model) pairs appear before any pair repeats.
+        The outer round-robin then interleaves the two sorted mode lists. With
+        n_random_nodes >= n_llms * n_embeddings, every foundation_model and every
+        embedding_model is guaranteed to appear at least once before GAM training.
+        """
+        def _model_id(v: object) -> str:
+            if isinstance(v, dict):
+                return v.get("model_id", str(v))
+            return getattr(v, "model_id", str(v))
+
+        def _model_pair_key(c: dict) -> tuple:
+            return (_model_id(c.get("foundation_model")), _model_id(c.get("embedding_model")))
+
+        # Group by search_mode; within each mode apply inner round-robin by model pair
+        mode_buckets: dict[Any, list[dict]] = defaultdict(list)
+        for c in combinations:
+            mode_buckets[c.get("search_mode")].append(c)
+
+        per_mode_balanced = {
+            mode: _round_robin(combs, _model_pair_key)
+            for mode, combs in mode_buckets.items()
+        }
+
+        # Flatten preserving per-mode order, then outer round-robin interleaves modes.
+        # _round_robin preserves insertion order within each mode bucket, so the
+        # inner model-pair ordering is carried through the outer interleave.
+        ordered = [c for combs in per_mode_balanced.values() for c in combs]
+        return _round_robin(ordered, lambda c: c.get("search_mode"))
 
     @staticmethod
     def _get_model_mode_balanced_combinations(combinations: list[dict]) -> list[dict]:
-        """Order combinations by round-robin across (foundation_model, embedding_model, search_mode) triples."""
+        """Order combinations by round-robin across (foundation_model, embedding_model, search_mode) triples.
+
+        With n_random_nodes >= max(8, n_modes * n_llms * n_embeddings), every
+        (foundation_model, embedding_model, search_mode) triple is guaranteed to
+        appear at least once before GAM training. chunking_method is not part of the
+        key — each triple's bucket is shuffled randomly so all chunking methods
+        appear naturally with enough n_random_nodes.
+        """
         def _model_id(v: object) -> str:
-            return v.get("model_id", str(v)) if isinstance(v, dict) else str(v)
+            if isinstance(v, dict):
+                return v.get("model_id", str(v))
+            return getattr(v, "model_id", str(v))
 
         def _key(c: dict) -> tuple:
             return (
@@ -364,6 +470,9 @@ class GAMOptimizer(BaseOptimizer):
 
         gam = LinearGAM(terms)
         gam.fit(x_train_enc, target)
+        print("#" * 100)
+        print(gam.terms)
+        print(encoders)
 
         remaining_evaluations = self._get_remaining_evaluations(
             self._search_space.combinations, self._evaluated_combinations

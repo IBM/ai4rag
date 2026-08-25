@@ -88,8 +88,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     inference_max_threads: int = 10,
     indexing_pipeline_params: dict | None = None,
     llm_judge_mode: LLMJudgeMode = DEFAULT_LLM_JUDGE_MODE,
-    n_random_nodes: int = 4,
     warm_start_strategy: Literal["mode_balanced", "model_mode_balanced"] = "mode_balanced",
+    n_random_nodes: int | None = None,
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -144,15 +144,26 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
         Any mode other than ``"none"`` requires at least one foundation model
         and one embedding model in the search space.
-    n_random_nodes : int, default=4
-        Number of random configurations to evaluate before starting GAM iterations.
-        Passed directly to :class:`~ai4rag.core.hpo.gam_opt.GAMOptSettings`.
     warm_start_strategy : {"mode_balanced", "model_mode_balanced"}, default="mode_balanced"
         Controls how the initial random nodes are ordered across buckets.
         ``"mode_balanced"`` round-robins across ``search_mode`` values;
         ``"model_mode_balanced"`` round-robins across
         ``(foundation_model, embedding_model, search_mode)`` triples.
         Passed directly to :class:`~ai4rag.core.hpo.gam_opt.GAMOptSettings`.
+    n_random_nodes : int | None, default=None
+        Number of random configurations to evaluate before starting GAM iterations.
+        When ``None`` (default), derived automatically from the search space so that
+        every model and search mode appears at least once before GAM training:
+
+        - ``"mode_balanced"`` (preset *speed*):
+          ``max(4, n_llms * n_embeddings)`` — enough slots for all
+          (foundation_model, embedding_model) pairs to each appear at least once
+          across the balanced search_mode round-robin.
+        - ``"model_mode_balanced"`` (preset *balanced*):
+          ``max(8, n_modes * n_llms * n_embeddings)`` — one slot per
+          (foundation_model, embedding_model, search_mode) triple.
+
+        Pass an explicit integer only when you need to override the formula.
 
     Returns
     -------
@@ -216,6 +227,25 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         params.append(Parameter(param_name, "C", values=values))
 
     search_space = AI4RAGSearchSpace(params=params)
+
+    # Derive n_random_nodes from the search space when not explicitly overridden.
+    # mode_balanced:       max(4, n_llms × n_embeddings)
+    # model_mode_balanced: max(8, n_modes × n_llms × n_embeddings)
+    #   chunking_method is not balanced explicitly; the floor of 8 is large enough
+    #   that all chunking methods appear at least once via the random shuffle.
+    if n_random_nodes is None:
+        n_llms = len(foundation_models)
+        n_embeddings = len(embedding_models)
+        n_modes = len(search_space_raw.get("search_mode", ["vector"]))
+        if warm_start_strategy == "model_mode_balanced":
+            n_random_nodes = max(8, n_modes * n_llms * n_embeddings)
+        else:
+            n_random_nodes = max(4, n_llms * n_embeddings)
+        _logger.info(
+            "Auto-computed n_random_nodes=%d for warm_start_strategy=%r "
+            "(n_llms=%d, n_embeddings=%d, n_modes=%d).",
+            n_random_nodes, warm_start_strategy, n_llms, n_embeddings, n_modes,
+        )
 
     evaluators = _build_evaluators(
         llm_judge_mode=llm_judge_mode,
