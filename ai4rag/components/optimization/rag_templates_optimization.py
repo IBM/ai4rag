@@ -88,6 +88,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     inference_max_threads: int = 10,
     indexing_pipeline_params: dict | None = None,
     llm_judge_mode: LLMJudgeMode = DEFAULT_LLM_JUDGE_MODE,
+    n_random_nodes: int = 4,
+    warm_start_strategy: Literal["mode_balanced", "model_mode_balanced"] = "mode_balanced",
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -142,6 +144,15 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
         Any mode other than ``"none"`` requires at least one foundation model
         and one embedding model in the search space.
+    n_random_nodes : int, default=4
+        Number of random configurations to evaluate before starting GAM iterations.
+        Passed directly to :class:`~ai4rag.core.hpo.gam_opt.GAMOptSettings`.
+    warm_start_strategy : {"mode_balanced", "model_mode_balanced"}, default="mode_balanced"
+        Controls how the initial random nodes are ordered across buckets.
+        ``"mode_balanced"`` round-robins across ``search_mode`` values;
+        ``"model_mode_balanced"`` round-robins across
+        ``(foundation_model, embedding_model, search_mode)`` triples.
+        Passed directly to :class:`~ai4rag.core.hpo.gam_opt.GAMOptSettings`.
 
     Returns
     -------
@@ -219,7 +230,11 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
     if isinstance(max_rag_patterns, str):
         max_rag_patterns = int(max_rag_patterns.strip())
-    optimizer_settings = GAMOptSettings(max_evals=max_rag_patterns)
+    optimizer_settings = GAMOptSettings(
+        max_evals=max_rag_patterns,
+        n_random_nodes=n_random_nodes,
+        warm_start_strategy=warm_start_strategy,
+    )
 
     event_handler = KFPEventHandler()
 

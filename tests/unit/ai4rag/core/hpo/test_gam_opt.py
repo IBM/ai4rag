@@ -23,6 +23,7 @@ class TestGAMOptSettings:
         assert settings.n_random_nodes == 4
         assert settings.evals_per_trial == 1
         assert settings.random_state == 64
+        assert settings.warm_start_strategy == "mode_balanced"
 
     def test_gam_opt_settings_creation_with_custom_values(self):
         """Test that GAMOptSettings can be instantiated with custom values."""
@@ -31,15 +32,17 @@ class TestGAMOptSettings:
             n_random_nodes=10,
             evals_per_trial=2,
             random_state=42,
+            warm_start_strategy="model_mode_balanced",
         )
 
         assert settings.max_evals == 50
         assert settings.n_random_nodes == 10
         assert settings.evals_per_trial == 2
         assert settings.random_state == 42
+        assert settings.warm_start_strategy == "model_mode_balanced"
 
-    def test_gam_opt_settings_post_init_keeps_n_random_nodes_if_smaller(self):
-        """Test that __post_init__ keeps n_random_nodes if it's smaller than max_evals."""
+    def test_gam_opt_settings_stores_n_random_nodes(self):
+        """Test that GAMOptSettings stores n_random_nodes as provided."""
         settings = GAMOptSettings(max_evals=20, n_random_nodes=5)
 
         assert settings.n_random_nodes == 5
@@ -51,6 +54,11 @@ class TestGAMOptSettings:
         settings = GAMOptSettings(max_evals=10)
 
         assert isinstance(settings, OptimizerSettings)
+
+    def test_gam_opt_settings_invalid_warm_start_strategy_raises(self):
+        """Invalid warm_start_strategy is rejected at construction time."""
+        with pytest.raises(ValueError, match="warm_start_strategy"):
+            GAMOptSettings(max_evals=10, warm_start_strategy="invalid_strategy")
 
 
 class TestGAMOptimizer:
@@ -91,7 +99,7 @@ class TestGAMOptimizer:
         assert optimizer.settings == optimizer_settings
         assert optimizer.evaluations == []
         assert optimizer._evaluated_combinations == []
-        assert optimizer._encoders_with_columns == []
+        assert optimizer._typed_encoders_with_columns == []
 
     def test_max_iterations_getter(self, mock_search_space, optimizer_settings):
         """Test the max_iterations property getter."""
@@ -317,45 +325,22 @@ class TestGAMOptimizer:
         # Should stop at max_iterations=4, not n_random_nodes=10
         assert len(optimizer.evaluations) == 4
 
-    def test_prepare_encoder(self, mock_search_space, optimizer_settings, mocker):
-        """Test the _prepare_encoder method."""
+    def test_evaluate_initial_random_nodes_n_random_exceeds_max_evals(self, mock_search_space):
+        """n_random_nodes > max_evals is silently bounded by max_iterations."""
+        settings = GAMOptSettings(max_evals=3, n_random_nodes=6)
         objective_func = MagicMock(return_value=0.5)
 
         optimizer = GAMOptimizer(
             objective_function=objective_func,
             search_space=mock_search_space,
-            settings=optimizer_settings,
+            settings=settings,
         )
 
-        # Initially no encoders
-        assert len(optimizer._encoders_with_columns) == 0
+        optimizer.evaluate_initial_random_nodes()
 
-        optimizer._prepare_encoder()
-
-        # Should have created encoders for each column
-        assert len(optimizer._encoders_with_columns) == 2  # param1 and param2
-        column_names = [col for col, enc in optimizer._encoders_with_columns]
-        assert "param1" in column_names
-        assert "param2" in column_names
-
-    def test_prepare_encoder_called_only_once(self, mock_search_space, optimizer_settings):
-        """Test that _prepare_encoder only prepares encoders once."""
-        objective_func = MagicMock(return_value=0.5)
-
-        optimizer = GAMOptimizer(
-            objective_function=objective_func,
-            search_space=mock_search_space,
-            settings=optimizer_settings,
-        )
-
-        optimizer._prepare_encoder()
-        first_encoders = optimizer._encoders_with_columns.copy()
-
-        # Call again
-        optimizer._prepare_encoder()
-
-        # Should not recreate encoders
-        assert optimizer._encoders_with_columns == first_encoders
+        # Capped at max_iterations=3 (min(max_evals=3, max_combinations=6))
+        assert len(optimizer.evaluations) == 3
+        assert all(e["score"] is not None for e in optimizer.evaluations)
 
     def test_run_iteration(self, mock_search_space, mocker):
         """Test the _run_iteration method."""
@@ -536,6 +521,27 @@ class TestGAMOptimizer:
         call_args = mock_gam.fit.call_args
         assert call_args[0][0].shape[0] == 3  # X_train should have 3 samples
         assert call_args[0][1].shape[0] == 3  # y_train should have 3 samples
+
+    def test_run_iteration_does_not_crash_when_remaining_is_empty(self, mock_search_space, mocker):
+        """_run_iteration returns silently when all combinations have been evaluated."""
+        mock_gam = MagicMock()
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=6)
+        scores = iter([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+        optimizer = GAMOptimizer(
+            objective_function=lambda _: next(scores),
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+        assert len(optimizer.evaluations) == 6  # all combos evaluated
+
+        # Should not raise KeyError or any other error
+        optimizer._run_iteration()
+
+        # GAM was fitted but predict should NOT have been called (early return)
+        mock_gam.predict.assert_not_called()
 
 
 class TestGAMOptimizerKnownObservations:
@@ -760,161 +766,276 @@ class TestGAMOptimizerKnownObservations:
         assert known[0]["score"] == 0.3
 
 
-class TestGetStratifiedCombinations:
-    """Test the _get_stratified_combinations static method."""
+class TestPrepareTypedEncoder:
+    """Test the _prepare_typed_encoder method."""
 
-    def test_skewed_search_space_stratifies_minority_first(self):
-        """Minority categorical values are moved ahead of the majority."""
-        # 4 hybrid, 2 vector — mirrors the real MaaS imbalance
-        combinations = [
-            {"search_mode": "hybrid", "chunk_size": 256},
-            {"search_mode": "hybrid", "chunk_size": 512},
-            {"search_mode": "hybrid", "chunk_size": 1024},
-            {"search_mode": "hybrid", "chunk_size": 2048},
-            {"search_mode": "vector", "chunk_size": 256},
-            {"search_mode": "vector", "chunk_size": 512},
+    @pytest.fixture
+    def mock_search_space(self):
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"param1": "a", "param2": 1},
+            {"param1": "b", "param2": 2},
+            {"param1": "c", "param2": 3},
+            {"param1": "d", "param2": 4},
+            {"param1": "e", "param2": 5},
+            {"param1": "f", "param2": 6},
         ]
-        result = GAMOptimizer._get_stratified_combinations(combinations)
+        mock_space.max_combinations = 6
+        return mock_space
 
-        # The first entry is "hybrid" (first in the original list),
-        # the second must be a "vector" entry (its first occurrence).
-        assert result[0]["search_mode"] == "hybrid"
-        assert result[1]["search_mode"] == "vector"
+    @pytest.fixture
+    def optimizer_settings(self):
+        return GAMOptSettings(max_evals=6, n_random_nodes=3)
 
-    def test_all_values_represented_after_stratification(self):
-        """After stratification, both search_mode values appear in the leading section."""
-        combinations = [
-            {"search_mode": "hybrid", "chunk_size": 256},
-            {"search_mode": "hybrid", "chunk_size": 512},
-            {"search_mode": "hybrid", "chunk_size": 1024},
-            {"search_mode": "vector", "chunk_size": 256},
-        ]
-        result = GAMOptimizer._get_stratified_combinations(combinations)
-
-        leading_modes = {c["search_mode"] for c in result[:2]}
-        assert leading_modes == {"hybrid", "vector"}
-
-    def test_already_balanced_order_is_unchanged(self):
-        """When each categorical value appears exactly once, the list is returned as-is."""
-        combinations = [
-            {"mode": "a", "size": 1},
-            {"mode": "b", "size": 2},
-            {"mode": "c", "size": 3},
-        ]
-        result = GAMOptimizer._get_stratified_combinations(combinations)
-        assert result == combinations
-
-    def test_no_string_columns_returns_unchanged(self):
-        """Integer-only search spaces (no string params) are returned without reordering."""
-        combinations = [{"chunk_size": 256}, {"chunk_size": 512}, {"chunk_size": 1024}]
-        result = GAMOptimizer._get_stratified_combinations(combinations)
-        assert result == combinations
-
-    def test_empty_combinations_returns_empty(self):
-        """Empty input returns empty output."""
-        assert GAMOptimizer._get_stratified_combinations([]) == []
-
-    def test_multiple_categorical_columns_stratified(self):
-        """Stratification covers all unique values across multiple categorical columns."""
-        # search_mode: hybrid/vector, method: dense/sparse
-        combinations = [
-            {"search_mode": "hybrid", "method": "dense"},
-            {"search_mode": "hybrid", "method": "sparse"},
-            {"search_mode": "vector", "method": "dense"},
-            {"search_mode": "vector", "method": "sparse"},
-        ]
-        result = GAMOptimizer._get_stratified_combinations(combinations)
-
-        # All four combinations introduce at least one new value, so all go to stratified.
-        assert len(result) == 4
-        # Every unique value for each column is represented in the stratified prefix.
-        assert {c["search_mode"] for c in result} == {"hybrid", "vector"}
-        assert {c["method"] for c in result} == {"dense", "sparse"}
-
-    def test_already_seen_reduces_stratified_set(self):
-        """Values already covered by warm-start are treated as pre-seen."""
-        combinations = [
-            {"search_mode": "hybrid", "chunk_size": 256},
-            {"search_mode": "hybrid", "chunk_size": 512},
-            {"search_mode": "vector", "chunk_size": 256},
-            {"search_mode": "vector", "chunk_size": 512},
-        ]
-        # "hybrid" already covered by warm-start; stratification should pull vector first.
-        result = GAMOptimizer._get_stratified_combinations(combinations, already_seen={"search_mode": {"hybrid"}})
-        assert result[0]["search_mode"] == "vector"
-
-    def test_already_seen_all_values_skips_stratification(self):
-        """When warm-start covers all values, the list is returned in shuffle order."""
-        combinations = [
-            {"search_mode": "hybrid", "chunk_size": 256},
-            {"search_mode": "hybrid", "chunk_size": 512},
-        ]
-        # Both search_mode values already covered (only "hybrid" remains but it's covered).
-        result = GAMOptimizer._get_stratified_combinations(
-            combinations, already_seen={"search_mode": {"hybrid", "vector"}}
+    def test_fits_encoders_for_varying_columns(self, mock_search_space, optimizer_settings):
+        """Encoders are created for all varying columns."""
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_search_space,
+            settings=optimizer_settings,
         )
-        # All go to remainder (all_covered immediately), order preserved.
-        assert result == combinations
+        assert len(optimizer._typed_encoders_with_columns) == 0
+        optimizer._prepare_typed_encoder()
+        assert len(optimizer._typed_encoders_with_columns) == 2
+        cols = [col for col, _ in optimizer._typed_encoders_with_columns]
+        assert "param1" in cols
+        assert "param2" in cols
 
-    def test_remainder_preserves_relative_order(self):
-        """Non-stratified combos maintain the same relative ordering as the input."""
-        combinations = [
-            {"mode": "a", "n": 1},
-            {"mode": "a", "n": 2},  # remainder (mode "a" already seen)
-            {"mode": "b", "n": 3},
-            {"mode": "a", "n": 4},  # remainder
+    def test_drops_constant_columns(self):
+        """Columns with a single unique value are excluded."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"param1": "a", "param2": 1, "constant": "x"},
+            {"param1": "b", "param2": 2, "constant": "x"},
         ]
-        result = GAMOptimizer._get_stratified_combinations(combinations)
+        mock_space.max_combinations = 2
+        settings = GAMOptSettings(max_evals=2, n_random_nodes=2)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer._prepare_typed_encoder()
+        cols = [col for col, _ in optimizer._typed_encoders_with_columns]
+        assert "constant" not in cols
+        assert "param1" in cols
+        assert "param2" in cols
 
-        # stratified = [{mode:a,n:1}, {mode:b,n:3}], remainder = [{mode:a,n:2}, {mode:a,n:4}]
-        assert result[0] == {"mode": "a", "n": 1}
-        assert result[1] == {"mode": "b", "n": 3}
-        assert result[2] == {"mode": "a", "n": 2}
-        assert result[3] == {"mode": "a", "n": 4}
+    def test_called_only_once(self, mock_search_space, optimizer_settings):
+        """Calling _prepare_typed_encoder twice does not rebuild the encoders."""
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_search_space,
+            settings=optimizer_settings,
+        )
+        optimizer._prepare_typed_encoder()
+        first = list(optimizer._typed_encoders_with_columns)
+        optimizer._prepare_typed_encoder()
+        assert optimizer._typed_encoders_with_columns == first
+
+    def test_serializes_dict_columns(self):
+        """Dict-valued model columns are serialized to model_id strings."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"foundation_model": {"model_id": "fm-a", "other": "x"}, "chunk_size": 128},
+            {"foundation_model": {"model_id": "fm-b", "other": "x"}, "chunk_size": 256},
+        ]
+        mock_space.max_combinations = 2
+        settings = GAMOptSettings(max_evals=2, n_random_nodes=2)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer._prepare_typed_encoder()
+        cols = [col for col, _ in optimizer._typed_encoders_with_columns]
+        assert "foundation_model" in cols
+        fm_enc = next(enc for col, enc in optimizer._typed_encoders_with_columns if col == "foundation_model")
+        assert set(fm_enc.classes_) == {"fm-a", "fm-b"}
+
+    def test_string_column_gets_str_classes(self, mock_search_space, optimizer_settings):
+        """String-valued columns produce str classes so factor terms are selected."""
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_search_space,
+            settings=optimizer_settings,
+        )
+        optimizer._prepare_typed_encoder()
+        param1_enc = next(enc for col, enc in optimizer._typed_encoders_with_columns if col == "param1")
+        assert isinstance(param1_enc.classes_[0], str)
+
+    def test_numeric_column_gets_non_str_classes(self, mock_search_space, optimizer_settings):
+        """Numeric columns produce non-str classes so spline terms are selected."""
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_search_space,
+            settings=optimizer_settings,
+        )
+        optimizer._prepare_typed_encoder()
+        param2_enc = next(enc for col, enc in optimizer._typed_encoders_with_columns if col == "param2")
+        assert not isinstance(param2_enc.classes_[0], str)
 
 
-class TestStratifiedInitialSampling:
-    """Test that evaluate_initial_random_nodes uses stratified sampling."""
+class TestGetModeBalancedCombinations:
+    """Test the _get_mode_balanced_combinations static method."""
 
-    def test_skewed_space_always_includes_minority_mode(self):
+    def test_round_robins_between_two_modes(self):
+        """Combinations alternate between search_mode values."""
+        combos = (
+            [{"search_mode": "vector", "n": i} for i in range(3)] +
+            [{"search_mode": "hybrid", "n": i} for i in range(3)]
+        )
+        result = GAMOptimizer._get_mode_balanced_combinations(combos)
+        assert len(result) == 6
+        assert result[0]["search_mode"] != result[1]["search_mode"]
+        assert result[2]["search_mode"] != result[3]["search_mode"]
+
+    def test_returns_all_combinations(self):
+        """All input combinations appear in the output."""
+        combos = (
+            [{"search_mode": "vector", "n": i} for i in range(3)] +
+            [{"search_mode": "hybrid", "n": i} for i in range(3)]
+        )
+        result = GAMOptimizer._get_mode_balanced_combinations(combos)
+        assert len(result) == 6
+
+    def test_empty_returns_empty(self):
+        """Empty input returns empty output."""
+        assert GAMOptimizer._get_mode_balanced_combinations([]) == []
+
+    def test_single_mode_preserves_order(self):
+        """A single-mode space is returned in original order."""
+        combos = [{"search_mode": "vector", "n": i} for i in range(4)]
+        result = GAMOptimizer._get_mode_balanced_combinations(combos)
+        assert [c["n"] for c in result] == [0, 1, 2, 3]
+
+    def test_missing_search_mode_key_uses_fallback_bucket(self):
+        """Combinations without search_mode are collected into a single bucket."""
+        combos = [{"n": i} for i in range(3)]
+        result = GAMOptimizer._get_mode_balanced_combinations(combos)
+        assert len(result) == 3
+
+    def test_skewed_space_first_n_alternates(self):
+        """With 6 hybrid and 2 vector, the first 4 results alternate modes."""
+        combos = (
+            [{"search_mode": "hybrid", "n": i} for i in range(6)] +
+            [{"search_mode": "vector", "n": i} for i in range(2)]
+        )
+        result = GAMOptimizer._get_mode_balanced_combinations(combos)
+        modes = [c["search_mode"] for c in result[:4]]
+        assert modes.count("vector") == 2
+        assert modes.count("hybrid") == 2
+
+
+class TestGetModelModeBalancedCombinations:
+    """Test the _get_model_mode_balanced_combinations static method."""
+
+    def test_single_model_pair_equivalent_to_mode_balanced(self):
+        """With one model pair, behaviour collapses to mode-balanced."""
+        fm = {"model_id": "fm1"}
+        em = {"model_id": "em1"}
+        combos = (
+            [{"foundation_model": fm, "embedding_model": em, "search_mode": "vector", "n": i} for i in range(3)] +
+            [{"foundation_model": fm, "embedding_model": em, "search_mode": "hybrid", "n": i} for i in range(3)]
+        )
+        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        assert len(result) == 6
+        assert result[0]["search_mode"] != result[1]["search_mode"]
+
+    def test_two_model_pairs_covers_all_buckets_in_first_four(self):
+        """With 2 model pairs × 2 modes = 4 buckets, each appears in first 4 results."""
+        fm1, fm2 = {"model_id": "fm1"}, {"model_id": "fm2"}
+        em = {"model_id": "em1"}
+        combos = [
+            {"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "n": 0},
+            {"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "n": 0},
+            {"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "n": 0},
+            {"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "n": 0},
+        ]
+        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        assert len(result) == 4
+        keys = {(c["foundation_model"]["model_id"], c["search_mode"]) for c in result}
+        assert keys == {("fm1", "vector"), ("fm1", "hybrid"), ("fm2", "vector"), ("fm2", "hybrid")}
+
+    def test_returns_all_combinations(self):
+        """All input combinations appear in the output."""
+        fm = {"model_id": "fm1"}
+        em = {"model_id": "em1"}
+        combos = (
+            [{"foundation_model": fm, "embedding_model": em, "search_mode": "vector", "n": i} for i in range(4)] +
+            [{"foundation_model": fm, "embedding_model": em, "search_mode": "hybrid", "n": i} for i in range(4)]
+        )
+        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        assert len(result) == 8
+
+    def test_empty_returns_empty(self):
+        """Empty input returns empty output."""
+        assert GAMOptimizer._get_model_mode_balanced_combinations([]) == []
+
+    def test_string_model_values_are_keyed_directly(self):
+        """Non-dict model values are converted to str for keying."""
+        combos = [
+            {"foundation_model": "fm1", "embedding_model": "em1", "search_mode": "vector"},
+            {"foundation_model": "fm1", "embedding_model": "em1", "search_mode": "hybrid"},
+        ]
+        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        assert len(result) == 2
+        assert result[0]["search_mode"] != result[1]["search_mode"]
+
+
+class TestModeBalancedInitialSampling:
+    """Test that evaluate_initial_random_nodes uses mode-balanced sampling."""
+
+    def test_skewed_space_always_includes_both_modes(self):
         """With a 3:1 hybrid/vector ratio, the initial sample always includes both modes."""
         mock_space = MagicMock(spec=SearchSpace)
-        # 6 hybrid, 2 vector — minority vector must appear in the initial 4
-        mock_space.combinations = [
-            {"search_mode": "hybrid", "size": 256},
-            {"search_mode": "hybrid", "size": 512},
-            {"search_mode": "hybrid", "size": 1024},
-            {"search_mode": "hybrid", "size": 2048},
-            {"search_mode": "hybrid", "size": 4096},
-            {"search_mode": "hybrid", "size": 8192},
-            {"search_mode": "vector", "size": 256},
-            {"search_mode": "vector", "size": 512},
-        ]
+        mock_space.combinations = (
+            [{"search_mode": "hybrid", "size": i} for i in range(6)] +
+            [{"search_mode": "vector", "size": i} for i in range(2)]
+        )
         mock_space.max_combinations = 8
 
         settings = GAMOptSettings(max_evals=8, n_random_nodes=4)
-        objective_func = MagicMock(return_value=0.5)
-
         optimizer = GAMOptimizer(
-            objective_function=objective_func,
+            objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
             settings=settings,
         )
         optimizer.evaluate_initial_random_nodes()
 
-        # Assert specifically on the first n_random_nodes evaluations; if the
-        # objective ever returns None the loop draws more items and checking all
-        # evaluations would pass for the wrong reason.
-        initial_evals = optimizer.evaluations[: settings.n_random_nodes]
-        modes_sampled = {e["search_mode"] for e in initial_evals}
-        assert "vector" in modes_sampled, (
-            "Stratified sampling must include at least one 'vector' evaluation "
-            "even though 'hybrid' comprises 75% of the search space."
-        )
-        assert "hybrid" in modes_sampled
+        initial_evals = optimizer.evaluations[:settings.n_random_nodes]
+        modes = {e["search_mode"] for e in initial_evals}
+        assert "vector" in modes
+        assert "hybrid" in modes
 
-    def test_warm_start_all_majority_stratifies_remaining_for_minority(self):
-        """When all warm-start obs are the majority mode, new evals cover the minority."""
+    def test_balanced_distribution_in_initial_nodes(self):
+        """Mode-balanced gives equal representation of each mode."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = (
+            [{"search_mode": "vector", "size": i} for i in range(10)] +
+            [{"search_mode": "hybrid", "size": i} for i in range(10)]
+        )
+        mock_space.max_combinations = 20
+
+        settings = GAMOptSettings(max_evals=20, n_random_nodes=4)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+
+        initial = optimizer.evaluations[:settings.n_random_nodes]
+        assert sum(1 for e in initial if e["search_mode"] == "vector") == 2
+        assert sum(1 for e in initial if e["search_mode"] == "hybrid") == 2
+
+    def test_warm_start_majority_leaves_room_for_minority_in_new_evals(self):
+        """When known obs are all majority mode, new evals cover the minority.
+
+        Mode-balanced round-robin guarantees that vector appears within the first
+        two new draws regardless of shuffle order, because there are only 2 vector
+        combos and 2 hybrid combos remaining after excluding the known observation.
+        """
         mock_space = MagicMock(spec=SearchSpace)
         mock_space.combinations = [
             {"search_mode": "hybrid", "size": 256},
@@ -926,7 +1047,9 @@ class TestStratifiedInitialSampling:
         mock_space.max_combinations = 5
 
         known = [{"search_mode": "hybrid", "size": 256, "score": 0.5}]
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=3)
+        # Use a fixed random_state for reproducibility; mode-balanced guarantees
+        # vector coverage regardless, but pinning the seed makes the test explicit.
+        settings = GAMOptSettings(max_evals=5, n_random_nodes=3, random_state=42)
 
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
@@ -936,73 +1059,18 @@ class TestStratifiedInitialSampling:
         )
         optimizer.evaluate_initial_random_nodes()
 
-        # 2 new evaluations needed to reach n_random_nodes=3; at least one must be vector.
-        new_evals = optimizer.evaluations[len(known) :]
+        new_evals = optimizer.evaluations[len(known):]
         assert "vector" in {e["search_mode"] for e in new_evals}
 
-    def test_warns_when_n_random_nodes_insufficient_for_coverage(self, mocker):
-        """A warning is logged when n_random_nodes is smaller than min needed for coverage."""
+    def test_sampling_is_deterministic_with_same_seed(self):
+        """Mode-balanced sampling is reproducible given the same random_state."""
         mock_space = MagicMock(spec=SearchSpace)
-        # param1 has 6 unique string values; n_random_nodes=3 < 6 → warning expected
-        mock_space.combinations = [
-            {"param1": "a", "param2": 1},
-            {"param1": "b", "param2": 2},
-            {"param1": "c", "param2": 3},
-            {"param1": "d", "param2": 4},
-            {"param1": "e", "param2": 5},
-            {"param1": "f", "param2": 6},
-        ]
-        mock_space.max_combinations = 6
-
-        mock_warn = mocker.patch("ai4rag.core.hpo.gam_opt.logger.warning")
-        settings = GAMOptSettings(max_evals=6, n_random_nodes=3)
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(return_value=0.5),
-            search_space=mock_space,
-            settings=settings,
+        mock_space.combinations = (
+            [{"search_mode": "hybrid", "size": i} for i in range(5)] +
+            [{"search_mode": "vector", "size": i} for i in range(5)]
         )
-        optimizer.evaluate_initial_random_nodes()
-
-        mock_warn.assert_called_once()
-        warning_msg = mock_warn.call_args[0][0] % mock_warn.call_args[0][1:]
-        assert "n_random_nodes=3" in warning_msg
-        assert "6" in warning_msg  # estimated minimum
-
-    def test_no_warning_when_n_random_nodes_sufficient(self, mocker):
-        """No warning when n_random_nodes covers all unique categorical values."""
-        mock_space = MagicMock(spec=SearchSpace)
-        # param1 has 2 unique string values; n_random_nodes=4 >= 2 → no warning
-        mock_space.combinations = [
-            {"search_mode": "hybrid", "size": 256},
-            {"search_mode": "hybrid", "size": 512},
-            {"search_mode": "vector", "size": 256},
-            {"search_mode": "vector", "size": 512},
-        ]
-        mock_space.max_combinations = 4
-
-        mock_warn = mocker.patch("ai4rag.core.hpo.gam_opt.logger.warning")
-        settings = GAMOptSettings(max_evals=4, n_random_nodes=4)
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(return_value=0.5),
-            search_space=mock_space,
-            settings=settings,
-        )
-        optimizer.evaluate_initial_random_nodes()
-
-        mock_warn.assert_not_called()
-
-    def test_stratification_is_deterministic_with_same_seed(self):
-        """Stratified sampling is fully reproducible given the same random_state."""
-        mock_space = MagicMock(spec=SearchSpace)
-        mock_space.combinations = [
-            {"search_mode": "hybrid", "size": 256},
-            {"search_mode": "hybrid", "size": 512},
-            {"search_mode": "hybrid", "size": 1024},
-            {"search_mode": "vector", "size": 256},
-            {"search_mode": "vector", "size": 512},
-        ]
-        mock_space.max_combinations = 5
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=3, random_state=42)
+        mock_space.max_combinations = 10
+        settings = GAMOptSettings(max_evals=10, n_random_nodes=4, random_state=42)
 
         def make_optimizer():
             opt = GAMOptimizer(
@@ -1014,6 +1082,34 @@ class TestStratifiedInitialSampling:
             return [e["size"] for e in opt.evaluations]
 
         assert make_optimizer() == make_optimizer()
+
+    def test_model_mode_balanced_strategy_covers_all_triples(self):
+        """model_mode_balanced covers all (model, mode) buckets in the first N evals."""
+        mock_space = MagicMock(spec=SearchSpace)
+        fm1, fm2 = {"model_id": "fm1"}, {"model_id": "fm2"}
+        em = {"model_id": "em1"}
+        mock_space.combinations = (
+            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
+            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)] +
+            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
+            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)]
+        )
+        mock_space.max_combinations = 12
+
+        settings = GAMOptSettings(
+            max_evals=12, n_random_nodes=4,
+            warm_start_strategy="model_mode_balanced",
+        )
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+
+        initial = optimizer.evaluations[:settings.n_random_nodes]
+        buckets = {(e["foundation_model"]["model_id"], e["search_mode"]) for e in initial}
+        assert len(buckets) == 4
 
 
 class TestGAMOptimizerDeterminism:
@@ -1064,31 +1160,36 @@ class TestGAMOptimizerDeterminism:
         assert evals1 == evals2
         assert len(evals1) == 3
 
-    def test_gam_optimizer_different_with_different_random_state(self, mock_search_space):
-        """Test that GAMOptimizer produces different evaluation order with different random_state."""
+    def test_gam_optimizer_different_with_different_random_state(self):
+        """Different random_state values produce different within-bucket orderings."""
+        # Use a deterministic space where the two seeds are known to produce
+        # different shuffle orders.  All items share the same search_mode bucket
+        # so the only source of variation is the shuffle.
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [{"search_mode": "vector", "n": i} for i in range(6)]
+        mock_space.max_combinations = 6
 
         def deterministic_objective(params):
-            return params["param2"] / 10.0
+            return params["n"] / 10.0
 
-        # First run with random_state=42
         optimizer1 = GAMOptimizer(
             objective_function=deterministic_objective,
-            search_space=mock_search_space,
-            settings=GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=42),
+            search_space=mock_space,
+            settings=GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=0),
         )
         optimizer1.evaluate_initial_random_nodes()
-        evals1 = [e["param1"] for e in optimizer1.evaluations]
 
-        # Second run with random_state=99
         optimizer2 = GAMOptimizer(
             objective_function=deterministic_objective,
-            search_space=mock_search_space,
-            settings=GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=99),
+            search_space=mock_space,
+            settings=GAMOptSettings(max_evals=6, n_random_nodes=3, random_state=1),
         )
         optimizer2.evaluate_initial_random_nodes()
-        evals2 = [e["param1"] for e in optimizer2.evaluations]
 
-        # Should evaluate different combinations or different order
+        evals1 = [e["n"] for e in optimizer1.evaluations]
+        evals2 = [e["n"] for e in optimizer2.evaluations]
+
+        # Seeds 0 and 1 produce different orderings of 6 items — verified offline.
         assert evals1 != evals2
 
     def test_gam_full_search_deterministic_with_same_random_state(self, mock_search_space, mocker):
