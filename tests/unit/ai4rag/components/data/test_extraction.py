@@ -407,11 +407,6 @@ class TestBuildDoclingFormatOptions:
         assert audio_option.pipeline_options.asr_options.language is None
 
 
-# ---------------------------------------------------------------------------
-# SUPPORTED_EXTENSIONS — audio formats
-# ---------------------------------------------------------------------------
-
-
 class TestSupportedExtensionsAudio:
     """Tests that audio formats are included in SUPPORTED_EXTENSIONS."""
 

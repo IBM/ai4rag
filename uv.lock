@@ -33,7 +33,6 @@ dependencies = [
     { name = "boto3" },
     { name = "chromadb" },
     { name = "docling-slim", extra = ["feat-chunking", "format-opendocument", "standard"] },
-    { name = "langchain-chroma" },
     { name = "langchain-community" },
     { name = "langchain-text-splitters" },
     { name = "multiprocess" },
@@ -101,7 +100,6 @@ requires-dist = [
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
-    { name = "langchain-chroma", specifier = "~=1.1.0" },
     { name = "langchain-community", specifier = "<0.4.2" },
     { name = "langchain-text-splitters", specifier = "~=1.1.0" },
     { name = "mkdocs", marker = "extra == 'docs'", specifier = "~=1.6.0" },
@@ -1733,20 +1731,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d5/d0/c7f9d3d26c0e3f8bb146c6d707ee0fc1d30d8da65a59626e8a580085e929/langchain-1.3.2.tar.gz", hash = "sha256:ffd5f204a46b5fa1a38bf89ba3b45ca0902c02d18fa7d2a2eaeaeb1f5bf19d0a", size = 600598, upload-time = "2026-05-26T18:17:57.715Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f8/82/a54edcd1c48163de5642eb10fa2cb58b13a8889c659964f63f0306b58b1e/langchain-1.3.2-py3-none-any.whl", hash = "sha256:900f6b3f4ee08b9ba3cdbe667dbf42525bd6f66a4a07a7f1db26262673e41ed6", size = 121225, upload-time = "2026-05-26T18:17:56.075Z" },
-]
-
-[[package]]
-name = "langchain-chroma"
-version = "1.1.0"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "chromadb" },
-    { name = "langchain-core" },
-    { name = "numpy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/fa/0e/54896830b7331c90788cf96b2c37858977c199da9ecdaf85cf11eb6e6bc1/langchain_chroma-1.1.0.tar.gz", hash = "sha256:8069685e7848041e998d16c8a4964256b031fd20551bf59429173415bc2adc12", size = 220382, upload-time = "2025-12-12T16:23:01.399Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/ae/35/2a6d1191acaad043647e28313b0ecd161d61f09d8be37d1996a90d752c13/langchain_chroma-1.1.0-py3-none-any.whl", hash = "sha256:ff65e4a2ccefb0fb9fde2ff38705022ace402f979d557f018f6e623f7288f0fc", size = 12981, upload-time = "2025-12-12T16:23:00.196Z" },
 ]
 
 [[package]]
