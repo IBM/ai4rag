@@ -487,3 +487,30 @@ class TestNormalizeOcrLang:
         from ai4rag.components.data.text_extraction import _normalize_ocr_lang
 
         assert _normalize_ocr_lang(["english", "chinese"]) == ("english", "chinese")
+
+
+class TestDoclingExtractionConfig:
+    """Tests for the config object that drives extraction behaviour."""
+
+    def test_defaults(self):
+        from ai4rag.components.data.text_extraction import DoclingExtractionConfig
+
+        cfg = DoclingExtractionConfig()
+        assert cfg.do_ocr is False
+        assert cfg.do_table_structure is False
+        assert cfg.ocr_lang == ("english",)
+
+    def test_ocr_lang_string_is_normalized(self):
+        from ai4rag.components.data.text_extraction import DoclingExtractionConfig
+
+        assert DoclingExtractionConfig(ocr_lang="chinese").ocr_lang == ("chinese",)
+
+    def test_ocr_lang_sequence_is_normalized(self):
+        from ai4rag.components.data.text_extraction import DoclingExtractionConfig
+
+        assert DoclingExtractionConfig(ocr_lang=["english", "chinese"]).ocr_lang == ("english", "chinese")
+
+    def test_empty_ocr_lang_falls_back_to_default(self):
+        from ai4rag.components.data.text_extraction import DoclingExtractionConfig
+
+        assert DoclingExtractionConfig(ocr_lang=()).ocr_lang == ("english",)

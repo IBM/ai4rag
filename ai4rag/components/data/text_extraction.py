@@ -42,7 +42,36 @@ _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
 
 DOWNLOAD_MAX_THREADS = 8
+
+# OCR language handling
+# ---------------------
+# There is *no* automatic language detection: OCR is a per-run choice driven by
+# the ``ocr_lang`` value supplied by the caller (defaulting to English).  RapidOCR
+# ships two model bundles that we support out of the box -- a Latin/English set
+# and a Chinese set -- and ``ocr_lang`` selects which one is used (see
+# ``_rapidocr_artifacts_rel_paths``).  Latin-script languages are all served by
+# the English models, so passing e.g. ``"french"`` still resolves to the English
+# bundle; only Chinese switches to the dedicated Chinese models.
 DEFAULT_OCR_LANG: tuple[str, ...] = ("english",)
+
+# Relative paths Docling expects under ``$DOCLING_ARTIFACTS_PATH/RapidOcr/`` for
+# the onnxruntime backend (see docling.models.stages.ocr.rapid_ocr_model).  These
+# mirror Docling's own on-disk layout, so they live here alongside the code that
+# resolves them rather than in ``pipelines-components``.
+_ARTIFACTS_RAPIDOCR_ENGLISH = (
+    "onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx",
+    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+    "onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx",
+)
+_ARTIFACTS_RAPIDOCR_CHINESE = (
+    "onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
+    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+    "onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
+)
+# Optional small models that some rapidocr wheels still ship under ``rapidocr/models/``.
+_BUNDLED_RAPIDOCR_DET = "PP-OCRv6_det_small.onnx"
+_BUNDLED_RAPIDOCR_CLS = "ch_ppocr_mobile_v2.0_cls_mobile.onnx"
+_BUNDLED_RAPIDOCR_REC = "PP-OCRv6_rec_small.onnx"
 
 # Module-level global used by multiprocessing workers.  Each spawned worker
 # initializes its own ``DocumentConverter`` via the pool initializer and
@@ -71,7 +100,49 @@ class ExtractionResult:
 
 @dataclass(frozen=True)
 class DoclingExtractionConfig:
-    """Docling converter settings shared with extraction worker processes."""
+    """Docling converter settings shared with extraction worker processes.
+
+    An instance of this config is the single knob callers (e.g.
+    ``pipelines-components``) use to control conversion behaviour.  It is
+    constructed once and passed to :func:`extract_text`, which forwards it
+    unchanged to every worker process so each worker builds an identically
+    configured ``DocumentConverter``.  Being ``frozen`` makes it hashable and
+    safe to ship across the ``spawn`` process boundary.
+
+    Attributes
+    ----------
+    do_table_structure
+        What: run Docling's TableFormer to reconstruct rows/columns from the
+        detected PDF layout.  Why: table structure parsing is comparatively
+        expensive, so it stays off by default and is opted into only when the
+        corpus contains tables worth reconstructing.
+    do_ocr
+        What: run RapidOCR on pages Docling flags as needing OCR (scanned PDFs,
+        images).  Why: born-digital documents already carry a text layer, so
+        OCR is off by default to avoid the runtime cost; enable it for scanned
+        or image inputs.
+    ocr_lang
+        What: the RapidOCR language selection (e.g. ``("english",)`` or
+        ``("english", "chinese")``).  Why: there is no auto-detection -- this
+        value picks which bundled model set is loaded.  Latin-script languages
+        map to the English models; only Chinese switches to the Chinese models
+        (see :func:`_rapidocr_artifacts_rel_paths`).  Ignored when ``do_ocr``
+        is ``False``.
+    ocr_det_model_path
+        What/Why: optional path to a custom RapidOCR text-*detection* ONNX
+        model, for disconnected clusters or specialised model sets that differ
+        from the bundled defaults.
+    ocr_cls_model_path
+        What/Why: optional path to a custom RapidOCR angle-*classification*
+        ONNX model (same rationale as ``ocr_det_model_path``).
+    ocr_rec_model_path
+        What/Why: optional path to a custom RapidOCR text-*recognition* ONNX
+        model (same rationale as ``ocr_det_model_path``).
+    ocr_rec_keys_path
+        What/Why: optional path to the character-keys dictionary matching the
+        custom recognition model; required when the recognition model uses a
+        non-default character set.
+    """
 
     do_table_structure: bool = False
     do_ocr: bool = False
@@ -80,6 +151,11 @@ class DoclingExtractionConfig:
     ocr_cls_model_path: str | None = None
     ocr_rec_model_path: str | None = None
     ocr_rec_keys_path: str | None = None
+
+    def __post_init__(self) -> None:
+        # Normalize ``ocr_lang`` in one place so callers may pass a single
+        # string or any sequence and always end up with a non-empty tuple.
+        object.__setattr__(self, "ocr_lang", _normalize_ocr_lang(self.ocr_lang))
 
 
 def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments,too-many-statements
@@ -93,13 +169,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     error_tolerance: float | None = None,
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
-    do_table_structure: bool = False,
-    do_ocr: bool = False,
-    ocr_lang: Sequence[str] | str | None = None,
-    ocr_det_model_path: str | None = None,
-    ocr_cls_model_path: str | None = None,
-    ocr_rec_model_path: str | None = None,
-    ocr_rec_keys_path: str | None = None,
+    docling_config: DoclingExtractionConfig | None = None,
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -136,27 +206,14 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     docling_artifacts_path
         Path to pre-downloaded Docling model artifacts for offline use.
         Falls back to ``DOCLING_ARTIFACTS_PATH`` environment variable.
-    do_table_structure
-        Whether Docling should run TableFormer to reconstruct table
-        rows and columns from detected PDF layout.  ``False`` (default)
-        disables table structure parsing; ``True`` enables it to achieve
-        increased accuracy of extracted data.
-    do_ocr
-        Whether Docling should run RapidOCR on pages that need OCR
-        (for example scanned PDFs or images).  ``False`` (default) keeps
-        OCR off for born-digital documents; ``True`` enables RapidOCR.
-    ocr_lang
-        RapidOCR language list (for example ``\"english\"`` or
-        ``[\"english\", \"chinese\"]``).  Defaults to ``[\"english\"]``
-        when OCR is enabled.  Ignored when ``do_ocr`` is ``False``.
-    ocr_det_model_path
-        Optional local path to a custom RapidOCR detection ONNX model.
-    ocr_cls_model_path
-        Optional local path to a custom RapidOCR classification ONNX model.
-    ocr_rec_model_path
-        Optional local path to a custom RapidOCR recognition ONNX model.
-    ocr_rec_keys_path
-        Optional local path to a custom RapidOCR recognition keys file.
+    docling_config
+        Ready :class:`DoclingExtractionConfig` controlling table-structure
+        and OCR behaviour.  Callers (e.g. ``pipelines-components``) construct
+        it once and pass it here; it is forwarded unchanged to every worker
+        process.  ``None`` (default) uses ``DoclingExtractionConfig()`` --
+        table structure and OCR both disabled.  See
+        :class:`DoclingExtractionConfig` for the per-field ``what``/``why``
+        and for how ``ocr_lang`` maps to bundled OCR models.
 
     Returns
     -------
@@ -181,22 +238,20 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
 
     s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
     artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
-    pipeline_config = DoclingExtractionConfig(
-        do_table_structure=do_table_structure,
-        do_ocr=do_ocr,
-        ocr_lang=_normalize_ocr_lang(ocr_lang),
-        ocr_det_model_path=ocr_det_model_path,
-        ocr_cls_model_path=ocr_cls_model_path,
-        ocr_rec_model_path=ocr_rec_model_path,
-        ocr_rec_keys_path=ocr_rec_keys_path,
-    )
+    pipeline_config = docling_config or DoclingExtractionConfig()
 
-    _logger.info("Docling table structure parsing: %s", do_table_structure)
+    has_custom_models = bool(
+        pipeline_config.ocr_det_model_path
+        or pipeline_config.ocr_cls_model_path
+        or pipeline_config.ocr_rec_model_path
+        or pipeline_config.ocr_rec_keys_path
+    )
+    _logger.info("Docling table structure parsing: %s", pipeline_config.do_table_structure)
     _logger.info(
         "Docling OCR (RapidOCR): enabled=%s lang=%s custom_models=%s",
-        do_ocr,
-        pipeline_config.ocr_lang if do_ocr else (),
-        bool(ocr_det_model_path or ocr_cls_model_path or ocr_rec_model_path or ocr_rec_keys_path),
+        pipeline_config.do_ocr,
+        pipeline_config.ocr_lang if pipeline_config.do_ocr else (),
+        has_custom_models,
     )
 
     documents = sorted(documents, key=lambda d: d.get("size_bytes", 0), reverse=True)
@@ -417,24 +472,6 @@ def _normalize_ocr_lang(ocr_lang: Sequence[str] | str | None) -> tuple[str, ...]
     return langs or DEFAULT_OCR_LANG
 
 
-# Relative paths Docling expects under ``$DOCLING_ARTIFACTS_PATH/RapidOcr/`` for
-# the onnxruntime backend (see docling.models.stages.ocr.rapid_ocr_model).
-_ARTIFACTS_RAPIDOCR_ENGLISH = (
-    "onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx",
-    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
-    "onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx",
-)
-_ARTIFACTS_RAPIDOCR_CHINESE = (
-    "onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
-    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
-    "onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
-)
-# Optional small models that some rapidocr wheels still ship under ``rapidocr/models/``.
-_BUNDLED_RAPIDOCR_DET = "PP-OCRv6_det_small.onnx"
-_BUNDLED_RAPIDOCR_CLS = "ch_ppocr_mobile_v2.0_cls_mobile.onnx"
-_BUNDLED_RAPIDOCR_REC = "PP-OCRv6_rec_small.onnx"
-
-
 def _rapidocr_artifacts_rel_paths(ocr_lang: tuple[str, ...]) -> tuple[str, ...]:
     """Pick Docling artifact-relative OCR model paths for the requested language."""
     normalized = {lang.strip().lower() for lang in ocr_lang}
@@ -444,10 +481,21 @@ def _rapidocr_artifacts_rel_paths(ocr_lang: tuple[str, ...]) -> tuple[str, ...]:
 
 
 def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:
-    """Return RapidOCR wheel model paths when the installed package still ships ONNX files."""
+    """Return RapidOCR wheel model paths when the installed package still ships ONNX files.
+
+    ``rapidocr`` is a transitive dependency of Docling, so it is expected to be
+    importable whenever OCR runs.  A failed import therefore signals a broken
+    install rather than an optional feature being absent, so we log it loudly
+    before falling back to the ``DOCLING_ARTIFACTS_PATH`` resolution path.
+    """
     try:
         import rapidocr
     except ImportError:
+        _logger.warning(
+            "Could not import 'rapidocr' (expected to be installed as a Docling "
+            "dependency). Falling back to DOCLING_ARTIFACTS_PATH for OCR models.",
+            exc_info=True,
+        )
         return None
 
     models_dir = Path(rapidocr.__file__).resolve().parent / "models"

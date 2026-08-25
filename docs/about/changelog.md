@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- **Text extraction** — optional RapidOCR via Docling (`do_ocr`, `ocr_lang`, custom ONNX model paths); OCR remains off by default
+- **Text extraction** — optional RapidOCR via Docling, configured through a single `DoclingExtractionConfig` passed to `extract_text` (`do_ocr`, `ocr_lang`, custom ONNX model paths); OCR remains off by default
 - **Document discovery / extraction** — JPEG, PNG, and TIFF image extensions supported for OCR-capable ingestion
 - **Dependencies** — added `openai` as the model-access SDK, replacing `ogx-client`
 

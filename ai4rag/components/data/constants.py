@@ -19,7 +19,6 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
         ".qmd",
         ".rmd",
         ".xhtml",
-        # Image formats for OCR-capable ingestion (RapidOCR via Docling).
         ".jpg",
         ".jpeg",
         ".png",
