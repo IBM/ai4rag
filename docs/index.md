@@ -38,6 +38,7 @@ It accepts benchmark data, search space definition, optimizer configuration then
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
+from ai4rag.rag.vector_store import ChromaConfig
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
 from pathlib import Path
@@ -53,7 +54,7 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="chroma",
+    vector_store_config=ChromaConfig(),
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(
         output_path=Path(__file__).parent / "ai4rag_results"
@@ -125,9 +126,9 @@ graph TB
 
 ### RAG Components
 
-- **Foundation Model**: LLM integration via `BaseFoundationModel` interface
-- **Embedding Model**: embedding model integration via `BaseEmbeddingModel`
-- **Vector Store**: selected from supported ones (Milvus via OGX and Chroma) or introduced by the user with `BaseVectorStore` interface
+- **Foundation Model**: any OpenAI-compatible chat endpoint via `OpenAIFoundationModel` — or bring your own via the `BaseFoundationModel` interface
+- **Embedding Model**: any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` — or bring your own via the `BaseEmbeddingModel` interface
+- **Vector Store**: Milvus, PostgreSQL/pgvector, or Chroma via direct clients — or bring your own via the `BaseVectorStore` interface
 - **Chunking**: document splitting into smaller chunks
 - **Retrieval**: simple and window-based retrieval strategies
 - **Templates**: complete RAG implementations defined as a `RAGTemplate`
@@ -136,13 +137,12 @@ graph TB
 
 ## Requirements
 
-!!! warning "OGX Integration"
-    `ai4rag` works with an [OGX](https://github.com/ogx-ai/ogx) server.
-    To run experiment based on OGX you will need:
+To run an optimization you need a **foundation model** (for text generation) and an **embedding model** (for document embeddings). `ai4rag` reaches both through the stock [`openai`](https://github.com/openai/openai-python) SDK, so **any OpenAI-compatible endpoint works** — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box.
 
-    - At least one foundation model (for text generation)
-    - At least one embedding model (for document embeddings)
-    - Vector database configured (e.g., Milvus) or locally used instance of Chroma
+!!! tip "Bring your own models"
+    Not using an OpenAI-compatible endpoint? Provide your own model classes instead: any implementation of `BaseFoundationModel` / `BaseEmbeddingModel` plugs straight into an experiment. See [Provider-Agnostic Design](user-guide/provider-agnostic.md).
+
+The vector store is independent of the model provider: connect directly to Chroma, Milvus, or PostgreSQL/pgvector via `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`.
 
 ---
 

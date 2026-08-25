@@ -38,10 +38,10 @@ class LocalEventHandler(BaseEventHandler):
 
             evaluation_results_path = dir_path / "evaluation_results.json"
             with open(evaluation_results_path, encoding="utf-8", mode="w") as file:
-                json.dump(evaluation_results, file)
+                json.dump(evaluation_results, file, ensure_ascii=False)
 
             with open(dir_path / "pattern.json", encoding="utf-8", mode="w") as file2:
-                json.dump(payload, file2)
+                json.dump(payload, file2, ensure_ascii=False)
 
 
 class KFPEventHandler(BaseEventHandler):

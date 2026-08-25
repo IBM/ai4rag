@@ -2,8 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from __future__ import annotations
-
 import importlib.resources
 from json import dump as json_dump
 from json import load as json_load
@@ -162,7 +160,7 @@ class Notebook:
             "nbformat_minor": self.nbformat_minor,
         }
 
-    def save(self, path: str | Path, indent: int = 2) -> Notebook:
+    def save(self, path: str | Path, indent: int = 2) -> "Notebook":
         """Save notebook to a file.
 
         Parameters
@@ -186,7 +184,7 @@ class Notebook:
         path.parent.mkdir(parents=True, exist_ok=True)
 
         with path.open("w+", encoding="utf-8") as f:
-            json_dump(self.to_dict(), f, indent=indent)
+            json_dump(self.to_dict(), f, indent=indent, ensure_ascii=False)
 
         return self
 
@@ -195,13 +193,13 @@ class Notebook:
         cls,
         notebook_name: str,
         templates_dir: str | Path | None = None,
-    ) -> Notebook:
+    ) -> "Notebook":
         """Load a Jupyter notebook template from bundled package data or a custom directory.
 
         Parameters
         ----------
         notebook_name : str
-            Name of the template file (e.g. ``"ogx_indexing_template.ipynb"``).
+            Name of the template file (e.g. ``"maas_indexing_template.ipynb"``).
         templates_dir : str | Path | None, default=None
             Directory containing the template notebooks.  When *None*,
             templates are loaded from the ``notebook_templates/`` sub-package
@@ -214,7 +212,7 @@ class Notebook:
 
         Examples
         --------
-        >>> nb = Notebook.load("ogx_indexing_template.ipynb")
+        >>> nb = Notebook.load("maas_indexing_template.ipynb")
         >>> nb = Notebook.load("custom.ipynb", templates_dir="/data/templates")
         """
         if templates_dir is not None:

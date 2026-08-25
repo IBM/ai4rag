@@ -1,7 +1,7 @@
 # Quick Start
 
 This guide walks you through running your first RAG optimization experiment with `ai4rag`.
-For the sake of quick-start OGX server will be used, but this can be run with independently deployed models as long as they are introduced to the experiment with proper wrapper.
+For the sake of quick-start OpenShift AI Models-as-a-Service (MaaS) will be used, but this can be run with any independently deployed OpenAI-compatible models as long as they are introduced to the experiment with the proper wrapper.
 
 ---
 
@@ -16,30 +16,39 @@ For the development purposes you may use `FileStore` implementation from `dev_ut
 Before starting, ensure you have:
 
 - [x] Installed ai4rag ([Installation Guide](installation.md))
-- [x] A running OGX server with models configured or other deployed models that can be used for the experiment
-- [x] Environment variables set (e.g. `BASE_URL`, `APIKEY`) to communicate with OGX server or deployed models
+- [x] Access to an OpenShift MaaS deployment (or any OpenAI-compatible models) that can be used for the experiment
+- [x] Environment variables set (`MAAS_BASE_URL`, `MAAS_API_KEY`) to communicate with MaaS
 
 ---
 
-## Step-by-Step Guide with OGX
+## Step-by-Step Guide with MaaS
 
-### 1. Prepare OGX Client
+### 1. Prepare the MaaS Client
 
-Create a client instance to connect to your OGX server:
+OpenShift MaaS serves every model from a single OpenAI-compatible endpoint —
+`MAAS_BASE_URL`, used verbatim. One client discovers the available models
+and is reused, unchanged, to serve every model wrapper.
+
+The `dev_utils` helpers wrap this setup — `create_dev_maas_client()`
+reads `MAAS_BASE_URL` / `MAAS_API_KEY` and builds that client, and
+`build_maas_model()` checks that a model id is available and binds it
+to the correct wrapper on the same client:
 
 ```python
-import os
 from dotenv import load_dotenv, find_dotenv
-from ogx_client import OgxClient
+from dev_utils.utils import create_dev_maas_client
 
 load_dotenv(find_dotenv())
 
-client = OgxClient(
-    base_url=os.getenv("BASE_URL"),
-    api_key=os.getenv("APIKEY")
-)
-
+# Single client, used both to discover models and to serve every wrapper.
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 ```
+
+!!! tip "Public API"
+    `dev_utils` is only available when cloning the repository. For the equivalent
+    setup using the public API (the single `OpenAI` client built with
+    `create_maas_client`), see
+    [Provider-Agnostic Design](../user-guide/provider-agnostic.md).
 
 ---
 
@@ -112,8 +121,7 @@ Specify which parameters to optimize and their possible values:
 ```python
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from dev_utils.utils import build_maas_model
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -122,10 +130,7 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                OGXFoundationModel(
-                    model_id="ollama/llama3.2:3b",
-                    client=client
-                )
+                build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")
             ],
         ),
         # Embedding model
@@ -133,11 +138,12 @@ search_space = AI4RAGSearchSpace(
             name="embedding_model",
             param_type="C",
             values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=client,
-                    params={
-                        "embedding_dimension": 768,
+                build_maas_model(
+                    client,
+                    model_id="bge-m3",
+                    model_type="embedding",
+                    embedding_params={
+                        "embedding_dimension": 1024,
                         "context_length": 8192
                     },
                 )
@@ -192,19 +198,27 @@ optimizer_settings = GAMOptSettings(
 
 ### 6. Run the Experiment
 
+!!! note "Choosing a Vector Store"
+    The vector store is selected by passing a `vector_store_config` to `AI4RAGExperiment`:
+
+    - `ChromaConfig()` — zero-config, in-memory. Vector-only search (no hybrid/BM25).
+    - `MilvusConfig.from_env()` or `MilvusConfig(uri=...)` — a running Milvus server. Supports hybrid search (dense + BM25).
+    - `PGVectorConfig.from_env()` or `PGVectorConfig(host=...)` — a running PostgreSQL instance with `pgvector`. Supports hybrid search (dense + full-text).
+
+    All three classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
+
 Create and run the optimization experiment:
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",  # "ogx" for OGX, or "chroma" for in-memory
-    ogx_vector_io_provider_id="milvus",  # Matches your OGX server config
+    vector_store_config=MilvusConfig.from_env(),  # See "Choosing a Vector Store" above
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<path_to_store_results>"),  # Tracks progress
 )
@@ -214,7 +228,7 @@ experiment.search()
 
 best_pattern = experiment.results.get_best_evaluations(k=1)[0]
 
-print(best_pattern.rag_pattern.generate("What is the main purpose of ai4rag?"))
+print(f"Best pattern: {best_pattern.pattern_name}, score: {best_pattern.final_score}")
 ```
 
 ---
@@ -232,28 +246,22 @@ After completion, check the `output_path` directory for:
 Here's the full code in one place:
 
 ```python
-import os
 from pathlib import Path
 from dotenv import load_dotenv
-from ogx_client import OgxClient
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
-from dev_utils.utils import read_benchmark_from_json
+from dev_utils.utils import build_maas_model, create_dev_maas_client, read_benchmark_from_json
 
 # 1. Setup client
 load_dotenv()
-client = OgxClient(
-    base_url=os.getenv("BASE_URL"),
-    api_key=os.getenv("APIKEY")
-)
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 # 2. Load documents
 documents = FileStore(Path("./knowledge_base")).load_as_documents()
@@ -267,16 +275,17 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")],
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=client,
-                    params={"embedding_dimension": 768, "context_length": 8192},
+                build_maas_model(
+                    client,
+                    model_id="bge-m3",
+                    model_type="embedding",
+                    embedding_params={"embedding_dimension": 1024, "context_length": 8192},
                 )
             ],
         ),
@@ -292,12 +301,10 @@ optimizer_settings = GAMOptSettings(max_evals=10, n_random_nodes=4)
 
 # 6. Run experiment
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",
+    vector_store_config=MilvusConfig.from_env(),
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="./results"),
 )

@@ -6,25 +6,22 @@
 
 from pathlib import Path
 
-from ogx_client import OgxClient
-
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.vector_store.config import get_vector_store_config
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
 from dev_utils.file_store import FileStore
-from dev_utils.utils import read_benchmark_from_json
+from dev_utils.utils import build_maas_model, create_dev_maas_client, read_benchmark_from_json
 
 if __name__ == "__main__":
     _filepath = Path(__file__)
     from dotenv import find_dotenv, load_dotenv
 
-    load_dotenv(find_dotenv())
+    load_dotenv(find_dotenv(".env.local"))
 
-    client = OgxClient()
+    client = create_dev_maas_client()
 
     # change to direct to your local documents path
     documents_path = _filepath.parents[1] / "local" / "data" / "rh_summit_2026" / "documents"
@@ -41,37 +38,31 @@ if __name__ == "__main__":
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
-        vector_store_type="ogx",
+        vector_store_type="milvus",
         params=[
             Parameter(
                 name="foundation_model",
                 param_type="C",
-                values=[OGXFoundationModel(model_id="vllm-inference-gpu-llama/llama-31-8b-instruct", client=client)],
+                values=[build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")],
             ),
             Parameter(
                 name="embedding_model",
                 param_type="C",
-                values=[
-                    OGXEmbeddingModel(
-                        model_id="vllm-embedding/bge-m3",
-                        client=client,
-                        params={"embedding_dimension": 1024, "context_length": 8192},
-                    )
-                ],
+                values=[build_maas_model(client, model_id="bge-m3", model_type="embedding")],
             ),
         ],
     )
 
+    vs_config = get_vector_store_config(provider="milvus")
+
     experiment = AI4RAGExperiment(
-        client=client,
         documents=documents,
         benchmark_data=benchmark_data,
         search_space=search_space,
         optimizer_settings=optimizer_settings,
         event_handler=LocalEventHandler(output_path=_filepath.parent / "local" / "chunkers"),
         # event_handler=LocalEventHandler(),
-        vector_store_type="ogx",
-        ogx_vector_io_provider_id="milvus-remote",
+        vector_store_config=vs_config,
     )
 
     experiment.search(skip_mps=True)

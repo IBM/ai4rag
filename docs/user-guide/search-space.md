@@ -74,17 +74,25 @@ Parameter(
 **Example 3: Model objects**
 
 ```python
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from dev_utils.utils import build_maas_model
 
 Parameter(
     name="foundation_model",
     param_type="C",
     values=[
-        OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-        OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+        build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm"),
+        build_maas_model(client, model_id="granite-3-3-8b-instruct", model_type="llm"),
     ]
 )
 ```
+
+!!! note "Building MaaS models"
+    `client` is the single MaaS client (e.g. from `create_dev_maas_client()`), and
+    `build_maas_model` checks that the model id is available before wrapping it, on that
+    same client, in `OpenAIFoundationModel` / `OpenAIEmbeddingModel`. See
+    [Quick Start](../getting-started/quick-start.md) for the `dev_utils` helpers and
+    [Provider-Agnostic Design](provider-agnostic.md) for the public-API equivalent
+    (`create_maas_client`).
 
 !!! tip "Categorical for Discrete Numerics"
     Even for numeric parameters like `chunk_size`, use Categorical (`"C"`) when you want to test specific values rather than a continuous range. This gives you more control over which values are tested.
@@ -150,7 +158,7 @@ Parameter(
 ```
 
 !!! note "Real Type Not Fully Supported"
-    Currently, Real parameters cannot be enumerated (no `.all_values()` method). For practical optimization, use Categorical with discrete float values instead:
+    Currently, Real parameters cannot be enumerated (`all_values()` raises `ParameterValueError` for Real params). For practical optimization, use Categorical with discrete float values instead:
     ```python
     Parameter(name="ranker_alpha", param_type="C", values=[0.0, 0.3, 0.5, 0.7, 1.0])
     ```
@@ -191,16 +199,16 @@ Two parameters are **always required** in an `AI4RAGSearchSpace`:
 
 The LLM used for text generation.
 
-**Example (OGX)**:
+**Example (MaaS)**:
 
 ```python
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from dev_utils.utils import build_maas_model
 
 Parameter(
     name="foundation_model",
     param_type="C",
     values=[
-        OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
+        build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")
     ]
 )
 ```
@@ -211,43 +219,48 @@ Parameter(
 
 The model used for generating document and query embeddings.
 
-**Example (OGX)**:
+**Example (MaaS)**:
 
 ```python
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from dev_utils.utils import build_maas_model
 
 Parameter(
     name="embedding_model",
     param_type="C",
     values=[
-        OGXEmbeddingModel(
-            model_id="ollama/nomic-embed-text:latest",
-            client=client,
-            params={"embedding_dimension": 768, "context_length": 8192}
+        build_maas_model(
+            client,
+            model_id="bge-m3",
+            model_type="embedding",
+            embedding_params={"embedding_dimension": 1024, "context_length": 8192},
         )
     ]
 )
 ```
 
-!!! note "Embedding Model params"
-    The `params` dict should include:
-    - `embedding_dimension`: Vector size (e.g., 768, 1536)
+!!! note "Embedding model params"
+    `embedding_params` (forwarded to the model's `params`) may include:
+
+    - `embedding_dimension`: Vector size (e.g., 1024, 1536)
     - `context_length`: Maximum tokens the model can process (used for validation)
+
+    When omitted, both are **auto-detected** at construction — MaaS `models.list()` carries no
+    metadata, so this is the only source for these values.
 
 ---
 
 ## Default Parameters
 
-If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. These defaults differ slightly between ChromaDB and OGX vector stores.
+If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. The `vector_store_type` parameter defaults to `"milvus"` and accepts `"milvus"`, `"pgvector"`, or `"chroma"`. These defaults differ slightly between Chroma (vector-only) and the hybrid-capable stores, Milvus and PGVector.
 
 ### Default Values
 
-| Parameter | Default (OGX) | Default (ChromaDB) | Type |
+| Parameter | Default (Milvus / PGVector) | Default (Chroma) | Type |
 |-----------|----------------------|-------------------|------|
 | `chunking_method` | `("recursive", "hybrid")` | `("recursive", "hybrid")` | Categorical |
 | `chunk_size` | `(512, 1024, 2048)` | `(512, 1024, 2048)` | Categorical |
 | `chunk_overlap` | `(0, 128, 256)` | `(0, 128, 256)` | Categorical |
-| `retrieval_method` | `("simple",)` | `("simple", "window")` | Categorical |
+| `retrieval_method` | `("simple",)` | `("simple",)` | Categorical |
 | `window_size` | `(0,)` | `(0, 1, 3, 5)` | Categorical |
 | `number_of_chunks` | `(3, 5, 10)` | `(3, 5, 10)` | Categorical |
 | `search_mode` | `("vector", "hybrid")` | `("vector",)` | Categorical |
@@ -256,9 +269,9 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 | `ranker_alpha` | `(1, 0.5)` | N/A | Categorical |
 
 !!! note "Why Different Defaults?"
-    - **ChromaDB** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
-    - **ChromaDB** defaults include window retrieval options since it's an in-memory store (faster experimentation)
-    - **OGX** defaults focus on simple retrieval but include hybrid search exploration
+    - **Chroma** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
+    - **Chroma** defaults explore a wider range of `window_size` values (`(0, 1, 3, 5)` vs `(0,)`) since it's an in-memory store (faster experimentation)
+    - **Milvus** and **PGVector** defaults focus on simple retrieval but include hybrid search exploration
 
 ---
 
@@ -375,17 +388,18 @@ context_length = 8192
 **Example**:
 
 ```python
-# Embedding model with context_length = 512
-embedding = OGXEmbeddingModel(
+# Embedding model with context_length = 1024
+embedding = OpenAIEmbeddingModel(
     model_id="small-embedder",
-    params={"context_length": 512, "embedding_dimension": 384}
+    client=client,
+    params={"context_length": 1024, "embedding_dimension": 384},
 )
 
 # Valid
-{"chunk_size": 256, "embedding_model": embedding}   # 256 <= 460.8 ✓
+{"chunk_size": 512, "embedding_model": embedding}    # 512 <= 921.6 ✓
 
 # Invalid (filtered out)
-{"chunk_size": 512, "embedding_model": embedding}    # 512 <= 460.8 ✗
+{"chunk_size": 1024, "embedding_model": embedding}   # 1024 <= 921.6 ✗
 ```
 
 ---
@@ -546,8 +560,7 @@ Optimize chunking and retrieval with fixed models:
 ```python
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.search_space.src.parameter import Parameter
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from dev_utils.utils import build_maas_model
 
 search_space = AI4RAGSearchSpace(
     params=[
@@ -555,16 +568,17 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
+            values=[build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")]
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=client,
-                    params={"embedding_dimension": 768, "context_length": 8192}
+                build_maas_model(
+                    client,
+                    model_id="bge-m3",
+                    model_type="embedding",
+                    embedding_params={"embedding_dimension": 1024, "context_length": 8192},
                 )
             ]
         ),
@@ -613,8 +627,7 @@ search_space = AI4RAGSearchSpace(
         Parameter(name="ranker_k", param_type="C", values=[0, 30, 60, 100]),
         Parameter(name="ranker_alpha", param_type="C", values=[1, 0.3, 0.5, 0.7]),
     ],
-    vector_store_type="ogx",  # Required for hybrid search
-    ogx_vector_io_provider_id="milvus",
+    vector_store_type="milvus",  # Required for hybrid search
 )
 ```
 
@@ -632,9 +645,9 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-                OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
-                OGXFoundationModel(model_id="ollama/mistral:7b", client=client),
+                build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm"),
+                build_maas_model(client, model_id="granite-3-3-8b-instruct", model_type="llm"),
+                build_maas_model(client, model_id="mistral-small-3-1-24b", model_type="llm"),
             ]
         ),
 
@@ -670,8 +683,8 @@ search_space = AI4RAGSearchSpace(
             name="foundation_model",
             param_type="C",
             values=[
-                OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client),
-                OGXFoundationModel(model_id="ollama/llama3.1:8b", client=client),
+                build_maas_model(client, model_id="granite-3-3-2b-instruct", model_type="llm"),
+                build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm"),
             ]
         ),
         Parameter(name="embedding_model", param_type="C", values=[embedding]),

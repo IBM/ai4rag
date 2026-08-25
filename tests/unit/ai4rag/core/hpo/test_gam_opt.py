@@ -765,7 +765,7 @@ class TestGetStratifiedCombinations:
 
     def test_skewed_search_space_stratifies_minority_first(self):
         """Minority categorical values are moved ahead of the majority."""
-        # 4 hybrid, 2 vector — mirrors the real OGX imbalance
+        # 4 hybrid, 2 vector — mirrors the real MaaS imbalance
         combinations = [
             {"search_mode": "hybrid", "chunk_size": 256},
             {"search_mode": "hybrid", "chunk_size": 512},
@@ -840,9 +840,7 @@ class TestGetStratifiedCombinations:
             {"search_mode": "vector", "chunk_size": 512},
         ]
         # "hybrid" already covered by warm-start; stratification should pull vector first.
-        result = GAMOptimizer._get_stratified_combinations(
-            combinations, already_seen={"search_mode": {"hybrid"}}
-        )
+        result = GAMOptimizer._get_stratified_combinations(combinations, already_seen={"search_mode": {"hybrid"}})
         assert result[0]["search_mode"] == "vector"
 
     def test_already_seen_all_values_skips_stratification(self):

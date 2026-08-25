@@ -7,7 +7,6 @@ from typing import Any, Generator
 
 from ai4rag import logger
 from ai4rag.evaluator.base_evaluator import EvaluationData, EvaluationMetricsResult
-from ai4rag.rag.template.base_template import BaseRAGTemplate
 
 
 @dataclass(frozen=True)
@@ -41,9 +40,6 @@ class EvaluationResult:
 
     final_score : float
         Single score calculated for optimization process as the value to be minimized or maximized.
-
-    rag_pattern : BaseRAGTemplate | None, default=None
-        RAG Pattern instance that can be used.
     """
 
     pattern_name: str
@@ -53,7 +49,6 @@ class EvaluationResult:
     scores: EvaluationMetricsResult
     execution_time: float
     final_score: float
-    rag_pattern: BaseRAGTemplate | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Cast instance to dict"""

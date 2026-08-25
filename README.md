@@ -28,34 +28,45 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 
 > [!IMPORTANT]
-> `ai4rag` is designed to be provider-agnostic: user may provide his own implementation for foundation model, embedding model or vector store and use them for the experiment.
-> Out of the box `ai4rag` is designed to work with [OGX](https://github.com/ogx-ai/ogx).
-> To use the full capabilities of `ai4rag`, you'll need access to an OGX server configured with at least one foundation model, one embedding model, and a vector database.
+> `ai4rag` is **provider-agnostic**. It reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so any **OpenAI-compatible endpoint** works — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box. You can also plug in your **own** foundation model, embedding model, or vector store by implementing the matching `Base*` interface.
+> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (Chroma, Milvus, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
 
-## OGX
+## Model providers
 
-ai4RAG can run experiments using an [OGX](https://github.com/ogx-ai/ogx) server for embeddings, vector storage, and text generation. Use the official client and API docs to connect and extend:
+`ai4rag` reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so it works with **any OpenAI-compatible endpoint** — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment. Prefer something else entirely? Implement `BaseFoundationModel` / `BaseEmbeddingModel` and pass your own models straight into an experiment.
 
-- **Client:** [ogx-client](https://pypi.org/project/ogx-client/) >= 1.2.0 (Python package used by ai4RAG; installs with this project).
-- **Server:** [OGX](https://github.com/ogx-ai/ogx) >= 1.1.0.
-- **API reference:** [OGX API docs](https://ogx-ai.github.io/docs/) — HTTP API used by the client.
+MaaS is the integration `ai4rag` ships helpers for, so the walkthrough below uses it:
+
+- **SDK:** [openai](https://pypi.org/project/openai/) >= 2, < 3 (Python package used by ai4RAG; installs with this project).
+- **Deployment:** an OpenShift AI MaaS instance exposing at least one foundation model and one embedding model.
+- **Endpoints:** MaaS serves **everything from a single OpenAI-compatible endpoint** — `MAAS_BASE_URL`, used verbatim. One client lists the available models (`models.list()`) and serves chat/completions and embeddings for all of them. Model ids are used verbatim, exactly as `models.list()` reports them.
 
 **Features used by ai4rag**
 
-When using the OGX backend, ai4rag relies on:
+When using the MaaS backend, ai4rag relies on:
 
-- **Embeddings** — Text embeddings via the client (e.g. for indexing and query encoding). See [Embeddings API](https://ogx-ai.github.io/docs/api/embeddings) in the docs.
-- **Vector stores** — Create, retrieve, and delete vector store instances (e.g. Milvus) with a chosen embedding model and dimension. See [Vector stores](https://ogx-ai.github.io/docs/api/creates-a-vector-store) in the API docs.
-- **Vector IO** — Insert document chunks (with embeddings) into a store and run similarity search (query) for retrieval. See [Vector IO](https://ogx-ai.github.io/docs/api/search-for-chunks-in-a-vector-store) and insert/query endpoints.
-- **Chat / responses** — Foundation model integration for answer generation (e.g. chat completions or responses API) when evaluating RAG patterns.
+- **Embeddings** — Text embeddings via the `embeddings` endpoint (e.g. for indexing and query encoding). Because `models.list()` carries no metadata, embedding dimension and context length are auto-detected at construction (or supplied via `params`).
+- **Chat / completions** — Foundation model integration for answer generation when evaluating RAG patterns.
+
+Vector storage is independent of MaaS: `ai4rag` connects directly to Chroma, Milvus, or PostgreSQL/pgvector via the config classes in `ai4rag.rag.vector_store` (see [Vector stores](#vector-stores) below).
+
+## Vector stores
+
+ai4RAG talks to the vector store directly through provider-specific clients — no MaaS deployment is required for this part. Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
+
+- **`ChromaConfig`** — Chroma. Ephemeral in-memory by default; persistent (via `persist_directory`) or client/server (via `host`/`port`) modes are also supported. Vector-only search.
+- **`MilvusConfig`** — Milvus. Requires a `uri`; supports TLS (`https://` scheme) and self-signed CAs via `server_cert`. Hybrid search (dense + BM25).
+- **`PGVectorConfig`** — PostgreSQL with the `pgvector` extension. Hybrid search (dense + `tsvector` full-text).
+
+Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI`, `PGVECTOR_HOST`).
 
 ## Document processing
 
-ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. Both `docling-core` and `ogx-client` are installed automatically with `ai4rag`.
+ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`chromadb`, `pymilvus`, `pgvector`, `psycopg`) are all installed automatically with `ai4rag`.
 
 
 ## Quick start
-1. [Provide an instance of `ogx-client` to integrate with OGX.](#prepare-ogx-client)
+1. [Prepare a MaaS client to integrate with your models.](#prepare-the-maas-client)
 2. [Prepare your knowledge base documents for the experiment.](#prepare-knowledge-base-documents)
 3. [Prepare `benchmark_data.json` with evaluation questions and answers.](#prepare-benchmark_datajson)
 4. [Define and constrain your search space.](#define-and-constrain-search-space)
@@ -63,20 +74,26 @@ ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) fo
 6. [Create and run the experiment.](#run-the-experiment)
 
 
-### Prepare `ogx-client`
-To enable full integration with OGX, instantiate an `OgxClient`.
-This allows `ai4rag` to use the models and vector stores available on your OGX server.
+### Prepare the MaaS client
+To enable full integration with MaaS, build a single client that lists the available models and serves them all — `ai4rag` reuses it for every foundation and embedding model wrapper.
+The `dev_utils` helper `create_dev_maas_client()` reads `MAAS_BASE_URL` / `MAAS_API_KEY` and builds that client for you.
 
 > [!tip]
 > Store your credentials securely in a `.env` file.
 
 ```python
-import os
 from dotenv import load_dotenv, find_dotenv
-from ogx_client import OgxClient
+from dev_utils.utils import create_dev_maas_client
 
-client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("API_KEY"))
+load_dotenv(find_dotenv())
+
+client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 ```
+
+> [!note]
+> `dev_utils` is only available when cloning the repository. For the equivalent setup using the
+> public API (the single `OpenAI` client built with `create_maas_client`),
+> see the [Provider-Agnostic Design](https://ibm.github.io/ai4rag/latest/user-guide/provider-agnostic/) guide.
 
 ### Prepare knowledge base documents
 Prepare a set of documents to serve as the knowledge base for retrieval.
@@ -135,8 +152,7 @@ During the experiment, the engine will optimize the RAG Pattern for the selected
 ```python
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from dev_utils.utils import build_maas_model
 
 
 search_space = AI4RAGSearchSpace(
@@ -144,16 +160,17 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="foundation_model",
             param_type="C",
-            values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)],
+            values=[build_maas_model(client, model_id="qwen3-8b-fp8-dynamic", model_type="llm")],
         ),
         Parameter(
             name="embedding_model",
             param_type="C",
             values=[
-                OGXEmbeddingModel(
-                    model_id="ollama/nomic-embed-text:latest",
-                    client=client,
-                    params={"embedding_dimension": 768, "context_length": 8192},
+                build_maas_model(
+                    client,
+                    model_id="bge-m3",
+                    model_type="embedding",
+                    embedding_params={"embedding_dimension": 1024, "context_length": 8192},
                 )
             ],
         ),
@@ -181,7 +198,7 @@ search_space = AI4RAGSearchSpace(
 > When omitted, both methods are included by default.
 
 > [!tip]
-> To run automatic models discovery with OGX you may use `prepare_search_space_with_ogx()` from `ai4rag.search_space.prepare_search_space`.
+> To validate model IDs and build a search space from a MaaS deployment in one call, use `prepare_search_space_with_maas()` from `ai4rag.search_space.prepare`, passing the MaaS client and the foundation/embedding model IDs per type.
 
 
 ### Configure optimizer
@@ -200,21 +217,20 @@ optimizer_settings = GAMOptSettings(
 Using the information from the previous steps, create an experiment and run the ai4rag optimization engine.
 
 > [!note]
-> For OGX vector stores, use `vector_store_type="ogx"` and specify the provider with
-> `ogx_vector_io_provider_id` (e.g., `ogx_vector_io_provider_id="milvus"`, `ogx_vector_io_provider_id="qdrant"`).
-> To use ChromaDB in-memory, specify `vector_store_type="chroma"`.
+> Select the vector store by passing a `vector_store_config` to `AI4RAGExperiment`:
+> `ChromaConfig()` for a zero-config in-memory store (vector-only search), or
+> `MilvusConfig.from_env()` / `PGVectorConfig.from_env()` for a server-backed store with hybrid (dense + keyword) search.
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",
+    vector_store_config=MilvusConfig.from_env(),
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="<local-path-to-store-your-output-files>"),
 )
@@ -223,8 +239,11 @@ experiment.search()
 best_eval = experiment.results.get_best_evaluations(k=1)[0]
 print(best_eval)
 
-print(best_eval.rag_pattern.generate("What ai4rag can be used for?"))
+print(f"Best pattern: {best_eval.pattern_name} (score: {best_eval.final_score})")
 ```
+
+> [!note]
+> Each trial closes its vector store once it finishes, so `EvaluationResult` no longer exposes a reusable `rag_pattern`. Read the outcome from its fields (`pattern_name`, `final_score`, `scores`, `rag_params`); rebuild the pattern from those settings if you want to run inference.
 
 > [!tip]
 > For production use, implement your own custom `EventHandler` to handle status changes and artifacts produced during the experiment.

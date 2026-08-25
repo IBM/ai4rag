@@ -55,7 +55,7 @@ body:
       value: |
         - ai4rag version:
         - Python version:
-        - OGX version:
+        - openai SDK version:
         - Vector Store (Milvus/ChromaDB):
         - Operating System:
       render: markdown

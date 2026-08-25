@@ -92,22 +92,28 @@ print(f"Loaded {result.record_count} records (sampled: {result.sampled})")
 
 ### Search Space Preparation
 
-Build a search space report with model pre-selection:
+Build and validate a search space, then serialize it to a report. Model
+pre-selection is a separate step (see `ModelsPreSelector`); the report written
+here is the full search space:
 
 ```python
-from ai4rag.components.optimization import prepare_search_space_report
-
-report = prepare_search_space_report(
-    test_data_path="/tmp/test_data.json",
-    extracted_text_path="/tmp/extracted/",
-    ogx_client=client,
-    embedding_models=["ibm/slate-125m-english-rtrvr"],
-    generation_models=["ibm/granite-3.1-8b-instruct"],
-    chunking_methods=["recursive"],   # optional: constrain chunking methods
-    chunk_sizes=[256, 512, 1024],     # optional: constrain chunk sizes
-    chunk_overlaps=[0, 128],          # optional: constrain chunk overlaps
+from ai4rag.search_space.prepare import (
+    build_search_space_report,
+    prepare_search_space_with_maas,
 )
-report.save_yaml("/tmp/search_space.yaml")
+
+search_space = prepare_search_space_with_maas(
+    payload={
+        "foundation_models": [{"model_id": "qwen3-8b-fp8-dynamic"}],
+        "embedding_models": [{"model_id": "bge-m3"}],
+        "chunking_methods": ["recursive"],  # optional: constrain chunking methods
+        "chunk_sizes": [256, 512, 1024],    # optional: constrain chunk sizes
+        "chunk_overlaps": [0, 128],         # optional: constrain chunk overlaps
+    },
+    client=client,
+    benchmark_data=benchmark_df,  # optional: used for language detection
+)
+build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
 ### RAG Optimization
@@ -116,14 +122,15 @@ Run a full optimization experiment:
 
 ```python
 from ai4rag.components.optimization import run_rag_optimization
+from ai4rag.rag.vector_store import MilvusConfig
 
 result = run_rag_optimization(
     extracted_text_path="/tmp/extracted/",
     test_data_path="/tmp/test_data.json",
-    search_space_report_path="/tmp/search_space.yaml",
+    search_space_report_path="/tmp/search_space.json",
     output_dir="/tmp/rag_patterns/",
-    ogx_client=client,
-    vector_io_provider_id="milvus",
+    maas_client=client,
+    vector_store_config=MilvusConfig.from_env(),
     test_data_key="benchmarks/test_data.json",
     input_data_key="documents/",
 )
@@ -137,18 +144,23 @@ The `ai4rag.components` package provides three shared utility modules used acros
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `utils.ogx_client` | `create_ogx_client()` | OGX client with SSL self-signed cert fallback |
+| `utils.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, used verbatim) for listing, chat, and embeddings, with SSL self-signed cert fallback |
 | `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
 These are importable from `ai4rag.components` or `ai4rag.components.utils`:
 
 ```python
-from ai4rag.components import create_s3_client, create_ogx_client, load_docling_documents
+from ai4rag.components import create_s3_client, create_maas_client, load_docling_documents
 ```
+
+!!! note "Single client for everything"
+    `create_maas_client()` builds the one client MaaS needs: it lists available models
+    (`models.list()`) and is reused, unchanged, to serve `chat.completions` and `embeddings`
+    for every model wrapper. See [Provider-Agnostic Design](provider-agnostic.md) for the full pattern.
 
 ## Design Principles
 
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
-- **Dependency injection**: All functions accept pre-configured clients (S3, OGX) as optional parameters — when omitted, clients are created from environment variables.
+- **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
 - **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
-- **SSL fallback**: All S3 and OGX operations automatically retry with `verify=False` when self-signed certificate errors are detected.
+- **SSL fallback**: S3 operations and the MaaS client automatically retry with `verify=False` when self-signed certificate errors are detected.

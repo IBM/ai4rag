@@ -22,9 +22,39 @@ permissions:
   id-token: write  # Required for trusted publishing
 
 jobs:
+  check-permissions:
+    name: Verify caller is a maintainer/admin
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check triggering actor's repository role
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const actor = context.actor;
+            const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              username: actor,
+            });
+
+            const permission = data.permission; // one of: admin, maintain, write, triage, read, none
+            const allowed = ['admin', 'maintain'];
+
+            core.info(`Actor @${actor} has repository permission: ${permission}`);
+
+            if (!allowed.includes(permission)) {
+              core.setFailed(
+                `❌ @${actor} is not a maintainer or administrator of this repository ` +
+                `(permission: ${permission}). Only maintainers/admins may run this workflow.`
+              );
+            } else {
+              core.info(`✅ @${actor} is authorized (${permission}) to publish.`);
+            }
+
   get-version:
     name: Get version from code
     runs-on: ubuntu-latest
+    needs: check-permissions
     outputs:
       version: ${{ steps.extract-version.outputs.version }}
       tag: ${{ steps.extract-version.outputs.tag }}

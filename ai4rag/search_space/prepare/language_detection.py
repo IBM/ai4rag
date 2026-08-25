@@ -6,7 +6,7 @@ import json
 import re
 
 from ai4rag import logger
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 
 LANGUAGE_MAP: dict[str, str] = {
     "aa": "Afar",
@@ -199,7 +199,7 @@ LANGUAGE_MAP: dict[str, str] = {
 
 def detect_language_with_llm(
     questions: list[str],
-    generation_model: OGXFoundationModel,
+    generation_model: OpenAIFoundationModel,
 ) -> dict[str, str] | None:
     """Detect the dominant language from sample questions using an LLM.
 
@@ -211,7 +211,7 @@ def detect_language_with_llm(
     questions : list[str]
         Raw question texts to classify.  Only the first five are sent to the model.
 
-    generation_model : OGXFoundationModel
+    generation_model : OpenAIFoundationModel
         Model instance.
 
     Returns

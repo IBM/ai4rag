@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.12.0](https://github.com/IBM/ai4rag/releases/tag/v0.12.0)
+
+### Added
+- **Vector store** — direct backend clients for Chroma, Milvus, and PostgreSQL/pgvector (`ChromaVectorStore`, `MilvusVectorStore`, `PGVectorStore`), each selected via a typed, frozen config dataclass (`ChromaConfig`, `MilvusConfig`, `PGVectorConfig`) passed as a single `vector_store_config`
+- **Vector store** — `reranker` module implementing RRF and weighted fusion for hybrid search
+- **Vector store** — `BaseVectorStore` now supports `close()` and the context-manager protocol; each optimization trial scopes its store in a `with` block, so connections and pools are no longer leaked per trial
+- **Vector store (pgvector)** — connection pooling via `psycopg_pool.ConnectionPool` with a configurable `PGVectorConfig.pool_max_size` (default 10); `AI4RAGExperiment` sizes the pool from `inference_max_threads` so it tracks real query concurrency
+- **Evaluator** — optional `RagasEvaluator` (with RAGAS adapter classes `AI4RAGRagasLLM` / `AI4RAGRagasEmbeddings`) enabling RAGAS-based metrics; `ragas` is now a regular dependency
+- **RAG optimization component** — `llm_judge_mode` selector (`base` / `ragas` / `all` / `none`) on `run_rag_optimization()` to choose which LLM-as-a-Judge evaluators run
+- **Evaluator** — `build_aggregate_metric()` shared helper on `BaseEvaluator` for constructing aggregate metric payloads
+- **Search space preparation** — `build_search_space_report()` and `serialize_model()` in `ai4rag.search_space.prepare`, co-locating the model↔spec round-trip (`serialize_model()` is the write mirror of the model restore path)
+- **Model access** — `create_maas_client()` and shared model discovery/restore helpers `get_foundation_models()` / `get_embedding_models()` in `ai4rag.search_space.prepare.models`, accepting either bare model ids (discovery) or serialized report specs (restore)
+- **Assets generator** — `get_vector_store_config()` / `get_vector_store_env_vars()` factories that build a backend config from a provider discriminator and expose each backend's required environment variables for documentation
+- **Dependencies** — added `openai` as the model-access SDK (replacing `ogx-client`), plus `chromadb`, `pymilvus`, `pgvector`, and `psycopg[binary,pool]` for the direct vector-store clients
+
+### Changed
+- **Model provider** — replaced the OGX integration with any OpenAI-compatible endpoint; the shipped integration targets OpenShift AI Models-as-a-Service (MaaS), which serves listing, chat, and embeddings from a single endpoint
+- **Vector store** — `get_vector_store()` and `AI4RAGExperiment` now take a single `vector_store_config` and dispatch on `config.provider`, replacing the `vector_store_type` string plus the OGX `vector_io` provider id
+- **Vector store** — collection-name resolution centralized in `BaseVectorStore`, enforcing a mandatory `ai4rag` prefix as the cross-backend isolation guard
+- **Vector store** — hybrid-search reranking parameter renamed `impact_factor` → `k`
+- **Search space** — default `vector_store_type` changed from `ogx` to `milvus`; the default Chroma search space no longer includes the `window` retrieval method
+- **Search space preparation** — renamed `prepare_search_space_with_ogx` to `prepare_search_space_with_maas`, now accepting an `openai.OpenAI` client. Because MaaS `models.list()` carries no metadata (model type, embedding dimension, context length), the payload must declare foundation and embedding model IDs explicitly; embedding dimension and context length are auto-detected at construction time
+- **Model ids** — model ids are used verbatim, exactly as `models.list()` reports them (including any `/` characters); there is no more model-specific URL derivation or id stripping
+- **Client factory** — replaced `create_ogx_client` with `create_maas_client`, a single client that serves listing, chat, and embeddings for every model at the one MaaS endpoint
+- **Notebook templates** — renamed the generated `ogx_{indexing,inference}` templates to `maas_{indexing,inference}`, each building a single `OpenAI` client from `MAAS_BASE_URL` / `MAAS_API_KEY` and reusing it for every model; the inference notebook now also rebuilds the pattern's detected generation language and passes it to `OpenAIFoundationModel`, so answers keep the benchmark's language
+- **Experiment / evaluator** — `metrics` and `optimization_metric` now require `RAGMetric` instances selected from `Metrics` and reject bare metric-name strings, which are ambiguous now that a name (e.g. `faithfulness`) is shared across the unitxt and RAGAS evaluators
+- **Model helpers** — model-instantiation helpers moved to `ai4rag.search_space.prepare.models`, removing the components↔search_space coupling
+- **Search space report** — model pre-selection decoupled from report building into an explicit `ModelsPreSelector` step; `SearchSpaceReport` slimmed to the search-space dict and no longer carries `selected_models` or a per-model `base_url`, and `pattern.json` no longer carries `base_url`
+- **Leaderboard** — aggregate scores are keyed by a collision-free key (unitxt and custom metrics keep their bare name; other evaluators are prefixed, e.g. `ragas_faithfulness`), so colliding metric names each get their own column instead of overwriting one another
+
+### Fixed
+- **Vector store (Milvus)** — forced `consistency_level="Strong"` on vector/hybrid search so a query immediately following an `add_documents()` upsert can no longer race Milvus's default bounded-staleness read and return zero hits against a collection that does contain matching data
+- **Vector store (pgvector)** — corrected `inner_product` scoring: the `<#>` operator returns the negative inner product, so the score is now derived by negation (cosine/l2/l1 keep `1/dist`), fixing an inverted ranking
+- **Vector store (pgvector)** — guarded lazy index creation with double-checked locking (plus a `UniqueViolation` fallback) so concurrent search threads no longer race on `CREATE INDEX`
+- **Experiment** — an optimization metric that is produced but unscored (`None` mean) is now recorded as a failed — not fatal — iteration; a genuinely absent metric still raises a `RAGExperimentError` with an evaluator-qualified message
+- **Components** — added `vector_db_secret_name` to the indexing pipeline params
+- **Core** — `ensure_ascii=False` when JSON-dumping documents that may reach the end user, preserving non-ASCII characters
+- **Benchmark data** — reject `BenchmarkData` records with zero correct answers, preventing a downstream unitxt `TokenOverlap` crash on `max()` of an empty iterable
+- **Experiment** — benchmark JSON is now read with an explicit UTF-8 encoding
+
+### Removed
+- **OGX** — removed all OGX support: the `ogx-client` dependency, `OGXFoundationModel`, `OGXEmbeddingModel`, `OGXVectorStore`, `OGXModelParameters`, `OGXEmbeddingParams`, `create_ogx_client`, the `ogx_utils` module, the `ogx_inference_base_url` helper, and the `OGX_CLIENT_BASE_URL` / `OGX_CLIENT_API_KEY` environment variables (replaced by `MAAS_BASE_URL` / `MAAS_API_KEY`)
+- **Assets generator** — removed the OGX-only `pattern_builder` and `prompt_filters` modules and the `build_pattern_json` export; indexing-spec enrichment is now inlined
+- **Search space preparation** — `prepare_search_space_report()` and the `search_space_preparation` module removed from `ai4rag.components.optimization`; build a search space with `prepare_search_space_with_maas()`, then call `build_search_space_report()` from `ai4rag.search_space.prepare`
+- **Experiment** — `EvaluationResult` no longer carries a `rag_pattern` field; a trial's vector store is closed once the trial finishes, so read `pattern_name` / `scores` from `EvaluationResult` instead of calling `.generate()` on a previously returned pattern
+- **Dependencies** — removed `langchain-chroma`; Chroma is now used directly via `chromadb`
+- **Samples** — removed the outdated `samples/run_ai4rag.ipynb` notebook
+
+---
+
+## [0.11.0](https://github.com/IBM/ai4rag/releases/tag/v0.11.0)
+
+### Added
+- **Text extraction** — added support for 9 additional document formats (`.odt`, `.odp`, `.adoc`, `.tex`, `.epub`, `.eml`, `.qmd`, `.rmd`, `.xhtml`) in document discovery and text extraction, alongside existing PDF, DOCX, PPTX, Markdown, HTML, and plain-text support
+
+### Changed
+- **Data component** — `SUPPORTED_EXTENSIONS` extracted into a shared `ai4rag.components.data.constants` module, removing duplication between document discovery and text extraction
+- **Dependencies** — replaced the `docling` meta-package with `docling-slim[standard,feat-chunking,format-opendocument]`, and dropped the standalone `docling-core` dependency, now pulled in transitively via the `feat-chunking` extra
+
+### Fixed
+- **Notebooks** — updated the `ogx_inference_template.ipynb` test-data-loading example to call `ai4rag.components.data.test_data_loader.load_test_data()`, replacing a stale reference to the removed `kfp_components` pipeline API
+
+---
+
 ## [0.10.4](https://github.com/IBM/ai4rag/releases/tag/v0.10.4)
 
 ### Fixed

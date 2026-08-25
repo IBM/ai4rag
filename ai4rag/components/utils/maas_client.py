@@ -6,12 +6,11 @@ import logging
 import ssl
 
 import httpx
-from ogx_client import APIConnectionError as OGXAPIConnectionError
-from ogx_client import OgxClient
+from openai import APIConnectionError, OpenAI
 
 from ai4rag import handler
 
-_logger = logging.getLogger("ogx-client")
+_logger = logging.getLogger("maas-client")
 _logger.addHandler(handler)
 
 
@@ -28,41 +27,36 @@ def is_ssl_error(exc: BaseException) -> bool:
     return False
 
 
-def ogx_inference_base_url(base_url: object) -> str:
-    """Build a ``/v1``-suffixed base URL for the OGX inference endpoint.
+def create_maas_client(base_url: str, api_key: str) -> OpenAI:
+    """Create the MaaS client, falling back to unverified TLS on self-signed certs.
 
-    Accepts plain strings and ``pydantic.AnyUrl`` instances.
-    """
-    return f"{str(base_url).rstrip('/')}/v1"
-
-
-def create_ogx_client(base_url: str, api_key: str) -> OgxClient:
-    """Create an :class:`OgxClient`, falling back to unverified TLS on self-signed certificates.
-
-    The function first creates a client with default TLS settings and
-    issues a lightweight request (``models.list()``) to probe connectivity.
-    If that request fails with an SSL verification error, the client is
+    A single client serves everything: it lists models via ``models.list()`` and
+    serves ``chat.completions`` and ``embeddings`` for every model at the same
+    OpenAI-compatible endpoint. The function first creates a client with default
+    TLS settings and issues a lightweight ``models.list()`` request to probe
+    connectivity. If that fails with an SSL verification error, the client is
     re-created with ``verify=False`` and a warning is logged.
 
     Parameters
     ----------
     base_url
-        URL of the OGX server.
+        Complete OpenAI-compatible MaaS endpoint URL, used verbatim
+        (e.g. ``https://<host>/v1``).
     api_key
         API key for authentication.
 
     Returns
     -------
-    OgxClient
+    OpenAI
         A connected client instance.
     """
-    client = OgxClient(base_url=base_url, api_key=api_key)
+    client = OpenAI(base_url=base_url, api_key=api_key)
     try:
         client.models.list()
-    except (ssl.SSLCertVerificationError, httpx.ConnectError, OGXAPIConnectionError) as exc:
+    except (ssl.SSLCertVerificationError, httpx.ConnectError, APIConnectionError) as exc:
         if is_ssl_error(exc):
-            _logger.warning("SSL verification failed for OgxClient — retrying with verify=False.")
-            client = OgxClient(base_url=base_url, api_key=api_key, http_client=httpx.Client(verify=False))
+            _logger.warning("SSL verification failed for MaaS client — retrying with verify=False.")
+            client = OpenAI(base_url=base_url, api_key=api_key, http_client=httpx.Client(verify=False))
         else:
             raise
     return client

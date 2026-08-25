@@ -5,7 +5,7 @@
 from typing import Annotated, Any
 
 from annotated_types import Ge, Gt, Le
-from ogx_client import APITimeoutError, OgxClient
+from openai import APITimeoutError, OpenAI
 from pydantic import BaseModel
 
 from ai4rag import logger
@@ -15,21 +15,21 @@ from ai4rag.utils.constants import ChatGenerationConstants
 _FALLBACK_TIMEOUT = 1200.0
 
 
-class OGXModelParameters(BaseModel):
-    """Parameters to use for OGXFoundationModel."""
+class OpenAIModelParameters(BaseModel):
+    """Parameters to use for OpenAIFoundationModel."""
 
     max_completion_tokens: Annotated[int, Gt(0)] = ChatGenerationConstants.MAX_COMPLETION_TOKENS
     temperature: Annotated[float, Ge(0), Le(1)] = ChatGenerationConstants.TEMPERATURE
 
 
-class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXModelParameters | None]):
-    """Integration point to use any model via OGX API / client"""
+class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIModelParameters | None]):
+    """Integration point to use any model via an OpenAI-compatible API / client."""
 
     def __init__(
         self,
-        client: OgxClient,
+        client: OpenAI,
         model_id: str,
-        params: dict[str, Any] | OGXModelParameters | None = None,
+        params: dict[str, Any] | OpenAIModelParameters | None = None,
         system_message_text: str | None = None,
         user_message_text: str | None = None,
         context_template_text: str | None = None,
@@ -46,19 +46,19 @@ class OGXFoundationModel(BaseFoundationModel[OgxClient, dict[str, Any] | OGXMode
         )
 
     @property
-    def params(self) -> OGXModelParameters:
+    def params(self) -> OpenAIModelParameters:
         """Get models params."""
         return self._params
 
     @params.setter
-    def params(self, params: dict | OGXModelParameters | None) -> None:
+    def params(self, params: dict | OpenAIModelParameters | None) -> None:
         """Set models params."""
         if isinstance(params, dict):
-            self._params = OGXModelParameters(**params)
-        elif isinstance(params, OGXModelParameters):
+            self._params = OpenAIModelParameters(**params)
+        elif isinstance(params, OpenAIModelParameters):
             self._params = params
         else:
-            self._params = OGXModelParameters()
+            self._params = OpenAIModelParameters()
 
     def chat(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """Chat completion for communication with selected foundation model.

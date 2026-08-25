@@ -2,8 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from __future__ import annotations
-
 import json
 from unittest.mock import MagicMock
 
@@ -17,7 +15,7 @@ from ai4rag.search_space.prepare.language_detection import (
 
 @pytest.fixture()
 def mock_generation_model() -> MagicMock:
-    """Return a MagicMock that behaves like an OGXFoundationModel."""
+    """Return a MagicMock that behaves like an OpenAIFoundationModel."""
     mock_choice = MagicMock()
     mock_choice.message.content = json.dumps({"code": "ja"})
 

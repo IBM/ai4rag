@@ -29,6 +29,11 @@
       show_root_heading: true
       show_source: true
 
+::: ai4rag.evaluator.base_evaluator.build_aggregate_metric
+    options:
+      show_root_heading: true
+      show_source: true
+
 ## Unitxt Evaluator
 
 ::: ai4rag.evaluator.unitxt_evaluator.UnitxtEvaluator
@@ -39,6 +44,23 @@
 ## LLM-as-a-Judge Evaluator
 
 ::: ai4rag.evaluator.llmaj_evaluator.LLMaJEvaluator
+    options:
+      show_root_heading: true
+      show_source: true
+
+## RAGAS Evaluator
+
+::: ai4rag.evaluator.ragas_evaluator.RagasEvaluator
+    options:
+      show_root_heading: true
+      show_source: true
+
+::: ai4rag.evaluator.ragas_adapters.AI4RAGRagasLLM
+    options:
+      show_root_heading: true
+      show_source: true
+
+::: ai4rag.evaluator.ragas_adapters.AI4RAGRagasEmbeddings
     options:
       show_root_heading: true
       show_source: true

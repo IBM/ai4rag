@@ -7,13 +7,38 @@ from typing import Any
 
 from ai4rag import __version__
 from ai4rag.components.assets_generator.notebook import Notebook
+from ai4rag.rag.vector_store import get_vector_store_env_vars
+
+
+def _format_required_env_vars(provider: str) -> str:
+    """Render a provider's environment variables as a Markdown bullet list.
+
+    Parameters
+    ----------
+    provider : str
+        Vector store backend discriminator (e.g. ``"milvus"``). An empty or
+        unsupported value yields an empty string so notebook generation never
+        fails on partial pattern data.
+
+    Returns
+    -------
+    str
+        One ``- `NAME` — description`` bullet per variable, joined by newlines;
+        empty string when *provider* is unknown or missing.
+    """
+    if not provider:
+        return ""
+    try:
+        env_vars = get_vector_store_env_vars(provider)
+    except ValueError:
+        return ""
+    return "\n".join(f"- `{name}` — {description}" for name, description in env_vars)
 
 
 def create_placeholder_mapping(
     output_data: dict[str, Any],
     test_data_key: str = "",
     input_data_key: str = "",
-    ogx_base_url: str = "",
 ) -> dict[str, Any]:
     """Create a mapping from placeholder names to their values from a pattern definition.
 
@@ -29,9 +54,6 @@ def create_placeholder_mapping(
         S3 key of the test data file used as input to AI4RAG.
     input_data_key : str, default=""
         S3 key of the documents directory used as input to AI4RAG.
-    ogx_base_url : str, default=""
-        Base URL for the OGX API.  Falls back to an empty string when not
-        provided, allowing the generated notebook to prompt users for the URL.
 
     Returns
     -------
@@ -48,13 +70,18 @@ def create_placeholder_mapping(
     mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")
     mapping["USER_MESSAGE"] = fm.get("user_message_text", "")
     mapping["CONTEXT_TEXT"] = fm.get("context_template_text", "")
+    # Detected generation language ({"code", "name"}); defaults mirror
+    # BaseFoundationModel's "auto" so the notebook restores the same behaviour.
+    mapping["LANGUAGE"] = fm.get("language", {"code": "", "name": "auto"})
 
     em = settings.get("embedding", {})
     mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
     mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
     vs = settings.get("vector_store_binding", {})
-    mapping["PROVIDER_ID"] = vs.get("provider_id", "")
-    mapping["COLLECTION_NAME"] = vs.get("vector_store_id", "")
+    provider_type = vs.get("provider_type", "")
+    mapping["PROVIDER_TYPE"] = provider_type
+    mapping["COLLECTION_NAME"] = vs.get("collection_name", "")
+    mapping["REQUIRED_ENV_VARS"] = _format_required_env_vars(provider_type)
 
     ret = settings.get("retrieval", {})
     mapping["RETRIEVAL_METHOD"] = ret.get("method", "")
@@ -72,8 +99,6 @@ def create_placeholder_mapping(
     mapping["TEST_DATA_KEY"] = test_data_key
     mapping["INPUT_DATA_KEY"] = input_data_key
 
-    mapping["OGX_CLIENT_BASE_URL"] = ogx_base_url.strip() if ogx_base_url else ""
-
     return mapping
 
 
@@ -83,7 +108,6 @@ def generate_notebook_from_template(
     output_notebook_path: str | Path,
     test_data_key: str = "",
     input_data_key: str = "",
-    ogx_base_url: str = "",
 ) -> None:
     """Generate a filled notebook from a template and pattern configuration.
 
@@ -94,7 +118,7 @@ def generate_notebook_from_template(
     ----------
     notebook_template : str
         Template base name without the ``_template.ipynb`` suffix
-        (e.g. ``"ogx_inference"`` or ``"ogx_indexing"``).
+        (e.g. ``"maas_inference"`` or ``"maas_indexing"``).
     output_data : dict[str, Any]
         The parsed ``pattern.json`` data.
     output_notebook_path : str | Path
@@ -103,14 +127,11 @@ def generate_notebook_from_template(
         S3 key of the test data file used as input to AI4RAG.
     input_data_key : str, default=""
         S3 key of the documents directory used as input to AI4RAG.
-    ogx_base_url : str, default=""
-        Base URL for the OGX API.
     """
     placeholder_mapping = create_placeholder_mapping(
         output_data,
         test_data_key=test_data_key,
         input_data_key=input_data_key,
-        ogx_base_url=ogx_base_url,
     )
     notebook = Notebook.load(
         notebook_name=f"{notebook_template}_template.ipynb",

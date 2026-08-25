@@ -19,6 +19,7 @@ from ai4rag.evaluator.base_evaluator import (
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
+from ai4rag.rag.vector_store.config import ChromaConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -73,7 +74,7 @@ def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS,
         documents=[],
         benchmark_data=_BENCHMARK_DF,
         search_space=MagicMock(),
-        vector_store_type="chroma",
+        vector_store_config=ChromaConfig(),
         optimizer_settings=MagicMock(),
         event_handler=MagicMock(),
         client=MagicMock(),
@@ -144,24 +145,23 @@ class TestDefaultMetrics:
         assert len(exp.metrics) == 1
         assert exp.metrics[0].name == "faithfulness"
 
-    def test_metrics_from_strings(self):
-        exp = _build_experiment(metrics=["faithfulness", "answer_correctness"])
+    def test_metrics_ragmetric_instances(self):
+        exp = _build_experiment(metrics=[Metrics.FAITHFULNESS, Metrics.ANSWER_CORRECTNESS])
         assert len(exp.metrics) == 2
         assert all(isinstance(m, RAGMetric) for m in exp.metrics)
         assert [m.name for m in exp.metrics] == ["faithfulness", "answer_correctness"]
 
-    def test_metrics_mixed_strings_and_ragmetric(self):
-        exp = _build_experiment(metrics=[Metrics.FAITHFULNESS, "context_correctness"])
-        assert len(exp.metrics) == 2
-        assert exp.metrics[0] is Metrics.FAITHFULNESS
-        assert exp.metrics[1] is Metrics.CONTEXT_CORRECTNESS
+    def test_metrics_string_raises(self):
+        with pytest.raises(TypeError, match="RAGMetric instance selected from Metrics"):
+            _build_experiment(metrics=["faithfulness"])
 
-    def test_metrics_unknown_string_raises(self):
-        with pytest.raises(ValueError, match="Unknown metric name 'nonexistent'"):
-            _build_experiment(metrics=["nonexistent"])
+    def test_metrics_unknown_ragmetric_raises(self):
+        unknown = RAGMetric(name="nonexistent", evaluator="unitxt", description="")
+        with pytest.raises(ValueError, match="Unknown RAGMetric 'nonexistent'"):
+            _build_experiment(metrics=[unknown])
 
     def test_metrics_wrong_type_element_raises(self):
-        with pytest.raises(TypeError, match="RAGMetric or str"):
+        with pytest.raises(TypeError, match="RAGMetric instance selected from Metrics"):
             _build_experiment(metrics=[42])
 
     def test_metrics_empty_list_raises(self):
@@ -183,6 +183,66 @@ class TestMetricEvaluatorValidation:
     def test_judge_metric_with_judge_evaluator_passes(self):
         evals = [UnitxtEvaluator(), _make_llmaj_evaluator()]
         _build_experiment(evaluators=evals, optimization_metric=Metrics.JUDGE_ANSWER_RELEVANCE)
+
+
+class TestResolveOptimizationScore:
+    """Selecting the optimization metric's score from a pattern's results."""
+
+    @staticmethod
+    def _scores(*metrics) -> EvaluationMetricsResult:
+        """Build a result-scores dict from ``(name, evaluator, mean)`` tuples."""
+        return EvaluationMetricsResult(
+            metrics=[
+                AggregateMetric(
+                    name=name,
+                    evaluator=evaluator,
+                    description="",
+                    scores=ConfidenceInterval(mean=mean, ci_low=None, ci_high=None),
+                )
+                for name, evaluator, mean in metrics
+            ],
+            question_scores=[],
+        )
+
+    def test_returns_mean_of_matching_metric(self):
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "unitxt", 0.8))
+
+        assert experiment._resolve_optimization_score(scores, "pattern_1") == 0.8
+
+    def test_disambiguates_colliding_names_by_evaluator(self):
+        """Both unitxt and ragas emit 'faithfulness'; the unitxt one must be chosen."""
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "ragas", 0.2), ("faithfulness", "unitxt", 0.9))
+
+        assert experiment._resolve_optimization_score(scores, "pattern_1") == 0.9
+
+    def test_none_mean_returns_none_not_error(self):
+        """A produced-but-unscored metric is a failed iteration, not a fatal error."""
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "unitxt", None))
+
+        assert experiment._resolve_optimization_score(scores, "pattern_1") is None
+
+    def test_absent_metric_raises(self):
+        """A metric that is not produced at all is a configuration error."""
+        from ai4rag.core.experiment.utils import RAGExperimentError
+
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("answer_correctness", "unitxt", 0.7))
+
+        with pytest.raises(RAGExperimentError, match="not found in evaluation results"):
+            experiment._resolve_optimization_score(scores, "pattern_1")
+
+    def test_wrong_evaluator_only_raises(self):
+        """A matching name under a different evaluator does not satisfy the target."""
+        from ai4rag.core.experiment.utils import RAGExperimentError
+
+        experiment = _build_experiment(optimization_metric=Metrics.FAITHFULNESS)
+        scores = self._scores(("faithfulness", "ragas", 0.5))
+
+        with pytest.raises(RAGExperimentError, match="not found in evaluation results"):
+            experiment._resolve_optimization_score(scores, "pattern_1")
 
 
 class TestMergeEvaluationResults:

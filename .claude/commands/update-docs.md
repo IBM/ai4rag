@@ -53,8 +53,8 @@ Produce a summary table of findings before making any edits:
 ```
 | Documentation page | Issue | Action |
 |---|---|---|
-| docs/api-reference/rag/vector-stores.md | `LSVectorStore` renamed to `OGXVectorStore` | Update all references |
-| docs/getting-started/installation.md | ogx-client bumped to ~=1.0.0 | Update version requirement |
+| docs/api-reference/rag/vector-stores.md | `LSVectorStore` renamed to `MilvusVectorStore` | Update all references |
+| docs/getting-started/installation.md | openai bumped to ~=2.1.0 | Update version requirement |
 | ... | ... | ... |
 ```
 

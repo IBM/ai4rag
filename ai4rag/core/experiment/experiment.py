@@ -3,12 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict, is_dataclass, replace
 from typing import Any, Sequence
 
 import pandas as pd
 from docling_core.types.doc import DoclingDocument
-from ogx_client import OgxClient
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -42,6 +41,7 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -74,36 +74,31 @@ class AI4RAGExperiment:
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimization.
 
-    vector_store_type : str
-        Specific type of Vector Data Base that will be used during the experiment.
-        Supported values: ``"ogx"`` and ``"chroma"``.
-
-    ogx_vector_io_provider_id : str | None
-        Provider ID for OGX vector store (e.g., ``"milvus"``, ``"qdrant"``).
-        Required when ``vector_store_type="ogx"``.
-
     optimizer_settings : OptimizerSettings
         Settings for the optimizer to be used during the experiment.
 
-    client : OgxClient | Any
-        Instance of the OGX client or other client allowing to communicate
-        with the available vector store providers.
+    vector_store_config : BaseVectorStoreConfig
+        Connection config for the vector store backend. Its type (via
+        ``config.provider``) determines which vector store implementation
+        is used for indexing and retrieval.
 
     event_handler : BaseEventHandler
         Instance satisfying BaseEventHandler's interface to stream pattern evaluation
         results and intermediate status updates. EventHandler is an entrypoint to configure
         custom logging and assets handling.
 
-    optimization_metric : RAGMetric | str, default=Metrics.FAITHFULNESS
+    optimization_metric : RAGMetric, default=Metrics.OVERALL_SCORE
         Metric used for calculating the final score that drives optimization.
+        Must be a ``RAGMetric`` instance selected from :class:`Metrics`.
 
     Other Parameters
     ----------------
     metrics : Sequence[RAGMetric]
-        Metrics evaluated during the AutoRAG experiment. Not all
-        of these metrics are used to calculate the final score, but they
-        are included in the evaluation results. When omitted, defaults
-        are derived from the configured evaluators.
+        Metrics evaluated during the AutoRAG experiment, each a ``RAGMetric``
+        instance selected from :class:`Metrics`. Not all of these metrics are
+        used to calculate the final score, but they are included in the
+        evaluation results. When omitted, defaults are derived from the
+        configured evaluators.
 
     evaluators : list[BaseEvaluator] | None, default=None
         Evaluator instances used to score RAG patterns during optimization.
@@ -133,26 +128,22 @@ class AI4RAGExperiment:
         documents: list[DoclingDocument],
         benchmark_data: pd.DataFrame,
         search_space: AI4RAGSearchSpace,
-        vector_store_type: str,
         optimizer_settings: OptimizerSettings,
         event_handler: BaseEventHandler,
-        client: OgxClient | Any = None,
-        ogx_vector_io_provider_id: str | None = None,
-        optimization_metric: RAGMetric | str = Metrics.OVERALL_SCORE,
+        vector_store_config: BaseVectorStoreConfig,
+        optimization_metric: RAGMetric = Metrics.OVERALL_SCORE,
         **kwargs,
     ):
         self.documents = documents
         self.benchmark_data = BenchmarkData(benchmark_data)
         self.search_space = search_space
-        self.vector_store_type = vector_store_type
-        self.ogx_vector_io_provider_id = ogx_vector_io_provider_id
+        self.vector_store_config = vector_store_config
         self.optimizer_settings = optimizer_settings
         self.event_handler = event_handler
-        self.client = client
         self.optimization_metric = optimization_metric
 
         self.evaluators: list[BaseEvaluator] = kwargs.pop("evaluators", None)
-        self.metrics: Sequence[RAGMetric | str] | None = kwargs.pop(
+        self.metrics: Sequence[RAGMetric] | None = kwargs.pop(
             "metrics", None
         )  # resolved in _resolve_metrics_and_validate
         self.n_mps_foundation_models = kwargs.pop(
@@ -199,27 +190,27 @@ class AI4RAGExperiment:
         return self._optimization_metric
 
     @optimization_metric.setter
-    def optimization_metric(self, val: RAGMetric | str) -> None:
-        """Validate and set optimization metrics"""
-        available_metrics = [m.name for m in Metrics]
+    def optimization_metric(self, val: RAGMetric) -> None:
+        """Validate and set the optimization metric.
 
-        if isinstance(val, str):
-            n_val = next((metric for metric in Metrics if metric.name == val), None)
-            val_name = val
-        elif isinstance(val, RAGMetric):
-            n_val = val if val in Metrics else None
-            val_name = val.name
-        else:
+        Expects a :class:`RAGMetric` instance selected from :class:`Metrics`.
+        A metric name is not unique across evaluators (e.g. both the unitxt and
+        RAGAS evaluators expose "faithfulness"), so a bare name string is
+        ambiguous and rejected; pass the specific ``RAGMetric`` instead.
+        """
+        if not isinstance(val, RAGMetric):
             raise RAGExperimentError(
-                f"Incorrect type for optimization metric: {val}. Expected ai4rag.evaluator.metric.RAGMetric or str."
+                f"Incorrect type for optimization metric: {val!r}. "
+                "Expected an ai4rag.evaluator.metric.RAGMetric instance selected from Metrics."
             )
 
-        if not n_val:
+        if val not in Metrics:
             raise RAGExperimentError(
-                f"Provided optimization metric: '{val_name}' is not supported. Available metrics: {available_metrics}."
+                f"Provided optimization metric: '{val.name}' is not supported. "
+                f"Available metrics: {[m.name for m in Metrics]}."
             )
 
-        self._optimization_metric = n_val
+        self._optimization_metric = val
 
     @property
     def benchmark_data(self) -> BenchmarkData:
@@ -253,32 +244,28 @@ class AI4RAGExperiment:
         return self._metrics
 
     @metrics.setter
-    def metrics(self, val: Sequence[RAGMetric | str] | None) -> None:
+    def metrics(self, val: Sequence[RAGMetric] | None) -> None:
         """Validate and set evaluation metrics.
 
-        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``),
-        a sequence of ``RAGMetric`` instances, a sequence of metric name
-        strings, or a mixed sequence of both.
+        Accepts ``None`` (resolved later by ``_resolve_metrics_and_validate``)
+        or a sequence of ``RAGMetric`` instances selected from :class:`Metrics`.
+        A metric name is not unique across evaluators (e.g. both the unitxt and
+        RAGAS evaluators expose "faithfulness"), so a bare name string is
+        ambiguous and rejected; pass the specific ``RAGMetric`` instead.
         """
         if val is None:
             self._metrics = None
             return
 
-        available = {m.name: m for m in Metrics}
         resolved: list[RAGMetric] = []
-
         for item in val:
-            if isinstance(item, RAGMetric):
-                if item not in Metrics:
-                    raise ValueError(f"Unknown RAGMetric '{item.name}'. Available: {list(available.keys())}.")
-                resolved.append(item)
-            elif isinstance(item, str):
-                metric = available.get(item)
-                if metric is None:
-                    raise ValueError(f"Unknown metric name '{item}'. Available: {list(available.keys())}.")
-                resolved.append(metric)
-            else:
-                raise TypeError(f"Each metric must be a RAGMetric or str, got {type(item).__name__}.")
+            if not isinstance(item, RAGMetric):
+                raise TypeError(
+                    f"Each metric must be a RAGMetric instance selected from Metrics, got {type(item).__name__}."
+                )
+            if item not in Metrics:
+                raise ValueError(f"Unknown RAGMetric '{item.name}'. Select a metric from Metrics.")
+            resolved.append(item)
 
         if not resolved:
             raise ValueError("Metrics sequence must not be empty.")
@@ -304,6 +291,15 @@ class AI4RAGExperiment:
             evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
             if "judge" in evaluator_types:
                 base.append(Metrics.JUDGE_ANSWER_RELEVANCE)
+            if "ragas" in evaluator_types:
+                base.extend(
+                    [
+                        Metrics.RAGAS_FAITHFULNESS,
+                        Metrics.RAGAS_ANSWER_RELEVANCY,
+                        Metrics.RAGAS_CONTEXT_PRECISION,
+                        Metrics.RAGAS_CONTEXT_RECALL,
+                    ]
+                )
             self._metrics = tuple(base)
             logger.info("Using default metrics: %s.", [m.name for m in self._metrics])
 
@@ -379,7 +375,7 @@ class AI4RAGExperiment:
 
         return selected_models
 
-    # pylint: disable=too-many-locals, too-many-statements
+    # pylint: disable=too-many-locals, too-many-statements, too-many-branches
     def run_single_evaluation(self, rag_params: RAGParamsType) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
@@ -421,7 +417,7 @@ class AI4RAGExperiment:
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
-        if search_mode != "vector" and self.vector_store_type == "chroma":
+        if search_mode != "vector" and self.vector_store_config.provider == "chroma":
             raise RAGExperimentError(
                 f"Search mode '{search_mode}' is not supported with chroma vector store. "
                 "Only 'vector' mode is supported for chroma."
@@ -455,98 +451,129 @@ class AI4RAGExperiment:
         pattern_name = self._create_pattern_name()
         logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        reuse_collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
+        collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
+
+        vector_store_config = self.vector_store_config
+        if isinstance(vector_store_config, PGVectorConfig):
+            # Size the connection pool to this run's actual query concurrency so a
+            # fully concurrent query_rag() call never queues for a slot (see
+            # PGVectorConfig.pool_max_size). Never shrink below a user-set ceiling:
+            # a caller who deliberately raised pool_max_size (e.g. to share the store
+            # with other concurrent work) must keep that headroom, so take the larger
+            # of the configured size and this run's inference concurrency.
+            pool_max_size = max(vector_store_config.pool_max_size, self.inference_max_threads)
+            if pool_max_size != vector_store_config.pool_max_size:
+                logger.info(
+                    "Raising PGVector pool_max_size from %d to %d to match inference_max_threads (%d).",
+                    vector_store_config.pool_max_size,
+                    pool_max_size,
+                    self.inference_max_threads,
+                )
+            else:
+                logger.info(
+                    "Keeping configured PGVector pool_max_size %d (>= inference_max_threads %d).",
+                    vector_store_config.pool_max_size,
+                    self.inference_max_threads,
+                )
+            vector_store_config = replace(vector_store_config, pool_max_size=pool_max_size)
 
         try:
             vector_store = get_vector_store(
-                vs_type=self.vector_store_type,
                 embedding_model=embedding_model,
-                reuse_collection_name=reuse_collection_name,
-                client=self.client,
-                ogx_vector_io_provider_id=self.ogx_vector_io_provider_id,
+                collection_name=collection_name,
+                config=vector_store_config,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(
                 exc,
                 embedding_model_id=embedding_model.model_id,
-                vector_store_provider_id=self.ogx_vector_io_provider_id or "local_chroma",
+                vector_store_provider_id=self.vector_store_config.provider,
             ) from exc
 
         collection_name = vector_store.collection_name
 
-        if not self._collection_exists(collection_name=collection_name):
-            chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
-            chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
-            chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
+        # The store's connection/client is only needed for indexing and retrieval,
+        # both of which finish before scoring; closing it deterministically here
+        # (rather than waiting on garbage collection) keeps a long HPO search from
+        # accumulating one open connection per evaluated pattern, including on
+        # trials that fail and get caught by search()'s objective_function.
+        with vector_store:
+            if not self._collection_exists(collection_name=collection_name):
+                chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
+                chunk_size = chunking_params.get(AI4RAGParamNames.CHUNK_SIZE)
+                chunk_overlap = chunking_params.get(AI4RAGParamNames.CHUNK_OVERLAP)
 
-            if chunking_method == "hybrid":
-                chunker = DoclingChunker(max_tokens=chunk_size)
-            else:
-                chunker = LangChainChunker(method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-            chunked_documents = chunker.split_documents(self.documents)
+                if chunking_method == "hybrid":
+                    chunker = DoclingChunker(max_tokens=chunk_size)
+                else:
+                    chunker = LangChainChunker(
+                        method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+                    )
+                chunked_documents = chunker.split_documents(self.documents)
 
-            if self.event_handler:
+                if self.event_handler:
+                    self.event_handler.on_status_change(
+                        level=LogLevel.INFO,
+                        message=(
+                            f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
+                            f"and chunk_overlap: {chunk_overlap}."
+                        ),
+                        step=ExperimentStep.CHUNKING,
+                    )
+
                 self.event_handler.on_status_change(
                     level=LogLevel.INFO,
                     message=(
-                        f"Chunking documents using the {chunking_method} method, chunk_size: {chunk_size} "
-                        f"and chunk_overlap: {chunk_overlap}."
+                        f"Embedding chunks using the {embedding_model.model_id} model. "
+                        f"Building index: {collection_name}."
                     ),
-                    step=ExperimentStep.CHUNKING,
+                    step=ExperimentStep.EMBEDDING,
                 )
 
-            self.event_handler.on_status_change(
-                level=LogLevel.INFO,
-                message=(
-                    f"Embedding chunks using the {embedding_model.model_id} model. "
-                    f"Building index: {collection_name}."
-                ),
-                step=ExperimentStep.EMBEDDING,
+                try:
+                    vector_store.add_documents(chunked_documents)
+                except Exception as exc:
+                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
+
+            else:
+                self.event_handler.on_status_change(
+                    level=LogLevel.INFO,
+                    message=f"Using index {collection_name}.",
+                    step=ExperimentStep.EMBEDDING,
+                )
+
+            logger.info("Using retriever with parameters: %s", retrieval_params)
+
+            retriever = Retriever(
+                vector_store=vector_store,
+                number_of_chunks=number_of_chunks,
+                method=retrieval_method,
+                search_mode=search_mode,
+                ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
+                ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
+                ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
             )
 
-            try:
-                vector_store.add_documents(chunked_documents)
-            except Exception as exc:
-                raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
-
-        else:
-            self.event_handler.on_status_change(
-                level=LogLevel.INFO,
-                message=f"Using index {collection_name}.",
-                step=ExperimentStep.EMBEDDING,
+            rag_pattern = SimpleRAG(
+                foundation_model=foundation_model,
+                retriever=retriever,
             )
 
-        logger.info("Using retriever with parameters: %s", retrieval_params)
+            _rag_log = (
+                f"Retrieval and generation using collection: '{collection_name}' and "
+                f"foundation model: '{foundation_model.model_id}'."
+            )
+            logger.info(_rag_log)
+            self.event_handler.on_status_change(
+                level=LogLevel.INFO,
+                message=_rag_log,
+                step=ExperimentStep.GENERATION,
+            )
 
-        retriever = Retriever(
-            vector_store=vector_store,
-            number_of_chunks=number_of_chunks,
-            method=retrieval_method,
-            search_mode=search_mode,
-            ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
-            ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
-            ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
-        )
+            inference_response = query_rag(
+                rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
+            )
 
-        rag_pattern = SimpleRAG(
-            foundation_model=foundation_model,
-            retriever=retriever,
-        )
-
-        _rag_log = (
-            f"Retrieval and generation using collection: '{collection_name}' and "
-            f"foundation model: '{foundation_model.model_id}'."
-        )
-        logger.info(_rag_log)
-        self.event_handler.on_status_change(
-            level=LogLevel.INFO,
-            message=_rag_log,
-            step=ExperimentStep.GENERATION,
-        )
-
-        inference_response = query_rag(
-            rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
-        )
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,
             pattern_name=pattern_name,
@@ -555,15 +582,7 @@ class AI4RAGExperiment:
         stop_time = time.time()
         execution_time = stop_time - start_time
 
-        final_score = next(
-            (r["scores"]["mean"] for r in result_scores["metrics"] if r["name"] == self.optimization_metric.name),
-            None,
-        )
-        if final_score is None:
-            raise RAGExperimentError(
-                f"Optimization metric '{self.optimization_metric.name}' not found in evaluation results. "
-                f"Available: {[m['name'] for m in result_scores['metrics']]}."
-            )
+        final_score = self._resolve_optimization_score(result_scores, pattern_name)
 
         logger.info("Calculated optimization score for '%s': %s", pattern_name, final_score)
 
@@ -575,7 +594,6 @@ class AI4RAGExperiment:
             scores=result_scores,
             execution_time=execution_time,
             final_score=final_score,
-            rag_pattern=rag_pattern,
         )
 
         evaluation_results_json = self.results.create_evaluation_results_json(
@@ -600,6 +618,63 @@ class AI4RAGExperiment:
             evaluation_result=evaluation_result,
         )
 
+        return final_score
+
+    def _resolve_optimization_score(self, result_scores: EvaluationMetricsResult, pattern_name: str) -> float | None:
+        """Extract the optimization metric's mean score from a pattern's results.
+
+        Matches on both name and evaluator: a metric name (e.g. ``"faithfulness"``)
+        can be produced by more than one evaluator (unitxt and ragas), and the
+        ``evaluator`` field is what disambiguates them.
+
+        Parameters
+        ----------
+        result_scores : EvaluationMetricsResult
+            Aggregated metrics produced for the evaluated pattern.
+        pattern_name : str
+            Name of the evaluated pattern, used for logging.
+
+        Returns
+        -------
+        float | None
+            The optimization metric's mean, or ``None`` when the metric was
+            produced but could not be scored for this pattern (a failed — not
+            fatal — iteration).
+
+        Raises
+        ------
+        RAGExperimentError
+            If no metric matching the optimization metric's name and evaluator is
+            present in the results at all (a configuration error).
+        """
+        optimization_metric_result = next(
+            (
+                r
+                for r in result_scores["metrics"]
+                if r["name"] == self.optimization_metric.name and r["evaluator"] == self.optimization_metric.evaluator
+            ),
+            None,
+        )
+        if optimization_metric_result is None:
+            available = [f"{m['name']} ({m['evaluator']})" for m in result_scores["metrics"]]
+            raise RAGExperimentError(
+                f"Optimization metric '{self.optimization_metric.name}' "
+                f"({self.optimization_metric.evaluator}) not found in evaluation results. "
+                f"Available: {available}."
+            )
+
+        # A ``None`` mean means the metric was produced but could not be scored for
+        # this pattern (e.g. a reference-based metric whose records all lacked
+        # references). That is a failed — not fatal — iteration: return ``None`` so
+        # the optimizer skips it rather than aborting the whole run.
+        final_score = optimization_metric_result["scores"]["mean"]
+        if final_score is None:
+            logger.warning(
+                "Optimization metric '%s' (%s) has no score for pattern '%s'; treating as a failed iteration.",
+                self.optimization_metric.name,
+                self.optimization_metric.evaluator,
+                pattern_name,
+            )
         return final_score
 
     def search(self, **kwargs) -> None:
@@ -707,20 +782,9 @@ class AI4RAGExperiment:
                 )
 
         vector_store_payload = {
-            "provider_id": self.ogx_vector_io_provider_id or "local_chroma",
-            "vector_store_id": evaluation_result.collection,
+            "provider_type": self.vector_store_config.provider,
+            "collection_name": evaluation_result.collection,
         }
-        if self.vector_store_type == "ogx":
-            try:
-                provider = self.client.providers.retrieve(self.ogx_vector_io_provider_id)
-                provider_type = getattr(provider, "provider_type", "unknown")
-            except Exception as exc:
-                provider_type = "unknown"
-                logger.warning(
-                    "Could not retrieve provider_type attribute of vector store in use...",
-                    exc_info=exc,
-                )
-            vector_store_payload["provider_type"] = provider_type
 
         indexing_payload = {
             "chunking": {
@@ -736,8 +800,14 @@ class AI4RAGExperiment:
 
         n_known = len(self.known_observations) if self.known_observations else 0
 
+        # Match on name and evaluator so a colliding metric name (e.g. unitxt vs
+        # ragas "faithfulness") only flags the actual optimization target.
         metrics_payload = [
-            {**m, "optimization_metric": True} if m["name"] == self.optimization_metric.name else m
+            (
+                {**m, "optimization_metric": True}
+                if m["name"] == self.optimization_metric.name and m["evaluator"] == self.optimization_metric.evaluator
+                else m
+            )
             for m in evaluation_result.scores["metrics"]
         ]
 
@@ -843,8 +913,8 @@ class AI4RAGExperiment:
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method returns name of the collection / vector_store_id (for OGX)
-        if chosen indexing params have already been used to create an index / collection.
+        This method returns the name of the collection if the chosen indexing
+        params have already been used to create an index / collection.
 
         Parameters
         ----------

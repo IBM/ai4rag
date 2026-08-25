@@ -4,14 +4,16 @@
 
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
-- **(Optional) OGX Server** >= 1.1.0: With at least one foundation model, one embedding model, and vector database configured
+- **A model provider**: a foundation model and an embedding model reachable over any OpenAI-compatible endpoint (a hosted API, a self-managed vLLM/TGI/Ollama server, or an OpenShift MaaS deployment), accessed through the `openai` SDK — or your own `BaseFoundationModel` / `BaseEmbeddingModel` implementation
+- **A vector store**: Chroma (in-memory by default, no setup required), or a running Milvus/PostgreSQL (pgvector) instance for hybrid retrieval
 
 
-!!! note "External models and vector database integration"
+!!! note "External models and vector store integration"
     `ai4rag` is designed to be provider-agnostic.
     It means you can use any model from any source as long as it satisfies `BaseFoundationModel` interface.
     The same rule applies to embedding model.
-    Custom vector database cannot be explicitly passed to the experiment configuration at this moment, but it can be handled by working the project and delivering custom `VectorStore` implementation.
+    Vector stores are selected via a typed `vector_store_config` (`ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) passed directly to the experiment.
+    A custom vector store can also be plugged in by delivering your own `BaseVectorStore` implementation.
 
 ---
 
@@ -26,6 +28,9 @@ pip install "git+https://github.com/IBM/ai4rag.git@main"
 This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
+
+Vector store clients — `chromadb`, `pymilvus`, `pgvector`, and `psycopg` — are core dependencies and install automatically.
+No extra step is needed to use Chroma, Milvus, or PostgreSQL/pgvector as a vector store.
 
 ---
 
@@ -74,45 +79,72 @@ uv sync --extra docs        # documentation tools only
 
 ---
 
-## OGX Setup
+## Model Provider Setup (OpenShift MaaS)
 
-`ai4rag` can be used with OGX server as the foundation models, embedding models and vector database provider.
-Follow these steps:
+`ai4rag` reaches foundation and embedding models through the stock
+[`openai`](https://github.com/openai/openai-python) SDK (installed automatically as a core
+dependency), so it works with **any OpenAI-compatible endpoint** — a hosted API, a
+self-managed server (vLLM, TGI, Ollama, …), or an
+[OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment.
+The steps below use MaaS, the provider `ai4rag` ships helpers for; to use a different endpoint,
+point the same `openai` client at its URL (or supply your own `BaseFoundationModel` /
+`BaseEmbeddingModel` implementation). The vector store is configured independently, via direct
+clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
 
-### 1. Install OGX
+### 1. Get Access to a MaaS Deployment
 
-```bash
-pip install "ogx>=1.1.0"
-```
+Obtain access to an OpenShift AI MaaS deployment that exposes:
 
-### 2. Configure Your Stack
+- At least one **foundation model** (e.g., `qwen3-8b-fp8-dynamic`)
+- At least one **embedding model** (e.g., `bge-m3`)
 
-Create an OGX configuration with:
+MaaS serves **all models from a single OpenAI-compatible endpoint** —
+`MAAS_BASE_URL`, used verbatim. No extra package is required — the `openai`
+SDK ships with `ai4rag` as a core dependency.
 
-- At least one **foundation model** (e.g., `ollama/llama3.2:3b`)
-- At least one **embedding model** (e.g., `ollama/nomic-embed-text:latest`)
-- A **vector database** (e.g., Milvus lite or ChromaDB)
+### 2. Note Your Credentials
 
-Refer to the [OGX documentation](https://ogx-ai.github.io/docs/) for detailed setup instructions.
+Record the MaaS base URL and API key for use in `ai4rag`:
 
-### 3. Start the Server
-
-```bash
-ogx run <your-CONFIG.yaml>
-```
-
-Note the server URL and API key for use in `ai4rag`.
+- **`MAAS_BASE_URL`** — the complete OpenAI-compatible endpoint URL, used verbatim (e.g. `https://<host>/v1`)
+- **`MAAS_API_KEY`** — a single API key for the single client that serves listing, chat, and embeddings
 
 ---
 
-## Environment Configuration
+## Vector Store Setup
 
-Store your OGX credentials securely in a `.env` file:
+`ai4rag` connects to the vector store directly — no MaaS deployment is required for this part.
+Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
+
+| Provider | Config | Hybrid search (dense + keyword) | Setup |
+|----------|--------|:---:|-------|
+| Chroma | `ChromaConfig` | :material-close: vector-only | None — defaults to an ephemeral in-memory client |
+| Milvus | `MilvusConfig` | :material-check: dense + BM25 | Requires a reachable Milvus instance |
+| PGVector | `PGVectorConfig` | :material-check: dense + tsvector full-text | Requires a reachable PostgreSQL instance with the `pgvector` extension |
+
+```python
+from ai4rag.rag.vector_store import ChromaConfig, MilvusConfig, PGVectorConfig
+
+# Zero-config, in-memory (great for local experimentation)
+vector_store_config = ChromaConfig()
+
+# Or build a config from environment variables
+vector_store_config = MilvusConfig.from_env()      # reads MILVUS_URI, MILVUS_TOKEN, MILVUS_SERVER_CERT
+vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
+```
+
+Each config class exposes the environment variables it reads via its `env_vars` attribute, and can be constructed explicitly instead of from the environment, e.g. `MilvusConfig(uri="https://localhost:19530")`.
+
+---
+
+## MaaS Environment Configuration
+
+Store your MaaS credentials securely in a `.env` file:
 
 ```bash
 # .env
-BASE_URL="<ogx_server_url>"
-APIKEY="<ogx_server_api_key>"
+MAAS_BASE_URL="<maas_endpoint_url>"
+MAAS_API_KEY="<maas_api_key>"
 ```
 
 !!! warning "Security"
@@ -126,8 +158,8 @@ from dotenv import load_dotenv, find_dotenv
 
 load_dotenv(find_dotenv())
 
-base_url = os.getenv("BASE_URL")
-api_key = os.getenv("APIKEY")
+base_url = os.getenv("MAAS_BASE_URL")
+api_key = os.getenv("MAAS_API_KEY")
 ```
 
 ---
@@ -141,19 +173,20 @@ import ai4rag
 print(ai4rag.__version__)
 ```
 
-Test OGX connectivity:
+Test MaaS connectivity:
 
 ```python
-from ogx_client import OgxClient
 import os
+from ai4rag.components.utils import create_maas_client
 
-client = OgxClient(
-    base_url=os.getenv("BASE_URL"),
-    api_key=os.getenv("APIKEY")
+# Single client — serves listing, chat, and embeddings for every model.
+client = create_maas_client(
+    base_url=os.getenv("MAAS_BASE_URL"),
+    api_key=os.getenv("MAAS_API_KEY"),
 )
 
 # List available models
-models = client.models.list()
+models = client.models.list().data
 print(f"Available models: {[m.id for m in models]}")
 ```
 

@@ -13,44 +13,62 @@ Rather than locking you into a specific vendor or technology stack, `ai4rag` def
 2. **Embedding Models** (for document and query embeddings)
 3. **Vector Stores** (for storing and retrieving document chunks)
 
-Concrete implementations for different providers (OGX, ChromaDB) all adhere to these interfaces, making them **interchangeable** within the optimization framework.
+Concrete implementations for different providers — an OpenAI-compatible endpoint (OpenShift MaaS out of the box, accessed through the OpenAI SDK) for foundation and embedding models; Chroma, Milvus, and PGVector for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
 
 ---
 
 ## Supported Providers
 
-### OGX Integration
+For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint works — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or OpenShift MaaS (the integration shipped out of the box, detailed below). Not OpenAI-compatible? Implement `BaseFoundationModel` / `BaseEmbeddingModel` (see [Extending with Custom Providers](#extending-with-custom-providers)). For **vector stores**, pick from the built-in Chroma / Milvus / PGVector backends or add your own via `BaseVectorStore`.
 
-**What it is**: [OGX](https://github.com/ogx-ai/ogx) is a unified interface for working with various models and associated infrastructure.
+### OpenShift MaaS Integration
+
+**What it is**: [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) exposes all deployed models through a single OpenAI-compatible endpoint, so `ai4rag` talks to it with the stock [`openai`](https://github.com/openai/openai-python) SDK. It is one example of an OpenAI-compatible provider; the setup below applies to any of them — point the client at your endpoint's URL.
 
 **What `ai4rag` supports**:
 
-- **Foundation Models**: Any model configured in your OGX server (Llama 3.x, Mistral, etc.)
-- **Embedding Models**: Any embedding model available through OGX
-- **Vector Stores**: Any vector database configured in OGX (Milvus, Qdrant, Weaviate, etc.)
+- **Foundation Models**: Any chat/completion model deployed on your MaaS instance
+- **Embedding Models**: Any embedding model deployed on your MaaS instance
 
-**Key advantage**: One client connection gives you access to multiple models and vector stores.
+**How it works**: a single client, pointing at `MAAS_BASE_URL` (used verbatim), serves everything — it lists the available models (`models.list()`) and is reused, unchanged, to serve `chat.completions` and `embeddings` for every model. Model ids are used verbatim, exactly as `models.list()` reports them (ids may contain `/`).
+
+!!! note "No model metadata"
+    Unlike some registries, MaaS `models.list()` carries no metadata (model type, embedding dimension, context length). So embedding dimension and context length are auto-detected by `OpenAIEmbeddingModel` at construction time (or supplied via `params`), and the caller declares which model ids are foundation vs. embedding.
 
 **Usage**:
 
 ```python
-from ogx_client import OgxClient
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+import os
+from ai4rag.components.utils import create_maas_client
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 
-client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
-
-foundation_model = OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)
-embedding_model = OGXEmbeddingModel(
-    model_id="ollama/nomic-embed-text:latest",
-    client=client,
-    params={"embedding_dimension": 768, "context_length": 8192}
+# A single client serves everything: it lists available models and serves
+# chat/completions and embeddings for all of them at the one MaaS endpoint.
+maas_client = create_maas_client(
+    base_url=os.getenv("MAAS_BASE_URL"),
+    api_key=os.getenv("MAAS_API_KEY"),
 )
 
-# Vector store type: "ogx" with ogx_vector_io_provider_id matching OGX config
-vector_store_type = "ogx"
-ogx_vector_io_provider_id = "milvus"  # or "qdrant", "weaviate", etc.
+# Model ids are used verbatim — exactly as models.list() reports them.
+foundation_model = OpenAIFoundationModel(
+    model_id="qwen3-8b-fp8-dynamic",
+    client=maas_client,
+)
+embedding_model = OpenAIEmbeddingModel(
+    model_id="bge-m3",
+    client=maas_client,
+    params={"embedding_dimension": 1024, "context_length": 8192},
+)
+
+# Vector store: chosen independently of the model clients via a typed config
+from ai4rag.rag.vector_store import MilvusConfig
+
+vector_store_config = MilvusConfig.from_env()
 ```
+
+!!! tip "Discovering models automatically"
+    To validate model ids and build a full search space from a MaaS deployment in one call, use [`prepare_search_space_with_maas`](search-space.md), passing the `maas_client` and the foundation/embedding model ids per type.
 
 ---
 
@@ -67,20 +85,23 @@ ogx_vector_io_provider_id = "milvus"  # or "qdrant", "weaviate", etc.
 **Limitations**:
 
 - **No hybrid search**: ChromaDB doesn't support sparse embeddings or hybrid retrieval
-- **In-memory only**: Data is not persisted between runs (by default)
+- **In-memory by default**: Data isn't persisted between runs unless you set `persist_directory` on `ChromaConfig`
 - **Not for production**: Suitable for development, not large-scale deployments
 
 **Usage**:
 
 ```python
 # Can use with any foundation/embedding models
+from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.utils.event_handler import LocalEventHandler
+
 experiment = AI4RAGExperiment(
-    client=client,  # OGX client
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="chroma",  # In-memory vector store
+    vector_store_config=ChromaConfig(),  # In-memory vector store
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
@@ -115,7 +136,7 @@ class BaseFoundationModel:
 
 **Current implementations**:
 
-- `OGXFoundationModel`: OGX integration
+- `OpenAIFoundationModel`: OpenShift MaaS (and any OpenAI-compatible API) integration
 
 ---
 
@@ -148,7 +169,7 @@ class BaseEmbeddingModel:
 
 **Current implementations**:
 
-- `OGXEmbeddingModel`: OGX integration
+- `OpenAIEmbeddingModel`: OpenShift MaaS (and any OpenAI-compatible API) integration
 
 ---
 
@@ -157,38 +178,42 @@ class BaseEmbeddingModel:
 **Interface**:
 
 ```python
-from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
+from ai4rag.rag.vector_store import BaseVectorStore
 
-class BaseVectorStore:
-    def __init__(self, embedding_model, distance_metric, reuse_collection_name=None):
+class BaseVectorStore(ABC):
+    def __init__(self, embedding_model, config, distance_metric, collection_name=None):
         self.embedding_model = embedding_model
+        self._config = config
         self.distance_metric = distance_metric
-        self.reuse_collection_name = reuse_collection_name
+        self._collection_name = resolve_collection_name(collection_name)
 
     @abstractmethod
-    def add_documents(self, documents: Sequence[Document]) -> None:
-        """Add documents to the vector store."""
-
-    @abstractmethod
-    def search(self, query: str, k: int, **kwargs) -> list[dict]:
+    def search(self, query: str, k: int, **kwargs) -> list[AI4RAGChunk]:
         """Search for relevant documents."""
 
-    @property
     @abstractmethod
+    def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
+        """Add documents to the vector store."""
+
+    @property
     def collection_name(self) -> str:
-        """Return the collection/index name."""
+        """Return the collection/index name. Concrete on the base class — reused
+        when `collection_name` is supplied to `__init__`, otherwise generated."""
+        return self._collection_name
 ```
 
 **What implementations must provide**:
 
-- `add_documents()`: Index documents with embeddings
 - `search()`: Retrieve top-k most relevant documents
-- `collection_name`: Unique identifier for the collection/index
+- `add_documents()`: Index documents with embeddings
+
+`collection_name` is implemented on the base class and should not be overridden.
 
 **Current implementations**:
 
-- `OGXVectorStore`: Any OGX vector database (Milvus, Qdrant, etc.)
-- `ChromaVectorStore`: ChromaDB in-memory store
+- `ChromaVectorStore`: ChromaDB (vector-only)
+- `MilvusVectorStore`: Milvus (hybrid: server-side dense + BM25)
+- `PGVectorStore`: PostgreSQL + pgvector (hybrid: dense + tsvector full-text)
 
 ---
 
@@ -196,95 +221,62 @@ class BaseVectorStore:
 
 The beauty of the provider-agnostic design is that you can **mix and match** components from different providers.
 
-### Example 1: OGX Everything
+The `foundation_model` and `embedding_model` below are the model wrappers built in the [OpenShift MaaS Integration](#openshift-maas-integration) usage snippet above — only the `vector_store_config` differs between the examples.
 
-Use OGX for models and vector store:
+### Example 1: MaaS Models with Milvus
+
+Use MaaS for foundation and embedding models, and Milvus (direct client) as the vector store:
 
 ```python
-from ogx_client import OgxClient
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-
-client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=AI4RAGSearchSpace(
         params=[
-            Parameter(
-                name="foundation_model",
-                param_type="C",
-                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
-            ),
-            Parameter(
-                name="embedding_model",
-                param_type="C",
-                values=[
-                    OGXEmbeddingModel(
-                        model_id="ollama/nomic-embed-text:latest",
-                        client=client,
-                        params={"embedding_dimension": 768, "context_length": 8192}
-                    )
-                ]
-            ),
+            Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
+            Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
             # ... other params
         ]
     ),
-    vector_store_type="ogx",
-    ogx_vector_io_provider_id="milvus",  # OGX Milvus
+    vector_store_config=MilvusConfig.from_env(),
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
 ---
 
-### Example 2: OGX Models with ChromaDB
+### Example 2: MaaS Models with ChromaDB
 
-Use OGX for models, but ChromaDB for quick local development:
+Use MaaS for models, but ChromaDB for quick local development:
 
 ```python
-from ogx_client import OgxClient
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store import ChromaConfig
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-
-client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=AI4RAGSearchSpace(
         params=[
-            Parameter(
-                name="foundation_model",
-                param_type="C",
-                values=[OGXFoundationModel(model_id="ollama/llama3.2:3b", client=client)]
-            ),
-            Parameter(
-                name="embedding_model",
-                param_type="C",
-                values=[
-                    OGXEmbeddingModel(
-                        model_id="ollama/nomic-embed-text:latest",
-                        client=client,
-                        params={"embedding_dimension": 768, "context_length": 8192}
-                    )
-                ]
-            ),
+            Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
+            Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
             # ... other params
         ]
     ),
-    vector_store_type="chroma",  # In-memory ChromaDB
+    vector_store_config=ChromaConfig(),  # In-memory ChromaDB
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
 !!! warning "No Hybrid Search with ChromaDB"
-    Remember that ChromaDB doesn't support hybrid search. If your search space includes `search_mode="hybrid"`, use an OGX vector store instead (e.g., `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"`).
+    Remember that ChromaDB doesn't support hybrid search. If your search space includes `search_mode="hybrid"`, use `MilvusConfig` or `PGVectorConfig` instead (Chroma is vector-only).
 
 ---
 
@@ -294,31 +286,29 @@ ChromaDB is the fastest way to get started with ai4rag without setting up extern
 
 ### Quick Setup
 
-No configuration needed - just specify `vector_store_type="chroma"`:
+No configuration needed - just pass `vector_store_config=ChromaConfig()`:
 
 ```python
 from pathlib import Path
-from ogx_client import OgxClient
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.rag.foundation_models.ogx import OGXFoundationModel
-from ai4rag.rag.embedding.ogx import OGXEmbeddingModel
+from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
 from dev_utils.utils import read_benchmark_from_json
 
-# Load data
-client = OgxClient(base_url=os.getenv("BASE_URL"), api_key=os.getenv("APIKEY"))
+# Load data (models built as in the MaaS Integration snippet above)
 documents = FileStore(Path("./docs")).load_as_documents()
 benchmark_data = read_benchmark_from_json(Path("./benchmark.json"))
 
 # Run experiment with ChromaDB (no vector database setup needed!)
 experiment = AI4RAGExperiment(
-    client=client,
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_type="chroma",  # In-memory, zero config
+    vector_store_config=ChromaConfig(),  # In-memory, zero config
     optimizer_settings=optimizer_settings,
+    event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 
 best_pattern = experiment.search()
@@ -409,97 +399,94 @@ class MyCustomEmbeddingModel(BaseEmbeddingModel):
 ### Adding a New Vector Store
 
 ```python
-from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
-from langchain_core.documents import Document
+from ai4rag.rag.vector_store import BaseVectorStore
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 class MyCustomVectorStore(BaseVectorStore):
     """Integration with my custom vector database."""
 
-    def __init__(self, embedding_model, distance_metric, reuse_collection_name=None):
-        super().__init__(embedding_model, distance_metric, reuse_collection_name)
-        self._collection_name = reuse_collection_name or self._generate_collection_name()
-        # Initialize your vector store client
+    def __init__(self, embedding_model, config, distance_metric, collection_name=None):
+        super().__init__(embedding_model, config, distance_metric, collection_name)
+        # Initialize your vector store client, e.g. using `config` for connection
+        # details and `self.collection_name` for the collection to open/create.
 
-    def add_documents(self, documents: Sequence[Document]) -> None:
+    def add_documents(self, documents: Sequence[AI4RAGChunk]) -> None:
         """Index documents with embeddings."""
-        texts = [doc.page_content for doc in documents]
+        texts = [doc.text for doc in documents]
         embeddings = self.embedding_model.embed_documents(texts)
 
         # Insert into your vector database
         self.client.insert(
-            collection=self._collection_name,
+            collection=self.collection_name,
             vectors=embeddings,
             metadata=[doc.metadata for doc in documents]
         )
 
-    def search(self, query: str, k: int, **kwargs) -> list[dict]:
+    def search(self, query: str, k: int, **kwargs) -> list[AI4RAGChunk]:
         """Retrieve top-k similar documents."""
         query_embedding = self.embedding_model.embed_query(query)
 
         # Query your vector database
         results = self.client.search(
-            collection=self._collection_name,
+            collection=self.collection_name,
             vector=query_embedding,
             top_k=k
         )
 
         # Transform to ai4rag format
         return [
-            {"page_content": r.text, "metadata": r.metadata}
+            AI4RAGChunk(text=r.text, metadata=r.metadata)
             for r in results
         ]
-
-    @property
-    def collection_name(self) -> str:
-        return self._collection_name
-
-    def _generate_collection_name(self) -> str:
-        """Generate unique collection name."""
-        import uuid
-        return f"ai4rag_{uuid.uuid4().hex[:8]}"
 ```
+
+!!! note "`collection_name` is provided by the base class"
+    `BaseVectorStore.__init__` resolves `collection_name` for you (reusing it if
+    supplied, otherwise generating a compliant name) and exposes it as the
+    `collection_name` property. Custom subclasses should not override it.
 
 ---
 
-## Vector Store Type Naming
+## Vector Store Backends
 
-When specifying `vector_store_type` in your experiment:
+`ai4rag` selects the vector store implementation from the *type* of the config object you pass as `vector_store_config` — there's no separate string to keep in sync.
 
-| `vector_store_type` | `ogx_vector_io_provider_id` | Provider |
-|---------------------|-------------------------------|----------|
-| `"chroma"` | N/A | ChromaDB (in-memory) |
-| `"ogx"` | `"milvus"` | OGX Milvus |
-| `"ogx"` | `"qdrant"` | OGX Qdrant |
-| `"ogx"` | `"weaviate"` | OGX Weaviate |
+| Config class | Provider | Key connection params | Env vars (`.from_env()`) |
+|---|---|---|---|
+| `ChromaConfig` | ChromaDB (vector-only) | `persist_directory`, `host`, `port` | `CHROMA_PERSIST_DIR`, `CHROMA_HOST`, `CHROMA_PORT` |
+| `MilvusConfig` | Milvus (hybrid: dense + BM25) | `uri` (required), `token`, `server_cert` | `MILVUS_URI` (required), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `PGVectorConfig` | PostgreSQL + pgvector (hybrid: dense + full-text) | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
 
-The `ogx_vector_io_provider_id` must match the provider configured in your OGX server.
+Each config class is a frozen, keyword-only dataclass with a `.from_env()` classmethod that builds an instance from the environment variables above:
 
-**Example OGX configuration** (excerpt):
+```python
+from ai4rag.rag.vector_store import ChromaConfig, MilvusConfig, PGVectorConfig
 
-```yaml
-# In your OGX config
-vector_dbs:
-  - provider_id: milvus
-    config:
-      host: localhost
-      port: 19530
+# Ephemeral in-memory Chroma (default) — no env vars required
+chroma_config = ChromaConfig()
+
+# Milvus, reading MILVUS_URI / MILVUS_TOKEN / MILVUS_SERVER_CERT from the environment
+milvus_config = MilvusConfig.from_env()
+
+# PGVector, reading PGVECTOR_HOST / PGVECTOR_PORT / PGVECTOR_DB / PGVECTOR_USER / PGVECTOR_PASSWORD
+pgvector_config = PGVectorConfig.from_env()
 ```
 
-Then use `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"` in `ai4rag`.
+Pass the resulting config as `vector_store_config` to `AI4RAGExperiment`, or build a store directly with `get_vector_store(embedding_model, config, collection_name=None)`.
 
 ---
 
 ## Provider Comparison
 
-| Feature | OGX | ChromaDB |
-|---------|------------|----------|
-| **Foundation Models** | Yes (Llama, Mistral, etc.) | N/A |
-| **Embedding Models** | Yes (any compatible model) | N/A |
-| **Vector Stores** | Yes (Milvus, Qdrant, etc.) | Yes (in-memory) |
-| **Hybrid Search** | Yes (via vector store) | No |
-| **Setup Complexity** | Medium (server required) | None |
-| **Cost** | Self-hosted (infra cost) | Free |
-| **Best For** | On-prem, self-hosted, Llama models | Local dev, testing |
+| Feature | OpenShift MaaS | ChromaDB | Milvus | PGVector |
+|---------|------------|----------|--------|----------|
+| **Foundation Models** | Yes (any deployed chat model) | N/A | N/A | N/A |
+| **Embedding Models** | Yes (any deployed embedding model) | N/A | N/A | N/A |
+| **Vector Store** | No (models only) | Yes (in-memory) | Yes | Yes |
+| **Hybrid Search** | N/A | No | Yes (dense + BM25) | Yes (dense + full-text) |
+| **Setup Complexity** | Medium (MaaS deployment required) | None | Medium (server required) | Medium (server required) |
+| **Cost** | Self-hosted (infra cost) | Free | Self-hosted (infra cost) | Self-hosted (infra cost) |
+| **Best For** | On-prem, self-hosted OpenAI-compatible models | Local dev, testing | Production, hybrid search | Production, hybrid search, existing Postgres infra |
 
 ---
 
@@ -509,7 +496,7 @@ Then use `vector_store_type="ogx"` with `ogx_vector_io_provider_id="milvus"` in 
 
 - **Abstract base classes**: `BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`
 - **Extensible**: Add support for new providers by implementing base classes
-- **OGX**: Unified access to multiple models and vector stores
-- **ChromaDB**: Zero-config in-memory vector store for development
+- **OpenShift MaaS**: OpenAI-SDK access to any deployed foundation and embedding model
+- **Direct-client vector stores**: `ChromaConfig`/`ChromaVectorStore` for zero-config local development, `MilvusConfig`/`MilvusVectorStore` and `PGVectorConfig`/`PGVectorStore` for production deployments with hybrid search
 
-The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of whether you're using Llama 3.2, Mistral, or a custom model. Focus on finding the best RAG configuration for your use case, not your infrastructure.
+The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of which model you're using. Focus on finding the best RAG configuration for your use case, not your infrastructure.

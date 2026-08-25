@@ -13,7 +13,7 @@ class RAGMetric:
     """Representation of a single metric that can be used in AI4RAG."""
 
     name: str
-    evaluator: Literal["unitxt", "judge", "custom"]
+    evaluator: Literal["unitxt", "judge", "ragas", "custom"]
     description: str
 
 
@@ -40,6 +40,27 @@ class Metrics(metaclass=ConstantMeta):
         name="answer_relevance",
         evaluator="judge",
         description="LLM judge score for how directly and helpfully the response addresses the question.",
+    )
+
+    RAGAS_FAITHFULNESS = RAGMetric(
+        name="faithfulness",
+        evaluator="ragas",
+        description="RAGAS score for how well the answer is grounded in the retrieved context without hallucination.",
+    )
+    RAGAS_ANSWER_RELEVANCY = RAGMetric(
+        name="answer_relevancy",
+        evaluator="ragas",
+        description="RAGAS score for how relevant and on-topic the answer is to the question.",
+    )
+    RAGAS_CONTEXT_PRECISION = RAGMetric(
+        name="context_precision",
+        evaluator="ragas",
+        description="RAGAS score for whether the retrieved contexts relevant to the ground truth are ranked highly.",
+    )
+    RAGAS_CONTEXT_RECALL = RAGMetric(
+        name="context_recall",
+        evaluator="ragas",
+        description="RAGAS score for how much of the ground-truth answer is covered by the retrieved contexts.",
     )
 
     OVERALL_SCORE = RAGMetric(

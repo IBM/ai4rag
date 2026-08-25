@@ -86,7 +86,7 @@ class DiscoveryResult:
         out_dir.mkdir(parents=True, exist_ok=True)
         descriptor_path = out_dir / filename
         with open(descriptor_path, "w", encoding="utf-8") as fh:
-            json.dump(self.to_dict(), fh, indent=2)
+            json.dump(self.to_dict(), fh, indent=2, ensure_ascii=False)
         _logger.info("Documents descriptor written to %s", descriptor_path)
 
 

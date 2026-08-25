@@ -10,8 +10,9 @@ ai4rag is designed as a modular RAG optimization engine with clear separation of
 
 ai4rag is **LLM and Vector Database provider agnostic**. It integrates with various backends through:
 
-- **OGX**: Primary integration for models and vector stores
-- **Pluggable Components**: Foundation models, embeddings, and vector stores are abstracted
+- **OpenAI-compatible model endpoints**: Foundation and embedding models are reached through the stock `openai` SDK, so any OpenAI-compatible endpoint works (OpenShift MaaS is the built-in integration)
+- **Direct Vector Store Clients**: Chroma, Milvus, and PGVector are integrated directly
+- **Pluggable Components**: Foundation models, embeddings, and vector stores are all defined by abstract base classes — implement one to plug in your own provider
 
 ### Template-Based Approach
 
@@ -112,13 +113,13 @@ graph TB
 **Embedding** (`ai4rag/rag/embedding/`)
 
 - Generates text embeddings
-- Integrates with OGX embedding models
+- Integrates with any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` (e.g. OpenShift MaaS)
 - Handles batching and error recovery
 
 **Vector Stores** (`ai4rag/rag/vector_store/`)
 
 - Stores and retrieves document embeddings
-- Supports Milvus (via OGX) and ChromaDB
+- Supports Milvus, PostgreSQL/pgvector, and ChromaDB via direct clients
 - Provides similarity search capabilities
 
 **Retrieval** (`ai4rag/rag/retrieval/`)
@@ -130,7 +131,7 @@ graph TB
 **Foundation Models** (`ai4rag/rag/foundation_models/`)
 
 - Generates answers using LLMs
-- Integrates with OGX models
+- Integrates with any OpenAI-compatible chat endpoint via `OpenAIFoundationModel` (e.g. OpenShift MaaS)
 - Formats prompts with retrieved context
 
 **Templates** (`ai4rag/rag/template/`)
@@ -157,7 +158,7 @@ graph TB
 
 - Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
-- Provider-agnostic — accepts injected S3 clients and OGX clients
+- Provider-agnostic — accepts injected S3 clients and OpenAI-compatible model clients
 
 **Optimization Components** (`ai4rag/components/optimization/`)
 
@@ -199,7 +200,7 @@ Chunking (chunk_size, chunk_overlap)
     ↓
 Embedding Model (embedding_model)
     ↓
-Vector Store (ogx + ogx_vector_io_provider_id, or chroma)
+Vector Store (Milvus / PGVector / Chroma via vector_store_config)
 ```
 
 ### Query Phase (Per Configuration)
@@ -256,7 +257,7 @@ ai4rag is designed for extensibility:
 ## Technology Stack
 
 - **Python**: 3.12 & 3.13
-- **OGX**: Model and vector store integration
+- **OpenAI SDK**: Foundation-model & embedding integration over any OpenAI-compatible endpoint (e.g. OpenShift MaaS)
 - **Docling Core**: Document representation and structure-aware chunking
 - **LangChain**: Token-based text splitting
 - **Unitxt**: Evaluation metrics

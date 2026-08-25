@@ -106,14 +106,37 @@ def _normalize_flat_settings(settings: dict | None) -> dict | None:
     }
 
 
+def _metric_key(name: str, evaluator: str | None) -> str:
+    """Build a collision-free metric key, disambiguating shared names by evaluator.
+
+    A metric name is not unique across evaluators (e.g. both the unitxt and RAGAS
+    evaluators emit ``"faithfulness"``). The unitxt/custom metrics keep their bare
+    name so the primary columns stay stable; any other evaluator's metrics are
+    prefixed with the evaluator (e.g. ``"ragas_faithfulness"``) so they do not
+    overwrite each other.
+    """
+    if evaluator and evaluator not in ("unitxt", "custom"):
+        return f"{evaluator}_{name}"
+    return name
+
+
 def _get_aggregate_scores(e: dict) -> dict[str, dict]:
-    """Extract aggregate metric scores as ``{name: {mean, ci_low, ci_high}}`` from either format."""
+    """Extract aggregate metric scores as ``{key: {mean, ci_low, ci_high}}`` from either format.
+
+    Keys are disambiguated by evaluator via :func:`_metric_key` so a metric name
+    shared across evaluators (e.g. unitxt vs RAGAS ``faithfulness``) yields
+    separate columns instead of one silently overwriting the other.
+    """
     evaluation = e.get("evaluation")
     if isinstance(evaluation, dict):
-        return {m["name"]: m["scores"] for m in evaluation.get("metrics", []) if isinstance(m, dict)}
+        return {
+            _metric_key(m["name"], m.get("evaluator")): m["scores"]
+            for m in evaluation.get("metrics", [])
+            if isinstance(m, dict)
+        }
     raw = e.get("scores") or {}
     if isinstance(raw, list):
-        return {m["name"]: m["scores"] for m in raw if isinstance(m, dict)}
+        return {_metric_key(m["name"], m.get("evaluator")): m["scores"] for m in raw if isinstance(m, dict)}
     aggregate = raw.get("scores") if isinstance(raw.get("scores"), dict) else raw
     return aggregate or {}
 
@@ -447,7 +470,7 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
             val = _get_config_value(merged, col) if merged else None
             if val is not None and (val != "" or col != "retrieval.ranker_strategy"):
                 if isinstance(val, dict):
-                    cells.append(json.dumps(val, sort_keys=True))
+                    cells.append(json.dumps(val, sort_keys=True, ensure_ascii=False))
                 else:
                     cells.append(str(val))
             elif col == "retrieval.ranker_strategy":
