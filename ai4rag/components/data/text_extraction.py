@@ -370,7 +370,7 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
     )
 
     asr_pipeline_options = AsrPipelineOptions(
-        asr_options=asr_model_specs.WHISPER_BASE,
+        asr_options=asr_model_specs.WHISPER_TINY,
     )
     asr_pipeline_options.asr_options.language = None
 

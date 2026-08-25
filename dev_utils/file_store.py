@@ -90,7 +90,7 @@ class FileStore:
         pdf_options.accelerator_options = AcceleratorOptions(device="auto")
 
         asr_options = AsrPipelineOptions()
-        asr_options.asr_options = asr_model_specs.WHISPER_BASE
+        asr_options.asr_options = asr_model_specs.WHISPER_TINY
         asr_options.asr_options.language = None #if we stay with default the multilang has problems with non-eng texts
 
         num_workers = os.cpu_count() or 1
