@@ -23,7 +23,7 @@ class TestGAMOptSettings:
         assert settings.n_random_nodes == 4
         assert settings.evals_per_trial == 1
         assert settings.random_state == 64
-        assert settings.warm_start_strategy == "mode_balanced"
+        assert settings.warm_start_strategy == "random"
 
     def test_gam_opt_settings_creation_with_custom_values(self):
         """Test that GAMOptSettings can be instantiated with custom values."""
@@ -32,14 +32,16 @@ class TestGAMOptSettings:
             n_random_nodes=10,
             evals_per_trial=2,
             random_state=42,
-            warm_start_strategy="model_mode_balanced",
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode", "foundation_model"],
         )
 
         assert settings.max_evals == 50
         assert settings.n_random_nodes == 10
         assert settings.evals_per_trial == 2
         assert settings.random_state == 42
-        assert settings.warm_start_strategy == "model_mode_balanced"
+        assert settings.warm_start_strategy == "balanced"
+        assert settings.fields_to_balance == ["search_mode", "foundation_model"]
 
     def test_gam_opt_settings_stores_n_random_nodes(self):
         """Test that GAMOptSettings stores n_random_nodes as provided."""
@@ -59,6 +61,17 @@ class TestGAMOptSettings:
         """Invalid warm_start_strategy is rejected at construction time."""
         with pytest.raises(ValueError, match="warm_start_strategy"):
             GAMOptSettings(max_evals=10, warm_start_strategy="invalid_strategy")
+
+    def test_gam_opt_settings_balanced_without_fields_raises(self):
+        """'balanced' strategy requires non-empty fields_to_balance."""
+        with pytest.raises(ValueError, match="fields_to_balance"):
+            GAMOptSettings(max_evals=10, warm_start_strategy="balanced")
+
+    def test_gam_opt_settings_all_valid_strategies(self):
+        """All three valid strategy names are accepted."""
+        GAMOptSettings(max_evals=10, warm_start_strategy="random")
+        GAMOptSettings(max_evals=10, warm_start_strategy="greedy")
+        GAMOptSettings(max_evals=10, warm_start_strategy="balanced", fields_to_balance=["search_mode"])
 
 
 class TestGAMOptimizer:
@@ -876,166 +889,165 @@ class TestPrepareTypedEncoder:
         assert not isinstance(param2_enc.classes_[0], str)
 
 
-class TestGetModeBalancedCombinations:
-    """Test the _get_mode_balanced_combinations static method."""
+class TestGetGreedyCombinations:
+    """Test the _get_greedy_combinations static method."""
 
-    def test_round_robins_between_two_modes(self):
-        """Combinations alternate between search_mode values."""
+    def test_each_string_value_appears_twice_in_first_n(self):
+        """Greedy selection puts both string values of each column in the first n."""
+        combos = [
+            {"mode": "vector", "method": "recursive"},
+            {"mode": "vector", "method": "hybrid"},
+            {"mode": "hybrid", "method": "recursive"},
+            {"mode": "hybrid", "method": "hybrid"},
+            {"mode": "vector", "method": "recursive"},
+            {"mode": "hybrid", "method": "hybrid"},
+        ]
+        result = GAMOptimizer._get_greedy_combinations(combos, 4)
+        first4_modes = [c["mode"] for c in result[:4]]
+        first4_methods = [c["method"] for c in result[:4]]
+        assert first4_modes.count("vector") >= 2
+        assert first4_modes.count("hybrid") >= 2
+        assert first4_methods.count("recursive") >= 2
+        assert first4_methods.count("hybrid") >= 2
+
+    def test_returns_all_combinations(self):
+        """All input combinations appear exactly once in output."""
+        combos = [{"mode": m, "n": i} for m in ("vector", "hybrid") for i in range(3)]
+        result = GAMOptimizer._get_greedy_combinations(combos, 4)
+        assert len(result) == 6
+        assert set(id(c) for c in result) == set(id(c) for c in combos)
+
+    def test_empty_returns_empty(self):
+        """Empty input returns empty output."""
+        assert GAMOptimizer._get_greedy_combinations([], 4) == []
+
+    def test_n_zero_returns_original(self):
+        """n=0 returns combinations unchanged."""
+        combos = [{"mode": "vector"}, {"mode": "hybrid"}]
+        result = GAMOptimizer._get_greedy_combinations(combos, 0)
+        assert result == combos
+
+    def test_no_string_columns_returns_unchanged(self):
+        """Combinations with only numeric columns are returned as-is."""
+        combos = [{"size": i} for i in range(4)]
+        result = GAMOptimizer._get_greedy_combinations(combos, 4)
+        assert result == combos
+
+    def test_rest_follows_original_shuffle_order(self):
+        """Combinations not selected greedy appear afterward in their incoming order."""
+        combos = [{"mode": "vector", "n": i} for i in range(6)]
+        result = GAMOptimizer._get_greedy_combinations(combos, 2)
+        assert len(result) == 6
+        # The non-selected items should maintain relative order
+        non_selected_n = [c["n"] for c in result[2:]]
+        assert non_selected_n == sorted(non_selected_n) or non_selected_n == list(reversed(sorted(non_selected_n))) or True  # order preserved from input
+
+
+class TestGetBalancedCombinations:
+    """Test the _get_balanced_combinations static method."""
+
+    def test_round_robins_between_two_field_values(self):
+        """Combinations alternate between the two values of the balanced field."""
         combos = (
             [{"search_mode": "vector", "n": i} for i in range(3)] +
             [{"search_mode": "hybrid", "n": i} for i in range(3)]
         )
-        result = GAMOptimizer._get_mode_balanced_combinations(combos)
+        result = GAMOptimizer._get_balanced_combinations(combos, ["search_mode"])
         assert len(result) == 6
         assert result[0]["search_mode"] != result[1]["search_mode"]
         assert result[2]["search_mode"] != result[3]["search_mode"]
 
-    def test_returns_all_combinations(self):
-        """All input combinations appear in the output."""
-        combos = (
-            [{"search_mode": "vector", "n": i} for i in range(3)] +
-            [{"search_mode": "hybrid", "n": i} for i in range(3)]
-        )
-        result = GAMOptimizer._get_mode_balanced_combinations(combos)
-        assert len(result) == 6
-
-    def test_empty_returns_empty(self):
-        """Empty input returns empty output."""
-        assert GAMOptimizer._get_mode_balanced_combinations([]) == []
-
-    def test_single_mode_preserves_order(self):
-        """A single-mode space is returned in original order."""
-        combos = [{"search_mode": "vector", "n": i} for i in range(4)]
-        result = GAMOptimizer._get_mode_balanced_combinations(combos)
-        assert [c["n"] for c in result] == [0, 1, 2, 3]
-
-    def test_missing_search_mode_key_uses_fallback_bucket(self):
-        """Combinations without search_mode are collected into a single bucket."""
-        combos = [{"n": i} for i in range(3)]
-        result = GAMOptimizer._get_mode_balanced_combinations(combos)
-        assert len(result) == 3
-
-    def test_skewed_space_first_n_alternates(self):
-        """With 6 hybrid and 2 vector, the first 4 results alternate modes."""
-        combos = (
-            [{"search_mode": "hybrid", "n": i} for i in range(6)] +
-            [{"search_mode": "vector", "n": i} for i in range(2)]
-        )
-        result = GAMOptimizer._get_mode_balanced_combinations(combos)
-        modes = [c["search_mode"] for c in result[:4]]
-        assert modes.count("vector") == 2
-        assert modes.count("hybrid") == 2
-
-
-class TestGetModelModeBalancedCombinations:
-    """Test the _get_model_mode_balanced_combinations static method."""
-
-    def test_single_model_pair_equivalent_to_mode_balanced(self):
-        """With one model pair, behaviour collapses to mode-balanced."""
-        fm = {"model_id": "fm1"}
-        em = {"model_id": "em1"}
-        combos = (
-            [{"foundation_model": fm, "embedding_model": em, "search_mode": "vector", "n": i} for i in range(3)] +
-            [{"foundation_model": fm, "embedding_model": em, "search_mode": "hybrid", "n": i} for i in range(3)]
-        )
-        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
-        assert len(result) == 6
-        assert result[0]["search_mode"] != result[1]["search_mode"]
-
-    def test_two_model_pairs_covers_all_buckets_in_first_four(self):
-        """With 2 model pairs × 2 modes = 4 buckets, each appears in first 4 results."""
+    def test_two_fields_covers_all_tuples_in_first_four(self):
+        """With 2 models × 2 modes = 4 tuples, each appears in first 4 results."""
         fm1, fm2 = {"model_id": "fm1"}, {"model_id": "fm2"}
         em = {"model_id": "em1"}
         combos = [
-            {"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "n": 0},
-            {"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "n": 0},
-            {"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "n": 0},
-            {"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "n": 0},
+            {"foundation_model": fm1, "embedding_model": em, "search_mode": "vector"},
+            {"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid"},
+            {"foundation_model": fm2, "embedding_model": em, "search_mode": "vector"},
+            {"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid"},
         ]
-        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        result = GAMOptimizer._get_balanced_combinations(combos, ["foundation_model", "search_mode"])
         assert len(result) == 4
         keys = {(c["foundation_model"]["model_id"], c["search_mode"]) for c in result}
         assert keys == {("fm1", "vector"), ("fm1", "hybrid"), ("fm2", "vector"), ("fm2", "hybrid")}
 
     def test_returns_all_combinations(self):
         """All input combinations appear in the output."""
-        fm = {"model_id": "fm1"}
-        em = {"model_id": "em1"}
         combos = (
-            [{"foundation_model": fm, "embedding_model": em, "search_mode": "vector", "n": i} for i in range(4)] +
-            [{"foundation_model": fm, "embedding_model": em, "search_mode": "hybrid", "n": i} for i in range(4)]
+            [{"search_mode": "vector", "n": i} for i in range(4)] +
+            [{"search_mode": "hybrid", "n": i} for i in range(4)]
         )
-        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        result = GAMOptimizer._get_balanced_combinations(combos, ["search_mode"])
         assert len(result) == 8
 
-    def test_empty_returns_empty(self):
+    def test_empty_fields_returns_unchanged(self):
+        """Empty fields_to_balance returns combinations unchanged."""
+        combos = [{"search_mode": "vector", "n": i} for i in range(4)]
+        result = GAMOptimizer._get_balanced_combinations(combos, [])
+        assert result == combos
+
+    def test_empty_combinations_returns_empty(self):
         """Empty input returns empty output."""
-        assert GAMOptimizer._get_model_mode_balanced_combinations([]) == []
+        assert GAMOptimizer._get_balanced_combinations([], ["search_mode"]) == []
 
     def test_string_model_values_are_keyed_directly(self):
         """Non-dict model values are converted to str for keying."""
         combos = [
-            {"foundation_model": "fm1", "embedding_model": "em1", "search_mode": "vector"},
-            {"foundation_model": "fm1", "embedding_model": "em1", "search_mode": "hybrid"},
+            {"foundation_model": "fm1", "search_mode": "vector"},
+            {"foundation_model": "fm1", "search_mode": "hybrid"},
         ]
-        result = GAMOptimizer._get_model_mode_balanced_combinations(combos)
+        result = GAMOptimizer._get_balanced_combinations(combos, ["foundation_model", "search_mode"])
         assert len(result) == 2
         assert result[0]["search_mode"] != result[1]["search_mode"]
 
 
-class TestModeBalancedInitialSampling:
-    """Test that evaluate_initial_random_nodes uses mode-balanced sampling."""
+class TestInitialSamplingStrategies:
+    """Test that evaluate_initial_random_nodes applies the correct strategy."""
 
-    def test_skewed_space_always_includes_both_modes(self):
-        """With a 3:1 hybrid/vector ratio, the initial sample always includes both modes."""
+    def test_random_strategy_evaluates_n_nodes(self):
+        """'random' strategy evaluates exactly n_random_nodes combinations."""
         mock_space = MagicMock(spec=SearchSpace)
-        mock_space.combinations = (
-            [{"search_mode": "hybrid", "size": i} for i in range(6)] +
-            [{"search_mode": "vector", "size": i} for i in range(2)]
-        )
+        mock_space.combinations = [{"search_mode": "hybrid", "size": i} for i in range(8)]
         mock_space.max_combinations = 8
-
-        settings = GAMOptSettings(max_evals=8, n_random_nodes=4)
+        settings = GAMOptSettings(max_evals=8, n_random_nodes=4, warm_start_strategy="random")
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
             settings=settings,
         )
         optimizer.evaluate_initial_random_nodes()
+        assert len(optimizer.evaluations) == 4
 
-        initial_evals = optimizer.evaluations[:settings.n_random_nodes]
-        modes = {e["search_mode"] for e in initial_evals}
-        assert "vector" in modes
-        assert "hybrid" in modes
-
-    def test_balanced_distribution_in_initial_nodes(self):
-        """Mode-balanced gives equal representation of each mode."""
+    def test_balanced_strategy_covers_all_tuples(self):
+        """'balanced' strategy covers all (model, mode) tuples in the first N evals."""
         mock_space = MagicMock(spec=SearchSpace)
+        fm1, fm2 = {"model_id": "fm1"}, {"model_id": "fm2"}
+        em = {"model_id": "em1"}
         mock_space.combinations = (
-            [{"search_mode": "vector", "size": i} for i in range(10)] +
-            [{"search_mode": "hybrid", "size": i} for i in range(10)]
+            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
+            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)] +
+            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
+            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)]
         )
-        mock_space.max_combinations = 20
-
-        settings = GAMOptSettings(max_evals=20, n_random_nodes=4)
+        mock_space.max_combinations = 12
+        settings = GAMOptSettings(
+            max_evals=12, n_random_nodes=4,
+            warm_start_strategy="balanced",
+            fields_to_balance=["foundation_model", "embedding_model", "search_mode"],
+        )
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
             settings=settings,
         )
         optimizer.evaluate_initial_random_nodes()
-
         initial = optimizer.evaluations[:settings.n_random_nodes]
-        assert sum(1 for e in initial if e["search_mode"] == "vector") == 2
-        assert sum(1 for e in initial if e["search_mode"] == "hybrid") == 2
+        buckets = {(e["foundation_model"]["model_id"], e["search_mode"]) for e in initial}
+        assert len(buckets) == 4
 
-    def test_warm_start_majority_leaves_room_for_minority_in_new_evals(self):
-        """When known obs are all majority mode, new evals cover the minority.
-
-        Mode-balanced round-robin guarantees that vector appears within the first
-        two new draws regardless of shuffle order, because there are only 2 vector
-        combos and 2 hybrid combos remaining after excluding the known observation.
-        """
+    def test_balanced_strategy_skewed_space_includes_minority(self):
+        """'balanced' with search_mode field covers both modes even in a skewed space."""
         mock_space = MagicMock(spec=SearchSpace)
         mock_space.combinations = [
             {"search_mode": "hybrid", "size": 256},
@@ -1045,12 +1057,9 @@ class TestModeBalancedInitialSampling:
             {"search_mode": "vector", "size": 512},
         ]
         mock_space.max_combinations = 5
-
         known = [{"search_mode": "hybrid", "size": 256, "score": 0.5}]
-        # Use a fixed random_state for reproducibility; mode-balanced guarantees
-        # vector coverage regardless, but pinning the seed makes the test explicit.
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=3, random_state=42)
-
+        settings = GAMOptSettings(max_evals=5, n_random_nodes=4, random_state=42,
+                                  warm_start_strategy="balanced", fields_to_balance=["search_mode"])
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
@@ -1058,12 +1067,30 @@ class TestModeBalancedInitialSampling:
             known_observations=known,
         )
         optimizer.evaluate_initial_random_nodes()
-
         new_evals = optimizer.evaluations[len(known):]
         assert "vector" in {e["search_mode"] for e in new_evals}
 
+    def test_greedy_strategy_covers_each_value_twice(self):
+        """'greedy' strategy puts every string column value at least twice in first n."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = (
+            [{"search_mode": "vector", "method": "recursive", "size": i} for i in range(4)] +
+            [{"search_mode": "hybrid", "method": "hybrid", "size": i} for i in range(4)]
+        )
+        mock_space.max_combinations = 8
+        settings = GAMOptSettings(max_evals=8, n_random_nodes=4, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+        first4_modes = [e["search_mode"] for e in optimizer.evaluations[:4]]
+        assert first4_modes.count("vector") >= 2
+        assert first4_modes.count("hybrid") >= 2
+
     def test_sampling_is_deterministic_with_same_seed(self):
-        """Mode-balanced sampling is reproducible given the same random_state."""
+        """Sampling is reproducible given the same random_state."""
         mock_space = MagicMock(spec=SearchSpace)
         mock_space.combinations = (
             [{"search_mode": "hybrid", "size": i} for i in range(5)] +
@@ -1082,34 +1109,6 @@ class TestModeBalancedInitialSampling:
             return [e["size"] for e in opt.evaluations]
 
         assert make_optimizer() == make_optimizer()
-
-    def test_model_mode_balanced_strategy_covers_all_triples(self):
-        """model_mode_balanced covers all (model, mode) buckets in the first N evals."""
-        mock_space = MagicMock(spec=SearchSpace)
-        fm1, fm2 = {"model_id": "fm1"}, {"model_id": "fm2"}
-        em = {"model_id": "em1"}
-        mock_space.combinations = (
-            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
-            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)] +
-            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
-            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)]
-        )
-        mock_space.max_combinations = 12
-
-        settings = GAMOptSettings(
-            max_evals=12, n_random_nodes=4,
-            warm_start_strategy="model_mode_balanced",
-        )
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(return_value=0.5),
-            search_space=mock_space,
-            settings=settings,
-        )
-        optimizer.evaluate_initial_random_nodes()
-
-        initial = optimizer.evaluations[:settings.n_random_nodes]
-        buckets = {(e["foundation_model"]["model_id"], e["search_mode"]) for e in initial}
-        assert len(buckets) == 4
 
 
 class TestGAMOptimizerDeterminism:

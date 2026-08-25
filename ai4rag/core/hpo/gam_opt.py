@@ -63,6 +63,31 @@ def _round_robin(combinations: list[dict], key_fn: Callable[[dict], Any]) -> lis
     return balanced
 
 
+def _str_val(v: object) -> str:
+    """Normalize any cell value to a string key (handles model objects and plain strings)."""
+    if v is None:
+        return "__none__"
+    if isinstance(v, dict):
+        return v.get("model_id", str(v))
+    if hasattr(v, "model_id"):
+        return v.model_id
+    return str(v)
+
+
+def _get_string_column_values(combinations: list[dict]) -> dict[str, set[str]]:
+    """Return {col: set_of_str_values} for all string-like columns in the combinations."""
+    if not combinations:
+        return {}
+    result: dict[str, set[str]] = {}
+    for col in combinations[0]:
+        sample = next((c.get(col) for c in combinations if c.get(col) is not None), None)
+        if sample is None:
+            continue
+        if isinstance(sample, (str, dict)) or hasattr(sample, "model_id"):
+            result[col] = {_str_val(c.get(col)) for c in combinations}
+    return result
+
+
 @dataclass
 class GAMOptSettings(OptimizerSettings):
     """
@@ -76,17 +101,20 @@ class GAMOptSettings(OptimizerSettings):
         Maximum number of evaluations performed during optimization process.
     n_random_nodes : int, default=4
         Number of random configurations to evaluate before starting GAM iterations.
-        Selection is balanced across search_mode values (mode_balanced strategy) or
-        across (foundation_model, embedding_model, search_mode) triples
-        (model_mode_balanced strategy), ensuring the GAM receives representative
-        signal on the most impactful categorical dimensions before training begins.
     evals_per_trial : int, default=1
         Number of configurations to evaluate per GAM iteration.
-    warm_start_strategy : {"mode_balanced", "model_mode_balanced"}, default="mode_balanced"
-        Controls how the initial n_random_nodes observations are ordered.
-        "mode_balanced"        — round-robin across search_mode values.
-        "model_mode_balanced"  — round-robin across (foundation_model,
-                                 embedding_model, search_mode) triples.
+    warm_start_strategy : {"random", "greedy", "balanced"}, default="random"
+        Controls how the initial n_random_nodes observations are selected/ordered.
+        "random"   — shuffle the candidate list and take the first n as-is.
+        "greedy"   — greedily pick n combinations so every string column value
+                     appears at least twice (raises if n_random_nodes is too small).
+        "balanced" — round-robin across the tuple of fields_to_balance values;
+                     non-balanced string column values each appear at least once.
+                     Requires fields_to_balance to be set.
+    fields_to_balance : list[str] | None, default=None
+        Field names to balance by round-robin when warm_start_strategy="balanced".
+        Each unique value combination of these fields is guaranteed to appear at
+        least once in the first n_random_nodes evaluations.
     random_state : int, default=64
         Inherited from OptimizerSettings. Controls shuffle order of initial
         random exploration phase. Does NOT control GAM model randomness
@@ -95,14 +123,19 @@ class GAMOptSettings(OptimizerSettings):
 
     n_random_nodes: int = 4
     evals_per_trial: int = 1
-    warm_start_strategy: Literal["mode_balanced", "model_mode_balanced"] = "mode_balanced"
+    warm_start_strategy: Literal["random", "greedy", "balanced"] = "random"
+    fields_to_balance: list[str] | None = None
 
     def __post_init__(self) -> None:
-        valid = {"mode_balanced", "model_mode_balanced"}
+        valid = {"random", "greedy", "balanced"}
         if self.warm_start_strategy not in valid:
             raise ValueError(
                 f"warm_start_strategy must be one of {sorted(valid)}; "
                 f"got {self.warm_start_strategy!r}."
+            )
+        if self.warm_start_strategy == "balanced" and not self.fields_to_balance:
+            raise ValueError(
+                "fields_to_balance must be a non-empty list when warm_start_strategy='balanced'."
             )
 
 
@@ -221,54 +254,55 @@ class GAMOptimizer(BaseOptimizer):
     def _validate_n_random_nodes(self) -> None:
         """Raise ValueError when n_random_nodes is below the required minimum for the strategy.
 
-        Counts unique foundation_model, embedding_model, and search_mode values in
-        the search space and enforces:
-
-        - mode_balanced:       n_random_nodes >= max(4, n_llms * n_embeddings)
-          The 2-level round-robin (outer: search_mode, inner: (llm, em) pair) can
-          only guarantee every model appears at least once when there are enough
-          slots — n_llms * n_embeddings evaluations total, regardless of n_modes.
-
-        - model_mode_balanced: n_random_nodes >= max(8, n_modes * n_llms * n_embeddings)
-          Round-robins across (llm, em, mode) triples; full coverage requires one slot
-          per triple. The floor of 8 ensures all chunking methods (not part of the key)
-          appear at least once via the random shuffle within each triple's bucket.
+        - random:   No minimum enforced — combinations are taken in shuffle order.
+        - greedy:   n_random_nodes >= 2 * max_unique_values_per_string_column, so
+                    every string column value can appear at least twice.
+        - balanced: n_random_nodes >= max(n_balanced_tuples, max_non_balanced_unique),
+                    where n_balanced_tuples is the number of unique value-tuples for
+                    fields_to_balance and max_non_balanced_unique is the max number of
+                    unique values among the remaining string columns.
         """
         combinations = self._search_space.combinations
         if not combinations:
             return
 
-        def _unique_ids(key: str) -> int:
-            seen: set[str] = set()
-            for c in combinations:
-                v = c.get(key)
-                if v is None:
-                    continue
-                if isinstance(v, dict):
-                    seen.add(v.get("model_id", str(v)))
-                elif hasattr(v, "model_id"):
-                    seen.add(v.model_id)
-                else:
-                    seen.add(str(v))
-            return len(seen)
+        strategy = self.settings.warm_start_strategy
 
-        n_llms = _unique_ids("foundation_model")
-        n_embeddings = _unique_ids("embedding_model")
-        n_modes = _unique_ids("search_mode") or 1
+        if strategy == "random":
+            return
 
-        if self.settings.warm_start_strategy == "model_mode_balanced":
-            recommended = max(8, n_modes * n_llms * n_embeddings)
-        else:  # mode_balanced
-            recommended = max(4, n_llms * n_embeddings)
+        str_cols = _get_string_column_values(combinations)
 
-        if self.settings.n_random_nodes < recommended:
-            raise ValueError(
-                f"n_random_nodes={self.settings.n_random_nodes} is too small for "
-                f"warm_start_strategy={self.settings.warm_start_strategy!r} with "
-                f"n_llms={n_llms}, n_embeddings={n_embeddings}, n_modes={n_modes}. "
-                f"Set n_random_nodes >= {recommended} to ensure every model appears "
-                f"at least once before GAM training."
-            )
+        if strategy == "greedy":
+            if not str_cols:
+                return
+            max_unique = max(len(vals) for vals in str_cols.values())
+            min_required = max(4, 2 * max_unique)
+            if self.settings.n_random_nodes < min_required:
+                raise ValueError(
+                    f"n_random_nodes={self.settings.n_random_nodes} is too small for "
+                    f"warm_start_strategy='greedy': each string column value must appear "
+                    f"at least twice (max unique values per column: {max_unique}). "
+                    f"Set n_random_nodes >= {min_required}."
+                )
+
+        elif strategy == "balanced":
+            fields_to_balance = self.settings.fields_to_balance or []
+            balanced_tuples = {
+                tuple(_str_val(c.get(f)) for f in fields_to_balance)
+                for c in combinations
+            }
+            n_balanced = len(balanced_tuples)
+            non_balanced = {col: vals for col, vals in str_cols.items() if col not in fields_to_balance}
+            max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
+            min_required = max(4, n_balanced, max_non_balanced)
+            if self.settings.n_random_nodes < min_required:
+                raise ValueError(
+                    f"n_random_nodes={self.settings.n_random_nodes} is too small for "
+                    f"warm_start_strategy='balanced' with fields_to_balance={fields_to_balance!r}. "
+                    f"n_balanced_tuples={n_balanced}, max_non_balanced_unique={max_non_balanced}. "
+                    f"Set n_random_nodes >= {min_required}."
+                )
 
     def _load_known_observations(self, known_observations: list[dict]) -> None:
         """
@@ -306,11 +340,10 @@ class GAMOptimizer(BaseOptimizer):
         already-successful evaluations count toward the n_random_nodes target
         and already-evaluated combinations are excluded from candidates.
 
-        The selection is balanced: combinations are ordered by round-robin across
-        search_mode values (mode_balanced) or across (foundation_model,
-        embedding_model, search_mode) triples (model_mode_balanced), ensuring
-        the GAM receives representative signal on the most impactful categorical
-        dimensions before training begins.
+        The selection order depends on warm_start_strategy:
+        "random"   — shuffled order (no reordering).
+        "greedy"   — greedy selection maximizing string-column coverage (each value >= 2 times).
+        "balanced" — round-robin across fields_to_balance value tuples.
         """
         successful_evaluations = sum(1 for e in self.evaluations if e["score"] is not None)
 
@@ -328,10 +361,13 @@ class GAMOptimizer(BaseOptimizer):
         combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
         random.Random(self.settings.random_state).shuffle(combinations_local)
 
-        if self.settings.warm_start_strategy == "model_mode_balanced":
-            combinations_local = self._get_model_mode_balanced_combinations(combinations_local)
-        else:  # "mode_balanced"
-            combinations_local = self._get_mode_balanced_combinations(combinations_local)
+        if self.settings.warm_start_strategy == "greedy":
+            combinations_local = self._get_greedy_combinations(combinations_local, self.settings.n_random_nodes)
+        elif self.settings.warm_start_strategy == "balanced":
+            combinations_local = self._get_balanced_combinations(
+                combinations_local, self.settings.fields_to_balance or []
+            )
+        # "random": use shuffled list as-is
 
         modes_in_space = {c.get("search_mode") for c in combinations_local}
         gen = (x for x in combinations_local)
@@ -359,60 +395,59 @@ class GAMOptimizer(BaseOptimizer):
             )
 
     @staticmethod
-    def _get_mode_balanced_combinations(combinations: list[dict]) -> list[dict]:
-        """Order by outer round-robin across search_mode and inner round-robin across (foundation_model, embedding_model) pairs.
+    def _get_greedy_combinations(combinations: list[dict], n: int) -> list[dict]:
+        """Greedily select n combinations ensuring every string column value appears >= 2 times.
 
-        Within each search_mode bucket, combinations are sorted so that distinct
-        (foundation_model, embedding_model) pairs appear before any pair repeats.
-        The outer round-robin then interleaves the two sorted mode lists. With
-        n_random_nodes >= n_llms * n_embeddings, every foundation_model and every
-        embedding_model is guaranteed to appear at least once before GAM training.
+        At each step the candidate with the highest coverage gain (number of string column
+        values whose current count is still below 2) is selected. Ties are broken by the
+        shuffle order coming in. The n selected combinations are returned first, followed
+        by the remaining combinations in their original (shuffled) order.
         """
-        def _model_id(v: object) -> str:
-            if isinstance(v, dict):
-                return v.get("model_id", str(v))
-            return getattr(v, "model_id", str(v))
+        if not combinations or n <= 0:
+            return combinations
 
-        def _model_pair_key(c: dict) -> tuple:
-            return (_model_id(c.get("foundation_model")), _model_id(c.get("embedding_model")))
+        str_cols = _get_string_column_values(combinations)
+        if not str_cols:
+            return combinations
 
-        # Group by search_mode; within each mode apply inner round-robin by model pair
-        mode_buckets: dict[Any, list[dict]] = defaultdict(list)
-        for c in combinations:
-            mode_buckets[c.get("search_mode")].append(c)
-
-        per_mode_balanced = {
-            mode: _round_robin(combs, _model_pair_key)
-            for mode, combs in mode_buckets.items()
+        coverage: dict[str, dict[str, int]] = {
+            col: {val: 0 for val in vals} for col, vals in str_cols.items()
         }
 
-        # Flatten preserving per-mode order, then outer round-robin interleaves modes.
-        # _round_robin preserves insertion order within each mode bucket, so the
-        # inner model-pair ordering is carried through the outer interleave.
-        ordered = [c for combs in per_mode_balanced.values() for c in combs]
-        return _round_robin(ordered, lambda c: c.get("search_mode"))
+        def _gain(c: dict) -> int:
+            return sum(
+                1 for col, val_counts in coverage.items()
+                if val_counts.get(_str_val(c.get(col)), 0) < 2
+            )
+
+        remaining_indices = list(range(len(combinations)))
+        selected_indices: list[int] = []
+
+        for _ in range(min(n, len(combinations))):
+            if not remaining_indices:
+                break
+            best_pos = max(range(len(remaining_indices)), key=lambda p: _gain(combinations[remaining_indices[p]]))
+            best_idx = remaining_indices.pop(best_pos)
+            selected_indices.append(best_idx)
+            for col in str_cols:
+                val = _str_val(combinations[best_idx].get(col))
+                if val in coverage[col]:
+                    coverage[col][val] = min(coverage[col][val] + 1, 2)
+
+        return [combinations[i] for i in selected_indices] + [combinations[i] for i in remaining_indices]
 
     @staticmethod
-    def _get_model_mode_balanced_combinations(combinations: list[dict]) -> list[dict]:
-        """Order combinations by round-robin across (foundation_model, embedding_model, search_mode) triples.
+    def _get_balanced_combinations(combinations: list[dict], fields_to_balance: list[str]) -> list[dict]:
+        """Order by round-robin across the value tuple of fields_to_balance.
 
-        With n_random_nodes >= max(8, n_modes * n_llms * n_embeddings), every
-        (foundation_model, embedding_model, search_mode) triple is guaranteed to
-        appear at least once before GAM training. chunking_method is not part of the
-        key — each triple's bucket is shuffled randomly so all chunking methods
-        appear naturally with enough n_random_nodes.
+        With n_random_nodes >= number of unique value-tuples for fields_to_balance,
+        every such tuple is guaranteed to appear at least once before GAM training.
         """
-        def _model_id(v: object) -> str:
-            if isinstance(v, dict):
-                return v.get("model_id", str(v))
-            return getattr(v, "model_id", str(v))
+        if not fields_to_balance:
+            return combinations
 
         def _key(c: dict) -> tuple:
-            return (
-                _model_id(c.get("foundation_model", None)),
-                _model_id(c.get("embedding_model", None)),
-                c.get("search_mode", None),
-            )
+            return tuple(_str_val(c.get(f)) for f in fields_to_balance)
 
         return _round_robin(combinations, _key)
 

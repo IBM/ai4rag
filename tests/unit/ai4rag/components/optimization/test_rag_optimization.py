@@ -424,18 +424,18 @@ class TestRunRagOptimizationWarmStartParams:
     """Tests that n_random_nodes and warm_start_strategy are forwarded to GAMOptSettings."""
 
     def test_default_n_random_nodes(self):
-        """n_random_nodes must default to 4."""
+        """n_random_nodes must default to None (auto-computed)."""
         import inspect
 
         sig = inspect.signature(run_rag_optimization)
-        assert sig.parameters["n_random_nodes"].default == 4
+        assert sig.parameters["n_random_nodes"].default is None
 
     def test_default_warm_start_strategy(self):
-        """warm_start_strategy must default to 'mode_balanced'."""
+        """warm_start_strategy must default to 'random'."""
         import inspect
 
         sig = inspect.signature(run_rag_optimization)
-        assert sig.parameters["warm_start_strategy"].default == "mode_balanced"
+        assert sig.parameters["warm_start_strategy"].default == "random"
 
     def test_invalid_warm_start_strategy_raises(self, mock_maas_client):
         """An invalid warm_start_strategy must raise ValueError from GAMOptSettings."""
@@ -453,7 +453,7 @@ class TestRunRagOptimizationWarmStartParams:
 
     def test_valid_warm_start_strategies_pass_validation(self, mock_maas_client):
         """Valid strategy values pass the warm_start_strategy check and fail later on real inputs."""
-        for strategy in ("mode_balanced", "model_mode_balanced"):
+        for strategy in ("random", "greedy"):
             with pytest.raises(ValueError, match="JSON file"):
                 run_rag_optimization(
                     extracted_text_path="dummy",
