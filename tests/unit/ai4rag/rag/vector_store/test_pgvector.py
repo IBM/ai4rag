@@ -33,6 +33,19 @@ def mock_embedding():
     return _MockEmbeddingModel()
 
 
+class _HighDimEmbedding:
+    """Mock embedding model above pgvector's 2000-dimension HNSW index limit."""
+
+    model_id = "big-embedding"
+    params = {"embedding_dimension": 3072}
+
+    def embed_documents(self, texts):
+        return [[0.1] * 3072 for _ in texts]
+
+    def embed_query(self, query):
+        return [0.1] * 3072
+
+
 @pytest.fixture
 def pgvector_config():
     return PGVectorConfig(host="localhost", port=5432, dbname="testdb", user="testuser")
@@ -78,24 +91,23 @@ class TestPGVectorStoreInit:
         with pytest.raises(ValueError, match="Unsupported distance metric"):
             PGVectorStore(mock_embedding, pgvector_config, distance_metric="hamming")
 
-    def test_embedding_dimension_over_limit_raises_before_pool_opens(self, mock_pool_cls, pgvector_config):
+    def test_embedding_dimension_over_limit_logs_warning_and_proceeds(self, mock_pool_cls, pgvector_config, caplog):
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
-        class _HighDimEmbedding:
-            model_id = "big-embedding"
-            params = {"embedding_dimension": 3072}
+        conn = _conn_from(mock_pool_cls)
 
-            def embed_documents(self, texts):
-                return [[0.1] * 3072 for _ in texts]
+        with caplog.at_level("WARNING"):
+            store = PGVectorStore(_HighDimEmbedding(), pgvector_config)
 
-            def embed_query(self, query):
-                return [0.1] * 3072
+        # Construction succeeds and opens a pool like any other dimension — the store
+        # is fully usable, just without an HNSW index (asserted separately in
+        # TestPGVectorStoreSearch.test_high_dimension_search_skips_hnsw_builds_gin).
+        mock_pool_cls.assert_called_once()
+        assert store.collection_name.startswith("ai4rag_")
+        assert any("exceeds pgvector's" in record.message for record in caplog.records)
 
-        with pytest.raises(ValueError, match="exceeds pgvector's"):
-            PGVectorStore(_HighDimEmbedding(), pgvector_config)
-
-        # The guard must fire before any expensive work: no pool is opened.
-        mock_pool_cls.assert_not_called()
+        executed = " ".join(str(c) for c in conn.execute.call_args_list)
+        assert "vector(3072)" in executed
 
     def test_embedding_dimension_at_limit_allowed(self, mock_pool_cls, pgvector_config):
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
@@ -205,6 +217,34 @@ class TestPGVectorStoreSearch:
         conn.execute.return_value.fetchall.return_value = []
         store.search("query", k=1)
         assert "hnsw" not in " ".join(str(c) for c in conn.execute.call_args_list)
+
+    def test_high_dimension_search_skips_hnsw_builds_gin(self, mock_pool_cls, pgvector_config):
+        """Above pgvector's 2000-dim limit, HNSW is skipped but GIN and search still work."""
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        conn = _conn_from(mock_pool_cls)
+        store = PGVectorStore(_HighDimEmbedding(), pgvector_config, collection_name="ai4rag_highdim")
+        conn.execute.return_value.fetchall.return_value = [("hello", {}, 0.5)]
+
+        results = store.search("query", k=1)
+
+        executed = " ".join(str(c) for c in conn.execute.call_args_list)
+        assert "hnsw" not in executed
+        assert "USING gin" in executed
+        assert results[0].text == "hello"
+
+    def test_high_dimension_hybrid_search_still_fuses(self, mock_pool_cls, pgvector_config):
+        """Hybrid fusion is independent of the embedding dimension/index tier."""
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        conn = _conn_from(mock_pool_cls)
+        store = PGVectorStore(_HighDimEmbedding(), pgvector_config, collection_name="ai4rag_highdim_hybrid")
+        conn.execute.return_value.fetchall.return_value = [("hello", {}, 0.5)]
+
+        results = store.search("query", k=1, search_mode="hybrid", ranker_strategy="rrf")
+
+        assert len(results) == 1
+        assert results[0].text == "hello"
 
     def test_ensure_indexes_is_thread_safe_under_concurrent_search(
         self, mock_pool_cls, mock_embedding, pgvector_config
