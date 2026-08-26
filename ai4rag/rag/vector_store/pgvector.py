@@ -144,12 +144,28 @@ class PGVectorStore(BaseVectorStore):
         self._indexes_built = False
         self._indexes_lock = threading.Lock()
 
-        self._pool = self._open_pool()
+        # Pool and table are created lazily on the first DB access so that
+        # add_documents() can embed documents (the slow step) before any
+        # connection is opened — keeping zero idle connections alive during
+        # embedding and avoiding TCP keepalive exhaustion on long-running
+        # embed calls.  _db_lock guards the one-time pool + table creation.
+        self._pool: ConnectionPool | None = None
+        self._db_lock = threading.Lock()
 
-        # The collection name IS the physical table name: the base class has
-        # already validated (ai4rag prefix) and sanitized it into a safe SQL
-        # identifier, so no separate table name or prefix is needed.
-        self._create_table()
+    def _ensure_db(self) -> ConnectionPool:
+        """Return the pool, opening it and creating the table on the first call.
+
+        Thread-safe via double-checked locking: concurrent callers block until
+        the first caller finishes setup, then all proceed with the ready pool.
+        """
+        if self._pool is not None:
+            return self._pool
+        with self._db_lock:
+            if self._pool is None:
+                pool = self._open_pool()
+                self._create_table(pool)
+                self._pool = pool
+        return self._pool  # type: ignore[return-value]
 
     def _open_pool(self) -> ConnectionPool:
         """Open the connection pool backing this store.
@@ -164,10 +180,10 @@ class PGVectorStore(BaseVectorStore):
         -------
         ConnectionPool
             The opened pool, sized between :attr:`_MIN_POOL_SIZE` and
-            ``self._config.pool_max_size``. :meth:`_create_table`, called right
-            after this in :meth:`__init__`, borrows the first connection and so
-            blocks (up to :attr:`_CONNECT_TIMEOUT`) until one is ready — a
-            misconfigured connection still fails fast, during construction.
+            ``self._config.pool_max_size``. Called by :meth:`_ensure_db` on the
+            first DB access, which also calls :meth:`_create_table` immediately
+            after — so a misconfigured connection fails fast on the first
+            database operation.
         """
         connect_kwargs: dict[str, Any] = {
             "host": self._config.host,
@@ -212,7 +228,7 @@ class PGVectorStore(BaseVectorStore):
         register_vector(conn)
         conn.execute("CREATE EXTENSION IF NOT EXISTS vector")
 
-    def _create_table(self) -> None:
+    def _create_table(self, pool: ConnectionPool) -> None:
         """Create the backing table if it does not already exist.
 
         The table maps one-to-one to the collection name and holds the chunk id,
@@ -222,7 +238,7 @@ class PGVectorStore(BaseVectorStore):
         metadata. ``content_text`` is the sole source of truth for chunk text —
         it is not also duplicated inside ``metadata``.
         """
-        with self._pool.connection() as conn:
+        with pool.connection() as conn:
             conn.execute(f"""
                 CREATE TABLE IF NOT EXISTS {self._quoted_table()} (
                     id TEXT PRIMARY KEY,
@@ -269,7 +285,7 @@ class PGVectorStore(BaseVectorStore):
 
             hnsw_idx = f"idx_{self._collection_name}_hnsw"
             gin_idx = f"idx_{self._collection_name}_gin"
-            with self._pool.connection() as conn:
+            with self._ensure_db().connection() as conn:
                 # Each statement is guarded independently, not by one shared try/except:
                 # under autocommit there is no transaction spanning them, so a race lost on
                 # one index must not skip creating the other.
@@ -442,7 +458,7 @@ class PGVectorStore(BaseVectorStore):
         """
         embedding = self.embedding_model.embed_query(query)
 
-        with self._pool.connection() as conn:
+        with self._ensure_db().connection() as conn:
             rows = conn.execute(
                 f"""
                 SELECT content_text, metadata, embedding {self._distance_operator} %s::vector AS distance
@@ -480,7 +496,7 @@ class PGVectorStore(BaseVectorStore):
         list[tuple[AI4RAGChunk, float]]
             Matched chunks paired with their ``ts_rank`` scores.
         """
-        with self._pool.connection() as conn:
+        with self._ensure_db().connection() as conn:
             rows = conn.execute(
                 f"""
                 SELECT content_text, metadata, ts_rank(tokenized_content, plainto_tsquery('english', %s)) AS score
@@ -666,7 +682,7 @@ class PGVectorStore(BaseVectorStore):
             Rows to upsert, each as ``(id, metadata JSON, embedding, content
             text, text to tokenize)``.
         """
-        with self._pool.connection() as conn, conn.cursor() as cur:
+        with self._ensure_db().connection() as conn, conn.cursor() as cur:
             cur.executemany(
                 f"""
                 INSERT INTO {self._quoted_table()} (id, metadata, embedding, content_text, tokenized_content)
@@ -698,9 +714,10 @@ class PGVectorStore(BaseVectorStore):
 
     def clean_collection(self) -> None:
         """Drop the PostgreSQL table."""
-        with self._pool.connection() as conn:
+        with self._ensure_db().connection() as conn:
             conn.execute(f"DROP TABLE IF EXISTS {self._quoted_table()} CASCADE")
 
     def close(self) -> None:
         """Close the connection pool."""
-        self._pool.close()
+        if self._pool is not None:
+            self._pool.close()

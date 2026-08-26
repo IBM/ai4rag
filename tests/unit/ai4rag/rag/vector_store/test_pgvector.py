@@ -65,18 +65,26 @@ def _conn_from(mock_pool_cls):
 @patch("ai4rag.rag.vector_store.pgvector.ConnectionPool")
 class TestPGVectorStoreInit:
 
-    def test_creates_table_without_indexes_at_init(self, mock_pool_cls, mock_embedding, pgvector_config):
+    def test_creates_table_on_first_db_access_not_at_init(self, mock_pool_cls, mock_embedding, pgvector_config):
         conn = _conn_from(mock_pool_cls)
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         store = PGVectorStore(mock_embedding, pgvector_config)
 
-        executed = " ".join(str(c) for c in conn.execute.call_args_list)
-        assert "CREATE TABLE" in executed
+        # Pool and table creation are deferred until the first DB operation so
+        # that embed_documents() runs without any idle connections open.
+        executed_at_init = " ".join(str(c) for c in conn.execute.call_args_list)
+        assert "CREATE TABLE" not in executed_at_init
+        assert mock_pool_cls.call_count == 0
+
+        # First DB access (e.g. add_documents) triggers pool open + table creation.
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        executed_after = " ".join(str(c) for c in conn.execute.call_args_list)
+        assert "CREATE TABLE" in executed_after
         # Indexes are deferred until the first search (build-after-load); they must NOT
         # be created at connection time, otherwise every insert pays HNSW maintenance.
-        assert "hnsw" not in executed
-        assert "USING gin" not in executed
+        assert "hnsw" not in executed_after
+        assert "USING gin" not in executed_after
         assert store.collection_name.startswith("ai4rag_")
 
     def test_reuses_collection_name(self, mock_pool_cls, mock_embedding, pgvector_config):
@@ -123,7 +131,9 @@ class TestPGVectorStoreInit:
                 return [0.1] * 2000
 
         conn = _conn_from(mock_pool_cls)
-        PGVectorStore(_LimitDimEmbedding(), pgvector_config)
+        store = PGVectorStore(_LimitDimEmbedding(), pgvector_config)
+        # Trigger DB access to materialise the table DDL.
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
 
         # Exactly at the limit is valid: the table is created with a 2000-dim column.
         executed = " ".join(str(c) for c in conn.execute.call_args_list)
@@ -133,21 +143,24 @@ class TestPGVectorStoreInit:
         cfg = PGVectorConfig(host="h", port=5432, dbname="d", user="u", password="secret")
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
-        PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store._ensure_db()  # trigger lazy pool creation
         connect_kwargs = mock_pool_cls.call_args.kwargs["kwargs"]
         assert connect_kwargs["password"] == "secret"
 
     def test_no_password_skips_kwarg(self, mock_pool_cls, mock_embedding, pgvector_config):
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
-        PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store._ensure_db()  # trigger lazy pool creation
         connect_kwargs = mock_pool_cls.call_args.kwargs["kwargs"]
         assert "password" not in connect_kwargs
 
     def test_pool_sized_for_concurrent_search(self, mock_pool_cls, mock_embedding, pgvector_config):
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
-        PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store._ensure_db()  # trigger lazy pool creation
         pool_kwargs = mock_pool_cls.call_args.kwargs
         assert pool_kwargs["min_size"] == PGVectorStore._MIN_POOL_SIZE
         assert pool_kwargs["max_size"] == pgvector_config.pool_max_size
@@ -159,7 +172,8 @@ class TestPGVectorStoreInit:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         cfg = replace(pgvector_config, pool_max_size=25)
-        PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store._ensure_db()  # trigger lazy pool creation
         pool_kwargs = mock_pool_cls.call_args.kwargs
         assert pool_kwargs["max_size"] == 25
 
@@ -500,7 +514,15 @@ class TestPGVectorStoreCleanAndClose:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store._ensure_db()  # trigger lazy pool creation before closing
         pool = mock_pool_cls.return_value
 
         store.close()
         pool.close.assert_called_once()
+
+    def test_close_before_any_db_access_is_safe(self, mock_pool_cls, mock_embedding, pgvector_config):
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store.close()  # pool was never opened — must not raise
+        mock_pool_cls.return_value.close.assert_not_called()
