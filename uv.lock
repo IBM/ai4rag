@@ -32,7 +32,7 @@ source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "chromadb" },
-    { name = "docling-slim", extra = ["feat-chunking", "format-audio", "format-opendocument", "standard"] },
+    { name = "docling-slim", extra = ["feat-chunking"] },
     { name = "langchain-community" },
     { name = "langchain-text-splitters" },
     { name = "multiprocess" },
@@ -57,6 +57,7 @@ code-check = [
 dev = [
     { name = "beautifulsoup4" },
     { name = "black" },
+    { name = "docling-slim", extra = ["format-audio", "format-opendocument", "standard"] },
     { name = "dotenv" },
     { name = "ipykernel" },
     { name = "isort" },
@@ -80,11 +81,15 @@ docs = [
     { name = "mkdocstrings", extra = ["python"] },
 ]
 test = [
+    { name = "docling-slim", extra = ["format-audio", "format-opendocument", "standard"] },
     { name = "nbformat" },
     { name = "psutil" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-mock" },
+]
+text-extraction = [
+    { name = "docling-slim", extra = ["format-audio", "format-opendocument", "standard"] },
 ]
 
 [package.metadata]
@@ -92,11 +97,13 @@ requires-dist = [
     { name = "ai4rag", extras = ["code-check"], marker = "extra == 'dev'" },
     { name = "ai4rag", extras = ["docs"], marker = "extra == 'dev'" },
     { name = "ai4rag", extras = ["test"], marker = "extra == 'dev'" },
+    { name = "ai4rag", extras = ["text-extraction"], marker = "extra == 'test'" },
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
     { name = "chromadb", specifier = ">=1.5,<2" },
-    { name = "docling-slim", extras = ["feat-chunking", "format-audio", "format-opendocument", "standard"], specifier = "~=2.107.0" },
+    { name = "docling-slim", extras = ["feat-chunking"], specifier = "~=2.107.0" },
+    { name = "docling-slim", extras = ["format-audio", "format-opendocument", "standard"], marker = "extra == 'text-extraction'", specifier = "~=2.107.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
@@ -125,7 +132,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = "==1.8.*" },
     { name = "unitxt", specifier = "~=1.26.1" },
 ]
-provides-extras = ["dev", "test", "code-check", "docs"]
+provides-extras = ["dev", "test", "code-check", "text-extraction", "docs"]
 
 [[package]]
 name = "aiohappyeyeballs"
