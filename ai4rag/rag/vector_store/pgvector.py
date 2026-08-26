@@ -54,7 +54,19 @@ class PGVectorStore(BaseVectorStore):
     # lazily up to the caller-supplied config.pool_max_size, so a fully concurrent
     # caller never queues for a slot as long as pool_max_size covers its own
     # concurrency (see PGVectorConfig.pool_max_size).
-    _MIN_POOL_SIZE = 1
+    #
+    # min_size=0 (no proactive connections): when _create_table() borrows the one
+    # pre-warmed connection, a min_size=1 pool would immediately open a second
+    # connection to restore the minimum, leaving *two* idle connections during the
+    # subsequent embed_documents() call.  With a large corpus (e.g. 556 hybrid
+    # chunks), that call can take >80 s — long enough for the OS TCP keepalive
+    # exhaustion (keepalives_idle + count*interval = 80 s) to declare both sockets
+    # dead.  The insert then fails on the first stale connection and the single
+    # retry exhausts the second stale one, raising IndexingError.  With min_size=0
+    # the pool never proactively opens a second connection, so only one socket
+    # accumulates during embedding; the existing one-retry policy picks up a fresh
+    # connection and the insert succeeds.
+    _MIN_POOL_SIZE = 0
 
     # pgvector caps HNSW (and IVFFlat) indexes on the ``vector`` type at 2000
     # dimensions (https://github.com/pgvector/pgvector#hnsw). Higher-dimensional
