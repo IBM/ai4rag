@@ -107,13 +107,14 @@ class TestPGVectorStoreInit:
         with caplog.at_level("WARNING"):
             store = PGVectorStore(_HighDimEmbedding(), pgvector_config)
 
-        # Construction succeeds and opens a pool like any other dimension — the store
-        # is fully usable, just without an HNSW index (asserted separately in
-        # TestPGVectorStoreSearch.test_high_dimension_search_skips_hnsw_builds_gin).
-        mock_pool_cls.assert_called_once()
+        # Warning is emitted at construction time; pool + table are still deferred.
         assert store.collection_name.startswith("ai4rag_")
         assert any("exceeds pgvector's" in record.message for record in caplog.records)
+        mock_pool_cls.assert_not_called()
 
+        # Trigger DB access; the table DDL must use the actual dimension.
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        mock_pool_cls.assert_called_once()
         executed = " ".join(str(c) for c in conn.execute.call_args_list)
         assert "vector(3072)" in executed
 
@@ -144,7 +145,7 @@ class TestPGVectorStoreInit:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
-        store._ensure_db()  # trigger lazy pool creation
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
         connect_kwargs = mock_pool_cls.call_args.kwargs["kwargs"]
         assert connect_kwargs["password"] == "secret"
 
@@ -152,7 +153,7 @@ class TestPGVectorStoreInit:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
-        store._ensure_db()  # trigger lazy pool creation
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
         connect_kwargs = mock_pool_cls.call_args.kwargs["kwargs"]
         assert "password" not in connect_kwargs
 
@@ -160,7 +161,7 @@ class TestPGVectorStoreInit:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
-        store._ensure_db()  # trigger lazy pool creation
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
         pool_kwargs = mock_pool_cls.call_args.kwargs
         assert pool_kwargs["min_size"] == PGVectorStore._MIN_POOL_SIZE
         assert pool_kwargs["max_size"] == pgvector_config.pool_max_size
@@ -173,7 +174,7 @@ class TestPGVectorStoreInit:
 
         cfg = replace(pgvector_config, pool_max_size=25)
         store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
-        store._ensure_db()  # trigger lazy pool creation
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
         pool_kwargs = mock_pool_cls.call_args.kwargs
         assert pool_kwargs["max_size"] == 25
 
@@ -507,6 +508,10 @@ class TestPGVectorStoreCleanAndClose:
         store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_to_drop")
 
         store.clean_collection()
+        all_sql = " ".join(str(c) for c in conn.execute.call_args_list)
+        # clean_collection uses _ensure_pool (not _ensure_db), so it must NOT
+        # issue a spurious CREATE TABLE before the DROP.
+        assert "CREATE TABLE" not in all_sql
         drop_calls = [c for c in conn.execute.call_args_list if "DROP TABLE" in str(c)]
         assert len(drop_calls) == 1
 
@@ -514,7 +519,7 @@ class TestPGVectorStoreCleanAndClose:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
-        store._ensure_db()  # trigger lazy pool creation before closing
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
         pool = mock_pool_cls.return_value
 
         store.close()
@@ -526,3 +531,60 @@ class TestPGVectorStoreCleanAndClose:
         store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
         store.close()  # pool was never opened — must not raise
         mock_pool_cls.return_value.close.assert_not_called()
+
+
+@patch("ai4rag.rag.vector_store.pgvector.ConnectionPool")
+class TestPGVectorStoreConcurrentInit:
+    """Verify that concurrent first DB accesses initialise pool and table exactly once."""
+
+    def test_pool_opened_exactly_once_under_concurrent_access(self, mock_pool_cls, mock_embedding, pgvector_config):
+        import threading
+
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        barrier = threading.Barrier(8)
+        errors: list[Exception] = []
+
+        def _trigger() -> None:
+            try:
+                barrier.wait()
+                store._ensure_db()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_trigger) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors, f"Concurrent _ensure_db raised: {errors}"
+        assert mock_pool_cls.call_count == 1, "Pool must be opened exactly once"
+
+    def test_table_created_exactly_once_under_concurrent_access(self, mock_pool_cls, mock_embedding, pgvector_config):
+        import threading
+
+        from ai4rag.rag.vector_store.pgvector import PGVectorStore
+
+        conn = _conn_from(mock_pool_cls)
+        store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        barrier = threading.Barrier(8)
+        errors: list[Exception] = []
+
+        def _trigger() -> None:
+            try:
+                barrier.wait()
+                store._ensure_db()
+            except Exception as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [threading.Thread(target=_trigger) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert not errors
+        create_calls = [c for c in conn.execute.call_args_list if "CREATE TABLE" in str(c)]
+        assert len(create_calls) == 1, "Table must be created exactly once"
