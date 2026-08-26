@@ -438,18 +438,39 @@ class GAMOptimizer(BaseOptimizer):
 
     @staticmethod
     def _get_balanced_combinations(combinations: list[dict], fields_to_balance: list[str]) -> list[dict]:
-        """Order by round-robin across the value tuple of fields_to_balance.
+        """Order by outer round-robin across fields_to_balance tuples, with an inner
+        round-robin across remaining string columns within each balanced bucket.
 
-        With n_random_nodes >= number of unique value-tuples for fields_to_balance,
-        every such tuple is guaranteed to appear at least once before GAM training.
+        The outer round-robin guarantees every fields_to_balance value-tuple appears
+        at least once when n_random_nodes >= n_balanced_tuples. The inner round-robin
+        ensures non-balanced string columns (e.g. chunking_method) also vary across
+        the initial evaluations rather than repeating the same value for each bucket.
         """
-        if not fields_to_balance:
+        if not combinations or not fields_to_balance:
             return combinations
 
-        def _key(c: dict) -> tuple:
+        def _outer_key(c: dict) -> tuple:
             return tuple(_str_val(c.get(f)) for f in fields_to_balance)
 
-        return _round_robin(combinations, _key)
+        str_cols = _get_string_column_values(combinations)
+        other_str_fields = [col for col in str_cols if col not in fields_to_balance]
+
+        if other_str_fields:
+            def _inner_key(c: dict) -> tuple:
+                return tuple(_str_val(c.get(f)) for f in other_str_fields)
+
+            outer_buckets: dict[tuple, list[dict]] = defaultdict(list)
+            for c in combinations:
+                outer_buckets[_outer_key(c)].append(c)
+
+            per_bucket_balanced = {
+                key: _round_robin(combs, _inner_key)
+                for key, combs in outer_buckets.items()
+            }
+            ordered = [c for combs in per_bucket_balanced.values() for c in combs]
+            return _round_robin(ordered, _outer_key)
+
+        return _round_robin(combinations, _outer_key)
 
     def _prepare_typed_encoder(self) -> None:
         """
