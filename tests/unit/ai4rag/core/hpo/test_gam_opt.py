@@ -1071,14 +1071,15 @@ class TestInitialSamplingStrategies:
         assert "vector" in {e["search_mode"] for e in new_evals}
 
     def test_greedy_strategy_covers_each_value_twice(self):
-        """'greedy' strategy puts every string column value at least twice in first n."""
+        """'greedy' strategy puts every discrete column value at least twice in first n."""
         mock_space = MagicMock(spec=SearchSpace)
+        # size has 2 unique values so max_unique=2, min_required=max(4,4)=4
         mock_space.combinations = (
-            [{"search_mode": "vector", "method": "recursive", "size": i} for i in range(4)] +
-            [{"search_mode": "hybrid", "method": "hybrid", "size": i} for i in range(4)]
+            [{"search_mode": "vector", "method": "recursive", "size": i} for i in range(2)] +
+            [{"search_mode": "hybrid", "method": "hybrid", "size": i} for i in range(2)]
         )
-        mock_space.max_combinations = 8
-        settings = GAMOptSettings(max_evals=8, n_random_nodes=4, warm_start_strategy="greedy")
+        mock_space.max_combinations = 4
+        settings = GAMOptSettings(max_evals=4, n_random_nodes=4, warm_start_strategy="greedy")
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,

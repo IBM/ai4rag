@@ -74,8 +74,13 @@ def _str_val(v: object) -> str:
     return str(v)
 
 
-def _get_string_column_values(combinations: list[dict]) -> dict[str, set[str]]:
-    """Return {col: set_of_str_values} for all string-like columns in the combinations."""
+def _get_discrete_column_values(combinations: list[dict]) -> dict[str, set[str]]:
+    """Return {col: set_of_str_values} for all discrete columns in the combinations.
+
+    All parameter types are included — strings, model objects, numeric values — so
+    that coverage tracking works for columns like chunk_size and chunk_overlap as
+    well as string columns like chunking_method or search_mode.
+    """
     if not combinations:
         return {}
     result: dict[str, set[str]] = {}
@@ -83,8 +88,7 @@ def _get_string_column_values(combinations: list[dict]) -> dict[str, set[str]]:
         sample = next((c.get(col) for c in combinations if c.get(col) is not None), None)
         if sample is None:
             continue
-        if isinstance(sample, (str, dict)) or hasattr(sample, "model_id"):
-            result[col] = {_str_val(c.get(col)) for c in combinations}
+        result[col] = {_str_val(c.get(col)) for c in combinations}
     return result
 
 
@@ -109,7 +113,7 @@ class GAMOptSettings(OptimizerSettings):
         "greedy"   — greedily pick n combinations so every string column value
                      appears at least twice (raises if n_random_nodes is too small).
         "balanced" — round-robin across the tuple of fields_to_balance values;
-                     non-balanced string column values each appear at least once.
+                     non-balanced discrete column values each appear at least once.
                      Requires fields_to_balance to be set.
     fields_to_balance : list[str] | None, default=None
         Field names to balance by round-robin when warm_start_strategy="balanced".
@@ -255,12 +259,12 @@ class GAMOptimizer(BaseOptimizer):
         """Raise ValueError when n_random_nodes is below the required minimum for the strategy.
 
         - random:   No minimum enforced — combinations are taken in shuffle order.
-        - greedy:   n_random_nodes >= 2 * max_unique_values_per_string_column, so
-                    every string column value can appear at least twice.
+        - greedy:   n_random_nodes >= 2 * max_unique_values_per_column, so every
+                    discrete column value (string or numeric) appears at least twice.
         - balanced: n_random_nodes >= max(n_balanced_tuples, max_non_balanced_unique),
                     where n_balanced_tuples is the number of unique value-tuples for
                     fields_to_balance and max_non_balanced_unique is the max number of
-                    unique values among the remaining string columns.
+                    unique values among the remaining discrete columns.
         """
         combinations = self._search_space.combinations
         if not combinations:
@@ -271,7 +275,7 @@ class GAMOptimizer(BaseOptimizer):
         if strategy == "random":
             return
 
-        str_cols = _get_string_column_values(combinations)
+        str_cols = _get_discrete_column_values(combinations)
 
         if strategy == "greedy":
             if not str_cols:
@@ -396,17 +400,17 @@ class GAMOptimizer(BaseOptimizer):
 
     @staticmethod
     def _get_greedy_combinations(combinations: list[dict], n: int) -> list[dict]:
-        """Greedily select n combinations ensuring every string column value appears >= 2 times.
+        """Greedily select n combinations ensuring every discrete column value appears >= 2 times.
 
-        At each step the candidate with the highest coverage gain (number of string column
-        values whose current count is still below 2) is selected. Ties are broken by the
-        shuffle order coming in. The n selected combinations are returned first, followed
-        by the remaining combinations in their original (shuffled) order.
+        At each step the candidate with the highest coverage gain (number of discrete column
+        values — string or numeric — whose current count is still below 2) is selected.
+        Ties are broken by the shuffle order coming in. The n selected combinations are
+        returned first, followed by the remaining combinations in their original (shuffled) order.
         """
         if not combinations or n <= 0:
             return combinations
 
-        str_cols = _get_string_column_values(combinations)
+        str_cols = _get_discrete_column_values(combinations)
         if not str_cols:
             return combinations
 
@@ -443,8 +447,8 @@ class GAMOptimizer(BaseOptimizer):
 
         The outer round-robin guarantees every fields_to_balance value-tuple appears
         at least once when n_random_nodes >= n_balanced_tuples. The inner round-robin
-        ensures non-balanced string columns (e.g. chunking_method) also vary across
-        the initial evaluations rather than repeating the same value for each bucket.
+        ensures non-balanced discrete columns (e.g. chunking_method, chunk_size) also
+        vary across the initial evaluations rather than repeating the same value for each bucket.
         """
         if not combinations or not fields_to_balance:
             return combinations
@@ -452,7 +456,7 @@ class GAMOptimizer(BaseOptimizer):
         def _outer_key(c: dict) -> tuple:
             return tuple(_str_val(c.get(f)) for f in fields_to_balance)
 
-        str_cols = _get_string_column_values(combinations)
+        str_cols = _get_discrete_column_values(combinations)
         other_str_fields = [col for col in str_cols if col not in fields_to_balance]
 
         if other_str_fields:
