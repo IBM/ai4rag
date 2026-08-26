@@ -8,10 +8,17 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
 
+from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions
-from docling.document_converter import DocumentConverter, PdfFormatOption, settings
+from docling.datamodel.pipeline_options import PdfPipelineOptions, AsrPipelineOptions
+from docling.document_converter import (
+    DocumentConverter,
+    PdfFormatOption,
+    settings,
+    AudioFormatOption,
+)
+from docling.pipeline.asr_pipeline import AsrPipeline
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
@@ -33,6 +40,12 @@ SUPPORTED_EXTENSIONS = {
     ".qmd",
     ".rmd",
     ".xhtml",
+    ".wav",
+    ".mp3",
+    ".m4a",
+    ".aac",
+    ".ogg",
+    ".flac",
 }
 
 _DEFAULT_CACHE_DIR = Path(__file__).parent / "local" / "docling_cache"
@@ -71,17 +84,28 @@ class FileStore:
         self.cache_dir = Path(cache_dir) if cache_dir is not None else None
         self.files = {}
 
-        pipeline_options = PdfPipelineOptions()
-        pipeline_options.do_ocr = False
-        pipeline_options.do_table_structure = True
-        pipeline_options.accelerator_options = AcceleratorOptions(device="auto")
+        pdf_options = PdfPipelineOptions()
+        pdf_options.do_ocr = False
+        pdf_options.do_table_structure = True
+        pdf_options.accelerator_options = AcceleratorOptions(device="auto")
+
+        asr_options = AsrPipelineOptions()
+        asr_options.asr_options = asr_model_specs.WHISPER_TINY
+        asr_options.asr_options.language = None #if we stay with default the multilang has problems with non-eng texts
 
         num_workers = os.cpu_count() or 1
         settings.perf.doc_batch_size = num_workers
         settings.perf.doc_batch_concurrency = num_workers
 
         self._converter = DocumentConverter(
-            format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)}
+            format_options={
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pdf_options),
+                InputFormat.AUDIO: AudioFormatOption(
+                    pipeline_cls=AsrPipeline,
+                    pipeline_options=asr_options
+                ),
+            }
         )
 
     def __repr__(self) -> str:
