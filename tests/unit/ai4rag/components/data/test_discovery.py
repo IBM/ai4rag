@@ -351,3 +351,59 @@ class TestDiscoverDocuments:
         )
 
         mock_client.list_objects_v2.assert_called_once_with(Bucket="my-bucket", Prefix="prefix/")
+
+    def test_audio_extensions_discovered(self, mocker):
+        """Audio files with supported extensions must be discovered."""
+        contents = [
+            _s3_object("audio/meeting.wav", 1000),
+            _s3_object("audio/podcast.mp3", 2000),
+            _s3_object("audio/recording.m4a", 1500),
+            _s3_object("audio/clip.aac", 800),
+            _s3_object("audio/voice.ogg", 600),
+            _s3_object("audio/sample.flac", 3000),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefix="audio/",
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.count == 6
+        keys = [d.key for d in result.documents]
+        assert "audio/meeting.wav" in keys
+        assert "audio/podcast.mp3" in keys
+        assert "audio/recording.m4a" in keys
+        assert "audio/clip.aac" in keys
+        assert "audio/voice.ogg" in keys
+        assert "audio/sample.flac" in keys
+
+    def test_mixed_audio_and_document_extensions(self, mocker):
+        """Audio and document files should both be discovered together."""
+        contents = [
+            _s3_object("data/report.pdf", 500),
+            _s3_object("data/meeting.mp3", 2000),
+            _s3_object("data/notes.md", 100),
+            _s3_object("data/recording.wav", 3000),
+            _s3_object("data/image.png", 400),
+            _s3_object("data/archive.zip", 400),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefix="data/",
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.count == 5
+        keys = [d.key for d in result.documents]
+        assert "data/report.pdf" in keys
+        assert "data/meeting.mp3" in keys
+        assert "data/notes.md" in keys
+        assert "data/recording.wav" in keys
+        assert "data/image.png" in keys  # images are supported (OCR)
+        assert "data/archive.zip" not in keys  # unsupported extension is filtered out

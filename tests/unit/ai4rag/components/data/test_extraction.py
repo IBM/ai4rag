@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import os
-from pathlib import Path
 
 import pytest
 
@@ -370,6 +369,7 @@ class TestBuildDoclingFormatOptions:
             InputFormat.LATEX,
             InputFormat.EPUB,
             InputFormat.EMAIL,
+            InputFormat.AUDIO,
         ):
             assert fmt in options, f"{fmt} missing from format options"
 
@@ -481,21 +481,41 @@ class TestBuildDoclingFormatOptions:
         options = _build_docling_format_options()
         assert InputFormat.IMAGE in options
 
+    def test_audio_format_uses_asr_pipeline(self):
+        """Audio format option must use the AsrPipeline class."""
+        from docling.datamodel.base_models import InputFormat
+        from docling.pipeline.asr_pipeline import AsrPipeline
+
+        options = _build_docling_format_options()
+        audio_option = options[InputFormat.AUDIO]
+        assert audio_option.pipeline_cls is AsrPipeline
+
+    def test_audio_format_language_is_auto_detect(self):
+        """Audio ASR options must use language=None for auto-detection."""
+        from docling.datamodel.base_models import InputFormat
+
+        options = _build_docling_format_options()
+        audio_option = options[InputFormat.AUDIO]
+        assert audio_option.pipeline_options.asr_options.language is None
+
 
 class TestNormalizeOcrLang:
     """Tests for OCR language normalization."""
 
     def test_default_when_none(self):
+        """``None`` normalizes to the default English tuple."""
         from ai4rag.components.data.text_extraction import _normalize_ocr_lang
 
         assert _normalize_ocr_lang(None) == ("english",)
 
     def test_string(self):
+        """A single string is wrapped into a one-element tuple."""
         from ai4rag.components.data.text_extraction import _normalize_ocr_lang
 
         assert _normalize_ocr_lang("chinese") == ("chinese",)
 
     def test_sequence(self):
+        """A sequence is preserved as a tuple in order."""
         from ai4rag.components.data.text_extraction import _normalize_ocr_lang
 
         assert _normalize_ocr_lang(["english", "chinese"]) == ("english", "chinese")
@@ -505,6 +525,7 @@ class TestDoclingExtractionConfig:
     """Tests for the config object that drives extraction behaviour."""
 
     def test_defaults(self):
+        """OCR and table structure are off by default; language defaults to English."""
         from ai4rag.components.data.text_extraction import DoclingExtractionConfig
 
         cfg = DoclingExtractionConfig()
@@ -513,16 +534,56 @@ class TestDoclingExtractionConfig:
         assert cfg.ocr_lang == ("english",)
 
     def test_ocr_lang_string_is_normalized(self):
+        """A string ``ocr_lang`` is normalized to a tuple in ``__post_init__``."""
         from ai4rag.components.data.text_extraction import DoclingExtractionConfig
 
         assert DoclingExtractionConfig(ocr_lang="chinese").ocr_lang == ("chinese",)
 
     def test_ocr_lang_sequence_is_normalized(self):
+        """A sequence ``ocr_lang`` is normalized to a tuple in ``__post_init__``."""
         from ai4rag.components.data.text_extraction import DoclingExtractionConfig
 
         assert DoclingExtractionConfig(ocr_lang=["english", "chinese"]).ocr_lang == ("english", "chinese")
 
     def test_empty_ocr_lang_falls_back_to_default(self):
+        """An empty ``ocr_lang`` falls back to the default English tuple."""
         from ai4rag.components.data.text_extraction import DoclingExtractionConfig
 
         assert DoclingExtractionConfig(ocr_lang=()).ocr_lang == ("english",)
+
+
+class TestSupportedExtensionsAudio:
+    """Tests that audio formats are included in SUPPORTED_EXTENSIONS."""
+
+    AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}
+
+    def test_audio_extensions_present(self):
+        """All audio extensions must be in SUPPORTED_EXTENSIONS."""
+        from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
+
+        for ext in self.AUDIO_EXTENSIONS:
+            assert ext in SUPPORTED_EXTENSIONS, f"{ext} missing from SUPPORTED_EXTENSIONS"
+
+    def test_original_extensions_still_present(self):
+        """Adding audio extensions must not remove existing document formats."""
+        from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
+
+        original = {
+            ".pdf",
+            ".docx",
+            ".pptx",
+            ".md",
+            ".html",
+            ".txt",
+            ".odt",
+            ".odp",
+            ".adoc",
+            ".tex",
+            ".epub",
+            ".eml",
+            ".qmd",
+            ".rmd",
+            ".xhtml",
+        }
+        for ext in original:
+            assert ext in SUPPORTED_EXTENSIONS, f"{ext} missing from SUPPORTED_EXTENSIONS"

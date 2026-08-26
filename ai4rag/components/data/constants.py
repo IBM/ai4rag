@@ -24,5 +24,11 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
         ".png",
         ".tif",
         ".tiff",
+        ".wav",
+        ".mp3",
+        ".m4a",
+        ".aac",
+        ".ogg",
+        ".flac",
     }
 )
