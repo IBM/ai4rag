@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Text extraction** — optional RapidOCR via Docling, configured through a single `DoclingExtractionConfig` passed to `extract_text` (`do_ocr`, `ocr_lang`, custom ONNX model paths); OCR remains off by default
+- **Document discovery / extraction** — JPEG, PNG, and TIFF image extensions supported for OCR-capable ingestion
+- **Text extraction** — audio ingestion (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) transcribed via Docling's ASR pipeline (Whisper), with automatic language detection
+
+### Fixed
+- **Text extraction / OCR** — fail fast with bake instructions when `DOCLING_ARTIFACTS_PATH` is set but RapidOCR ONNX models are missing; current PyPI `rapidocr` wheels no longer ship model files (bake via `tmp/Containerfile.autorag-dev`)
+
+---
+
 ## [0.12.0](https://github.com/IBM/ai4rag/releases/tag/v0.12.0)
 
 ### Added

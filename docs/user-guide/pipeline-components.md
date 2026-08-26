@@ -73,6 +73,39 @@ result = extract_text(
 print(f"Processed {result.processed_count}/{result.total_documents}")
 ```
 
+Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email, Quarto/R Markdown, XHTML, and images (JPEG, PNG, TIFF).
+
+OCR is **off by default**. Conversion behaviour (table structure and OCR) is
+controlled through a single `DoclingExtractionConfig` instance. To enable
+RapidOCR (for scanned PDFs / images):
+
+```python
+from ai4rag.components.data import DoclingExtractionConfig, extract_text
+
+result = extract_text(
+    documents=[{"key": "scans/page.png", "size_bytes": 2048}],
+    bucket="my-bucket",
+    output_dir="/tmp/extracted",
+    docling_config=DoclingExtractionConfig(
+        do_ocr=True,             # RapidOCR via Docling
+        ocr_lang="english",      # default when OCR is enabled
+        # Optional custom ONNX models for disconnected / specialized deployments:
+        # ocr_det_model_path="/models/det.onnx",
+        # ocr_cls_model_path="/models/cls.onnx",
+        # ocr_rec_model_path="/models/rec.onnx",
+        # ocr_rec_keys_path="/models/keys.txt",
+    ),
+)
+```
+
+**Language handling.** There is no automatic language detection — `ocr_lang`
+selects which bundled RapidOCR model set is loaded. Latin-script languages all
+resolve to the English models; only Chinese switches to the dedicated Chinese
+models. `ocr_lang` accepts a single string (`"english"`) or a sequence
+(`["english", "chinese"]`) and defaults to `["english"]` when OCR is enabled.
+
+Default RapidOCR models are **not** in current PyPI `rapidocr` wheels. On AutoRAG/OpenShift images with `DOCLING_ARTIFACTS_PATH` set, bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`). Docling auto-detects pages that need OCR when `do_ocr=True`. Override with `ocr_*_model_path` for custom ONNX sets.
+
 ### Test Data Loading
 
 Load benchmark test data from S3:

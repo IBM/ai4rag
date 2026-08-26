@@ -123,7 +123,7 @@ def discover_documents(  # pylint: disable=too-many-locals
         Maximum cumulative size (in gigabytes) when sampling is enabled.
     supported_extensions : set[str] | None, default=None
         File extensions to accept.  Defaults to
-        ``{".pdf", ".docx", ".pptx", ".md", ".html", ".txt"}``.
+        :data:`~ai4rag.components.data.constants.SUPPORTED_EXTENSIONS`.
     s3_client : Any | None, default=None
         Pre-configured ``boto3`` S3 client.  When ``None``, one is created
         via :func:`ai4rag.components._s3.create_s3_client`.

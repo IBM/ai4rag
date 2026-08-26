@@ -162,7 +162,7 @@ class TestDiscoverDocuments:
         """Files with unsupported extensions must be excluded."""
         contents = [
             _s3_object("docs/report.pdf", 100),
-            _s3_object("docs/image.png", 200),
+            _s3_object("docs/photo.jpg", 200),
             _s3_object("docs/archive.zip", 300),
         ]
         mock_client = _make_mock_s3_client(mocker, contents)
@@ -173,8 +173,35 @@ class TestDiscoverDocuments:
             s3_client=mock_client,
         )
 
-        assert result.count == 1
-        assert result.documents[0].key == "docs/report.pdf"
+        keys = [d.key for d in result.documents]
+        assert result.count == 2
+        assert "docs/report.pdf" in keys
+        assert "docs/photo.jpg" in keys
+        assert "docs/archive.zip" not in keys
+
+    def test_image_extensions_are_supported(self, mocker):
+        """JPEG/PNG/TIFF image keys must be discovered for OCR extraction."""
+        contents = [
+            _s3_object("docs/a.png", 10),
+            _s3_object("docs/b.jpeg", 20),
+            _s3_object("docs/c.tif", 30),
+            _s3_object("docs/d.tiff", 40),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.count == 4
+        assert {d.key for d in result.documents} == {
+            "docs/a.png",
+            "docs/b.jpeg",
+            "docs/c.tif",
+            "docs/d.tiff",
+        }
 
     def test_sampling_respects_size_limit(self, mocker):
         """Size-based sampling must stop adding files once the limit is reached."""
@@ -258,7 +285,7 @@ class TestDiscoverDocuments:
     def test_no_supported_files_raises_runtime_error(self, mocker):
         """RuntimeError must be raised when the bucket has no supported files."""
         contents = [
-            _s3_object("data/image.png", 100),
+            _s3_object("data/notes.xlsx", 100),
             _s3_object("data/archive.tar.gz", 200),
         ]
         mock_client = _make_mock_s3_client(mocker, contents)
@@ -361,6 +388,7 @@ class TestDiscoverDocuments:
             _s3_object("data/notes.md", 100),
             _s3_object("data/recording.wav", 3000),
             _s3_object("data/image.png", 400),
+            _s3_object("data/archive.zip", 400),
         ]
         mock_client = _make_mock_s3_client(mocker, contents)
 
@@ -371,10 +399,11 @@ class TestDiscoverDocuments:
             s3_client=mock_client,
         )
 
-        assert result.count == 4
+        assert result.count == 5
         keys = [d.key for d in result.documents]
         assert "data/report.pdf" in keys
         assert "data/meeting.mp3" in keys
         assert "data/notes.md" in keys
         assert "data/recording.wav" in keys
-        assert "data/image.png" not in keys
+        assert "data/image.png" in keys  # images are supported (OCR)
+        assert "data/archive.zip" not in keys  # unsupported extension is filtered out
