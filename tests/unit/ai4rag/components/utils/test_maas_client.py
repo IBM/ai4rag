@@ -99,8 +99,30 @@ class TestCreateMaasClient:
 
         assert result is mock_client
         mock_client.models.list.assert_called_once()
-        # OpenAI should have been instantiated exactly once (no fallback).
-        mock_openai_cls.assert_called_once_with(base_url="https://maas.example.com", api_key="test-key")
+        # OpenAI should have been instantiated exactly once (no fallback), with /v1 appended.
+        mock_openai_cls.assert_called_once_with(base_url="https://maas.example.com/v1", api_key="test-key")
+
+    def test_does_not_duplicate_v1_suffix(self, mocker):
+        """A base URL that already ends with ``/v1`` is passed through unchanged."""
+        mock_openai_cls = mocker.patch("ai4rag.components.utils.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+
+        from ai4rag.components.utils.maas_client import create_maas_client
+
+        create_maas_client(base_url="https://maas.example.com/v1", api_key="test-key")
+
+        mock_openai_cls.assert_called_once_with(base_url="https://maas.example.com/v1", api_key="test-key")
+
+    def test_strips_trailing_slash_before_appending_v1(self, mocker):
+        """A trailing slash on the base URL doesn't produce a double slash before ``/v1``."""
+        mock_openai_cls = mocker.patch("ai4rag.components.utils.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+
+        from ai4rag.components.utils.maas_client import create_maas_client
+
+        create_maas_client(base_url="https://maas.example.com/", api_key="test-key")
+
+        mock_openai_cls.assert_called_once_with(base_url="https://maas.example.com/v1", api_key="test-key")
 
     def test_falls_back_to_unverified_tls_on_ssl_error(self, mocker):
         """An SSL verification failure triggers a retry with ``verify=False``."""
