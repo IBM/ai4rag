@@ -40,8 +40,8 @@ def create_maas_client(base_url: str, api_key: str) -> OpenAI:
     Parameters
     ----------
     base_url
-        Complete OpenAI-compatible MaaS endpoint URL, used verbatim
-        (e.g. ``https://<host>/v1``).
+        OpenAI-compatible MaaS endpoint URL (e.g. ``https://<host>``). The
+        ``/v1`` path segment is appended automatically if not already present.
     api_key
         API key for authentication.
 
@@ -50,6 +50,9 @@ def create_maas_client(base_url: str, api_key: str) -> OpenAI:
     OpenAI
         A connected client instance.
     """
+    base_url = base_url.rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
     client = OpenAI(base_url=base_url, api_key=api_key)
     try:
         client.models.list()

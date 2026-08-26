@@ -24,9 +24,9 @@ class TestCreateMaasClient:
         # Verify client is returned
         assert client == mock_client_instance
 
-        # Verify OpenAI was called
+        # Verify OpenAI was called, with /v1 appended to the base URL
         mock_openai_cls.assert_called_once_with(
-            base_url="http://test.com",
+            base_url="http://test.com/v1",
             api_key="test-key",
         )
 
@@ -57,12 +57,12 @@ class TestCreateMaasClient:
         # Verify first call with SSL verification
         assert mock_openai_cls.call_count == 2
         first_call = mock_openai_cls.call_args_list[0]
-        assert first_call.kwargs["base_url"] == "http://test.com"
+        assert first_call.kwargs["base_url"] == "http://test.com/v1"
         assert first_call.kwargs["api_key"] == "test-key"
 
         # Verify second call with verify=False
         second_call = mock_openai_cls.call_args_list[1]
-        assert second_call.kwargs["base_url"] == "http://test.com"
+        assert second_call.kwargs["base_url"] == "http://test.com/v1"
         assert second_call.kwargs["api_key"] == "test-key"
         assert second_call.kwargs["http_client"] == mock_http_client
 
