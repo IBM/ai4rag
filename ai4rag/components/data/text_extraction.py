@@ -483,20 +483,25 @@ def _rapidocr_artifacts_rel_paths(ocr_lang: tuple[str, ...]) -> tuple[str, ...]:
 def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:
     """Return RapidOCR wheel model paths when the installed package still ships ONNX files.
 
-    ``rapidocr`` is a transitive dependency of Docling, so it is expected to be
-    importable whenever OCR runs.  A failed import therefore signals a broken
-    install rather than an optional feature being absent, so we log it loudly
-    before falling back to the ``DOCLING_ARTIFACTS_PATH`` resolution path.
+    Only called on the OCR path (``do_ocr=True``).  ``rapidocr`` is a hard
+    transitive dependency of ``docling-slim[standard]``, so it must be importable
+    whenever OCR is requested; a failed import means a broken install and OCR
+    genuinely cannot run, so we raise an actionable error rather than degrade
+    silently (a bare ``ImportError`` would otherwise surface deep inside a worker
+    process).
+
+    ``None`` is returned only for the *expected* case where rapidocr imports but
+    no longer bundles ONNX files (current wheels), letting the caller fall back
+    to the ``DOCLING_ARTIFACTS_PATH`` resolution path.
     """
     try:
         import rapidocr
-    except ImportError:
-        _logger.warning(
-            "Could not import 'rapidocr' (expected to be installed as a Docling "
-            "dependency). Falling back to DOCLING_ARTIFACTS_PATH for OCR models.",
-            exc_info=True,
-        )
-        return None
+    except ImportError as exc:
+        raise RuntimeError(
+            "OCR was requested (do_ocr=True) but the 'rapidocr' package is not importable. "
+            "It ships with 'docling-slim[standard]', so this indicates a broken install; "
+            "reinstall ai4rag (or docling) to restore it, or disable OCR."
+        ) from exc
 
     models_dir = Path(rapidocr.__file__).resolve().parent / "models"
     paths = {

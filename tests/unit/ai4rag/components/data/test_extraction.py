@@ -441,6 +441,18 @@ class TestBuildDoclingFormatOptions:
         with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
+    def test_missing_rapidocr_package_raises(self, monkeypatch):
+        """A non-importable rapidocr on the OCR path fails fast with an actionable error."""
+        import sys
+
+        from ai4rag.components.data import text_extraction as te
+
+        # Setting the module to None in sys.modules makes ``import rapidocr`` raise ImportError.
+        monkeypatch.setitem(sys.modules, "rapidocr", None)
+
+        with pytest.raises(RuntimeError, match="rapidocr"):
+            te._try_resolve_wheel_rapidocr_model_paths()
+
     def test_uses_artifacts_when_rapidocr_models_present(self, monkeypatch, tmp_path):
         """With RapidOCR models under DOCLING_ARTIFACTS_PATH, leave paths unset for Docling."""
         from docling.datamodel.base_models import InputFormat
