@@ -1070,6 +1070,38 @@ class TestInitialSamplingStrategies:
         new_evals = optimizer.evaluations[len(known):]
         assert "vector" in {e["search_mode"] for e in new_evals}
 
+    def test_balanced_strategy_covers_non_balanced_column_values(self):
+        """'balanced' initial phase covers non-balanced column values (e.g. chunk_size).
+
+        Regression: the old full-tuple inner key created unique keys per combination,
+        making _round_robin a no-op and leaving all selected items at chunk_size=512.
+        """
+        mock_space = MagicMock(spec=SearchSpace)
+        # 2 search modes × 3 chunk_sizes × 2 methods = 12 combinations
+        mock_space.combinations = [
+            {"search_mode": mode, "chunk_size": size, "method": method}
+            for mode in ("vector", "hybrid")
+            for size in (512, 1024, 2048)
+            for method in ("recursive", "flat")
+        ]
+        mock_space.max_combinations = 12
+        settings = GAMOptSettings(
+            max_evals=12, n_random_nodes=6, random_state=64,
+            warm_start_strategy="balanced", fields_to_balance=["search_mode"],
+        )
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+        initial = optimizer.evaluations[:settings.n_random_nodes]
+        chunk_sizes_seen = {e["chunk_size"] for e in initial}
+        assert len(chunk_sizes_seen) > 1, (
+            f"Only one chunk_size ({chunk_sizes_seen}) appeared in the first "
+            f"{settings.n_random_nodes} evaluations — inner round-robin is broken."
+        )
+
     def test_greedy_strategy_covers_each_value_twice(self):
         """'greedy' strategy puts every discrete column value at least twice in first n."""
         mock_space = MagicMock(spec=SearchSpace)

@@ -459,22 +459,29 @@ class GAMOptimizer(BaseOptimizer):
         str_cols = _get_discrete_column_values(combinations)
         other_str_fields = [col for col in str_cols if col not in fields_to_balance]
 
+        outer_buckets: dict[tuple, list[dict]] = defaultdict(list)
+        for c in combinations:
+            outer_buckets[_outer_key(c)].append(c)
+
         if other_str_fields:
-            def _inner_key(c: dict) -> tuple:
-                return tuple(_str_val(c.get(f)) for f in other_str_fields)
+            # Apply round-robin per non-balanced field in ascending cardinality order
+            # so the highest-cardinality field (e.g. chunk_size) dominates the cycling
+            # pattern.  Using a full-tuple key creates unique keys for every combination
+            # (single-item buckets), making _round_robin a no-op — so we must apply it
+            # one field at a time.
+            fields_by_cardinality = sorted(other_str_fields, key=lambda f: len(str_cols[f]))
 
-            outer_buckets: dict[tuple, list[dict]] = defaultdict(list)
-            for c in combinations:
-                outer_buckets[_outer_key(c)].append(c)
+            per_bucket_balanced: dict[tuple, list[dict]] = {}
+            for key, combs in outer_buckets.items():
+                result: list[dict] = list(combs)
+                for field in fields_by_cardinality:
+                    result = _round_robin(result, lambda c, f=field: _str_val(c.get(f)))
+                per_bucket_balanced[key] = result
+        else:
+            per_bucket_balanced = dict(outer_buckets)
 
-            per_bucket_balanced = {
-                key: _round_robin(combs, _inner_key)
-                for key, combs in outer_buckets.items()
-            }
-            ordered = [c for combs in per_bucket_balanced.values() for c in combs]
-            return _round_robin(ordered, _outer_key)
-
-        return _round_robin(combinations, _outer_key)
+        ordered = [c for combs in per_bucket_balanced.values() for c in combs]
+        return _round_robin(ordered, _outer_key)
 
     def _prepare_typed_encoder(self) -> None:
         """
