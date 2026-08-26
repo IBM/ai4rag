@@ -29,7 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "docling-slim[standard,feat-chunking,format-opendocument,asr]~=2.107.0",
+  "docling-slim[standard,feat-chunking,format-opendocument,format-audio]~=2.107.0",
   "chromadb>=1.5,<2",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
