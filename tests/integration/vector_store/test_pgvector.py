@@ -19,6 +19,7 @@ import pytest
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import PGVectorConfig
 from ai4rag.rag.vector_store.pgvector import PGVectorStore
+from tests.integration.vector_store.conftest import DeterministicEmbeddingModel
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("PGVECTOR_HOST") is None,
@@ -36,6 +37,7 @@ def _table_exists(store: PGVectorStore) -> bool:
     return row is not None and row[0] is not None
 
 
+@pytest.mark.pgvector
 class TestPGVectorIntegration:
     """Full create → add → search → drop lifecycle against a live pgvector server.
 
@@ -108,3 +110,66 @@ class TestPGVectorIntegration:
             assert not _table_exists(store)
         finally:
             store.close()
+
+
+def _index_names(store: PGVectorStore) -> set[str]:
+    """Return the names of every index currently defined on the store's table."""
+    with store._pool.connection() as conn:
+        rows = conn.execute(
+            "SELECT indexname FROM pg_indexes WHERE tablename = %s", (store.collection_name,)
+        ).fetchall()
+    return {row[0] for row in rows}
+
+
+@pytest.mark.pgvector
+class TestPGVectorHighDimensionIntegration:
+    """Verifies the >2000-dim fallback against a real pgvector extension.
+
+    pgvector caps HNSW/IVFFlat indexes at 2000 dimensions
+    (see :attr:`PGVectorStore._MAX_INDEXABLE_DIMENSION`); above that, the store must
+    still store, index (full-text only), and search correctly — just without an ANN
+    index on the embedding column. This class exercises that against a live server,
+    since ``TestPGVectorIntegration`` above only covers the ≤2000-dim path and the
+    unit suite only mocks the DDL rather than running it against a real pgvector
+    extension.
+    """
+
+    @staticmethod
+    @pytest.fixture(scope="class")
+    def vector_store(sample_chunks):
+        store = PGVectorStore(
+            embedding_model=DeterministicEmbeddingModel(dimension=2100),
+            config=PGVectorConfig.from_env(),
+            collection_name="ai4rag_integration_test_highdim",
+        )
+        store.add_documents(sample_chunks)
+        try:
+            yield store
+        finally:
+            store.clean_collection()
+            store.close()
+
+    def test_hnsw_index_is_not_created_but_gin_is(self, vector_store):
+        """Triggering index creation (first search) skips HNSW but still builds GIN."""
+        vector_store.search("anything", k=1)  # triggers _ensure_indexes
+
+        names = _index_names(vector_store)
+        assert not any("hnsw" in name for name in names)
+        assert any("gin" in name for name in names)
+
+    def test_search_returns_exact_relevant_chunk(self, vector_store, sample_chunks):
+        """Without an ANN index, search still returns the exact nearest match."""
+        target = sample_chunks[0]
+        results = vector_store.search(target.text, k=len(sample_chunks))
+
+        assert results, "search returned no results"
+        assert results[0].text == target.text
+        assert results[0].metadata["document_id"] == target.metadata["document_id"]
+
+    def test_hybrid_search_still_works(self, vector_store, sample_chunks):
+        """Hybrid (dense + keyword) fusion is unaffected by the missing ANN index."""
+        target = sample_chunks[0]
+        results = vector_store.search(target.text, k=len(sample_chunks), search_mode="hybrid", ranker_strategy="rrf")
+
+        assert results
+        assert target.text in {result.text for result in results}

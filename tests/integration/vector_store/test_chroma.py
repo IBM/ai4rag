@@ -25,6 +25,7 @@ def _collection_exists(store: ChromaVectorStore, name: str) -> bool:
     return name in {collection.name for collection in store._client.list_collections()}
 
 
+@pytest.mark.chroma
 class TestChromaIntegration:
     """Full create → add → search → drop lifecycle against a live Chroma server.
 
