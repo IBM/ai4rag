@@ -30,6 +30,7 @@ from ai4rag.search_space.prepare.models import (
     _validate_foundation_model,
     get_embedding_models,
     get_foundation_models,
+    serialize_model,
 )
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
@@ -317,3 +318,62 @@ class TestRestoreFromSpec:
         client = _serving_client([])
         with pytest.raises(SearchSpaceValueError, match="must include a non-empty 'model_id'"):
             get_foundation_models(client, [{"params": {"temperature": 0.1}}], validate=False)
+
+
+# ---------------------------------------------------------------------------
+# Serialization (the write mirror of restore)
+# ---------------------------------------------------------------------------
+
+
+class TestSerializeModel:
+    """serialize_model must produce specs that restore back to equivalent models."""
+
+    def test_foundation_model_serializes_and_round_trips(self):
+        """A foundation model serializes to a spec that restores to the same model."""
+        client = _serving_client([])
+        spec = {
+            "model_id": _FM_ID,
+            "type": "generation",
+            "params": {"temperature": 0.4},
+            "language": {"code": "de", "name": "German"},
+            "system_message_text": "sys {reference_documents} {question}",
+            "user_message_text": "usr {reference_documents} {question}",
+            "context_template_text": "ctx {document}",
+        }
+        (model,) = get_foundation_models(client, [spec], validate=False)
+
+        out = serialize_model(model)
+
+        assert out["model_id"] == _FM_ID
+        assert out["type"] == "generation"
+        assert out["params"]["temperature"] == 0.4
+        assert out["language"]["code"] == "de"
+        assert out["language"]["name"] == "German"
+        assert out["system_message_text"] == spec["system_message_text"]
+        assert out["context_template_text"] == spec["context_template_text"]
+
+        # Restoring the serialized spec yields an equivalent model.
+        (restored,) = get_foundation_models(client, [out], validate=False)
+        assert restored.model_id == model.model_id
+        assert restored.params.temperature == model.params.temperature
+        assert restored.language.code == model.language.code
+
+    def test_embedding_model_serializes_without_language_or_prompts(self):
+        """An embedding spec carries params only — no language or prompt keys."""
+        client = _serving_client([])
+        spec = {
+            "model_id": _EM_ID,
+            "type": "embedding",
+            "params": {"embedding_dimension": 1024, "context_length": 8192},
+        }
+        (model,) = get_embedding_models(client, [spec], validate=False)
+
+        out = serialize_model(model)
+
+        assert out["model_id"] == _EM_ID
+        assert out["type"] == "embedding"
+        assert out["params"]["embedding_dimension"] == 1024
+        assert out["params"]["context_length"] == 8192
+        assert "language" not in out
+        assert "system_message_text" not in out
+        assert "context_template_text" not in out
