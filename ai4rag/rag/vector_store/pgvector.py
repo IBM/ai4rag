@@ -58,11 +58,12 @@ class PGVectorStore(BaseVectorStore):
 
     # pgvector caps HNSW (and IVFFlat) indexes on the ``vector`` type at 2000
     # dimensions (https://github.com/pgvector/pgvector#hnsw). Higher-dimensional
-    # vectors still store and query correctly, but the index cannot be built. Since
-    # indexes are created lazily on the first search (see ``_ensure_indexes``), an
-    # oversized model would otherwise crash on the first query — after a full, and
-    # potentially costly, embed-and-insert cycle. Rejecting it here fails fast,
-    # before a connection is opened or a single document is embedded.
+    # vectors still store and query correctly — only the ANN index cannot be built.
+    # Rather than rejecting oversized models outright, ``_ensure_indexes`` skips
+    # building the HNSW index above this threshold and lets PostgreSQL fall back to
+    # an exact sequential scan: slower per query, but still fully correct (in fact
+    # exact rather than HNSW's approximate result), and every other code path
+    # (storage, keyword search, hybrid fusion) is unaffected by the dimension.
     _MAX_INDEXABLE_DIMENSION = 2000
 
     _DISTANCE_METRIC_TO_OPERATOR: dict[str, str] = {
@@ -111,19 +112,18 @@ class PGVectorStore(BaseVectorStore):
         Raises
         ------
         ValueError
-            If ``distance_metric`` is not one of the supported metrics, or if the
-            model's embedding dimension exceeds pgvector's HNSW index limit of
-            :attr:`_MAX_INDEXABLE_DIMENSION` dimensions.
+            If ``distance_metric`` is not one of the supported metrics.
         """
         super().__init__(embedding_model, config, distance_metric, collection_name)
         self._embedding_dimension = resolve_embedding_dimension(self.embedding_model)
         if self._embedding_dimension > self._MAX_INDEXABLE_DIMENSION:
-            raise ValueError(
-                f"Embedding dimension {self._embedding_dimension} exceeds pgvector's "
-                f"{self._MAX_INDEXABLE_DIMENSION}-dimension limit for HNSW indexes. "
-                f"Use an embedding model with at most {self._MAX_INDEXABLE_DIMENSION} "
-                "dimensions, or a backend that supports higher-dimensional indexing "
-                "(e.g. Milvus)."
+            logger.warning(
+                "Embedding dimension %d exceeds pgvector's %d-dimension limit for HNSW "
+                "indexes; searches on collection %r will use an exact sequential scan "
+                "instead of an approximate nearest-neighbor index.",
+                self._embedding_dimension,
+                self._MAX_INDEXABLE_DIMENSION,
+                self._collection_name,
             )
 
         distance_key = distance_metric.lower()
@@ -253,6 +253,12 @@ class PGVectorStore(BaseVectorStore):
         catalog. The lock prevents that race for this instance; the ``UniqueViolation``
         catch below is a second line of defense for a collection shared across instances
         (e.g. reused by another trial), where no Python-level lock can help.
+
+        The HNSW index is only built when :attr:`_embedding_dimension` is within
+        pgvector's :attr:`_MAX_INDEXABLE_DIMENSION` limit; above it, this step is
+        skipped entirely (search then falls back to an exact sequential scan) while
+        the GIN full-text index is still built unconditionally, since it does not
+        depend on the embedding column at all.
         """
         if self._indexes_built:
             return
@@ -267,13 +273,23 @@ class PGVectorStore(BaseVectorStore):
                 # Each statement is guarded independently, not by one shared try/except:
                 # under autocommit there is no transaction spanning them, so a race lost on
                 # one index must not skip creating the other.
-                self._create_index_ignoring_race(
-                    conn,
-                    f"""
-                    CREATE INDEX IF NOT EXISTS {hnsw_idx}
-                    ON {self._quoted_table()} USING hnsw (embedding {self._index_ops})
-                    """,
-                )
+                if self._embedding_dimension <= self._MAX_INDEXABLE_DIMENSION:
+                    self._create_index_ignoring_race(
+                        conn,
+                        f"""
+                        CREATE INDEX IF NOT EXISTS {hnsw_idx}
+                        ON {self._quoted_table()} USING hnsw (embedding {self._index_ops})
+                        """,
+                    )
+                else:
+                    logger.info(
+                        "Skipping HNSW index for %s: embedding dimension %d exceeds "
+                        "pgvector's %d-dimension limit; search will use an exact "
+                        "sequential scan.",
+                        self._collection_name,
+                        self._embedding_dimension,
+                        self._MAX_INDEXABLE_DIMENSION,
+                    )
                 self._create_index_ignoring_race(
                     conn,
                     f"""

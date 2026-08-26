@@ -856,8 +856,8 @@ config = PGVectorConfig(host="localhost", port=5432, dbname="ai4rag", user="ai4r
 
 The resolved `collection_name` is used verbatim as the physical PostgreSQL table name — created with an `id` primary key, a `document` JSONB payload, an `embedding` vector column, `content_text`, and a `tokenized_content` `tsvector` column feeding full-text search. Supported `distance_metric` values are `"cosine"`, `"l2"`, `"l1"`, and `"inner_product"`.
 
-!!! warning "Embedding dimension limit"
-    pgvector caps HNSW indexes on the `vector` type at 2000 dimensions. `PGVectorStore.__init__` raises `ValueError` up front if the embedding model's dimension exceeds this limit, rather than failing later on the first indexed search — use `MilvusVectorStore` for higher-dimensional embedding models.
+!!! note "Embedding dimensions above 2000"
+    pgvector caps HNSW/IVFFlat indexes on the `vector` type at 2000 dimensions. `PGVectorStore` still creates the table and stores/queries vectors of any dimension pgvector supports (up to 16,000) — above 2000, it simply skips building the HNSW index and logs a warning, so searches fall back to an exact sequential scan instead of an approximate one. Results remain correct; only per-query latency scales with collection size. For very large, high-dimension collections where scan latency matters, `MilvusVectorStore` remains available.
 
 **Hybrid Search:**
 

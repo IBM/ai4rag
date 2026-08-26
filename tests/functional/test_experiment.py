@@ -77,6 +77,7 @@ def _make_event_handler(test_name):
     return LocalEventHandler()
 
 
+@pytest.mark.chroma
 class TestExperimentChroma:
     """Run experiment with chroma vector store and MaaS models."""
 
@@ -112,6 +113,7 @@ class TestExperimentChroma:
         assert 0 <= best_eval.final_score <= 1
 
 
+@pytest.mark.milvus
 class TestExperimentMilvus:
     """Run experiment with a direct Milvus vector store client and MaaS models."""
 
@@ -147,6 +149,7 @@ class TestExperimentMilvus:
         assert 0 <= best_eval.final_score <= 1
 
 
+@pytest.mark.pgvector
 class TestExperimentPGVector:
     """Run experiment with PG vector store and MaaS models."""
 
@@ -182,6 +185,7 @@ class TestExperimentPGVector:
         assert 0 <= best_eval.final_score <= 1
 
 
+@pytest.mark.chroma
 class TestExperimentChromaWithKnownObservations:
     """Run experiment with chroma, MaaS models, and known observations."""
 

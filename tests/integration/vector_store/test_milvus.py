@@ -33,6 +33,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
+@pytest.mark.milvus
 class TestMilvusIntegration:
     """Full create → add → search → drop lifecycle against a live Milvus server.
 
