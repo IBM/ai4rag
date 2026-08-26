@@ -29,7 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "docling-slim[standard,feat-chunking,format-opendocument,format-audio]~=2.107.0",
+  "docling-slim[feat-chunking]~=2.107.0",
   "chromadb>=1.5,<2",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
@@ -64,9 +64,11 @@ dev = [
   "ipykernel",
 ]
 
-test = ["pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
+test = ["ai4rag[text-extraction]", "pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
 
 code_check = ["pylint", "black", "isort"]
+
+text-extraction = ["docling-slim[standard,format-opendocument,format-audio]~=2.107.0"]
 
 docs = [
   "mkdocs~=1.6.0",
