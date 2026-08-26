@@ -12,11 +12,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PaginatedPipelineOptions, ThreadedPdfPipelineOptions
+from docling.datamodel.pipeline_options import (
+    AsrPipelineOptions,
+    PaginatedPipelineOptions,
+    ThreadedPdfPipelineOptions,
+)
 from docling.document_converter import (
     AsciiDocFormatOption,
+    AudioFormatOption,
     DocumentConverter,
     EmailFormatOption,
     EpubFormatOption,
@@ -29,6 +35,7 @@ from docling.document_converter import (
     PowerpointFormatOption,
     WordFormatOption,
 )
+from docling.pipeline.asr_pipeline import AsrPipeline
 
 from ai4rag import handler
 from ai4rag.components.data.constants import SUPPORTED_EXTENSIONS
@@ -361,6 +368,12 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         do_table_structure=do_table_structure,
         accelerator_options=accel,
     )
+
+    asr_pipeline_options = AsrPipelineOptions(
+        asr_options=asr_model_specs.WHISPER_TINY,
+    )
+    asr_pipeline_options.asr_options.language = None
+
     paginated_pipeline_options = PaginatedPipelineOptions(
         artifacts_path=ap,
         generate_page_images=False,
@@ -379,6 +392,7 @@ def _build_docling_format_options(do_table_structure: bool = False) -> dict:
         InputFormat.LATEX: LatexFormatOption(),
         InputFormat.EPUB: EpubFormatOption(),
         InputFormat.EMAIL: EmailFormatOption(),
+        InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=asr_pipeline_options),
     }
 
 

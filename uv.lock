@@ -96,7 +96,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'code-check'" },
     { name = "boto3", specifier = ">=1.28" },
     { name = "chromadb", specifier = ">=1.5,<2" },
-    { name = "docling-slim", extras = ["feat-chunking", "format-opendocument", "standard"], specifier = "~=2.107.0" },
+    { name = "docling-slim", extras = ["asr", "feat-chunking", "format-opendocument", "standard"], specifier = "~=2.107.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
