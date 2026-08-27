@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
-from .config import BaseVectorStoreConfig, MilvusConfig, MilvusLiteConfig, PGVectorConfig
+from .config import BaseVectorStoreConfig, MilvusConfig, MilvusLiteConfig, Neo4jConfig, PGVectorConfig
 
 
 def get_vector_store(
@@ -23,7 +23,7 @@ def get_vector_store(
     embedding_model : BaseEmbeddingModel
         Embedding model used for embeddings creation.
 
-    config : MilvusConfig | MilvusLiteConfig | PGVectorConfig
+    config : MilvusConfig | MilvusLiteConfig | Neo4jConfig | PGVectorConfig
         Connection config for the chosen backend. :class:`MilvusConfig` targets a
         remote Milvus server; :class:`MilvusLiteConfig` selects the embedded,
         local Milvus Lite engine.
@@ -79,6 +79,18 @@ def get_vector_store(
             from .pgvector import PGVectorStore
 
             return PGVectorStore(
+                embedding_model=embedding_model,
+                config=config,
+                collection_name=collection_name,
+            )
+
+        case "neo4j":
+            if not isinstance(config, Neo4jConfig):
+                raise TypeError("Neo4jConfig is required when provider='neo4j'.")
+
+            from .neo4j import Neo4jGraphStore
+
+            return Neo4jGraphStore(
                 embedding_model=embedding_model,
                 config=config,
                 collection_name=collection_name,

@@ -22,8 +22,8 @@ class Retriever:
     number_of_chunks : int
         Number of chunks to retrieve.
 
-    search_mode : Literal["vector", "hybrid"], default="vector"
-        Search mode passed to the vector store: "vector" or "hybrid".
+    search_mode : Literal["vector", "hybrid", "graph"], default="vector"
+        Search mode passed to the vector store: "vector", "hybrid", or "graph".
 
     ranker_strategy : str | None, default=None
         Ranking strategy for hybrid search: "rrf", "weighted", or "normalized".
@@ -40,7 +40,7 @@ class Retriever:
         vector_store: BaseVectorStore,
         number_of_chunks: int,
         method: Literal["simple"] = "simple",
-        search_mode: Literal["vector", "hybrid"] = "vector",
+        search_mode: Literal["vector", "hybrid", "graph"] = "vector",
         ranker_strategy: str | None = None,
         ranker_k: int | None = None,
         ranker_alpha: float | None = None,

@@ -13,6 +13,7 @@ __all__ = [
     "BaseVectorStoreConfig",
     "MilvusConfig",
     "MilvusLiteConfig",
+    "Neo4jConfig",
     "PGVectorConfig",
     "get_vector_store_config",
     "get_vector_store_env_vars",
@@ -310,11 +311,65 @@ class PGVectorConfig(BaseVectorStoreConfig):
         )
 
 
+@dataclass(frozen=True, kw_only=True)
+class Neo4jConfig(BaseVectorStoreConfig):
+    """Connection parameters for a Neo4j instance.
+
+    Parameters
+    ----------
+    uri : str
+        Bolt or neo4j URI. Use ``neo4j+s://host:7687`` for encrypted (AuraDB /
+        self-signed TLS), ``neo4j://host:7687`` for plaintext.
+    username : str, default="neo4j"
+        Database user.
+    password : str
+        Database password.
+    database : str, default="neo4j"
+        Target Neo4j database name (``neo4j`` in Community Edition).
+    provider : str, default="neo4j"
+        Backend discriminator.
+    """
+
+    env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("NEO4J_URI", "Bolt or neo4j URI. Use neo4j+s://host:7687 for TLS. (required)"),
+        ("NEO4J_USERNAME", "Database user (default neo4j)."),
+        ("NEO4J_PASSWORD", "Database password. (required)"),
+        ("NEO4J_DATABASE", "Neo4j database name (default neo4j)."),
+    )
+
+    uri: str
+    username: str = "neo4j"
+    password: str = ""
+    database: str = "neo4j"
+    provider: str = "neo4j"
+
+    @classmethod
+    def from_env(cls) -> "Neo4jConfig":
+        """Build config from ``NEO4J_*`` environment variables.
+
+        Returns
+        -------
+        Neo4jConfig
+            Config populated from the ``NEO4J_*`` environment variables.
+
+        Raises
+        ------
+        KeyError
+            If the required ``NEO4J_URI`` or ``NEO4J_PASSWORD`` variable is not set.
+        """
+        return cls(
+            uri=os.environ["NEO4J_URI"],
+            username=os.environ.get("NEO4J_USERNAME", "neo4j"),
+            password=os.environ["NEO4J_PASSWORD"],
+            database=os.environ.get("NEO4J_DATABASE", "neo4j"),
+        )
+
+
 # Registry mapping a provider discriminator to its config class. Built from each
 # class's ``provider`` default so the provider string has a single source of truth.
 # Wrapped in a read-only view so importers cannot mutate the shared mapping.
 _CONFIG_BY_PROVIDER: MappingProxyType[str, type[BaseVectorStoreConfig]] = MappingProxyType(
-    {config_cls.provider: config_cls for config_cls in (MilvusConfig, MilvusLiteConfig, PGVectorConfig)}
+    {config_cls.provider: config_cls for config_cls in (MilvusConfig, MilvusLiteConfig, Neo4jConfig, PGVectorConfig)}
 )
 
 #: Provider discriminators accepted by :func:`get_vector_store_config` and

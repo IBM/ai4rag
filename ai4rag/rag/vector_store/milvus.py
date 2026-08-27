@@ -259,6 +259,11 @@ class MilvusVectorStore(BaseVectorStore):
         list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
             Matched chunks, optionally paired with their scores.
         """
+        if search_mode not in ("vector", "hybrid"):
+            raise ValueError(
+                f"search_mode='{search_mode}' is not supported by MilvusVectorStore. "
+                "Use 'vector' or 'hybrid'."
+            )
         validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
 
         if search_mode == "hybrid":

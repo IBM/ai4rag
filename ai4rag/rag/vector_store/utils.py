@@ -120,9 +120,9 @@ def resolve_collection_name(collection_name: str | None) -> str:
     return sanitized
 
 
-#: Supported search modes shared by every hybrid-capable backend: pure dense
-#: vector search, or dense + sparse/keyword ``hybrid`` search.
-_VALID_SEARCH_MODES = ("vector", "hybrid")
+#: Supported search modes across all backends: pure dense vector search,
+#: dense + sparse/keyword ``hybrid`` search, and Neo4j-exclusive ``graph`` search.
+_VALID_SEARCH_MODES = ("vector", "hybrid", "graph")
 
 #: Supported hybrid reranking strategies shared by every hybrid-capable backend.
 _VALID_RANKER_STRATEGIES = ("rrf", "weighted", "normalized")
