@@ -36,7 +36,7 @@ and Kubernetes-specific concerns (secrets, resource limits).  All business logic
 
 ## Installation
 
-S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction (`docling`) are all included in the core `ai4rag` install — no extra dependencies are needed to use pipeline components.
+S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for born-digital documents (`docling-slim[feat-chunking]`) are all included in the core `ai4rag` install. OCR (scanned PDFs/images) and audio transcription additionally require the `text-extraction` extra — see [Installation](../getting-started/installation.md#basic-installation).
 
 ## Data Components
 
@@ -73,7 +73,7 @@ result = extract_text(
 print(f"Processed {result.processed_count}/{result.total_documents}")
 ```
 
-Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email, Quarto/R Markdown, XHTML, and images (JPEG, PNG, TIFF).
+Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email, Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
 OCR is **off by default**. Conversion behaviour (table structure and OCR) is
 controlled through a single `DoclingExtractionConfig` instance. To enable
@@ -105,6 +105,20 @@ models. `ocr_lang` accepts a single string (`"english"`) or a sequence
 (`["english", "chinese"]`) and defaults to `["english"]` when OCR is enabled.
 
 Default RapidOCR models are **not** in current PyPI `rapidocr` wheels. On AutoRAG/OpenShift images with `DOCLING_ARTIFACTS_PATH` set, bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`). Docling auto-detects pages that need OCR when `do_ocr=True`. Override with `ocr_*_model_path` for custom ONNX sets.
+
+#### Audio Transcription
+
+Audio files (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) are transcribed automatically — no configuration flag is needed, unlike OCR. `extract_text` routes them through Docling's ASR pipeline using a Whisper (`whisper-tiny`) model, with the spoken language auto-detected per file:
+
+```python
+from ai4rag.components.data import extract_text
+
+result = extract_text(
+    documents=[{"key": "recordings/call.mp3", "size_bytes": 4096}],
+    bucket="my-bucket",
+    output_dir="/tmp/extracted",
+)
+```
 
 ### Test Data Loading
 
@@ -177,7 +191,7 @@ The `ai4rag.components` package provides three shared utility modules used acros
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `utils.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, used verbatim) for listing, chat, and embeddings, with SSL self-signed cert fallback |
+| `utils.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with SSL self-signed cert fallback |
 | `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
 These are importable from `ai4rag.components` or `ai4rag.components.utils`:

@@ -30,7 +30,7 @@ For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint w
 - **Foundation Models**: Any chat/completion model deployed on your MaaS instance
 - **Embedding Models**: Any embedding model deployed on your MaaS instance
 
-**How it works**: a single client, pointing at `MAAS_BASE_URL` (used verbatim), serves everything — it lists the available models (`models.list()`) and is reused, unchanged, to serve `chat.completions` and `embeddings` for every model. Model ids are used verbatim, exactly as `models.list()` reports them (ids may contain `/`).
+**How it works**: a single client, pointing at `MAAS_BASE_URL`, serves everything — it lists the available models (`models.list()`) and is reused, unchanged, to serve `chat.completions` and `embeddings` for every model. `MAAS_BASE_URL` may be host-only or already `/v1`-suffixed — `create_maas_client()` normalizes it either way. Model ids are used verbatim, exactly as `models.list()` reports them (ids may contain `/`).
 
 !!! note "No model metadata"
     Unlike some registries, MaaS `models.list()` carries no metadata (model type, embedding dimension, context length). So embedding dimension and context length are auto-detected by `OpenAIEmbeddingModel` at construction time (or supplied via `params`), and the caller declares which model ids are foundation vs. embedding.

@@ -32,6 +32,17 @@ If you want to use specific version, please use e.g. `"@v0.1.1"`
 Vector store clients — `chromadb`, `pymilvus`, `pgvector`, and `psycopg` — are core dependencies and install automatically.
 No extra step is needed to use Chroma, Milvus, or PostgreSQL/pgvector as a vector store.
 
+!!! note "OCR and audio ingestion"
+    Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
+    Scanned PDFs/images (via RapidOCR) and audio transcription (via Whisper) additionally require the
+    `text-extraction` extra, which pulls in `torch`, `docling-ibm-models`, `rapidocr`, and `whisper`:
+
+    ```bash
+    pip install "ai4rag[text-extraction] @ git+https://github.com/IBM/ai4rag.git@main"
+    ```
+
+    See [Pipeline Components](../user-guide/pipeline-components.md#text-extraction) for usage.
+
 ---
 
 ## Development Installation
@@ -99,14 +110,14 @@ Obtain access to an OpenShift AI MaaS deployment that exposes:
 - At least one **embedding model** (e.g., `bge-m3`)
 
 MaaS serves **all models from a single OpenAI-compatible endpoint** —
-`MAAS_BASE_URL`, used verbatim. No extra package is required — the `openai`
+`MAAS_BASE_URL`. No extra package is required — the `openai`
 SDK ships with `ai4rag` as a core dependency.
 
 ### 2. Note Your Credentials
 
 Record the MaaS base URL and API key for use in `ai4rag`:
 
-- **`MAAS_BASE_URL`** — the complete OpenAI-compatible endpoint URL, used verbatim (e.g. `https://<host>/v1`)
+- **`MAAS_BASE_URL`** — the OpenAI-compatible endpoint URL (e.g. `https://<host>`); a trailing `/v1` is appended automatically if not already present
 - **`MAAS_API_KEY`** — a single API key for the single client that serves listing, chat, and embeddings
 
 ---
