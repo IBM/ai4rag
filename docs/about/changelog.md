@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - **Text extraction / OCR** — fail fast with bake instructions when `DOCLING_ARTIFACTS_PATH` is set but RapidOCR ONNX models are missing; current PyPI `rapidocr` wheels no longer ship model files (bake via `tmp/Containerfile.autorag-dev`)
 
+### Removed
+- **Vector store** — `ChromaVectorStore`, `MilvusVectorStore`, and `PGVectorStore` are no longer re-exported from `ai4rag.rag.vector_store`; import each directly from its backend module instead (`ai4rag.rag.vector_store.chroma`, `.milvus`, `.pgvector`). This keeps each backend's client library (`chromadb`, `pymilvus`, `psycopg`) — and its own import-time requirements, notably chromadb's minimum sqlite3 version — isolated to callers that actually use that backend. `BaseVectorStore`, `ChromaConfig`/`MilvusConfig`/`PGVectorConfig`, `get_vector_store`, `get_vector_store_config`, and `get_vector_store_env_vars` are unaffected and remain importable from `ai4rag.rag.vector_store`
+
 ---
 
 ## [0.12.0](https://github.com/IBM/ai4rag/releases/tag/v0.12.0)

@@ -18,7 +18,6 @@ from ai4rag.core.experiment.exception_handler import (
     IndexingError,
     VectorStoreInitializationError,
 )
-from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
 from ai4rag.core.experiment.utils import (
     RAGExperimentError,
@@ -45,7 +44,7 @@ from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep
+from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 
 
@@ -147,9 +146,11 @@ class AI4RAGExperiment:
             "metrics", None
         )  # resolved in _resolve_metrics_and_validate
         self.n_mps_foundation_models = kwargs.pop(
-            "n_mps_foundation_models", ModelsPreSelector.DEFAULT_N_FOUNDATION_MODELS
+            "n_mps_foundation_models", PreSelectorConstants.DEFAULT_N_FOUNDATION_MODELS
         )
-        self.n_mps_embedding_models = kwargs.pop("n_mps_embedding_models", ModelsPreSelector.DEFAULT_N_EMBEDDING_MODELS)
+        self.n_mps_embedding_models = kwargs.pop(
+            "n_mps_embedding_models", PreSelectorConstants.DEFAULT_N_EMBEDDING_MODELS
+        )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
 
@@ -353,6 +354,8 @@ class AI4RAGExperiment:
             message=_log_start_mps,
             step=ExperimentStep.MODEL_SELECTION,
         )
+
+        from ai4rag.core.experiment.mps import ModelsPreSelector
 
         mps = ModelsPreSelector(
             benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),

@@ -27,7 +27,7 @@ from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.chroma import ChromaVectorStore
-from ai4rag.utils.constants import AI4RAGParamNames
+from ai4rag.utils.constants import AI4RAGParamNames, PreSelectorConstants
 
 __all__ = ["PreSelectorError", "ModelsPreSelector"]
 
@@ -97,8 +97,8 @@ class ModelsPreSelector:
         Number of embedding models to select in the process of MPS.
     """
 
-    DEFAULT_N_FOUNDATION_MODELS = 3
-    DEFAULT_N_EMBEDDING_MODELS = 2
+    DEFAULT_N_FOUNDATION_MODELS = PreSelectorConstants.DEFAULT_N_FOUNDATION_MODELS
+    DEFAULT_N_EMBEDDING_MODELS = PreSelectorConstants.DEFAULT_N_EMBEDDING_MODELS
 
     def __init__(
         self,

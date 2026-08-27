@@ -11,12 +11,12 @@ from typing import Sequence
 from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import PdfPipelineOptions, AsrPipelineOptions
+from docling.datamodel.pipeline_options import AsrPipelineOptions, PdfPipelineOptions
 from docling.document_converter import (
+    AudioFormatOption,
     DocumentConverter,
     PdfFormatOption,
     settings,
-    AudioFormatOption,
 )
 from docling.pipeline.asr_pipeline import AsrPipeline
 from docling_core.types.doc import DoclingDocument
@@ -91,7 +91,7 @@ class FileStore:
 
         asr_options = AsrPipelineOptions()
         asr_options.asr_options = asr_model_specs.WHISPER_TINY
-        asr_options.asr_options.language = None #if we stay with default the multilang has problems with non-eng texts
+        asr_options.asr_options.language = None  # if we stay with default the multilang has problems with non-eng texts
 
         num_workers = os.cpu_count() or 1
         settings.perf.doc_batch_size = num_workers
@@ -99,12 +99,8 @@ class FileStore:
 
         self._converter = DocumentConverter(
             format_options={
-                InputFormat.PDF: PdfFormatOption(
-                    pipeline_options=pdf_options),
-                InputFormat.AUDIO: AudioFormatOption(
-                    pipeline_cls=AsrPipeline,
-                    pipeline_options=asr_options
-                ),
+                InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options),
+                InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=asr_options),
             }
         )
 

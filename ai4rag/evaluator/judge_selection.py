@@ -18,7 +18,6 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
-from ai4rag.rag.vector_store.chroma import ChromaVectorStore
 
 
 def calibration_subset_size(total_rows: int) -> int:
@@ -195,6 +194,8 @@ def _run_reference_rag(
     list
         List of :class:`EvaluationData` instances ready for judge scoring.
     """
+    from ai4rag.rag.vector_store.chroma import ChromaVectorStore
+
     chunker = LangChainChunker(chunk_size=512, method="recursive", chunk_overlap=128)
     chunks = chunker.split_documents(documents)
     vector_store = ChromaVectorStore(embedding_model=embedding_model, collection_name="ai4rag_judge_calibration")

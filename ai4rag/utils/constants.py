@@ -13,6 +13,7 @@ __all__ = [
     "RetrievalConstraints",
     "ChatGenerationConstants",
     "TokenEstimation",
+    "PreSelectorConstants",
 ]
 
 
@@ -132,3 +133,10 @@ class RetrievalConstraints(metaclass=ConstantMeta):
     RANKER_STRATEGIES = ["rrf", "weighted", "normalized"]
     MIN_RANKER_K = 1
     MAX_RANKER_K = 100
+
+
+class PreSelectorConstants(metaclass=ConstantMeta):
+    """Constants used by models pre-selector to limit models amount."""
+
+    DEFAULT_N_FOUNDATION_MODELS = 3
+    DEFAULT_N_EMBEDDING_MODELS = 2

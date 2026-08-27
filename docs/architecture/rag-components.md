@@ -785,7 +785,8 @@ def add_documents(self, documents: list[AI4RAGChunk], **kwargs) -> None:
 **Usage:**
 
 ```python
-from ai4rag.rag.vector_store import MilvusVectorStore, MilvusConfig
+from ai4rag.rag.vector_store import MilvusConfig
+from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
 # Create vector store (omit collection_name to auto-generate a new collection)
 vector_store = MilvusVectorStore(
@@ -866,7 +867,8 @@ The resolved `collection_name` is used verbatim as the physical PostgreSQL table
 **Usage:**
 
 ```python
-from ai4rag.rag.vector_store import PGVectorStore, PGVectorConfig
+from ai4rag.rag.vector_store import PGVectorConfig
+from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
 vector_store = PGVectorStore(
     embedding_model=embedding_model,
