@@ -17,6 +17,7 @@ Data processing functions for the AutoRAG pipeline.
     options:
       members:
         - extract_text
+        - DoclingExtractionConfig
         - ExtractionResult
 
 ## Test Data Loading

@@ -26,7 +26,7 @@ Before starting, ensure you have:
 ### 1. Prepare the MaaS Client
 
 OpenShift MaaS serves every model from a single OpenAI-compatible endpoint —
-`MAAS_BASE_URL`, used verbatim. One client discovers the available models
+`MAAS_BASE_URL`. One client discovers the available models
 and is reused, unchanged, to serve every model wrapper.
 
 The `dev_utils` helpers wrap this setup — `create_dev_maas_client()`

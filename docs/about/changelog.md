@@ -7,18 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.13.0](https://github.com/IBM/ai4rag/releases/tag/v0.13.0)
 
 ### Added
 - **Text extraction** — optional RapidOCR via Docling, configured through a single `DoclingExtractionConfig` passed to `extract_text` (`do_ocr`, `ocr_lang`, custom ONNX model paths); OCR remains off by default
 - **Document discovery / extraction** — JPEG, PNG, and TIFF image extensions supported for OCR-capable ingestion
 - **Text extraction** — audio ingestion (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) transcribed via Docling's ASR pipeline (Whisper), with automatic language detection
 
+### Changed
+- **Dependencies** — split docling's heavy conversion stack (`torch`, `docling-ibm-models`, `rapidocr`, `whisper`) out of the base install into a new `text-extraction` extra; core RAG code (chunking, experiment, evaluator, templates) only needs `docling-slim[feat-chunking]`. The `test` extra now depends on `ai4rag[text-extraction]` so unit tests keep exercising the full conversion stack
+- **Model pre-selection** — default foundation/embedding model counts used by `ModelsPreSelector` extracted into a new `PreSelectorConstants` (`ai4rag.utils.constants`)
+
 ### Fixed
 - **Text extraction / OCR** — fail fast with bake instructions when `DOCLING_ARTIFACTS_PATH` is set but RapidOCR ONNX models are missing; current PyPI `rapidocr` wheels no longer ship model files (bake via `tmp/Containerfile.autorag-dev`)
+- **Vector store (pgvector)** — embedding models whose dimension exceeds pgvector's 2000-dimension HNSW/IVFFlat index cap are no longer rejected at construction; `PGVectorStore` now skips building the HNSW index above the limit and logs a warning, falling back to an exact sequential scan (storage, keyword search, and hybrid fusion are unaffected)
+- **Vector store (pgvector)** — the connection pool and backing table are now created lazily on the first `add_documents()`/search call, guarded by double-checked locking, instead of during `__init__`; avoids idle pooled connections accumulating while the (potentially slow) embedding step runs before the first insert
+- **Model access** — `create_maas_client()` now normalizes `base_url` by stripping any trailing slash and appending `/v1` if missing, so both host-only and fully-qualified endpoint URLs work (previously the URL was used verbatim, requiring the exact `/v1`-suffixed endpoint)
 
 ### Removed
 - **Vector store** — `ChromaVectorStore`, `MilvusVectorStore`, and `PGVectorStore` are no longer re-exported from `ai4rag.rag.vector_store`; import each directly from its backend module instead (`ai4rag.rag.vector_store.chroma`, `.milvus`, `.pgvector`). This keeps each backend's client library (`chromadb`, `pymilvus`, `psycopg`) — and its own import-time requirements, notably chromadb's minimum sqlite3 version — isolated to callers that actually use that backend. `BaseVectorStore`, `ChromaConfig`/`MilvusConfig`/`PGVectorConfig`, `get_vector_store`, `get_vector_store_config`, and `get_vector_store_env_vars` are unaffected and remain importable from `ai4rag.rag.vector_store`
+- **Internal utilities** — removed the unused `ai4rag.utils.validators` module
 
 ---
 
