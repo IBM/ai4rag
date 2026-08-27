@@ -137,5 +137,6 @@ class RetrievalConstraints(metaclass=ConstantMeta):
 
 class PreSelectorConstants(metaclass=ConstantMeta):
     """Constants used by models pre-selector to limit models amount."""
+
     DEFAULT_N_FOUNDATION_MODELS = 3
     DEFAULT_N_EMBEDDING_MODELS = 2
