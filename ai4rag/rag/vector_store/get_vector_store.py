@@ -4,10 +4,7 @@
 # -----------------------------------------------------------------------------
 from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
-from .chroma import ChromaVectorStore
 from .config import BaseVectorStoreConfig, ChromaConfig, MilvusConfig, PGVectorConfig
-from .milvus import MilvusVectorStore
-from .pgvector import PGVectorStore
 
 
 def get_vector_store(
@@ -53,6 +50,8 @@ def get_vector_store(
             if not isinstance(config, ChromaConfig):
                 raise TypeError("ChromaConfig is required when provider='chroma'.")
 
+            from .chroma import ChromaVectorStore
+
             return ChromaVectorStore(
                 embedding_model=embedding_model,
                 config=config,
@@ -63,6 +62,8 @@ def get_vector_store(
             if not isinstance(config, MilvusConfig):
                 raise TypeError("MilvusConfig is required when provider='milvus'.")
 
+            from .milvus import MilvusVectorStore
+
             return MilvusVectorStore(
                 embedding_model=embedding_model,
                 config=config,
@@ -72,6 +73,8 @@ def get_vector_store(
         case "pgvector":
             if not isinstance(config, PGVectorConfig):
                 raise TypeError("PGVectorConfig is required when provider='pgvector'.")
+
+            from .pgvector import PGVectorStore
 
             return PGVectorStore(
                 embedding_model=embedding_model,
