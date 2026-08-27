@@ -2,142 +2,142 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
          <loc>https://ibm.github.io/ai4rag/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/about/changelog/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/about/license/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/assets-generator/leaderboard/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/assets-generator/notebooks/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/components/data/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/components/optimization/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/core/experiment/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/core/hpo/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/evaluator/evaluator/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/rag/chunking/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/rag/embedding/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/rag/foundation-models/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/rag/retrieval/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/rag/vector-stores/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/api-reference/search-space/search-space/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/architecture/core-components/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/architecture/data-flow/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/architecture/overview/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/architecture/rag-components/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/development/code-style/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/development/contributing/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/development/testing/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/development/workflow/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/getting-started/installation/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/getting-started/quick-start/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/includes/abbreviations/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/evaluation/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/event-handlers/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/hybrid-search/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/optimizers/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/overview/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/pipeline-components/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/provider-agnostic/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
     <url>
          <loc>https://ibm.github.io/ai4rag/user-guide/search-space/</loc>
-         <lastmod>2026-08-20</lastmod>
+         <lastmod>2026-08-27</lastmod>
     </url>
 </urlset>
