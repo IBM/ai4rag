@@ -192,43 +192,55 @@ class TestAddDocuments:
 # search — vector mode
 # ---------------------------------------------------------------------------
 
+_VECTOR_RETRIEVER_PATH = "neo4j_graphrag.retrievers.VectorRetriever"
+_CYPHER_RETRIEVER_PATH = "neo4j_graphrag.retrievers.VectorCypherRetriever"
+
+
+def _make_retriever_result(items):
+    """Build a mock RetrieverResult with the given items."""
+    result = MagicMock()
+    result.items = items
+    return result
+
+
+def _make_retriever_item(text, score=0.9, meta=None):
+    item = MagicMock()
+    item.content = text
+    item.metadata = {"score": score, "_meta": meta or {}}
+    return item
+
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestSearchVector:
-    def _mock_vector_result(self, session, rows):
-        result = MagicMock()
-        result.data.return_value = rows
-        session.run.return_value = result
-
-    def _make_row(self, text="hello", score=0.9):
-        return {"id": "abc", "text": text, "metadata": json.dumps({"seq": 1}), "score": score}
-
-    def test_calls_vector_index_query(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_uses_vector_retriever_with_collection_index(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        self._mock_vector_result(session, [self._make_row()])
 
-        store.search("query", k=1)
+        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
+            mock_vr_cls.return_value.search.return_value = _make_retriever_result([])
+            store.search("q", k=3)
 
-        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "db.index.vector.queryNodes" in cypher_calls
+        _, init_kwargs = mock_vr_cls.call_args
+        assert init_kwargs["index_name"] == "ai4rag_col__vector"
+        mock_vr_cls.return_value.search.assert_called_once_with(query_text="q", top_k=3)
 
     def test_returns_chunks_without_scores(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        self._mock_vector_result(session, [self._make_row("text A")])
 
-        results = store.search("query", k=1)
+        items = [_make_retriever_item("text A", 0.9)]
+        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
+            mock_vr_cls.return_value.search.return_value = _make_retriever_result(items)
+            results = store.search("query", k=1)
 
-        assert isinstance(results, list)
         assert all(isinstance(r, AI4RAGChunk) for r in results)
+        assert results[0].text == "text A"
 
     def test_returns_chunks_with_scores(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        self._mock_vector_result(session, [self._make_row(score=0.85)])
 
-        results = store.search("query", k=1, include_scores=True)
+        items = [_make_retriever_item("text", 0.85)]
+        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
+            mock_vr_cls.return_value.search.return_value = _make_retriever_result(items)
+            results = store.search("query", k=1, include_scores=True)
 
         assert isinstance(results[0], tuple)
         chunk, score = results[0]
@@ -236,7 +248,7 @@ class TestSearchVector:
         assert abs(score - 0.85) < 1e-6
 
     def test_graph_mode_rejected_by_milvus(self, mock_driver_cls, mock_embedding, neo4j_config):
-        """Milvus must raise ValueError for search_mode='graph' — validated here via the shared check."""
+        """Milvus must raise ValueError for search_mode='graph'."""
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
         with pytest.raises(ValueError, match="not supported by MilvusVectorStore"):
@@ -265,56 +277,74 @@ class TestSearchVector:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestSearchGraph:
-    def _make_row(self, text="seed", score=0.9, chunk_id=None):
-        meta = json.dumps({"seq": 0})
-        return {"id": chunk_id or "seed_id", "text": text, "metadata": meta, "score": score}
-
-    def test_issues_sequential_neighbor_query(self, mock_driver_cls, mock_embedding, neo4j_config):
-        seed_row = self._make_row("seed text", 0.9, "seed_id")
-
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-
-        schema_r = MagicMock()
-        vector_r = MagicMock()
-        vector_r.data.return_value = [seed_row]
-        neighbor_r = MagicMock()
-        neighbor_r.data.return_value = []
-        entity_r = MagicMock()
-        entity_r.data.return_value = []
-
-        session.run.side_effect = [schema_r, vector_r, neighbor_r, entity_r]
-
+    def test_uses_cypher_retriever_with_kg_index(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        store.search("q", k=1, search_mode="graph")
 
-        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "NEXT_CHUNK" in cypher_calls
+        with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
+            mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
+            store.search("q", k=2, search_mode="graph")
 
-    def test_returns_seeds_when_no_neighbors(self, mock_driver_cls, mock_embedding, neo4j_config):
-        seed_row = self._make_row("seed", 0.9, "seed_id")
+        _, init_kwargs = mock_cr_cls.call_args
+        assert init_kwargs["index_name"] == "Chunk__embedding"
+        mock_cr_cls.return_value.search.assert_called_once_with(
+            query_text="q", top_k=2, query_params={"col": "ai4rag_col"}
+        )
 
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        schema_r = MagicMock()
-        vector_r = MagicMock()
-        vector_r.data.return_value = [seed_row]
-        empty_r = MagicMock()
-        empty_r.data.return_value = []
-
-        session.run.side_effect = [schema_r, vector_r, empty_r, empty_r]
-
+    def test_retrieval_query_contains_next_chunk(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        results = store.search("q", k=5, search_mode="graph")
+
+        with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
+            mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
+            store.search("q", k=1, search_mode="graph", graph_hops=2)
+
+        _, init_kwargs = mock_cr_cls.call_args
+        assert "NEXT_CHUNK" in init_kwargs["retrieval_query"]
+        assert "*1..2" in init_kwargs["retrieval_query"]
+        assert "node.collection = $col" in init_kwargs["retrieval_query"]
+
+    def test_graph_search_passes_collection_param(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_kg2")
+
+        with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
+            mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
+            store.search("q", k=1, search_mode="graph")
+
+        mock_cr_cls.return_value.search.assert_called_once_with(
+            query_text="q", top_k=1, query_params={"col": "ai4rag_kg2"}
+        )
+
+    def test_retrieval_query_contains_entity_expansion(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+
+        with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
+            mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
+            store.search("q", k=1, search_mode="graph", include_entity_neighbors=True)
+
+        _, init_kwargs = mock_cr_cls.call_args
+        assert "__Entity__" in init_kwargs["retrieval_query"]
+        assert "FROM_CHUNK" in init_kwargs["retrieval_query"]
+
+    def test_returns_chunks_from_graph_search(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+
+        item = MagicMock()
+        item.content = "seed text with context"
+        item.metadata = {"score": 0.88}
+        with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
+            mock_cr_cls.return_value.search.return_value = _make_retriever_result([item])
+            results = store.search("q", k=1, search_mode="graph")
 
         assert len(results) == 1
-        assert results[0].text == "seed"
+        assert isinstance(results[0], AI4RAGChunk)
+        assert results[0].text == "seed text with context"
 
     def test_invalid_graph_hops_raises(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="graph_hops"):
-            _validate_neo4j_search_params("graph", None, None, None, graph_hops=0)
+            _validate_neo4j_search_params("graph", graph_hops=0)
 
     def test_invalid_entity_neighbor_limit_raises(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="entity_neighbor_limit"):
-            _validate_neo4j_search_params("graph", None, None, None, entity_neighbor_limit=-1)
+            _validate_neo4j_search_params("graph", entity_neighbor_limit=-1)
 
 
 # ---------------------------------------------------------------------------
@@ -493,115 +523,87 @@ class TestParseKgExtraction:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestBuildKnowledgeGraphFromDocuments:
-    def _make_model(self, payload):
-        model = MagicMock()
-        choice = MagicMock()
-        choice.message.content = json.dumps(payload)
-        model.chat.return_value = [choice]
-        return model
+    """Tests for build_knowledge_graph_from_documents (SimpleKGPipeline-based)."""
 
-    def _make_docling_doc(self, name="doc1"):
+    def _make_docling_doc(self, text="Document text content."):
         doc = MagicMock()
-        doc.name = name
+        doc.export_to_markdown.return_value = text
         return doc
 
-    def _make_chunks(self, n=1):
-        return [
-            AI4RAGChunk(text=f"Chunk {i} text.", metadata={"document_id": "d1", "sequence_number": i})
-            for i in range(n)
-        ]
+    def _make_pipeline_mock(self):
+        """Return a MagicMock for SimpleKGPipeline whose run_async returns a coroutine."""
+        async def _noop(*args, **kwargs):
+            return MagicMock()
 
-    def test_calls_add_documents_then_llm(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *a, **kw: fn(MagicMock(), *a, **kw)
+        pipeline = MagicMock()
+        pipeline.run_async.side_effect = _noop
+        return pipeline
 
-        chunks = self._make_chunks(1)
-        payload = _make_extraction_payload(
-            nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice", "description": "A person."}}],
-        )
-        model = self._make_model(payload)
-
-        with patch("ai4rag.rag.vector_store.neo4j.DoclingChunker") as mock_chunker_cls:
-            mock_chunker_cls.return_value.split_documents.return_value = chunks
-            store.build_knowledge_graph_from_documents(
-                documents=[self._make_docling_doc()],
-                model=model,
-            )
-
-        model.chat.assert_called_once()
-        messages = model.chat.call_args.args[0]
-        roles = [m["role"] for m in messages]
-        assert "system" in roles
-
-    def test_uses_provided_chunker(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *a, **kw: fn(MagicMock(), *a, **kw)
-
-        chunks = self._make_chunks(1)
-        model = self._make_model(_make_extraction_payload([]))
-        mock_chunker = MagicMock()
-        mock_chunker.split_documents.return_value = chunks
-
-        store.build_knowledge_graph_from_documents(
-            documents=[self._make_docling_doc()],
-            model=model,
-            chunker=mock_chunker,
-        )
-
-        mock_chunker.split_documents.assert_called_once()
-
-    def test_empty_chunks_skips_llm(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_exports_each_document_to_markdown(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         model = MagicMock()
-        mock_chunker = MagicMock()
-        mock_chunker.split_documents.return_value = []
+        doc1 = self._make_docling_doc("Text one.")
+        doc2 = self._make_docling_doc("Text two.")
 
-        store.build_knowledge_graph_from_documents(
-            documents=[self._make_docling_doc()],
-            model=model,
-            chunker=mock_chunker,
-        )
+        with patch(
+            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
+            return_value=self._make_pipeline_mock(),
+        ):
+            store.build_knowledge_graph_from_documents(documents=[doc1, doc2], model=model)
 
-        model.chat.assert_not_called()
+        doc1.export_to_markdown.assert_called_once()
+        doc2.export_to_markdown.assert_called_once()
 
-    def test_bad_llm_response_does_not_raise(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_empty_text_skips_pipeline(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        model = MagicMock()
+        doc = self._make_docling_doc("")  # export produces empty string
+
+        with patch("asyncio.run") as mock_run:
+            store.build_knowledge_graph_from_documents(documents=[doc], model=model)
+
+        mock_run.assert_not_called()
+
+    def test_creates_kg_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *a, **kw: fn(MagicMock(), *a, **kw)
-
-        chunks = self._make_chunks(1)
         model = MagicMock()
-        choice = MagicMock()
-        choice.message.content = "not json"
-        model.chat.return_value = [choice]
-        mock_chunker = MagicMock()
-        mock_chunker.split_documents.return_value = chunks
 
-        # Must not raise
-        store.build_knowledge_graph_from_documents(
-            documents=[self._make_docling_doc()],
-            model=model,
-            chunker=mock_chunker,
-        )
+        with patch(
+            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
+            return_value=self._make_pipeline_mock(),
+        ):
+            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+
+        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
+        assert "Chunk__embedding" in cypher_calls
+
+    def test_tags_chunk_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        model = MagicMock()
+
+        with patch(
+            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
+            return_value=self._make_pipeline_mock(),
+        ):
+            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+
+        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
+        assert "c.collection IS NULL" in cypher_calls
+        assert "ai4rag_col" in cypher_calls
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
-        """Extraction must not issue paginated MATCH queries against the DB."""
+        """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *a, **kw: fn(MagicMock(), *a, **kw)
+        model = MagicMock()
 
-        chunks = self._make_chunks(1)
-        model = self._make_model(_make_extraction_payload([]))
-        mock_chunker = MagicMock()
-        mock_chunker.split_documents.return_value = chunks
-
-        store.build_knowledge_graph_from_documents(
-            documents=[self._make_docling_doc()],
-            model=model,
-            chunker=mock_chunker,
-        )
+        with patch(
+            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
+            return_value=self._make_pipeline_mock(),
+        ):
+            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
 
         skip_calls = [c for c in session.run.call_args_list if "SKIP" in str(c)]
         assert skip_calls == []
@@ -643,53 +645,33 @@ class TestCleanAndClose:
 
 class TestValidateNeo4jSearchParams:
     def test_vector_mode_valid(self):
-        _validate_neo4j_search_params("vector", None, None, None)
-
-    def test_vector_mode_rejects_ranker_strategy(self):
-        with pytest.raises(ValueError, match="ranker parameters"):
-            _validate_neo4j_search_params("vector", "rrf", None, None)
-
-    def test_vector_mode_rejects_ranker_k(self):
-        with pytest.raises(ValueError, match="ranker parameters"):
-            _validate_neo4j_search_params("vector", None, 60, None)
+        _validate_neo4j_search_params("vector")
 
     def test_hybrid_mode_rejected(self):
         with pytest.raises(ValueError, match="search_mode"):
-            _validate_neo4j_search_params("hybrid", "rrf", None, None)
+            _validate_neo4j_search_params("hybrid")
 
     def test_graph_mode_valid(self):
-        _validate_neo4j_search_params("graph", None, None, None)
+        _validate_neo4j_search_params("graph")
 
-    def test_graph_mode_valid_with_rrf(self):
-        _validate_neo4j_search_params("graph", "rrf", 60, None, graph_hops=2)
-
-    def test_graph_mode_invalid_ranker_strategy_raises(self):
-        with pytest.raises(ValueError, match="ranker_strategy"):
-            _validate_neo4j_search_params("graph", "bad_strategy", None, None)
-
-    def test_graph_mode_ranker_k_without_rrf_raises(self):
-        with pytest.raises(ValueError, match="ranker_k"):
-            _validate_neo4j_search_params("graph", "weighted", 60, None)
-
-    def test_graph_mode_ranker_alpha_without_weighted_raises(self):
-        with pytest.raises(ValueError, match="ranker_alpha"):
-            _validate_neo4j_search_params("graph", "rrf", None, 0.5)
+    def test_graph_mode_valid_with_hops(self):
+        _validate_neo4j_search_params("graph", graph_hops=2)
 
     def test_graph_hops_zero_raises(self):
         with pytest.raises(ValueError, match="graph_hops"):
-            _validate_neo4j_search_params("graph", None, None, None, graph_hops=0)
+            _validate_neo4j_search_params("graph", graph_hops=0)
 
     def test_graph_hops_non_int_raises(self):
         with pytest.raises(ValueError, match="graph_hops"):
-            _validate_neo4j_search_params("graph", None, None, None, graph_hops=1.5)
+            _validate_neo4j_search_params("graph", graph_hops=1.5)
 
     def test_entity_neighbor_limit_negative_raises(self):
         with pytest.raises(ValueError, match="entity_neighbor_limit"):
-            _validate_neo4j_search_params("graph", None, None, None, entity_neighbor_limit=-1)
+            _validate_neo4j_search_params("graph", entity_neighbor_limit=-1)
 
     def test_entity_neighbor_limit_zero_is_valid(self):
-        _validate_neo4j_search_params("graph", None, None, None, entity_neighbor_limit=0)
+        _validate_neo4j_search_params("graph", entity_neighbor_limit=0)
 
     def test_unknown_mode_raises(self):
         with pytest.raises(ValueError, match="search_mode"):
-            _validate_neo4j_search_params("unknown", None, None, None)
+            _validate_neo4j_search_params("unknown")
