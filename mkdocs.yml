@@ -201,9 +201,8 @@ nav:
           - Vector Stores: api-reference/rag/vector-stores.md
           - Chunking: api-reference/rag/chunking.md
           - Retrieval: api-reference/rag/retrieval.md
-      - Components:
-          - Data: api-reference/components/data.md
-          - Optimization: api-reference/components/optimization.md
+      - Utils:
+          - Data: api-reference/utils/data.md
       - Assets Generator:
           - Notebooks & Templates: api-reference/assets-generator/notebooks.md
           - Leaderboard: api-reference/assets-generator/leaderboard.md

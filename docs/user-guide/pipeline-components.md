@@ -1,14 +1,16 @@
 # Pipeline Components
 
-The `ai4rag.components` package provides reusable building blocks for RAG pipeline workflows.
-These functions encapsulate the business logic that was previously inlined in Kubeflow Pipeline components,
-making it available for use in any context — KFP pipelines, standalone scripts, notebooks, or tests.
+`ai4rag.utils.data` and `ai4rag.utils.assets_generator` provide reusable building blocks for RAG
+pipeline workflows. These functions encapsulate the business logic that was previously inlined in
+Kubeflow Pipeline components, making it available for use in any context — KFP pipelines, standalone
+scripts, notebooks, or tests.
 
 ## Architecture
 
 ```
 ┌──────────────────────────────────────────────┐
-│  pipelines-components  (KFP wrappers)        │
+│  pipelines-components  (KFP wrappers +       │
+│  RAG optimization orchestration)             │
 │  ┌─────────┐ ┌──────────┐ ┌──────────────┐  │
 │  │ @dsl.   │ │ @dsl.    │ │ @dsl.        │  │
 │  │component│ │component │ │ component    │  │
@@ -19,20 +21,22 @@ making it available for use in any context — KFP pipelines, standalone scripts
 ┌───────▼────────────▼─────────────▼───────────┐
 │  ai4rag  (business logic)                    │
 │  ┌─────────────┐ ┌─────────────────────────┐ │
-│  │ components/                               │ │
+│  │ utils/                                    │ │
 │  │  data/                                    │ │
-│  │  optimization/                            │ │
 │  │  assets_generator/                        │ │
 │  │   notebook, leaderboard, templates        │ │
+│  │  clients/ — s3, maas_client               │ │
 │  └───────────────────────────────────────────┘ │
 │  ┌──────────────────────────────────────────┐ │
-│  │ core/ — experiment, HPO, search space    │ │
+│  │ core/ — experiment, HPO                  │ │
+│  │ search_space/ — search space, prepare    │ │
 │  └──────────────────────────────────────────┘ │
 └──────────────────────────────────────────────┘
 ```
 
-KFP wrappers handle only artifact I/O (reading `dsl.Input[Artifact]`, writing `dsl.Output[Artifact]`)
-and Kubernetes-specific concerns (secrets, resource limits).  All business logic lives in `ai4rag`.
+KFP wrappers handle artifact I/O (reading `dsl.Input[Artifact]`, writing `dsl.Output[Artifact]`),
+Kubernetes-specific concerns (secrets, resource limits), and full RAG-optimization orchestration.
+Data-stage and asset-generation business logic lives in `ai4rag`, so it can be exercised outside KFP.
 
 ## Installation
 
@@ -45,7 +49,7 @@ S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for 
 List and sample documents from an S3-compatible bucket:
 
 ```python
-from ai4rag.components.data import discover_documents
+from ai4rag.utils.data import discover_documents
 
 result = discover_documents(
     bucket_name="my-bucket",
@@ -62,7 +66,7 @@ result.save("/tmp/discovery_output")
 Download documents from S3 and extract text using Docling:
 
 ```python
-from ai4rag.components.data import extract_text
+from ai4rag.utils.data import extract_text
 
 result = extract_text(
     documents=[{"key": "docs/report.pdf", "size_bytes": 1024}],
@@ -80,15 +84,15 @@ controlled through a single `DoclingExtractionConfig` instance. To enable
 RapidOCR (for scanned PDFs / images):
 
 ```python
-from ai4rag.components.data import DoclingExtractionConfig, extract_text
+from ai4rag.utils.data import DoclingExtractionConfig, extract_text
 
 result = extract_text(
     documents=[{"key": "scans/page.png", "size_bytes": 2048}],
     bucket="my-bucket",
     output_dir="/tmp/extracted",
     docling_config=DoclingExtractionConfig(
-        do_ocr=True,             # RapidOCR via Docling
-        ocr_lang="english",      # default when OCR is enabled
+        do_ocr=True,  # RapidOCR via Docling
+        ocr_lang="english",  # default when OCR is enabled
         # Optional custom ONNX models for disconnected / specialized deployments:
         # ocr_det_model_path="/models/det.onnx",
         # ocr_cls_model_path="/models/cls.onnx",
@@ -111,7 +115,7 @@ Default RapidOCR models are **not** in current PyPI `rapidocr` wheels. On AutoRA
 Audio files (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) are transcribed automatically — no configuration flag is needed, unlike OCR. `extract_text` routes them through Docling's ASR pipeline using a Whisper (`whisper-tiny`) model, with the spoken language auto-detected per file:
 
 ```python
-from ai4rag.components.data import extract_text
+from ai4rag.utils.data import extract_text
 
 result = extract_text(
     documents=[{"key": "recordings/call.mp3", "size_bytes": 4096}],
@@ -125,7 +129,7 @@ result = extract_text(
 Load benchmark test data from S3:
 
 ```python
-from ai4rag.components.data import load_test_data
+from ai4rag.utils.data import load_test_data
 
 result = load_test_data(
     bucket_name="my-bucket",
@@ -135,9 +139,7 @@ result = load_test_data(
 print(f"Loaded {result.record_count} records (sampled: {result.sampled})")
 ```
 
-## Optimization Components
-
-### Search Space Preparation
+## Search Space Preparation
 
 Build and validate a search space, then serialize it to a report. Model
 pre-selection is a separate step (see `ModelsPreSelector`); the report written
@@ -163,41 +165,30 @@ search_space = prepare_search_space_with_maas(
 build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
-### RAG Optimization
-
-Run a full optimization experiment:
-
-```python
-from ai4rag.components.optimization import run_rag_optimization
-from ai4rag.rag.vector_store import MilvusConfig
-
-result = run_rag_optimization(
-    extracted_text_path="/tmp/extracted/",
-    test_data_path="/tmp/test_data.json",
-    search_space_report_path="/tmp/search_space.json",
-    output_dir="/tmp/rag_patterns/",
-    maas_client=client,
-    vector_store_config=MilvusConfig.from_env(),
-    test_data_key="benchmarks/test_data.json",
-    input_data_key="documents/",
-)
-print(f"Generated {len(result.patterns)} patterns")
-```
+!!! note "RAG optimization orchestration"
+    Running a full optimization experiment (`run_rag_optimization`) — wiring search-space
+    preparation, indexing, retrieval, generation, and evaluation together into RAG
+    patterns — is a KFP pipeline concern and lives in the `pipelines-components` repo, on
+    top of the `ai4rag.core` and `ai4rag.search_space` APIs.
 
 ## Shared Utilities
 
-The `ai4rag.components` package provides three shared utility modules used across components:
+`ai4rag.utils.clients` provides thin, dependency-injectable adapters over the external
+services pipeline steps talk to, and `ai4rag.utils.docling_io` loads persisted
+`DoclingDocument` JSON:
 
 | Module | Function | Purpose |
 |--------|----------|---------|
-| `utils.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
-| `utils.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with SSL self-signed cert fallback |
-| `utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
+| `ai4rag.utils.clients.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
+| `ai4rag.utils.clients.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with SSL self-signed cert fallback |
+| `ai4rag.utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
-These are importable from `ai4rag.components` or `ai4rag.components.utils`:
+`create_s3_client()` and `create_maas_client()` are also re-exported from the `ai4rag.utils.clients`
+package for convenience:
 
 ```python
-from ai4rag.components import create_s3_client, create_maas_client, load_docling_documents
+from ai4rag.utils.clients import create_maas_client, create_s3_client
+from ai4rag.utils.docling_io import load_docling_documents
 ```
 
 !!! note "Single client for everything"

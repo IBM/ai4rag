@@ -1,0 +1,19 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2025-2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
+from ai4rag.utils.data.documents_discovery import DiscoveryResult, DocumentDescriptor, discover_documents
+from ai4rag.utils.data.test_data_loader import TestDataLoaderError, TestDataResult, load_test_data
+from ai4rag.utils.data.text_extraction import DoclingExtractionConfig, ExtractionResult, extract_text
+
+__all__ = [
+    "discover_documents",
+    "DiscoveryResult",
+    "DocumentDescriptor",
+    "extract_text",
+    "DoclingExtractionConfig",
+    "ExtractionResult",
+    "load_test_data",
+    "TestDataLoaderError",
+    "TestDataResult",
+]

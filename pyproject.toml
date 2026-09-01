@@ -82,7 +82,7 @@ docs = [
 version = { attr = "ai4rag.__version__" }
 
 [tool.setuptools.package-data]
-"ai4rag.components.assets_generator" = ["notebook_templates/*.ipynb"]
+"ai4rag.utils.assets_generator" = ["notebook_templates/*.ipynb"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "dev_utils*"]
@@ -98,8 +98,7 @@ log_level = "INFO"
 # Skipping orchestration modules that require integration tests (S3, multiprocessing, full experiment runs)
 omit = [
   "ai4rag/core/experiment/experiment.py",
-  "ai4rag/components/data/text_extraction.py",
-  "ai4rag/components/optimization/rag_templates_optimization.py",
+  "ai4rag/utils/data/text_extraction.py",
 ]
 
 [tool.black]
