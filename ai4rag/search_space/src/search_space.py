@@ -126,7 +126,7 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
 def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     """Ranker parameters must only be set when search_mode is 'hybrid'.
 
-    When search_mode is 'vector', all ranker params must be sentinels
+    When search_mode is 'vector' or 'graph', all ranker params must be sentinels
     (empty string for strategy, 0 for ranker_k, 1 for ranker_alpha).
     When search_mode is 'hybrid', ranker_strategy must be a non-empty string.
 
@@ -145,7 +145,7 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     ranker_k = combination.get(AI4RAGParamNames.RANKER_K)
     ranker_alpha = combination.get(AI4RAGParamNames.RANKER_ALPHA)
 
-    if search_mode == "vector":
+    if search_mode in ("vector", "graph"):
         if ranker_strategy or ranker_k or ranker_alpha not in (1, None):
             return False
         return True

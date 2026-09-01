@@ -49,7 +49,7 @@ class RAGParamsType(TypedDict):
     window_size: int
     number_of_chunks: int
     retrieval_method: Literal["simple", "window"]
-    search_mode: Literal["vector", "hybrid"]
+    search_mode: Literal["vector", "hybrid", "graph"]
     ranker_strategy: str
     ranker_k: int
     ranker_alpha: int | float
@@ -69,7 +69,7 @@ class RAGRetrievalParamsType(TypedDict):
     retrieval_window_size: int
     number_of_retrieved_chunks: int
     retrieval_method: Literal["simple", "window"]
-    search_mode: Literal["vector", "hybrid"]
+    search_mode: Literal["vector", "hybrid", "graph"]
     ranker_strategy: str
     ranker_k: int
     ranker_alpha: int | float
