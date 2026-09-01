@@ -182,13 +182,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     # --- Input validation ---
     valid_strategies = {"random", "greedy", "balanced"}
     if warm_start_strategy not in valid_strategies:
-        raise ValueError(
-            f"warm_start_strategy must be one of {sorted(valid_strategies)}; got {warm_start_strategy!r}."
-        )
+        raise ValueError(f"warm_start_strategy must be one of {sorted(valid_strategies)}; got {warm_start_strategy!r}.")
     if warm_start_strategy == "balanced" and not fields_to_balance:
-        raise ValueError(
-            "fields_to_balance must be a non-empty list when warm_start_strategy='balanced'."
-        )
+        raise ValueError("fields_to_balance must be a non-empty list when warm_start_strategy='balanced'.")
 
     valid_modes = list(get_args(LLMJudgeMode))
     if llm_judge_mode not in valid_modes:
@@ -243,14 +239,13 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         n_modes = len(search_space_raw.get("search_mode", ["vector"]))
         if warm_start_strategy == "greedy":
             max_str_unique = max(
-                (len(vals) for vals in search_space_raw.values()
-                 if vals and isinstance(vals[0], (str, dict))),
+                (len(vals) for vals in search_space_raw.values() if vals and isinstance(vals[0], (str, dict))),
                 default=1,
             )
             n_random_nodes = max(4, 2 * max_str_unique)
         elif warm_start_strategy == "balanced":
             n_balanced = 1
-            for field in (fields_to_balance or []):
+            for field in fields_to_balance or []:
                 if field == "foundation_model":
                     n_balanced *= n_llms
                 elif field == "embedding_model":
@@ -263,9 +258,12 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         else:  # "random"
             n_random_nodes = max(4, n_llms * n_embeddings)
         _logger.info(
-            "Auto-computed n_random_nodes=%d for warm_start_strategy=%r "
-            "(n_llms=%d, n_embeddings=%d, n_modes=%d).",
-            n_random_nodes, warm_start_strategy, n_llms, n_embeddings, n_modes,
+            "Auto-computed n_random_nodes=%d for warm_start_strategy=%r " "(n_llms=%d, n_embeddings=%d, n_modes=%d).",
+            n_random_nodes,
+            warm_start_strategy,
+            n_llms,
+            n_embeddings,
+            n_modes,
         )
 
     evaluators = _build_evaluators(

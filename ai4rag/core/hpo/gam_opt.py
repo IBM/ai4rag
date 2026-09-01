@@ -29,6 +29,7 @@ def _serialize_dict_col(series: pd.Series) -> pd.Series:
     Handles both dict-valued models ({"model_id": "..."}, production) and
     model object instances with a model_id attribute (tests / direct API use).
     """
+
     def _needs_serialization(x: object) -> bool:
         return isinstance(x, dict) or hasattr(x, "model_id")
 
@@ -134,13 +135,10 @@ class GAMOptSettings(OptimizerSettings):
         valid = {"random", "greedy", "balanced"}
         if self.warm_start_strategy not in valid:
             raise ValueError(
-                f"warm_start_strategy must be one of {sorted(valid)}; "
-                f"got {self.warm_start_strategy!r}."
+                f"warm_start_strategy must be one of {sorted(valid)}; " f"got {self.warm_start_strategy!r}."
             )
         if self.warm_start_strategy == "balanced" and not self.fields_to_balance:
-            raise ValueError(
-                "fields_to_balance must be a non-empty list when warm_start_strategy='balanced'."
-            )
+            raise ValueError("fields_to_balance must be a non-empty list when warm_start_strategy='balanced'.")
 
 
 class GAMOptimizer(BaseOptimizer):
@@ -291,17 +289,14 @@ class GAMOptimizer(BaseOptimizer):
             if effective_budget < min_required:
                 raise ValueError(
                     f"n_random_nodes={self.settings.n_random_nodes} is too small for "
-                    f"warm_start_strategy='greedy': each string column value must appear "
+                    f"warm_start_strategy='greedy': each discrete column value must appear "
                     f"at least twice (max unique values per column: {max_unique}). "
                     f"Set n_random_nodes >= {min_required}."
                 )
 
         elif strategy == "balanced":
             fields_to_balance = self.settings.fields_to_balance or []
-            balanced_tuples = {
-                tuple(_str_val(c.get(f)) for f in fields_to_balance)
-                for c in combinations
-            }
+            balanced_tuples = {tuple(_str_val(c.get(f)) for f in fields_to_balance) for c in combinations}
             n_balanced = len(balanced_tuples)
             non_balanced = {col: vals for col, vals in str_cols.items() if col not in fields_to_balance}
             max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
@@ -445,9 +440,7 @@ class GAMOptimizer(BaseOptimizer):
         if not str_cols:
             return combinations
 
-        coverage: dict[str, dict[str, int]] = {
-            col: {val: 0 for val in vals} for col, vals in str_cols.items()
-        }
+        coverage: dict[str, dict[str, int]] = {col: {val: 0 for val in vals} for col, vals in str_cols.items()}
         if initial_coverage:
             for col, val_counts in initial_coverage.items():
                 if col in coverage:
@@ -456,10 +449,7 @@ class GAMOptimizer(BaseOptimizer):
                             coverage[col][val] = min(count, 2)
 
         def _gain(c: dict) -> int:
-            return sum(
-                1 for col, val_counts in coverage.items()
-                if val_counts.get(_str_val(c.get(col)), 0) < 2
-            )
+            return sum(1 for col, val_counts in coverage.items() if val_counts.get(_str_val(c.get(col)), 0) < 2)
 
         remaining_indices = list(range(len(combinations)))
         selected_indices: list[int] = []
@@ -536,9 +526,7 @@ class GAMOptimizer(BaseOptimizer):
             df[col] = _serialize_dict_col(df[col])
         varying_cols = [c for c in df.columns if df[c].nunique() > 1]
         for col in varying_cols:
-            self._typed_encoders_with_columns.append(
-                (col, LabelEncoder().fit(df[col]))
-            )
+            self._typed_encoders_with_columns.append((col, LabelEncoder().fit(df[col])))
         logger.debug("Typed encoder for %s has been prepared.", self.__class__.__name__)
 
     # pylint: disable=too-many-locals
@@ -568,9 +556,7 @@ class GAMOptimizer(BaseOptimizer):
                 data[col] = enc.classes_[0]
         target = df["score"]
 
-        x_train_enc = np.column_stack(
-            [enc.transform(data[col]) for col, enc in encoders]
-        )
+        x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
 
         terms = None
         for i, (_, enc) in enumerate(encoders):
@@ -591,9 +577,7 @@ class GAMOptimizer(BaseOptimizer):
         for col in remaining_df.columns:
             remaining_df[col] = _serialize_dict_col(remaining_df[col])
 
-        encoded = np.column_stack(
-            [enc.transform(remaining_df[col]) for col, enc in encoders]
-        )
+        encoded = np.column_stack([enc.transform(remaining_df[col]) for col, enc in encoders])
         predictions = gam.predict(encoded)
 
         for idx, val in enumerate(remaining_evaluations):
