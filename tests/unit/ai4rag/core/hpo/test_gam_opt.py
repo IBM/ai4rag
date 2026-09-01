@@ -938,9 +938,10 @@ class TestGetGreedyCombinations:
         combos = [{"mode": "vector", "n": i} for i in range(6)]
         result = GAMOptimizer._get_greedy_combinations(combos, 2)
         assert len(result) == 6
-        # The non-selected items should maintain relative order
-        non_selected_n = [c["n"] for c in result[2:]]
-        assert non_selected_n == sorted(non_selected_n) or non_selected_n == list(reversed(sorted(non_selected_n))) or True  # order preserved from input
+        # Non-selected items must appear in the same relative order as in the input.
+        input_positions = {c["n"]: idx for idx, c in enumerate(combos)}
+        non_selected_positions = [input_positions[c["n"]] for c in result[2:]]
+        assert non_selected_positions == sorted(non_selected_positions)
 
 
 class TestGetBalancedCombinations:

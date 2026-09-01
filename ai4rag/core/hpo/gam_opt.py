@@ -277,12 +277,18 @@ class GAMOptimizer(BaseOptimizer):
 
         str_cols = _get_discrete_column_values(combinations)
 
+        # Already-successful known_observations count toward the coverage budget.
+        successful_known = sum(1 for e in self.evaluations if e.get("score") is not None)
+        # effective_budget: the larger of n_random_nodes and what known_observations
+        # already provide — if known obs alone meet the minimum, no raise is needed.
+        effective_budget = max(self.settings.n_random_nodes, successful_known)
+
         if strategy == "greedy":
             if not str_cols:
                 return
             max_unique = max(len(vals) for vals in str_cols.values())
             min_required = max(4, 2 * max_unique)
-            if self.settings.n_random_nodes < min_required:
+            if effective_budget < min_required:
                 raise ValueError(
                     f"n_random_nodes={self.settings.n_random_nodes} is too small for "
                     f"warm_start_strategy='greedy': each string column value must appear "
@@ -300,7 +306,7 @@ class GAMOptimizer(BaseOptimizer):
             non_balanced = {col: vals for col, vals in str_cols.items() if col not in fields_to_balance}
             max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
             min_required = max(4, n_balanced, max_non_balanced)
-            if self.settings.n_random_nodes < min_required:
+            if effective_budget < min_required:
                 raise ValueError(
                     f"n_random_nodes={self.settings.n_random_nodes} is too small for "
                     f"warm_start_strategy='balanced' with fields_to_balance={fields_to_balance!r}. "
@@ -366,14 +372,28 @@ class GAMOptimizer(BaseOptimizer):
         random.Random(self.settings.random_state).shuffle(combinations_local)
 
         if self.settings.warm_start_strategy == "greedy":
-            combinations_local = self._get_greedy_combinations(combinations_local, self.settings.n_random_nodes)
+            str_cols = _get_discrete_column_values(combinations_local)
+            initial_coverage: dict[str, dict[str, int]] = {
+                col: {val: 0 for val in vals} for col, vals in str_cols.items()
+            }
+            for obs in self.evaluations:
+                if obs.get("score") is None:
+                    continue
+                for col in initial_coverage:
+                    val = _str_val(obs.get(col))
+                    if val in initial_coverage[col]:
+                        initial_coverage[col][val] = min(initial_coverage[col][val] + 1, 2)
+            remaining_budget = self.settings.n_random_nodes - successful_evaluations
+            combinations_local = self._get_greedy_combinations(
+                combinations_local, remaining_budget, initial_coverage=initial_coverage
+            )
         elif self.settings.warm_start_strategy == "balanced":
             combinations_local = self._get_balanced_combinations(
                 combinations_local, self.settings.fields_to_balance or []
             )
         # "random": use shuffled list as-is
 
-        modes_in_space = {c.get("search_mode") for c in combinations_local}
+        discrete_cols_in_space = _get_discrete_column_values(combinations_local)
         gen = (x for x in combinations_local)
 
         while successful_evaluations < self.settings.n_random_nodes:
@@ -388,24 +408,35 @@ class GAMOptimizer(BaseOptimizer):
             if len(self.evaluations) == self.max_iterations:
                 break
 
-        modes_covered = {e.get("search_mode") for e in self.evaluations if e.get("score") is not None}
-        uncovered = modes_in_space - modes_covered
-        if uncovered:
+        uncovered_by_col: dict[str, list[str]] = {}
+        for col, vals_in_space in discrete_cols_in_space.items():
+            covered = {_str_val(e.get(col)) for e in self.evaluations if e.get("score") is not None}
+            uncovered = vals_in_space - covered
+            if uncovered:
+                uncovered_by_col[col] = sorted(uncovered)
+        if uncovered_by_col:
             logger.warning(
-                "n_random_nodes=%d was too small to cover all search_mode values. "
-                "Uncovered modes: %s. Consider increasing n_random_nodes.",
+                "n_random_nodes=%d was too small to cover all discrete column values. "
+                "Uncovered values by column: %s. Consider increasing n_random_nodes.",
                 self.settings.n_random_nodes,
-                sorted(str(m) for m in uncovered),
+                uncovered_by_col,
             )
 
     @staticmethod
-    def _get_greedy_combinations(combinations: list[dict], n: int) -> list[dict]:
+    def _get_greedy_combinations(
+        combinations: list[dict],
+        n: int,
+        initial_coverage: dict[str, dict[str, int]] | None = None,
+    ) -> list[dict]:
         """Greedily select n combinations ensuring every discrete column value appears >= 2 times.
 
         At each step the candidate with the highest coverage gain (number of discrete column
         values — string or numeric — whose current count is still below 2) is selected.
         Ties are broken by the shuffle order coming in. The n selected combinations are
         returned first, followed by the remaining combinations in their original (shuffled) order.
+
+        initial_coverage seeds the per-value counts so that values already covered by
+        known_observations are not redundantly targeted.
         """
         if not combinations or n <= 0:
             return combinations
@@ -417,6 +448,12 @@ class GAMOptimizer(BaseOptimizer):
         coverage: dict[str, dict[str, int]] = {
             col: {val: 0 for val in vals} for col, vals in str_cols.items()
         }
+        if initial_coverage:
+            for col, val_counts in initial_coverage.items():
+                if col in coverage:
+                    for val, count in val_counts.items():
+                        if val in coverage[col]:
+                            coverage[col][val] = min(count, 2)
 
         def _gain(c: dict) -> int:
             return sum(
@@ -524,6 +561,11 @@ class GAMOptimizer(BaseOptimizer):
         data = df.drop(columns=["score"])
         for col in data.columns:
             data[col] = _serialize_dict_col(data[col])
+        # known_observations may omit columns that vary in the search space; fill
+        # with the encoder's first class so transform() does not KeyError.
+        for col, enc in encoders:
+            if col not in data.columns:
+                data[col] = enc.classes_[0]
         target = df["score"]
 
         x_train_enc = np.column_stack(
@@ -537,9 +579,6 @@ class GAMOptimizer(BaseOptimizer):
 
         gam = LinearGAM(terms)
         gam.fit(x_train_enc, target)
-        print("#" * 100)
-        print(gam.terms)
-        print(encoders)
 
         remaining_evaluations = self._get_remaining_evaluations(
             self._search_space.combinations, self._evaluated_combinations
