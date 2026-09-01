@@ -75,6 +75,48 @@ class OptimizationResult:
     evaluations: list
 
 
+def _compute_n_random_nodes(
+    warm_start_strategy: str,
+    search_space_raw: dict,
+    fields_to_balance: list[str] | None,
+    foundation_models: list,
+    embedding_models: list,
+) -> int:
+    """Auto-compute n_random_nodes from search space dimensions when not supplied explicitly."""
+    n_llms = len(foundation_models)
+    n_embeddings = len(embedding_models)
+    n_modes = len(search_space_raw.get("search_mode", ["vector"]))
+    if warm_start_strategy == "greedy":
+        max_str_unique = max(
+            (len(vals) for vals in search_space_raw.values() if vals and isinstance(vals[0], (str, dict))),
+            default=1,
+        )
+        result = max(4, 2 * max_str_unique)
+    elif warm_start_strategy == "balanced":
+        n_balanced = 1
+        for field in fields_to_balance or []:
+            if field == "foundation_model":
+                n_balanced *= n_llms
+            elif field == "embedding_model":
+                n_balanced *= n_embeddings
+            elif field == "search_mode":
+                n_balanced *= n_modes
+            else:
+                n_balanced *= 2
+        result = max(8, n_balanced)
+    else:  # "random"
+        result = max(4, n_llms * n_embeddings)
+    _logger.info(
+        "Auto-computed n_random_nodes=%d for warm_start_strategy=%r (n_llms=%d, n_embeddings=%d, n_modes=%d).",
+        result,
+        warm_start_strategy,
+        n_llms,
+        n_embeddings,
+        n_modes,
+    )
+    return result
+
+
 def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
     extracted_text_path: str | Path,
     test_data_path: str | Path,
@@ -234,36 +276,8 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     search_space = AI4RAGSearchSpace(params=params)
 
     if n_random_nodes is None:
-        n_llms = len(foundation_models)
-        n_embeddings = len(embedding_models)
-        n_modes = len(search_space_raw.get("search_mode", ["vector"]))
-        if warm_start_strategy == "greedy":
-            max_str_unique = max(
-                (len(vals) for vals in search_space_raw.values() if vals and isinstance(vals[0], (str, dict))),
-                default=1,
-            )
-            n_random_nodes = max(4, 2 * max_str_unique)
-        elif warm_start_strategy == "balanced":
-            n_balanced = 1
-            for field in fields_to_balance or []:
-                if field == "foundation_model":
-                    n_balanced *= n_llms
-                elif field == "embedding_model":
-                    n_balanced *= n_embeddings
-                elif field == "search_mode":
-                    n_balanced *= n_modes
-                else:
-                    n_balanced *= 2
-            n_random_nodes = max(8, n_balanced)
-        else:  # "random"
-            n_random_nodes = max(4, n_llms * n_embeddings)
-        _logger.info(
-            "Auto-computed n_random_nodes=%d for warm_start_strategy=%r " "(n_llms=%d, n_embeddings=%d, n_modes=%d).",
-            n_random_nodes,
-            warm_start_strategy,
-            n_llms,
-            n_embeddings,
-            n_modes,
+        n_random_nodes = _compute_n_random_nodes(
+            warm_start_strategy, search_space_raw, fields_to_balance, foundation_models, embedding_models
         )
 
     evaluators = _build_evaluators(

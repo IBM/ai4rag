@@ -397,15 +397,22 @@ class GAMOptimizer(BaseOptimizer):
             if score is not None:
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
-            params_with_score = params | {"score": score}
-            self.evaluations.append(params_with_score)
+            self.evaluations.append(params | {"score": score})
 
             if len(self.evaluations) == self.max_iterations:
                 break
 
+        self._log_uncovered_values(discrete_cols_in_space, self.evaluations, self.settings.n_random_nodes)
+
+    @staticmethod
+    def _log_uncovered_values(
+        discrete_cols_in_space: dict[str, set],
+        evaluations: list[dict],
+        n_random_nodes: int,
+    ) -> None:
         uncovered_by_col: dict[str, list[str]] = {}
         for col, vals_in_space in discrete_cols_in_space.items():
-            covered = {_str_val(e.get(col)) for e in self.evaluations if e.get("score") is not None}
+            covered = {_str_val(e.get(col)) for e in evaluations if e.get("score") is not None}
             uncovered = vals_in_space - covered
             if uncovered:
                 uncovered_by_col[col] = sorted(uncovered)
@@ -413,7 +420,7 @@ class GAMOptimizer(BaseOptimizer):
             logger.warning(
                 "n_random_nodes=%d was too small to cover all discrete column values. "
                 "Uncovered values by column: %s. Consider increasing n_random_nodes.",
-                self.settings.n_random_nodes,
+                n_random_nodes,
                 uncovered_by_col,
             )
 
