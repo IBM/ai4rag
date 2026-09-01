@@ -90,6 +90,7 @@ class DiscoveryResult:
         _logger.info("Documents descriptor written to %s", descriptor_path)
 
 
+# pylint: disable=too-many-locals
 def discover_documents(
     bucket_name: str,
     prefix: str = "",
