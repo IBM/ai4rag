@@ -9,8 +9,6 @@ from unittest.mock import MagicMock
 import pytest
 
 from ai4rag.components.data.test_data_loader import (
-    BENCHMARK_RECORD_KEYS_NEW,
-    BENCHMARK_RECORD_KEYS_OLD,
     TestDataLoaderError,
     TestDataResult,
     load_test_data,
