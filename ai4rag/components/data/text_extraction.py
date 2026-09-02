@@ -672,7 +672,7 @@ def _text_extraction_pool_initializer(
     )
 
 
-def _worker_process_document(
+def _worker_process_document(  # pylint: disable=too-many-locals
     file_path_str: str, output_dir_str: str, s3_key: str = "", input_data_key: str = ""
 ) -> tuple[bool, str | None]:
     """Convert a single document to a DoclingDocument JSON file.
