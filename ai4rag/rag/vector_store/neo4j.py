@@ -454,9 +454,19 @@ class Neo4jGraphStore(BaseVectorStore):
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
 
         def _fmt(record) -> RetrieverResultItem:
+            raw_meta = record.get("metadata")
+            if isinstance(raw_meta, str) and raw_meta:
+                try:
+                    chunk_meta = json.loads(raw_meta)
+                except Exception:
+                    chunk_meta = {}
+            else:
+                chunk_meta = raw_meta or {}
+            if "document_id" not in chunk_meta and record.get("document_id"):
+                chunk_meta["document_id"] = record.get("document_id")
             return RetrieverResultItem(
                 content=record.get("text") or "",
-                metadata={"score": float(record.get("score", 0.0))},
+                metadata={"score": float(record.get("score", 0.0)), "_meta": chunk_meta},
             )
 
         retriever = VectorCypherRetriever(
@@ -472,7 +482,7 @@ class Neo4jGraphStore(BaseVectorStore):
         result = retriever.search(query_text=query, top_k=k, query_params={"col": self._collection_name})
 
         pairs = [
-            (AI4RAGChunk(text=item.content, metadata={}), float(item.metadata.get("score", 0.0)))
+            (AI4RAGChunk(text=item.content, metadata=item.metadata.get("_meta", {})), float(item.metadata.get("score", 0.0)))
             for item in result.items
             if item.content
         ]
@@ -945,7 +955,8 @@ def _build_graph_retrieval_query(
         + "WITH node, score, ent_texts, "
         + "collect(DISTINCT fwd.text) + collect(DISTINCT bwd.text) AS seq_texts "
         + "WITH node, score, [x IN ent_texts + seq_texts WHERE x IS NOT NULL] AS ctx "
-        + "RETURN node.text + reduce(s='', t IN ctx | s + '\\n---\\n' + t) AS text, score"
+        + "RETURN node.text + reduce(s='', t IN ctx | s + '\\n---\\n' + t) AS text, score, "
+        + "node.document_id AS document_id, node.metadata AS metadata"
     )
 
 
