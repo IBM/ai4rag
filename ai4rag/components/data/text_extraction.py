@@ -712,7 +712,7 @@ def _worker_process_document(file_path_str: str, output_dir_str: str, s3_key: st
             parts = s3_key.split("/")
             try:
                 doc_idx = parts.index("documents")
-                doc_name = "/".join(parts[doc_idx + 1:])
+                doc_name = "/".join(parts[doc_idx + 1 :])
             except (ValueError, IndexError):
                 # No "documents/" prefix found, use the full key
                 doc_name = s3_key
@@ -829,7 +829,12 @@ def _download_and_submit(  # pylint: disable=too-many-locals
 
     downloaded_paths.sort(key=lambda p: p.stat().st_size, reverse=True)
     extraction_tasks = [
-        (str(lp), process_pool.apply_async(_worker_process_document, (str(lp), str(out_dir), local_to_key.get(lp.resolve(), ""))))
+        (
+            str(lp),
+            process_pool.apply_async(
+                _worker_process_document, (str(lp), str(out_dir), local_to_key.get(lp.resolve(), ""))
+            ),
+        )
         for lp in downloaded_paths
     ]
     return extraction_tasks, download_errors
