@@ -246,7 +246,10 @@ class Neo4jGraphStore(BaseVectorStore):
         batches = [chunks[i : i + chunk_batch_size] for i in range(0, len(chunks), chunk_batch_size)]
 
         def _extract(batch: list[AI4RAGChunk]) -> tuple[list[dict], list[dict]]:
-            texts = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in batch)
+            # Use sequential integer labels instead of raw chunk IDs so the LLM
+            # can reproduce them reliably. Map back to real IDs after parsing.
+            idx_to_chunk_id = {str(i): c.chunk_id for i, c in enumerate(batch)}
+            texts = "\n\n".join(f"[{i}] {c.text}" for i, c in enumerate(batch))
             choices = model.chat(
                 [
                     {"role": "system", "content": _KG_BATCH_SYSTEM_PROMPT},
@@ -254,18 +257,22 @@ class Neo4jGraphStore(BaseVectorStore):
                 ],
                 max_completion_tokens=max_tokens,
             )
-            return _parse_kg_extraction(choices[0].message.content or "")
+            entities, relationships = _parse_kg_extraction(choices[0].message.content or "")
+            for ent in entities:
+                ent["chunk_id"] = idx_to_chunk_id.get(ent.get("chunk_id", ""), "")
+            return entities, relationships
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(_extract, batch): batch for batch in batches}
             for future in as_completed(futures):
                 try:
-                    entities, _ = future.result()
-                    if entities:
+                    entities, relationships = future.result()
+                    if entities or relationships:
                         with self._driver.session(database=self._config.database) as session:
                             session.execute_write(
                                 Neo4jGraphStore._write_kg_entities_tx,
                                 entities,
+                                relationships,
                                 self._collection_name,
                             )
                 except Exception as exc:
@@ -275,9 +282,10 @@ class Neo4jGraphStore(BaseVectorStore):
     def _write_kg_entities_tx(
         tx: neo4j.Transaction,
         entities: list[dict],
+        relationships: list[dict],
         collection_name: str,
     ) -> None:
-        """Write ``__Entity__`` nodes + ``FROM_CHUNK`` edges (neo4j-graphrag schema)."""
+        """Write ``__Entity__`` nodes, ``FROM_CHUNK`` edges, and ``RELATED_TO`` edges."""
         for ent in entities:
             name = ent.get("name", "")
             chunk_id = ent.get("chunk_id", "")
@@ -298,6 +306,21 @@ class Neo4jGraphStore(BaseVectorStore):
                     chunk_id=chunk_id,
                     entity_id=name,
                 )
+
+        for rel in relationships:
+            src = rel.get("source", "")
+            tgt = rel.get("target", "")
+            if not src or not tgt:
+                continue
+            tx.run(
+                "MATCH (src:__Entity__ {id: $src}) "
+                "MATCH (tgt:__Entity__ {id: $tgt}) "
+                "MERGE (src)-[:RELATED_TO {keywords: $kw, description: $desc}]->(tgt)",
+                src=src,
+                tgt=tgt,
+                kw=rel.get("keywords", ""),
+                desc=rel.get("description", ""),
+            )
 
     def _upsert_doc_groups(
         self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]
