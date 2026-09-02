@@ -234,9 +234,9 @@ class Neo4jGraphStore(BaseVectorStore):
         self,
         chunks: list[AI4RAGChunk],
         model: Any,
-        chunk_batch_size: int = 16,
-        max_workers: int = 4,
-        max_tokens: int = 2048,
+        chunk_batch_size: int = 4,
+        max_workers: int = 2,
+        max_tokens: int = 1024,
     ) -> None:
         """Extract entities from *chunks* using *model* and write them to Neo4j.
 
@@ -578,7 +578,7 @@ class Neo4jGraphStore(BaseVectorStore):
         model: OpenAIFoundationModel,
         entities: list[str] | None = None,
         relations: list[str] | None = None,
-        chunk_batch_size: int = 16,
+        chunk_batch_size: int = 4,
         max_workers: int = 4,
         max_tokens: int = 2048,
     ) -> None:
