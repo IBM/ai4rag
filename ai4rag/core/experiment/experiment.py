@@ -491,6 +491,7 @@ class AI4RAGExperiment:
                 embedding_model=embedding_model,
                 collection_name=collection_name,
                 config=vector_store_config,
+                foundation_model=foundation_model,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(

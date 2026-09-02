@@ -127,9 +127,11 @@ class Neo4jGraphStore(BaseVectorStore):
         config: Neo4jConfig,
         distance_metric: str = "cosine",
         collection_name: str | None = None,
+        foundation_model: Any = None,
     ):
         super().__init__(embedding_model, config, distance_metric, collection_name)
         self._embedding_dimension = resolve_embedding_dimension(embedding_model)
+        self._foundation_model = foundation_model
         self._driver = neo4j.GraphDatabase.driver(
             config.uri,
             auth=(config.username, config.password),
@@ -172,13 +174,24 @@ class Neo4jGraphStore(BaseVectorStore):
         can scope results to this collection without requiring
         :meth:`build_knowledge_graph_from_documents`.
 
+        When *model* is provided via kwargs, entity extraction is performed after
+        indexing: chunks are sent in batches to the LLM, and the resulting
+        ``__Entity__`` nodes are written to Neo4j with ``FROM_CHUNK``
+        relationships so that ``search(mode="graph")`` can expand context via the
+        knowledge graph.
+
         Parameters
         ----------
         documents : list[AI4RAGChunk]
             Chunks to be embedded and stored.
         **kwargs : Any
-            Optional overrides. ``batch_size`` (int) sets the maximum number of
-            chunks per write transaction (default :attr:`_BATCH_SIZE`).
+            Optional overrides:
+
+            - ``batch_size`` (int) — max chunks per write transaction
+              (default :attr:`_BATCH_SIZE`).
+            - ``model`` — foundation model used for entity extraction.  When
+              omitted, graph search falls back to sequential ``NEXT_CHUNK``
+              expansion only.
         """
         if not documents:
             return
@@ -210,6 +223,81 @@ class Neo4jGraphStore(BaseVectorStore):
 
         if pending:
             self._upsert_doc_groups(pending)
+
+        if self._foundation_model is not None:
+            self._extract_and_link_entities(
+                [chunk for chunk, _ in unique_pairs],
+                self._foundation_model,
+            )
+
+    def _extract_and_link_entities(
+        self,
+        chunks: list[AI4RAGChunk],
+        model: Any,
+        chunk_batch_size: int = 16,
+        max_workers: int = 4,
+        max_tokens: int = 2048,
+    ) -> None:
+        """Extract entities from *chunks* using *model* and write them to Neo4j.
+
+        Creates ``__Entity__`` nodes and ``FROM_CHUNK`` relationships matching
+        the schema expected by :meth:`_search_graph` (neo4j-graphrag compatible).
+        """
+        batches = [chunks[i : i + chunk_batch_size] for i in range(0, len(chunks), chunk_batch_size)]
+
+        def _extract(batch: list[AI4RAGChunk]) -> tuple[list[dict], list[dict]]:
+            texts = "\n\n".join(f"[{c.chunk_id}] {c.text}" for c in batch)
+            choices = model.chat(
+                [
+                    {"role": "system", "content": _KG_BATCH_SYSTEM_PROMPT},
+                    {"role": "user", "content": texts},
+                ],
+                max_completion_tokens=max_tokens,
+            )
+            return _parse_kg_extraction(choices[0].message.content or "")
+
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(_extract, batch): batch for batch in batches}
+            for future in as_completed(futures):
+                try:
+                    entities, _ = future.result()
+                    if entities:
+                        with self._driver.session(database=self._config.database) as session:
+                            session.execute_write(
+                                Neo4jGraphStore._write_kg_entities_tx,
+                                entities,
+                                self._collection_name,
+                            )
+                except Exception as exc:
+                    logger.warning("Entity extraction batch failed: %s", exc)
+
+    @staticmethod
+    def _write_kg_entities_tx(
+        tx: neo4j.Transaction,
+        entities: list[dict],
+        collection_name: str,
+    ) -> None:
+        """Write ``__Entity__`` nodes + ``FROM_CHUNK`` edges (neo4j-graphrag schema)."""
+        for ent in entities:
+            name = ent.get("name", "")
+            chunk_id = ent.get("chunk_id", "")
+            if not name:
+                continue
+            tx.run(
+                "MERGE (e:__Entity__ {id: $id}) "
+                "SET e.name = $name, e.description = $desc",
+                id=name,
+                name=name,
+                desc=ent.get("description", ""),
+            )
+            if chunk_id:
+                tx.run(
+                    f"MATCH (c:{collection_name}:Chunk {{id: $chunk_id}}) "
+                    "MATCH (e:__Entity__ {id: $entity_id}) "
+                    "MERGE (e)-[:FROM_CHUNK]->(c)",
+                    chunk_id=chunk_id,
+                    entity_id=name,
+                )
 
     def _upsert_doc_groups(
         self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]
