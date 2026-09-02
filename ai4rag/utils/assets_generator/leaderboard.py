@@ -361,7 +361,9 @@ def _build_leaderboard_html(
 
 
 def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches,too-many-statements
-    patterns_dir: str | Path, optimization_metric: str = "faithfulness"
+    patterns_dir: str | Path,
+    optimization_metric: str = "faithfulness",
+    optimization_metric_evaluator: str | None = None,
 ) -> str:
     """Build a styled HTML leaderboard from RAG pattern evaluation results.
 
@@ -377,6 +379,11 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
     optimization_metric : str, default="faithfulness"
         Name of the metric used to rank patterns (e.g.
         ``"faithfulness"``, ``"answer_correctness"``).
+    optimization_metric_evaluator : str | None, default=None
+        Evaluator that produced ``optimization_metric`` (e.g. ``"ragas"``).
+        Required to disambiguate metric names shared across evaluators (see
+        :func:`_metric_key`); omit it only when the name is unambiguous
+        (unitxt/custom metrics, whose columns already use the bare name).
 
     Returns
     -------
@@ -434,8 +441,11 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
         if col not in metric_columns:
             metric_columns.append(col)
 
-    # Place the optimisation metric column right after Pattern_Name
-    opt_metric_col = _metric_to_mean_key(optimization_metric or "faithfulness")
+    # Place the optimisation metric column right after Pattern_Name. The key must go
+    # through `_metric_key` too, or an evaluator-shared name (e.g. "faithfulness")
+    # would resolve to the unitxt/custom column even when RAGAS drove optimization.
+    opt_metric_key = _metric_key(optimization_metric or "faithfulness", optimization_metric_evaluator)
+    opt_metric_col = _metric_to_mean_key(opt_metric_key)
     if opt_metric_col in metric_columns:
         other_metrics = [c for c in metric_columns if c != opt_metric_col]
         metric_columns = [opt_metric_col] + other_metrics
@@ -535,6 +545,6 @@ def build_leaderboard_html(  # pylint: disable=too-many-locals,too-many-branches
         table_body=table_body,
         best_pattern_name=best_pattern_name,
         num_patterns=len(evaluations),
-        eval_metric=optimization_metric or "faithfulness",
+        eval_metric=opt_metric_key,
         colgroup_html=colgroup_html,
     )

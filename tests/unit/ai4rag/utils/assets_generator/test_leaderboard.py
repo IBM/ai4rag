@@ -167,6 +167,33 @@ class TestMetricEvaluatorDisambiguation:
         assert "0.5500" in html  # unitxt faithfulness
         assert "0.9100" in html  # ragas faithfulness
 
+    def test_optimization_metric_evaluator_pins_ragas_column(self, tmp_path: Path):
+        """When RAGAS drove optimization, its column (not unitxt's) must be pinned first."""
+        subdir = tmp_path / "p1"
+        subdir.mkdir()
+        with (subdir / "pattern.json").open("w") as f:
+            json.dump(self._pattern_with_both_faithfulness(), f)
+
+        html = build_leaderboard_html(
+            tmp_path, optimization_metric="faithfulness", optimization_metric_evaluator="ragas"
+        )
+
+        assert "Ranked by" in html
+        assert "ragas faithfulness" in html
+        # The pinned column (right after Pattern_Name) must be RAGAS's, not unitxt's.
+        assert html.index("mean ragas faithfulness") < html.index("mean faithfulness")
+
+    def test_missing_optimization_metric_evaluator_keeps_bare_name_behaviour(self, tmp_path: Path):
+        """Without an evaluator hint, the bare name still resolves to the unitxt/custom column."""
+        subdir = tmp_path / "p1"
+        subdir.mkdir()
+        with (subdir / "pattern.json").open("w") as f:
+            json.dump(self._pattern_with_both_faithfulness(), f)
+
+        html = build_leaderboard_html(tmp_path, optimization_metric="faithfulness")
+
+        assert html.index("mean faithfulness") < html.index("mean ragas faithfulness")
+
 
 class TestBuildLeaderboardHtmlEmptyDir:
     """Verify behaviour when the patterns directory contains no pattern files."""
