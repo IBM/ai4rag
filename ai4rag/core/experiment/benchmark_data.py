@@ -140,7 +140,7 @@ class BenchmarkData:
                     f"Incorrect '{self.DOC_KEYS}' value: each question must have at least one "
                     "document key, got an empty list."
                 )
-            _validate_list_of_strings(el, "document_keys")
+            _validate_list_of_strings(el, self.DOC_KEYS)
         self._document_keys = val
 
     @property
