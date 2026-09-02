@@ -152,6 +152,15 @@ class ModelsPreSelector:
         for element in self.benchmark_data.document_ids:
             document_ids.extend(element)
 
+        # Validate that benchmark keys match ingested documents
+        ingested_keys = {doc.name for doc in self.documents}
+        missing_keys = set(document_ids) - ingested_keys
+        if missing_keys:
+            raise ValueError(
+                f"Benchmark data references {len(missing_keys)} document keys not ingested: "
+                f"{sorted(missing_keys)[:5]}{'...' if len(missing_keys) > 5 else ''}"
+            )
+
         documents = [document for document in self.documents if document.name in document_ids]
         chunked_documents = self._chunk_documents(documents)
 

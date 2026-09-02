@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import warnings
 from typing import Iterator
 
 import pandas as pd
@@ -31,7 +32,8 @@ class BenchmarkData:
         Validated answers from the benchmark dataset.
 
     document_ids : list[str]
-        Validated IDs of documents with correct context for given answers.
+        Validated S3 object keys of documents with correct context for given answers.
+        Accepts both 'correct_answer_document_keys' (preferred) and 'correct_answer_document_ids' (deprecated).
 
     Raises
     ------
@@ -42,6 +44,7 @@ class BenchmarkData:
     QUESTION = "question"
     CORRECT_ANSWERS = "correct_answers"
     DOC_IDS = "correct_answer_document_ids"
+    DOC_KEYS = "correct_answer_document_keys"
 
     def __init__(self, benchmark_data: pd.DataFrame):
         if len(benchmark_data) == 0:
@@ -50,7 +53,23 @@ class BenchmarkData:
 
         self.questions: list[str] = list(self._benchmark_data[self.QUESTION])
         self.correct_answers: list[list[str]] = list(self._benchmark_data[self.CORRECT_ANSWERS])
-        self.document_ids: list[list[str]] = list(self._benchmark_data[self.DOC_IDS])
+
+        # Support both new field name (preferred) and old field name (deprecated)
+        if self.DOC_KEYS in self._benchmark_data.columns:
+            self.document_ids: list[list[str]] = list(self._benchmark_data[self.DOC_KEYS])
+        elif self.DOC_IDS in self._benchmark_data.columns:
+            warnings.warn(
+                "Field 'correct_answer_document_ids' is deprecated. Use 'correct_answer_document_keys' instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            self.document_ids: list[list[str]] = list(self._benchmark_data[self.DOC_IDS])
+        else:
+            raise BenchmarkDataValueError(
+                "Benchmark data must contain either 'correct_answer_document_keys' (preferred) "
+                "or 'correct_answer_document_ids' (deprecated)."
+            )
+
         self._questions_ids = [f"q{idx}" for idx in range(len(self.questions))]
 
     def __iter__(self) -> Iterator[tuple[str, list[str], list[str] | None]]:
@@ -131,7 +150,7 @@ class BenchmarkData:
             self._document_ids = val
         else:
             for el in val:
-                _validate_list_of_strings(el, self.DOC_IDS)
+                _validate_list_of_strings(el, "document_keys")
             self._document_ids = val
 
     @property

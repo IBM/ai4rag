@@ -14,7 +14,8 @@ from ai4rag.components.utils.s3 import create_s3_client
 _logger = logging.getLogger("test-data-loader")
 _logger.addHandler(handler)
 
-BENCHMARK_RECORD_KEYS: frozenset[str] = frozenset({"question", "correct_answers", "correct_answer_document_ids"})
+BENCHMARK_RECORD_KEYS_NEW: frozenset[str] = frozenset({"question", "correct_answers", "correct_answer_document_keys"})
+BENCHMARK_RECORD_KEYS_OLD: frozenset[str] = frozenset({"question", "correct_answers", "correct_answer_document_ids"})
 BENCHMARK_SAMPLE_SIZE: int = 25
 
 
@@ -30,7 +31,7 @@ class TestDataResult:
     ----------
     data : list[dict]
         Benchmark records, each containing *question*,
-        *correct_answers*, and *correct_answer_document_ids*.
+        *correct_answers*, and *correct_answer_document_keys* (or deprecated *correct_answer_document_ids*).
     record_count : int
         Number of records in ``data``.
     sampled : bool
@@ -154,10 +155,11 @@ def _parse_and_validate(raw: str) -> list[dict]:
     for idx, record in enumerate(data):
         if not isinstance(record, dict):
             raise TestDataLoaderError(f"Expected a dict at index {idx}, got {type(record).__name__}: {record!r}")
-        if set(record.keys()) != BENCHMARK_RECORD_KEYS:
+        record_keys = set(record.keys())
+        if record_keys != BENCHMARK_RECORD_KEYS_NEW and record_keys != BENCHMARK_RECORD_KEYS_OLD:
             raise TestDataLoaderError(
                 f"Incorrect or incomplete keys in test data record at index {idx}. "
-                f"Each record must contain exactly: {sorted(BENCHMARK_RECORD_KEYS)}."
+                f"Each record must contain exactly: {sorted(BENCHMARK_RECORD_KEYS_NEW)} or {sorted(BENCHMARK_RECORD_KEYS_OLD)}."
             )
 
     return data

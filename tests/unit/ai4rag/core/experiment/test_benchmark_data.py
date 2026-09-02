@@ -15,7 +15,7 @@ def benchmark_data_df() -> pd.DataFrame:
         {
             "question": "What is meaning of life?",
             "correct_answers": ["Being good to others."],
-            "correct_answer_document_ids": ["doc_id_1", "doc_id_2"],
+            "correct_answer_document_keys": ["doc_id_1", "doc_id_2"],
         },
         {
             "question": "Is it good to be a software engineer?",
@@ -23,12 +23,12 @@ def benchmark_data_df() -> pd.DataFrame:
                 "Sometimes it is good, sometimes it is bad. But mostly it is ok.",
                 "It's great!",
             ],
-            "correct_answer_document_ids": ["doc_id_3", "doc_id_4"],
+            "correct_answer_document_keys": ["doc_id_3", "doc_id_4"],
         },
         {
             "question": "What is Python?",
             "correct_answers": ["A programming language."],
-            "correct_answer_document_ids": ["doc_id_5"],
+            "correct_answer_document_keys": ["doc_id_5"],
         },
     ]
     return pd.DataFrame(raw_data)
@@ -363,3 +363,61 @@ class TestBenchmarkDataValueError:
         error = BenchmarkDataValueError("Test error")
         assert str(error) == "Test error"
         assert isinstance(error, ValueError)
+
+
+class TestBenchmarkDataBackwardCompatibility:
+    """Test suite for backward compatibility with old field names."""
+
+    def test_backward_compatibility_with_old_field_name(self):
+        """Test that old field 'correct_answer_document_ids' still works with deprecation warning."""
+        raw_data = [
+            {
+                "question": "Test question?",
+                "correct_answers": ["Test answer."],
+                "correct_answer_document_ids": ["old_doc_1"],
+            }
+        ]
+        df = pd.DataFrame(raw_data)
+
+        with pytest.warns(DeprecationWarning, match="correct_answer_document_ids.*deprecated"):
+            benchmark_data = BenchmarkData(benchmark_data=df)
+
+        assert len(benchmark_data.document_ids) == 1
+        assert benchmark_data.document_ids[0] == ["old_doc_1"]
+
+    def test_new_field_name_does_not_warn(self):
+        """Test that new field 'correct_answer_document_keys' does not trigger deprecation warning."""
+        raw_data = [
+            {
+                "question": "Test question?",
+                "correct_answers": ["Test answer."],
+                "correct_answer_document_keys": ["new_doc_1"],
+            }
+        ]
+        df = pd.DataFrame(raw_data)
+
+        # Should not raise any warnings
+        with pytest.warns(None) as warning_list:
+            benchmark_data = BenchmarkData(benchmark_data=df)
+
+        # Filter out unrelated warnings and check no deprecation warnings
+        deprecation_warnings = [w for w in warning_list if issubclass(w.category, DeprecationWarning)]
+        assert len(deprecation_warnings) == 0
+        assert len(benchmark_data.document_ids) == 1
+        assert benchmark_data.document_ids[0] == ["new_doc_1"]
+
+    def test_missing_both_field_names_raises_error(self):
+        """Test that missing both field names raises an appropriate error."""
+        raw_data = [
+            {
+                "question": "Test question?",
+                "correct_answers": ["Test answer."],
+            }
+        ]
+        df = pd.DataFrame(raw_data)
+
+        with pytest.raises(
+            BenchmarkDataValueError,
+            match="Benchmark data must contain either 'correct_answer_document_keys'",
+        ):
+            BenchmarkData(benchmark_data=df)

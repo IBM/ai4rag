@@ -87,14 +87,14 @@ Create a `benchmark_data.json` file with questions and ground truth answers:
       "ai4rag optimizes RAG templates using hyperparameter optimization",
       "ai4rag finds optimal RAG configurations"
     ],
-    "correct_answer_document_ids": ["doc_001.pdf", "doc_002.pdf"]
+    "correct_answer_document_keys": ["doc_001.pdf", "doc_002.pdf"]
   },
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
       "Milvus and ChromaDB are supported."
     ],
-    "correct_answer_document_ids": ["doc_005.txt"]
+    "correct_answer_document_keys": ["doc_005.txt"]
   }
 ]
 ```

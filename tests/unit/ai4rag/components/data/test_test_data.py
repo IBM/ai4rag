@@ -9,7 +9,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from ai4rag.components.data.test_data_loader import (
-    BENCHMARK_RECORD_KEYS,
+    BENCHMARK_RECORD_KEYS_NEW,
+    BENCHMARK_RECORD_KEYS_OLD,
     TestDataLoaderError,
     TestDataResult,
     load_test_data,
@@ -25,7 +26,7 @@ def _valid_record(question: str = "q", answer: str = "a", doc_id: str = "d1") ->
     return {
         "question": question,
         "correct_answers": [answer],
-        "correct_answer_document_ids": [doc_id],
+        "correct_answer_document_keys": [doc_id],
     }
 
 

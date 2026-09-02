@@ -411,7 +411,7 @@ def _evaluation_result_fallback(eval_data_list: list, evaluation_result: Any) ->
     for ev in eval_data_list:
         answer_contexts: list[dict[str, str]] = []
         if getattr(ev, "contexts", None) and getattr(ev, "context_ids", None):
-            answer_contexts = [{"text": t, "document_id": doc_id} for t, doc_id in zip(ev.contexts, ev.context_ids)]
+            answer_contexts = [{"text": t, "document_key": doc_id} for t, doc_id in zip(ev.contexts, ev.context_ids)]
         qid = getattr(ev, "question_id", None)
         metrics = [
             {"name": m["name"], "evaluator": m["evaluator"], "score": m["value"]} for m in scores_by_qid.get(qid, [])
