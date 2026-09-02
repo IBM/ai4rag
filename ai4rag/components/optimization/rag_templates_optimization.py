@@ -75,6 +75,48 @@ class OptimizationResult:
     evaluations: list
 
 
+def _compute_n_random_nodes(
+    warm_start_strategy: str,
+    search_space_raw: dict,
+    fields_to_balance: list[str] | None,
+    foundation_models: list,
+    embedding_models: list,
+) -> int:
+    """Auto-compute n_random_nodes from search space dimensions when not supplied explicitly."""
+    n_llms = len(foundation_models)
+    n_embeddings = len(embedding_models)
+    n_modes = len(search_space_raw.get("search_mode", ["vector"]))
+    if warm_start_strategy == "greedy":
+        max_str_unique = max(
+            (len(vals) for vals in search_space_raw.values() if vals and isinstance(vals[0], (str, dict))),
+            default=1,
+        )
+        result = max(4, 2 * max_str_unique)
+    elif warm_start_strategy == "balanced":
+        n_balanced = 1
+        for field in fields_to_balance or []:
+            if field == "foundation_model":
+                n_balanced *= n_llms
+            elif field == "embedding_model":
+                n_balanced *= n_embeddings
+            elif field == "search_mode":
+                n_balanced *= n_modes
+            else:
+                n_balanced *= 2
+        result = max(8, n_balanced)
+    else:  # "random"
+        result = max(4, n_llms * n_embeddings)
+    _logger.info(
+        "Auto-computed n_random_nodes=%d for warm_start_strategy=%r (n_llms=%d, n_embeddings=%d, n_modes=%d).",
+        result,
+        warm_start_strategy,
+        n_llms,
+        n_embeddings,
+        n_modes,
+    )
+    return result
+
+
 def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments
     extracted_text_path: str | Path,
     test_data_path: str | Path,
@@ -88,6 +130,9 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     inference_max_threads: int = 10,
     indexing_pipeline_params: dict | None = None,
     llm_judge_mode: LLMJudgeMode = DEFAULT_LLM_JUDGE_MODE,
+    warm_start_strategy: Literal["random", "greedy", "balanced"] = "random",
+    n_random_nodes: int | None = None,
+    fields_to_balance: list[str] | None = None,
 ) -> OptimizationResult:
     """Run a full AI4RAG optimization experiment and generate output artefacts.
 
@@ -142,6 +187,24 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
         Any mode other than ``"none"`` requires at least one foundation model
         and one embedding model in the search space.
+    warm_start_strategy : {"random", "greedy", "balanced"}, default="random"
+        Controls how the initial random nodes are selected/ordered.
+        ``"random"``   — shuffled order, no reordering.
+        ``"greedy"``   — greedy selection so every string column value appears >= 2 times.
+        ``"balanced"`` — round-robin across ``fields_to_balance`` value tuples.
+        Passed directly to :class:`~ai4rag.core.hpo.gam_opt.GAMOptSettings`.
+    n_random_nodes : int | None, default=None
+        Number of random configurations to evaluate before starting GAM iterations.
+        When ``None`` (default), derived automatically:
+
+        - ``"random"``  : ``max(4, n_llms * n_embeddings)``
+        - ``"greedy"``  : ``max(4, 2 * max_unique_values_per_string_column)``
+        - ``"balanced"``: ``max(8, product of unique values for fields_to_balance)``
+
+        Pass an explicit integer only when you need to override the formula.
+    fields_to_balance : list[str] | None, default=None
+        Required when ``warm_start_strategy="balanced"``. Names of search space fields
+        whose unique value combinations are balanced by round-robin in the initial phase.
 
     Returns
     -------
@@ -159,6 +222,12 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
         If ``optimization_settings`` has invalid types.
     """
     # --- Input validation ---
+    valid_strategies = {"random", "greedy", "balanced"}
+    if warm_start_strategy not in valid_strategies:
+        raise ValueError(f"warm_start_strategy must be one of {sorted(valid_strategies)}; got {warm_start_strategy!r}.")
+    if warm_start_strategy == "balanced" and not fields_to_balance:
+        raise ValueError("fields_to_balance must be a non-empty list when warm_start_strategy='balanced'.")
+
     valid_modes = list(get_args(LLMJudgeMode))
     if llm_judge_mode not in valid_modes:
         raise ValueError(f"llm_judge_mode {llm_judge_mode!r} is not supported. Select one of {valid_modes}.")
@@ -206,6 +275,11 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
 
     search_space = AI4RAGSearchSpace(params=params)
 
+    if n_random_nodes is None:
+        n_random_nodes = _compute_n_random_nodes(
+            warm_start_strategy, search_space_raw, fields_to_balance, foundation_models, embedding_models
+        )
+
     evaluators = _build_evaluators(
         llm_judge_mode=llm_judge_mode,
         foundation_models=foundation_models,
@@ -219,7 +293,12 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     max_rag_patterns = settings.get("max_number_of_rag_patterns", DEFAULT_MAX_RAG_PATTERNS)
     if isinstance(max_rag_patterns, str):
         max_rag_patterns = int(max_rag_patterns.strip())
-    optimizer_settings = GAMOptSettings(max_evals=max_rag_patterns)
+    optimizer_settings = GAMOptSettings(
+        max_evals=max_rag_patterns,
+        n_random_nodes=n_random_nodes,
+        warm_start_strategy=warm_start_strategy,
+        fields_to_balance=fields_to_balance,
+    )
 
     event_handler = KFPEventHandler()
 
