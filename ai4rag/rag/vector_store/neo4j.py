@@ -167,6 +167,10 @@ class Neo4jGraphStore(BaseVectorStore):
 
         Creates ``Chunk`` and ``Document`` nodes (with the collection label),
         ``CONTAINS`` provenance links, and ``NEXT_CHUNK`` sequential links.
+        Also ensures the shared ``Chunk__embedding`` index exists and sets the
+        ``collection`` property on each chunk so that ``search(mode="graph")``
+        can scope results to this collection without requiring
+        :meth:`build_knowledge_graph_from_documents`.
 
         Parameters
         ----------
@@ -178,6 +182,8 @@ class Neo4jGraphStore(BaseVectorStore):
         """
         if not documents:
             return
+
+        self._ensure_kg_schema()
 
         embeddings = self.embedding_model.embed_documents([doc.text for doc in documents])
         unique_pairs = list(iter_unique_chunks(documents, embeddings))
@@ -232,17 +238,18 @@ class Neo4jGraphStore(BaseVectorStore):
                     f"MERGE (c:{collection_name}:Chunk {{id: $id}}) "
                     f"SET c.text = $text, c.embedding = $embedding, "
                     f"c.document_id = $document_id, c.sequence_number = $sequence_number, "
-                    f"c.metadata = $metadata",
+                    f"c.metadata = $metadata, c.collection = $collection",
                     id=chunk.chunk_id,
                     text=chunk.text,
                     embedding=embedding,
                     document_id=doc_id,
                     sequence_number=chunk.metadata.get("sequence_number", 0),
                     metadata=json.dumps(chunk.metadata),
+                    collection=collection_name,
                 )
                 tx.run(
-                    f"MATCH (d:{collection_name}:Document {{id: $doc_id}}), "
-                    f"(c:{collection_name}:Chunk {{id: $chunk_id}}) "
+                    f"MATCH (d:{collection_name}:Document {{id: $doc_id}}) "
+                    f"MATCH (c:{collection_name}:Chunk {{id: $chunk_id}}) "
                     f"MERGE (d)-[:CONTAINS]->(c)",
                     doc_id=doc_id,
                     chunk_id=chunk.chunk_id,
@@ -252,8 +259,8 @@ class Neo4jGraphStore(BaseVectorStore):
                 chunk_a = sorted_pairs[i][0]
                 chunk_b = sorted_pairs[i + 1][0]
                 tx.run(
-                    f"MATCH (a:{collection_name}:Chunk {{id: $id_a}}), "
-                    f"(b:{collection_name}:Chunk {{id: $id_b}}) "
+                    f"MATCH (a:{collection_name}:Chunk {{id: $id_a}}) "
+                    f"MATCH (b:{collection_name}:Chunk {{id: $id_b}}) "
                     f"MERGE (a)-[:NEXT_CHUNK]->(b)",
                     id_a=chunk_a.chunk_id,
                     id_b=chunk_b.chunk_id,
