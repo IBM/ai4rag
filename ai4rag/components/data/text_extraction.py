@@ -174,6 +174,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
     docling_config: DoclingExtractionConfig | None = None,
+    input_data_key: str = "",
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -288,6 +289,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
             process_pool=process_pool,
             out_dir=out_dir,
             s3_creds=s3_creds,
+            input_data_key=input_data_key,
         )
         _logger.info(
             "Downloads finished in %.1fs; %d file(s) queued for extraction, %d download error(s).",
@@ -670,7 +672,9 @@ def _text_extraction_pool_initializer(
     )
 
 
-def _worker_process_document(file_path_str: str, output_dir_str: str, s3_key: str = "") -> tuple[bool, str | None]:
+def _worker_process_document(
+    file_path_str: str, output_dir_str: str, s3_key: str = "", input_data_key: str = ""
+) -> tuple[bool, str | None]:
     """Convert a single document to a DoclingDocument JSON file.
 
     Plain-text (``.txt``) files are wrapped in a minimal
@@ -704,18 +708,15 @@ def _worker_process_document(file_path_str: str, output_dir_str: str, s3_key: st
         input_file = Path(file_path_str)
         output_dir = Path(output_dir_str)
 
-        # Use the original S3 key as document name, stripping base path prefix.
-        # S3 key format: "datasets/rag/document_keys_txt/documents/manuals/xr-200/file.txt"
-        # We want: "manuals/xr-200/file.txt"
-        if s3_key:
-            # Find the "documents/" marker and strip everything up to and including it
-            parts = s3_key.split("/")
-            try:
-                doc_idx = parts.index("documents")
-                doc_name = "/".join(parts[doc_idx + 1 :])
-            except (ValueError, IndexError):
-                # No "documents/" prefix found, use the full key
-                doc_name = s3_key
+        # Use the original S3 key as document name, stripping the input_data_key prefix.
+        # S3 key: "datasets/rag/docs/documents/manuals/xr-200/file.txt"
+        # input_data_key: "datasets/rag/docs/documents"
+        # Result: "manuals/xr-200/file.txt"
+        if s3_key and input_data_key:
+            prefix = input_data_key.rstrip("/") + "/"
+            doc_name = s3_key[len(prefix) :] if s3_key.startswith(prefix) else s3_key
+        elif s3_key:
+            doc_name = s3_key
         else:
             doc_name = input_file.name
 
@@ -771,6 +772,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     process_pool: Any,
     out_dir: Path,
     s3_creds: dict[str, str | None],
+    input_data_key: str = "",
 ) -> tuple[list[tuple[str, Any]], list[dict]]:
     """Download all documents from S3, then submit for extraction largest-first.
 
@@ -832,7 +834,8 @@ def _download_and_submit(  # pylint: disable=too-many-locals
         (
             str(lp),
             process_pool.apply_async(
-                _worker_process_document, (str(lp), str(out_dir), local_to_key.get(lp.resolve(), ""))
+                _worker_process_document,
+                (str(lp), str(out_dir), local_to_key.get(lp.resolve(), ""), input_data_key),
             ),
         )
         for lp in downloaded_paths
