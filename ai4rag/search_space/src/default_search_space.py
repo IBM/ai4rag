@@ -16,7 +16,7 @@ _default_chunk_overlaps = (0, 128, 256)
 # Neo4j: chunk size and overlap are fixed so the optimizer focuses on search mode
 # (vector vs. graph) and chunking method rather than also exploring chunking geometry.
 _default_neo4j_chunk_sizes = (1024,)
-_default_neo4j_chunk_overlaps = (64,)
+_default_neo4j_chunk_overlaps = (0, 64)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
 _default_chroma_retrieval_methods = ("simple",)
