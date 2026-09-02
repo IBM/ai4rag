@@ -4,3 +4,12 @@
 # -----------------------------------------------------------------------------
 from .base_event_handler import BaseEventHandler, EvaluationRecord, LogLevel, PatternPayload
 from .event_handler import KFPEventHandler, LocalEventHandler
+
+__all__ = [
+    "BaseEventHandler",
+    "EvaluationRecord",
+    "LogLevel",
+    "PatternPayload",
+    "LocalEventHandler",
+    "KFPEventHandler",
+]

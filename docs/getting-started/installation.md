@@ -188,7 +188,7 @@ Test MaaS connectivity:
 
 ```python
 import os
-from ai4rag.components.utils import create_maas_client
+from ai4rag.utils.clients.maas_client import create_maas_client
 
 # Single client — serves listing, chat, and embeddings for every model.
 client = create_maas_client(

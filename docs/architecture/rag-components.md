@@ -1332,7 +1332,7 @@ Full RAG pipeline with all components:
 
 ```python
 import os
-from ai4rag.components.utils import create_maas_client
+from ai4rag.utils.clients.maas_client import create_maas_client
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.vector_store import get_vector_store, MilvusConfig
