@@ -10,10 +10,10 @@ from typing import Literal
 import pandas as pd
 from openai import OpenAI
 
-from ai4rag.components.utils import create_maas_client
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.search_space.prepare.models import _list_maas_model_ids
+from ai4rag.utils.clients.maas_client import create_maas_client
 
 
 def create_dev_maas_client() -> OpenAI:

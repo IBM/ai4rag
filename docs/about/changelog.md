@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.14.0](https://github.com/IBM/ai4rag/releases/tag/v0.14.0)
+
+### Added
+- **Leaderboard** — `build_leaderboard_html()` gains an `optimization_metric_evaluator` parameter so the pinned leaderboard column resolves to the evaluator that drove optimization instead of always falling back to unitxt/custom when metric names collide across evaluators (e.g. `faithfulness`)
+
+### Changed
+- **Core** — split `ai4rag.components` into `ai4rag.utils` (pure, dependency-free business-logic helpers) and `pipelines-components` (KFP-only orchestration): `ai4rag.components.data` → `ai4rag.utils.data`, `ai4rag.components.assets_generator` → `ai4rag.utils.assets_generator` (`NotebookCell` and `create_placeholder_mapping` are no longer re-exported from the package `__init__`; import them from their submodules), `ai4rag.components.utils.{s3,maas_client}` grouped into a new `ai4rag.utils.clients` package, and `ai4rag.components.utils.docling_io` moved to `ai4rag.utils.docling_io`
+
+### Fixed
+- **Experiment** — `AI4RAGExperiment` now only includes the unitxt default metric bundle (`answer_correctness`, `faithfulness`, `context_correctness`, `overall_score`) when a unitxt evaluator is actually configured, instead of always including it regardless of active evaluators
+
+### Removed
+- **RAG optimization component** — `ai4rag.components.optimization` (`run_rag_optimization`, `OptimizationResult`) removed entirely; RAG-optimization orchestration is now a KFP-only concern living in `pipelines-components`, built on `ai4rag.core` and `ai4rag.search_space`
+- **Components** — the `ai4rag.components` package no longer exists; import from `ai4rag.utils` instead
+
+---
+
 ## [0.13.0](https://github.com/IBM/ai4rag/releases/tag/v0.13.0)
 
 ### Added

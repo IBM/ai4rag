@@ -154,19 +154,20 @@ graph TB
 
 ### 5. Pipeline Components Layer
 
-**Data Components** (`ai4rag/components/data/`)
+**Data Components** (`ai4rag/utils/data/`)
 
 - Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
 - Provider-agnostic — accepts injected S3 clients and OpenAI-compatible model clients
 
-**Optimization Components** (`ai4rag/components/optimization/`)
+**RAG Optimization Orchestration** (`pipelines-components` repo)
 
 - Search space preparation with model pre-selection
 - Full RAG optimization orchestration
 - Language detection for multilingual benchmark support
+- Built on top of `ai4rag.search_space` and `ai4rag.core`; not part of this repo
 
-**Assets Generator** (`ai4rag/components/assets_generator/`)
+**Assets Generator** (`ai4rag/utils/assets_generator/`)
 
 - Programmatic Jupyter notebook generation from templates
 - HTML leaderboard rendering from pattern evaluations

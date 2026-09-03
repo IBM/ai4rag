@@ -39,7 +39,7 @@ For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint w
 
 ```python
 import os
-from ai4rag.components.utils import create_maas_client
+from ai4rag.utils.clients.maas_client import create_maas_client
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 

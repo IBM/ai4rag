@@ -240,7 +240,7 @@ class AI4RAGExperiment:
             self._evaluators = list(val)
 
     @property
-    def metrics(self) -> Sequence[RAGMetric]:
+    def metrics(self) -> Sequence[RAGMetric] | None:
         """Get evaluation metrics."""
         return self._metrics
 
@@ -283,17 +283,22 @@ class AI4RAGExperiment:
         evaluator types.
         """
         if self.metrics is None:
-            base: list[RAGMetric] = [
-                Metrics.ANSWER_CORRECTNESS,
-                Metrics.FAITHFULNESS,
-                Metrics.CONTEXT_CORRECTNESS,
-                Metrics.OVERALL_SCORE,
-            ]
             evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
+            metrics = []
+
+            if "unitxt" in evaluator_types:
+                metrics.extend(
+                    [
+                        Metrics.ANSWER_CORRECTNESS,
+                        Metrics.FAITHFULNESS,
+                        Metrics.CONTEXT_CORRECTNESS,
+                        Metrics.OVERALL_SCORE,
+                    ]
+                )
             if "judge" in evaluator_types:
-                base.append(Metrics.JUDGE_ANSWER_RELEVANCE)
+                metrics.append(Metrics.JUDGE_ANSWER_RELEVANCE)
             if "ragas" in evaluator_types:
-                base.extend(
+                metrics.extend(
                     [
                         Metrics.RAGAS_FAITHFULNESS,
                         Metrics.RAGAS_ANSWER_RELEVANCY,
@@ -301,7 +306,7 @@ class AI4RAGExperiment:
                         Metrics.RAGAS_CONTEXT_RECALL,
                     ]
                 )
-            self._metrics = tuple(base)
+            self._metrics = tuple(metrics)
             logger.info("Using default metrics: %s.", [m.name for m in self._metrics])
 
         evaluator_types = {e.EVALUATOR_TYPE for e in self._evaluators}
