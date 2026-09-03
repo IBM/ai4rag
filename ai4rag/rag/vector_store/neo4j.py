@@ -230,14 +230,17 @@ class Neo4jGraphStore(BaseVectorStore):
                 model=self._foundation_model,
             )
 
-    def _run_kg_pipeline(self, texts: list[str], model: Any) -> None:
-        """Run ``SimpleKGPipeline`` on each chunk text individually.
+    def _run_kg_pipeline(self, texts: list[str], model: Any, max_concurrent: int = 8) -> None:
+        """Run ``SimpleKGPipeline`` on chunk texts concurrently.
 
-        Processes chunks one at a time to stay within LLM context limits.
         Explicit entity/relation types are provided so the pipeline uses
         ``SchemaBuilder`` instead of ``SchemaFromTextExtractor`` — the latter
         sends the entire input text in a single LLM call, which exceeds
         context limits for large corpora.
+
+        Chunks are processed concurrently (bounded by ``max_concurrent``) inside
+        a single asyncio event loop, giving near-linear speedup over the
+        sequential approach since LLM calls are I/O-bound.
         """
         from neo4j_graphrag.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
         from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
@@ -259,9 +262,17 @@ class Neo4jGraphStore(BaseVectorStore):
             neo4j_database=self._config.database,
         )
 
+        async def _run_all() -> None:
+            sem = asyncio.Semaphore(max_concurrent)
+
+            async def _run_one(text: str) -> None:
+                async with sem:
+                    await pipeline.run_async(text=text)
+
+            await asyncio.gather(*(_run_one(t) for t in texts))
+
         try:
-            for text in texts:
-                asyncio.run(pipeline.run_async(text=text))
+            asyncio.run(_run_all())
         except RuntimeError:
             raise RuntimeError(
                 "_run_kg_pipeline cannot be called from within a running event loop. "
