@@ -225,101 +225,48 @@ class Neo4jGraphStore(BaseVectorStore):
             self._upsert_doc_groups(pending)
 
         if self._foundation_model is not None:
-            self._extract_and_link_entities(
-                [chunk for chunk, _ in unique_pairs],
-                self._foundation_model,
+            self._run_kg_pipeline(
+                text="\n\n".join(chunk.text for chunk, _ in unique_pairs),
+                model=self._foundation_model,
             )
 
-    def _extract_and_link_entities(
-        self,
-        chunks: list[AI4RAGChunk],
-        model: Any,
-        chunk_batch_size: int = 4,
-        max_workers: int = 2,
-        max_tokens: int = 1024,
-    ) -> None:
-        """Extract entities from *chunks* using *model* and write them to Neo4j.
+    def _run_kg_pipeline(self, text: str, model: Any) -> None:
+        """Run ``SimpleKGPipeline`` on *text* and tag new chunks with this collection.
 
-        Creates ``__Entity__`` nodes and ``FROM_CHUNK`` relationships matching
-        the schema expected by :meth:`_search_graph` (neo4j-graphrag compatible).
+        Delegates entity/relation extraction and graph writing to
+        ``neo4j_graphrag``'s ``SimpleKGPipeline``, which creates ``__Entity__``
+        nodes, ``FROM_CHUNK`` relationships, and ``RELATED_TO`` edges in the
+        same schema used by :meth:`_search_graph`.
         """
-        batches = [chunks[i : i + chunk_batch_size] for i in range(0, len(chunks), chunk_batch_size)]
+        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
+        from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
-        def _extract(batch: list[AI4RAGChunk]) -> tuple[list[dict], list[dict]]:
-            # Use sequential integer labels instead of raw chunk IDs so the LLM
-            # can reproduce them reliably. Map back to real IDs after parsing.
-            idx_to_chunk_id = {str(i): c.chunk_id for i, c in enumerate(batch)}
-            texts = "\n\n".join(f"[{i}] {c.text}" for i, c in enumerate(batch))
-            choices = model.chat(
-                [
-                    {"role": "system", "content": _KG_BATCH_SYSTEM_PROMPT},
-                    {"role": "user", "content": texts},
-                ],
-                max_completion_tokens=max_tokens,
+        if not text.strip():
+            return
+
+        pipeline = SimpleKGPipeline(
+            llm=_LLMAdapter(model),
+            driver=self._driver,
+            embedder=_EmbedderAdapter(self.embedding_model),
+            from_pdf=False,
+            text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=200),
+            on_error="IGNORE",
+            perform_entity_resolution=True,
+            neo4j_database=self._config.database,
+        )
+
+        try:
+            asyncio.run(pipeline.run_async(text=text))
+        except RuntimeError:
+            raise RuntimeError(
+                "_run_kg_pipeline cannot be called from within a running event loop. "
+                "Install 'nest_asyncio' and call nest_asyncio.apply() beforehand."
             )
-            entities, relationships = _parse_kg_extraction(choices[0].message.content or "")
-            for ent in entities:
-                ent["chunk_id"] = idx_to_chunk_id.get(ent.get("chunk_id", ""), "")
-            return entities, relationships
 
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(_extract, batch): batch for batch in batches}
-            for future in as_completed(futures):
-                try:
-                    entities, relationships = future.result()
-                    if entities or relationships:
-                        with self._driver.session(database=self._config.database) as session:
-                            session.execute_write(
-                                Neo4jGraphStore._write_kg_entities_tx,
-                                entities,
-                                relationships,
-                                self._collection_name,
-                            )
-                except Exception as exc:
-                    logger.warning("Entity extraction batch failed: %s", exc)
-
-    @staticmethod
-    def _write_kg_entities_tx(
-        tx: neo4j.Transaction,
-        entities: list[dict],
-        relationships: list[dict],
-        collection_name: str,
-    ) -> None:
-        """Write ``__Entity__`` nodes, ``FROM_CHUNK`` edges, and ``RELATED_TO`` edges."""
-        for ent in entities:
-            name = ent.get("name", "")
-            chunk_id = ent.get("chunk_id", "")
-            if not name:
-                continue
-            tx.run(
-                "MERGE (e:__Entity__ {id: $id}) "
-                "SET e.name = $name, e.description = $desc",
-                id=name,
-                name=name,
-                desc=ent.get("description", ""),
-            )
-            if chunk_id:
-                tx.run(
-                    f"MATCH (c:{collection_name}:Chunk {{id: $chunk_id}}) "
-                    "MATCH (e:__Entity__ {id: $entity_id}) "
-                    "MERGE (e)-[:FROM_CHUNK]->(c)",
-                    chunk_id=chunk_id,
-                    entity_id=name,
-                )
-
-        for rel in relationships:
-            src = rel.get("source", "")
-            tgt = rel.get("target", "")
-            if not src or not tgt:
-                continue
-            tx.run(
-                "MATCH (src:__Entity__ {id: $src}) "
-                "MATCH (tgt:__Entity__ {id: $tgt}) "
-                "MERGE (src)-[:RELATED_TO {keywords: $kw, description: $desc}]->(tgt)",
-                src=src,
-                tgt=tgt,
-                kw=rel.get("keywords", ""),
-                desc=rel.get("description", ""),
+        with self._driver.session(database=self._config.database) as session:
+            session.run(
+                "MATCH (c:Chunk) WHERE c.collection IS NULL SET c.collection = $col",
+                col=self._collection_name,
             )
 
     def _upsert_doc_groups(
