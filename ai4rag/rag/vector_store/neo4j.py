@@ -226,28 +226,32 @@ class Neo4jGraphStore(BaseVectorStore):
 
         if self._foundation_model is not None:
             self._run_kg_pipeline(
-                text="\n\n".join(chunk.text for chunk, _ in unique_pairs),
+                texts=[chunk.text for chunk, _ in unique_pairs],
                 model=self._foundation_model,
             )
 
-    def _run_kg_pipeline(self, text: str, model: Any) -> None:
-        """Run ``SimpleKGPipeline`` on *text* and tag new chunks with this collection.
+    def _run_kg_pipeline(self, texts: list[str], model: Any) -> None:
+        """Run ``SimpleKGPipeline`` on each chunk text individually.
 
-        Delegates entity/relation extraction and graph writing to
-        ``neo4j_graphrag``'s ``SimpleKGPipeline``, which creates ``__Entity__``
-        nodes, ``FROM_CHUNK`` relationships, and ``RELATED_TO`` edges in the
-        same schema used by :meth:`_search_graph`.
+        Processes chunks one at a time to stay within LLM context limits.
+        Explicit entity/relation types are provided so the pipeline uses
+        ``SchemaBuilder`` instead of ``SchemaFromTextExtractor`` — the latter
+        sends the entire input text in a single LLM call, which exceeds
+        context limits for large corpora.
         """
         from neo4j_graphrag.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
         from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
-        if not text.strip():
+        texts = [t for t in texts if t.strip()]
+        if not texts:
             return
 
         pipeline = SimpleKGPipeline(
             llm=_LLMAdapter(model),
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
+            entities=["Person", "Organization", "Place", "Concept", "Event", "Product", "Technology"],
+            relations=["RELATED_TO", "PART_OF", "LOCATED_IN", "BELONGS_TO", "CREATED_BY", "MENTIONS"],
             from_pdf=False,
             text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=200),
             on_error="IGNORE",
@@ -256,7 +260,8 @@ class Neo4jGraphStore(BaseVectorStore):
         )
 
         try:
-            asyncio.run(pipeline.run_async(text=text))
+            for text in texts:
+                asyncio.run(pipeline.run_async(text=text))
         except RuntimeError:
             raise RuntimeError(
                 "_run_kg_pipeline cannot be called from within a running event loop. "
