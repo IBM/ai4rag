@@ -279,9 +279,17 @@ class Neo4jGraphStore(BaseVectorStore):
                 "Install 'nest_asyncio' and call nest_asyncio.apply() beforehand."
             )
 
+        # Tag newly-created KG Chunk nodes with the collection and copy provenance
+        # metadata from the matching collection-scoped chunk (matched by text).
+        # This ensures graph-search seeds always have a non-null metadata field so
+        # source document paths are available during MRR evaluation.
         with self._driver.session(database=self._config.database) as session:
             session.run(
-                "MATCH (c:Chunk) WHERE c.collection IS NULL SET c.collection = $col",
+                f"MATCH (kc:Chunk) WHERE kc.collection IS NULL "
+                f"OPTIONAL MATCH (oc:{self._collection_name}:Chunk) WHERE oc.text = kc.text "
+                f"SET kc.collection = $col, "
+                f"    kc.metadata = COALESCE(oc.metadata, kc.metadata), "
+                f"    kc.document_id = COALESCE(oc.document_id, kc.document_id)",
                 col=self._collection_name,
             )
 
