@@ -410,6 +410,8 @@ class Neo4jGraphStore(BaseVectorStore):
                 metadata = raw_meta or {}
             if metadata.get("source") is None:
                 metadata["source"] = ""
+            if metadata.get("document_id") is None and node:
+                metadata["document_id"] = node.get("document_id", "")
             return RetrieverResultItem(
                 content=text,
                 metadata={"score": record.get("score", 0.0), "_meta": metadata},
@@ -463,6 +465,8 @@ class Neo4jGraphStore(BaseVectorStore):
                 chunk_meta["document_id"] = record.get("document_id")
             if chunk_meta.get("source") is None:
                 chunk_meta["source"] = ""
+            if chunk_meta.get("document_id") is None:
+                chunk_meta["document_id"] = record.get("document_id") or ""
             return RetrieverResultItem(
                 content=record.get("text") or "",
                 metadata={"score": float(record.get("score", 0.0)), "_meta": chunk_meta},

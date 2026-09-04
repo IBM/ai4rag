@@ -491,7 +491,7 @@ class AI4RAGExperiment:
                 embedding_model=embedding_model,
                 collection_name=collection_name,
                 config=vector_store_config,
-                foundation_model=foundation_model,
+                foundation_model=foundation_model if search_mode == "graph" else None,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(
