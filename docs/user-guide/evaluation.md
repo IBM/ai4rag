@@ -75,7 +75,7 @@ Answer Correctness: High (matches ground truth)
 
 **Score range**: 0.0 to 1.0 (higher is better)
 
-**How it works**: Compares the document IDs of retrieved chunks against the `correct_answer_document_ids` in your benchmark data.
+**How it works**: Compares the document IDs of retrieved chunks against the `correct_answer_document_keys` in your benchmark data.
 
 **Example**:
 
@@ -332,14 +332,14 @@ Your `benchmark_data.json` must follow this schema:
       "ai4rag is a RAG optimization engine",
       "ai4rag optimizes RAG templates using hyperparameter optimization"
     ],
-    "correct_answer_document_ids": ["readme.md", "overview.md"]
+    "correct_answer_document_keys": ["readme.md", "overview.md"]
   },
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
       "ChromaDB and Milvus"
     ],
-    "correct_answer_document_ids": ["vector_stores.md", "quick_start.md"]
+    "correct_answer_document_keys": ["vector_stores.md", "quick_start.md"]
   }
 ]
 ```
@@ -390,7 +390,7 @@ This makes evaluation more robust to phrasing variations.
 
 **3. Accurate Document IDs**
 
-Ensure `correct_answer_document_ids` match the `document_id` metadata in your knowledge base:
+Ensure `correct_answer_document_keys` match the `document_id` metadata in your knowledge base:
 
 ```python
 # When loading documents
@@ -622,7 +622,7 @@ for m in best.scores["metrics"]:
 **Actions**:
 
 - Ensure all benchmark questions have non-empty `correct_answers`
-- Verify `correct_answer_document_ids` are provided
+- Verify `correct_answer_document_keys` are provided
 - Check that generated answers aren't empty (model timeout issue)
 
 ---

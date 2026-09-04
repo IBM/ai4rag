@@ -68,7 +68,7 @@ class AI4RAGExperiment:
         List of parsed docling documents to embed in vector db and use as context in RAG.
 
     benchmark_data : pd.DataFrame | BenchmarkData
-        Structure with 3 columns: 'question', 'correct_answers' and - if applicable - 'correct_answer_document_ids'.
+        Structure with 3 columns: 'question', 'correct_answers' and 'correct_answer_document_keys'.
 
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimization.

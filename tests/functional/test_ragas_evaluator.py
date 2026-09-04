@@ -221,7 +221,7 @@ def benchmark_data():
                 ["Applications of topic_1 span engineering, science, and industry."],
                 ["Researchers have studied topic_2 extensively over many decades."],
             ],
-            "correct_answer_document_ids": [["doc_0"], ["doc_1"], ["doc_2"]],
+            "correct_answer_document_keys": [["doc_0"], ["doc_1"], ["doc_2"]],
         }
     )
 

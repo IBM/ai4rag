@@ -122,7 +122,7 @@ Create a `benchmark_data.json` file following this schema:
 			"<answer 1 for question 1>",
 			"<answer 2 for question 1>"
 		],
-		"correct_answer_document_ids": ["<list of documents ids based on which correct answers were generated>"]
+		"correct_answer_document_keys": ["<list of documents ids based on which correct answers were generated>"]
 	},
 	{
 		"question": "<question_2>",
@@ -130,7 +130,7 @@ Create a `benchmark_data.json` file following this schema:
 			"<answer 1 for question 2>",
 			"<answer 2 for question 2>"
 		],
-		"correct_answer_document_ids": ["<list of documents ids based on which correct answers were generated>"]
+		"correct_answer_document_keys": ["<list of documents ids based on which correct answers were generated>"]
 	}
 ]
 ```

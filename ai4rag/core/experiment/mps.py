@@ -148,11 +148,19 @@ class ModelsPreSelector:
         for each pattern.
         """
         logger.debug("MPS: Sampling documents")
-        document_ids = []
-        for element in self.benchmark_data.document_ids:
-            document_ids.extend(element)
+        benchmark_keys = []
+        for element in self.benchmark_data.document_keys:
+            benchmark_keys.extend(element)
 
-        documents = [document for document in self.documents if document.name in document_ids]
+        ingested_keys = {doc.name for doc in self.documents}
+        missing_keys = set(benchmark_keys) - ingested_keys
+        if missing_keys:
+            raise ValueError(
+                f"Benchmark data references {len(missing_keys)} document keys not ingested: "
+                f"{sorted(missing_keys)[:5]}{'...' if len(missing_keys) > 5 else ''}"
+            )
+
+        documents = [document for document in self.documents if document.name in benchmark_keys]
         chunked_documents = self._chunk_documents(documents)
 
         for i, embedding_model in enumerate(self.embedding_models):

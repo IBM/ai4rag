@@ -175,6 +175,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
     docling_config: DoclingExtractionConfig | None = None,
+    input_data_key: str = "",
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -289,6 +290,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
             process_pool=process_pool,
             out_dir=out_dir,
             s3_creds=s3_creds,
+            input_data_key=input_data_key,
         )
         _logger.info(
             "Downloads finished in %.1fs; %d file(s) queued for extraction, %d download error(s).",
@@ -671,7 +673,9 @@ def _text_extraction_pool_initializer(
     )
 
 
-def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[bool, str | None]:
+def _worker_process_document(  # pylint: disable=too-many-locals
+    file_path_str: str, output_dir_str: str, s3_key: str = "", input_data_key: str = ""
+) -> tuple[bool, str | None]:
     """Convert a single document to a DoclingDocument JSON file.
 
     Plain-text (``.txt``) files are wrapped in a minimal
@@ -685,6 +689,10 @@ def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[b
     output_dir_str
         Absolute path to the directory where the resulting JSON file
         will be written (named ``<original_filename>.json``).
+    s3_key
+        Original S3 object key (e.g., "datasets/rag/docs/readme.txt").
+        Used as document name to preserve full path through pipeline.
+        Falls back to filename if empty.
 
     Returns
     -------
@@ -700,11 +708,28 @@ def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[b
     try:
         input_file = Path(file_path_str)
         output_dir = Path(output_dir_str)
-        output_file = output_dir / f"{input_file.name}.json"
+
+        # Use the original S3 key as document name, stripping the input_data_key prefix.
+        # S3 key: "datasets/rag/docs/documents/manuals/xr-200/file.txt"
+        # input_data_key: "datasets/rag/docs/documents"
+        # Result: "manuals/xr-200/file.txt"
+        if s3_key and input_data_key:
+            prefix = input_data_key.rstrip("/") + "/"
+            doc_name = s3_key[len(prefix) :] if s3_key.startswith(prefix) else s3_key
+        elif s3_key:
+            doc_name = s3_key
+        else:
+            doc_name = input_file.name
+
+        # Preserve directory structure in output to prevent collisions when multiple
+        # files have the same basename from different S3 subdirectories
+        output_rel_path = Path(doc_name).with_suffix(Path(doc_name).suffix + ".json")
+        output_file = output_dir / output_rel_path
 
         if input_file.suffix.lower() == ".txt":
-            doc = DoclingDocument(name=input_file.name)
+            doc = DoclingDocument(name=doc_name)
             doc.add_text(label=DocItemLabel.TEXT, text=input_file.read_text(encoding="utf-8"))
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             doc.save_as_json(output_file)
             return True, None
 
@@ -719,17 +744,18 @@ def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[b
         worker_log.info(
             "pid=%s docling convert start: %s (%.1f MiB on disk)",
             os.getpid(),
-            input_file.name,
+            doc_name,
             file_size_mib,
         )
         conversion_result = converter.convert(input_file)
-        conversion_result.document.name = input_file.name
+        conversion_result.document.name = doc_name
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         conversion_result.document.save_as_json(output_file)
         worker_log.info(
             "pid=%s docling convert done: %s -> %s (%.1fs)",
             os.getpid(),
-            input_file.name,
-            output_file.name,
+            doc_name,
+            output_file,
             time.perf_counter() - start,
         )
         return True, None
@@ -747,6 +773,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     process_pool: Any,
     out_dir: Path,
     s3_creds: dict[str, str | None],
+    input_data_key: str = "",
 ) -> tuple[list[tuple[str, Any]], list[dict]]:
     """Download all documents from S3, then submit for extraction largest-first.
 
@@ -800,9 +827,18 @@ def _download_and_submit(  # pylint: disable=too-many-locals
                 continue
             downloaded_paths.append(local_path)
 
+    # Map local paths back to their S3 keys for doc_name computation
+    local_to_key = {(download_path / d["key"]).resolve(): d["key"] for d in supported}
+
     downloaded_paths.sort(key=lambda p: p.stat().st_size, reverse=True)
     extraction_tasks = [
-        (str(lp), process_pool.apply_async(_worker_process_document, (str(lp), str(out_dir))))
+        (
+            str(lp),
+            process_pool.apply_async(
+                _worker_process_document,
+                (str(lp), str(out_dir), local_to_key.get(lp.resolve(), ""), input_data_key),
+            ),
+        )
         for lp in downloaded_paths
     ]
     return extraction_tasks, download_errors

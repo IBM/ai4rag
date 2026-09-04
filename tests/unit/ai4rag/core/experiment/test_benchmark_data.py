@@ -15,7 +15,7 @@ def benchmark_data_df() -> pd.DataFrame:
         {
             "question": "What is meaning of life?",
             "correct_answers": ["Being good to others."],
-            "correct_answer_document_ids": ["doc_id_1", "doc_id_2"],
+            "correct_answer_document_keys": ["doc_id_1", "doc_id_2"],
         },
         {
             "question": "Is it good to be a software engineer?",
@@ -23,12 +23,12 @@ def benchmark_data_df() -> pd.DataFrame:
                 "Sometimes it is good, sometimes it is bad. But mostly it is ok.",
                 "It's great!",
             ],
-            "correct_answer_document_ids": ["doc_id_3", "doc_id_4"],
+            "correct_answer_document_keys": ["doc_id_3", "doc_id_4"],
         },
         {
             "question": "What is Python?",
             "correct_answers": ["A programming language."],
-            "correct_answer_document_ids": ["doc_id_5"],
+            "correct_answer_document_keys": ["doc_id_5"],
         },
     ]
     return pd.DataFrame(raw_data)
@@ -49,7 +49,7 @@ class TestBenchmarkDataInitialization:
         assert len(benchmark_data) == 3
         assert len(benchmark_data.questions) == 3
         assert len(benchmark_data.correct_answers) == 3
-        assert len(benchmark_data.document_ids) == 3
+        assert len(benchmark_data.document_keys) == 3
 
     def test_init_with_empty_question_string(self, benchmark_data_df):
         """Test initialization fails with empty question string."""
@@ -83,19 +83,19 @@ class TestBenchmarkDataInitialization:
 
     def test_init_with_empty_document_id_string(self, benchmark_data_df):
         """Test initialization fails with empty document ID string."""
-        benchmark_data_df.loc[0, "correct_answer_document_ids"] = [""]
-        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_ids' value: ''"):
+        benchmark_data_df.loc[0, "correct_answer_document_keys"] = [""]
+        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_keys' value: ''"):
             BenchmarkData(benchmark_data=benchmark_data_df)
 
     def test_init_with_non_string_document_id(self, benchmark_data_df):
         """Test initialization fails with non-string document ID."""
-        benchmark_data_df.loc[0, "correct_answer_document_ids"] = [None]
-        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_ids' value: 'None'"):
+        benchmark_data_df.loc[0, "correct_answer_document_keys"] = [None]
+        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_keys' value: 'None'"):
             BenchmarkData(benchmark_data=benchmark_data_df)
 
     def test_init_with_empty_dataframe(self):
         """Test initialization with empty DataFrame."""
-        empty_df = pd.DataFrame(columns=["question", "correct_answers", "correct_answer_document_ids"])
+        empty_df = pd.DataFrame(columns=["question", "correct_answers", "correct_answer_document_keys"])
         with pytest.raises(BenchmarkDataValueError, match="There are no records in the benchmark data."):
             _ = BenchmarkData(benchmark_data=empty_df)
 
@@ -201,7 +201,7 @@ class TestBenchmarkDataProperties:
 
     def test_document_ids_property_getter(self, benchmark_data):
         """Test document_ids property getter."""
-        doc_ids = benchmark_data.document_ids
+        doc_ids = benchmark_data.document_keys
         assert isinstance(doc_ids, list)
         assert len(doc_ids) == 3
         assert doc_ids[0] == ["doc_id_1", "doc_id_2"]
@@ -209,23 +209,23 @@ class TestBenchmarkDataProperties:
     def test_document_ids_property_setter_valid(self, benchmark_data):
         """Test document_ids property setter with valid data."""
         new_doc_ids = [["id1"], ["id2"], ["id3"]]
-        benchmark_data.document_ids = new_doc_ids
-        assert benchmark_data.document_ids == new_doc_ids
+        benchmark_data.document_keys = new_doc_ids
+        assert benchmark_data.document_keys == new_doc_ids
 
-    def test_document_ids_property_setter_none(self, benchmark_data):
-        """Test document_ids property setter with None."""
-        benchmark_data.document_ids = None
-        assert benchmark_data.document_ids is None
+    def test_document_keys_property_setter_empty_list(self, benchmark_data):
+        """Test document_keys property setter fails with empty list for a question."""
+        with pytest.raises(BenchmarkDataValueError, match="at least one document key"):
+            benchmark_data.document_keys = [["doc1"], [], ["doc3"]]
 
     def test_document_ids_property_setter_empty_string(self, benchmark_data):
         """Test document_ids property setter fails with empty string."""
-        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_ids' value: ''"):
-            benchmark_data.document_ids = [[""]]
+        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_keys' value: ''"):
+            benchmark_data.document_keys = [[""]]
 
     def test_document_ids_property_setter_non_string(self, benchmark_data):
         """Test document_ids property setter fails with non-string."""
-        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_ids' value: '789'"):
-            benchmark_data.document_ids = [[789]]
+        with pytest.raises(BenchmarkDataValueError, match="Incorrect 'correct_answer_document_keys' value: '789'"):
+            benchmark_data.document_keys = [[789]]
 
     def test_questions_ids_property(self, benchmark_data):
         """Test questions_ids property."""
@@ -270,7 +270,7 @@ class TestBenchmarkDataGetRandomSample:
         sample2 = benchmark_data.get_random_sample(n_records=2, random_seed=42)
         assert sample1.questions == sample2.questions
         assert sample1.correct_answers == sample2.correct_answers
-        assert sample1.document_ids == sample2.document_ids
+        assert sample1.document_keys == sample2.document_keys
 
     def test_get_random_sample_different_seeds(self, benchmark_data):
         """Test get_random_sample produces different results with different seeds."""
@@ -296,7 +296,7 @@ class TestBenchmarkDataEdgeCases:
             {
                 "question": ["Single question?"],
                 "correct_answers": [["Single answer."]],
-                "correct_answer_document_ids": [["doc1"]],
+                "correct_answer_document_keys": [["doc1"]],
             }
         )
         benchmark_data = BenchmarkData(benchmark_data=df)
@@ -309,12 +309,12 @@ class TestBenchmarkDataEdgeCases:
             {
                 "question": ["Q1"],
                 "correct_answers": [["A1", "A2", "A3"]],
-                "correct_answer_document_ids": [["doc1", "doc2", "doc3"]],
+                "correct_answer_document_keys": [["doc1", "doc2", "doc3"]],
             }
         )
         benchmark_data = BenchmarkData(benchmark_data=df)
         assert len(benchmark_data.correct_answers[0]) == 3
-        assert len(benchmark_data.document_ids[0]) == 3
+        assert len(benchmark_data.document_keys[0]) == 3
 
     def test_single_document_id_per_question(self):
         """Test BenchmarkData with single document ID per question."""
@@ -322,11 +322,11 @@ class TestBenchmarkDataEdgeCases:
             {
                 "question": ["Q1"],
                 "correct_answers": [["A1"]],
-                "correct_answer_document_ids": [["doc1"]],
+                "correct_answer_document_keys": [["doc1"]],
             }
         )
         benchmark_data = BenchmarkData(benchmark_data=df)
-        assert len(benchmark_data.document_ids[0]) == 1
+        assert len(benchmark_data.document_keys[0]) == 1
 
     def test_whitespace_only_strings(self, benchmark_data_df):
         """Test that whitespace-only strings are considered valid (not empty)."""
@@ -343,7 +343,7 @@ class TestBenchmarkDataEdgeCases:
             {
                 "question": [long_question],
                 "correct_answers": [[long_answer]],
-                "correct_answer_document_ids": [["doc1"]],
+                "correct_answer_document_keys": [["doc1"]],
             }
         )
         benchmark_data = BenchmarkData(benchmark_data=df)
@@ -363,3 +363,37 @@ class TestBenchmarkDataValueError:
         error = BenchmarkDataValueError("Test error")
         assert str(error) == "Test error"
         assert isinstance(error, ValueError)
+
+
+class TestBenchmarkDataFieldValidation:
+    """Test suite for document_keys field requirements."""
+
+    def test_missing_document_keys_raises_error(self):
+        """Benchmark data without correct_answer_document_keys must raise."""
+        raw_data = [
+            {
+                "question": "Test question?",
+                "correct_answers": ["Test answer."],
+            }
+        ]
+        df = pd.DataFrame(raw_data)
+
+        with pytest.raises(
+            BenchmarkDataValueError,
+            match="correct_answer_document_keys",
+        ):
+            BenchmarkData(benchmark_data=df)
+
+    def test_old_field_name_is_rejected(self):
+        """The deprecated correct_answer_document_ids field must not be accepted."""
+        raw_data = [
+            {
+                "question": "Test question?",
+                "correct_answers": ["Test answer."],
+                "correct_answer_document_ids": ["doc_1"],
+            }
+        ]
+        df = pd.DataFrame(raw_data)
+
+        with pytest.raises(BenchmarkDataValueError, match="correct_answer_document_keys"):
+            BenchmarkData(benchmark_data=df)

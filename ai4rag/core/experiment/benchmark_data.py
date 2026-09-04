@@ -20,7 +20,7 @@ class BenchmarkData:
     ----------
     benchmark_data : pandas.DataFrame
         Benchmark Data given as DataFrame.It should be tabular data that contains
-        questions, answers and documents_ids columns.
+        questions, answers and correct_answer_document_keys columns.
 
     Attributes
     ----------
@@ -30,8 +30,8 @@ class BenchmarkData:
     correct_answers : list[str]
         Validated answers from the benchmark dataset.
 
-    document_ids : list[str]
-        Validated IDs of documents with correct context for given answers.
+    document_keys : list[list[str]]
+        Validated S3 object keys of documents with correct context for given answers.
 
     Raises
     ------
@@ -41,7 +41,7 @@ class BenchmarkData:
 
     QUESTION = "question"
     CORRECT_ANSWERS = "correct_answers"
-    DOC_IDS = "correct_answer_document_ids"
+    DOC_KEYS = "correct_answer_document_keys"
 
     def __init__(self, benchmark_data: pd.DataFrame):
         if len(benchmark_data) == 0:
@@ -50,18 +50,25 @@ class BenchmarkData:
 
         self.questions: list[str] = list(self._benchmark_data[self.QUESTION])
         self.correct_answers: list[list[str]] = list(self._benchmark_data[self.CORRECT_ANSWERS])
-        self.document_ids: list[list[str]] = list(self._benchmark_data[self.DOC_IDS])
+
+        if self.DOC_KEYS not in self._benchmark_data.columns:
+            raise BenchmarkDataValueError(
+                f"Benchmark data must contain '{self.DOC_KEYS}'. "
+                "Each record needs a list of S3 object keys identifying the ground-truth documents."
+            )
+        self.document_keys: list[list[str]] = list(self._benchmark_data[self.DOC_KEYS])
+
         self._questions_ids = [f"q{idx}" for idx in range(len(self.questions))]
 
     def __iter__(self) -> Iterator[tuple[str, list[str], list[str] | None]]:
-        for q, a, id_ in zip(self.questions, self.correct_answers, self.document_ids):
-            yield q, a, id_
+        for q, a, keys in zip(self.questions, self.correct_answers, self.document_keys):
+            yield q, a, keys
 
     def __len__(self) -> int:
         return len(self.questions)
 
     def __getitem__(self, idx: int) -> tuple[str, list[str], list[str] | None]:
-        return self.questions[idx], self.correct_answers[idx], self.document_ids[idx]
+        return self.questions[idx], self.correct_answers[idx], self.document_keys[idx]
 
     def get_random_sample(self, n_records: int = 10, random_seed: int = 17) -> "BenchmarkData":
         """
@@ -120,19 +127,21 @@ class BenchmarkData:
         self._correct_answers = val
 
     @property
-    def document_ids(self) -> list[list[str]]:
-        """Get all document ids from benchmark data."""
-        return self._document_ids
+    def document_keys(self) -> list[list[str]]:
+        """Get all document keys from benchmark data."""
+        return self._document_keys
 
-    @document_ids.setter
-    def document_ids(self, val: list[list[str]] | None) -> None:
-        """Validate whether each element is a list of not empty strings"""
-        if val is None:
-            self._document_ids = val
-        else:
-            for el in val:
-                _validate_list_of_strings(el, self.DOC_IDS)
-            self._document_ids = val
+    @document_keys.setter
+    def document_keys(self, val: list[list[str]]) -> None:
+        """Validate whether each element is a non-empty list of not empty strings"""
+        for el in val:
+            if not el:
+                raise BenchmarkDataValueError(
+                    f"Incorrect '{self.DOC_KEYS}' value: each question must have at least one "
+                    "document key, got an empty list."
+                )
+            _validate_list_of_strings(el, self.DOC_KEYS)
+        self._document_keys = val
 
     @property
     def questions_ids(self) -> list[str]:
