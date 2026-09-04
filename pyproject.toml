@@ -132,3 +132,4 @@ max-line-length = 120
 max-args = 8
 max-positional-arguments = 8
 max-attributes = 10
+max-module-lines = 1100

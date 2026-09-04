@@ -6,6 +6,7 @@ import asyncio
 import heapq
 import json
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -37,6 +38,20 @@ class _LoopBoundPool:
     pool: asyncpg.Pool
     loop: asyncio.AbstractEventLoop
     thread: threading.Thread
+
+
+class _InFlightTracker:
+    """Tracks calls dispatched via :meth:`PGVectorStore._run`, so :meth:`PGVectorStore.close`
+    can wait for them to drain before tearing down the event loop.
+
+    ``cond`` and ``count`` are always read and mutated together — one under the
+    other — so, like :class:`_LoopBoundPool`, they are bundled into a single
+    object rather than two separate attributes on the store.
+    """
+
+    def __init__(self) -> None:
+        self.cond = threading.Condition()
+        self.count = 0
 
 
 class PGVectorStore(BaseVectorStore):
@@ -71,6 +86,27 @@ class PGVectorStore(BaseVectorStore):
 
     _BATCH_SIZE = 1024
     _CONNECT_TIMEOUT = 10
+
+    # asyncpg has no equivalent of libpq's `keepalives_*` socket options (see the
+    # note on `_open_pool`), so a connection silently killed by an idle middlebox
+    # would otherwise surface as a hang bounded only by the OS's TCP retransmission
+    # timeout (minutes, not seconds) instead of a prompt, retryable error. Applied
+    # to both the acquire and the query on each hot-path call (see
+    # `_fetch_vector_rows`, `_fetch_keyword_rows`, `_insert_batch_async`) — never to
+    # the one-time DDL in `_create_table`/`_build_indexes`/`_drop_table`, which can
+    # legitimately take longer on a large collection and must not be cut short.
+    # Passing it to `pool.acquire()` too (not just the query itself) matters: asyncpg
+    # reuses that same budget for the connection's *release-time* cleanup (resetting
+    # session state, confirming a cancelled query) — without it, that cleanup step
+    # has no timeout of its own and could hang indefinitely on a truly dead
+    # connection, undoing the whole point of bounding the query.
+    _COMMAND_TIMEOUT = 90.0
+
+    # Shorter than asyncpg's own 300s default: proactively recycling idle pooled
+    # connections more often shrinks (but, absent a real keepalive, cannot fully
+    # close) the window in which a connection can be silently dropped while sitting
+    # idle in the pool between calls.
+    _MAX_INACTIVE_CONNECTION_LIFETIME = 60.0
 
     # search() and add_documents() may be called concurrently across threads (e.g.
     # one worker per benchmark question in query_rag(), or one per concurrent
@@ -180,6 +216,12 @@ class PGVectorStore(BaseVectorStore):
         self._table_created: bool = False
         self._db_lock = threading.Lock()
 
+        # Guards the handoff between _run() (reader) and close() (writer): close()
+        # must not stop/close the loop while another thread's _run() call is still
+        # dispatched on it. See _run() and close() for the drain protocol this
+        # implements.
+        self._inflight = _InFlightTracker()
+
     def _run(self, coro: Any) -> Any:
         """Run *coro* on the store's dedicated event loop and block for its result.
 
@@ -200,6 +242,13 @@ class PGVectorStore(BaseVectorStore):
         :meth:`_ensure_db`/:meth:`_ensure_pool` itself, so that lookup — which
         calls :meth:`_run` — always happens on the caller's thread.
 
+        Safe to call concurrently with :meth:`close`: this method and ``close()``
+        coordinate over :attr:`_inflight` so that a store closed mid-call raises
+        a clear :class:`RuntimeError` (never an ``AttributeError`` from a
+        half-torn-down ``self._db``), and ``close()`` blocks until every
+        in-flight :meth:`_run` call it can see has finished before stopping the
+        loop out from under it.
+
         Parameters
         ----------
         coro : Any
@@ -209,8 +258,63 @@ class PGVectorStore(BaseVectorStore):
         -------
         Any
             The coroutine's result.
+
+        Raises
+        ------
+        RuntimeError
+            If the store has already been closed via :meth:`close`.
         """
-        return asyncio.run_coroutine_threadsafe(coro, self._db.loop).result()
+        with self._inflight.cond:
+            db = self._db
+            if db is None:
+                coro.close()  # avoid a "coroutine was never awaited" warning
+                raise RuntimeError(f"PGVectorStore for collection {self._collection_name!r} is closed.")
+            self._inflight.count += 1
+        try:
+            return self._dispatch(db.loop, coro)
+        finally:
+            with self._inflight.cond:
+                self._inflight.count -= 1
+                if self._inflight.count == 0:
+                    self._inflight.cond.notify_all()
+
+    def _run_with_retry(self, make_coro: Callable[[], Any]) -> Any:
+        """Run a coroutine on the store's event loop, retrying once on a dropped connection.
+
+        *make_coro* is a zero-argument callable rather than a coroutine because a
+        coroutine object can only be awaited once: a retry needs a fresh one. The
+        pool discards a connection it finds broken and hands out a fresh one on
+        the next borrow, so the retry itself needs no explicit reconnect. This
+        recovers from a *transient* drop (recycled backend, dropped idle
+        connection); it deliberately does not mask a deterministic failure — an
+        operation that always kills the backend still surfaces after one retry.
+
+        Parameters
+        ----------
+        make_coro : Callable[[], Any]
+            Builds a fresh coroutine to run; called once, and again on retry.
+
+        Returns
+        -------
+        Any
+            The coroutine's result.
+        """
+        try:
+            return self._run(make_coro())
+        except asyncpg.exceptions.PostgresConnectionError as exc:
+            logger.warning("PGVector operation failed (%s); retrying once.", exc)
+            return self._run(make_coro())
+
+    @staticmethod
+    def _dispatch(loop: asyncio.AbstractEventLoop, coro: Any) -> Any:
+        """Run *coro* on *loop* from another thread and block for its result.
+
+        Bare ``asyncio.run_coroutine_threadsafe(...).result()`` factored out so
+        :meth:`close` can dispatch the pool's shutdown coroutine onto a loop it
+        already holds a direct reference to, after :attr:`_db` has been cleared
+        and :meth:`_run` is no longer usable.
+        """
+        return asyncio.run_coroutine_threadsafe(coro, loop).result()
 
     def _ensure_pool(self) -> asyncpg.Pool:
         """Return the pool, opening it (and its background event loop) on the first call.
@@ -282,14 +386,10 @@ class PGVectorStore(BaseVectorStore):
         if self._config.password:
             connect_kwargs["password"] = self._config.password
 
-        # asyncpg has no equivalent of libpq's `keepalives_*` connection options,
-        # so a long idle gap between calls (e.g. during a slow embedding step) is
-        # no longer covered by TCP keepalives. A connection dropped that way
-        # surfaces as a PostgresConnectionError on next use, which
-        # _insert_batch_with_retry already retries once.
         return await asyncpg.create_pool(
             min_size=self._MIN_POOL_SIZE,
             max_size=self._config.pool_max_size,
+            max_inactive_connection_lifetime=self._MAX_INACTIVE_CONNECTION_LIFETIME,
             init=self._configure_connection,
             **connect_kwargs,
         )
@@ -588,20 +688,31 @@ class PGVectorStore(BaseVectorStore):
         # for every other concurrent search()/add_documents() on this store.
         embedding = self.embedding_model.embed_query(query)
         pool = self._ensure_db()
-        rows = self._run(self._fetch_vector_rows(pool, embedding, k))
+        rows = self._run_with_retry(lambda: self._fetch_vector_rows(pool, embedding, k))
+        results = self._vector_rows_to_results(rows)
+        if include_scores:
+            return results
+        return [chunk for chunk, _ in results]
 
+    def _vector_rows_to_results(self, rows: list[asyncpg.Record]) -> list[tuple[AI4RAGChunk, float]]:
+        """Convert raw dense-search rows into chunks paired with relevance scores."""
         results: list[tuple[AI4RAGChunk, float]] = []
         for content_text, metadata, distance in rows:
             score = self._distance_to_score(float(distance))
             chunk = AI4RAGChunk(text=content_text, metadata=self._parse_metadata(metadata))
             results.append((chunk, score))
-        if include_scores:
-            return results
-        return [chunk for chunk, _ in results]
+        return results
 
     async def _fetch_vector_rows(self, pool: asyncpg.Pool, embedding: list[float], k: int) -> list[asyncpg.Record]:
         """Run the dense similarity query and return the raw matching rows."""
-        async with pool.acquire() as conn:
+        # `acquire(timeout=...)` matters beyond bounding the wait for a free slot: asyncpg
+        # records it as the connection holder's budget for the *release-time* cleanup this
+        # `async with` triggers on exit (resetting session state, awaiting confirmation of a
+        # cancelled query) — see PoolConnectionHolder.release() in asyncpg/pool.py. Without it,
+        # that cleanup step defaults to no timeout at all, so a query that times out on a truly
+        # dead connection could still hang indefinitely at release, right where _COMMAND_TIMEOUT
+        # was meant to prevent exactly that.
+        async with pool.acquire(timeout=self._COMMAND_TIMEOUT) as conn:
             return await conn.fetch(
                 f"""
                 SELECT content_text, metadata, embedding {self._distance_operator} $1::vector AS distance
@@ -611,6 +722,7 @@ class PGVectorStore(BaseVectorStore):
                 """,
                 embedding,
                 k,
+                timeout=self._COMMAND_TIMEOUT,
             )
 
     def _search_keyword(self, query: str, k: int) -> list[tuple[AI4RAGChunk, float]]:
@@ -632,8 +744,11 @@ class PGVectorStore(BaseVectorStore):
             Matched chunks paired with their ``ts_rank`` scores.
         """
         pool = self._ensure_db()
-        rows = self._run(self._fetch_keyword_rows(pool, query, k))
+        rows = self._run_with_retry(lambda: self._fetch_keyword_rows(pool, query, k))
+        return self._keyword_rows_to_results(rows)
 
+    def _keyword_rows_to_results(self, rows: list[asyncpg.Record]) -> list[tuple[AI4RAGChunk, float]]:
+        """Convert raw keyword-search rows into chunks paired with ``ts_rank`` scores."""
         results: list[tuple[AI4RAGChunk, float]] = []
         for content_text, metadata, score in rows:
             chunk = AI4RAGChunk(text=content_text, metadata=self._parse_metadata(metadata))
@@ -642,7 +757,9 @@ class PGVectorStore(BaseVectorStore):
 
     async def _fetch_keyword_rows(self, pool: asyncpg.Pool, query: str, k: int) -> list[asyncpg.Record]:
         """Run the full-text query and return the raw matching rows."""
-        async with pool.acquire() as conn:
+        # See the matching comment in _fetch_vector_rows: the acquire-time timeout also
+        # bounds this connection's release-time cleanup, not just the wait for a free slot.
+        async with pool.acquire(timeout=self._COMMAND_TIMEOUT) as conn:
             return await conn.fetch(
                 f"""
                 SELECT content_text, metadata, ts_rank(tokenized_content, plainto_tsquery('english', $1)) AS score
@@ -653,7 +770,26 @@ class PGVectorStore(BaseVectorStore):
                 """,
                 query,
                 k,
+                timeout=self._COMMAND_TIMEOUT,
             )
+
+    async def _fetch_hybrid_rows(
+        self, pool: asyncpg.Pool, embedding: list[float], query: str, k: int
+    ) -> tuple[list[asyncpg.Record], list[asyncpg.Record]]:
+        """Run the dense and keyword row fetches concurrently and return both raw row sets.
+
+        The two queries are independent (different WHERE/ORDER BY clauses, no
+        shared state) and each borrows its own connection from *pool*, so
+        :func:`asyncio.gather` runs them concurrently on the shared event loop
+        instead of one waiting on the other's round trip — this coroutine is
+        dispatched as a single :meth:`_run` call for exactly that reason; two
+        separate ``_run`` calls from the caller thread would serialize them
+        again by blocking on the first's result before issuing the second.
+        """
+        return await asyncio.gather(
+            self._fetch_vector_rows(pool, embedding, k),
+            self._fetch_keyword_rows(pool, query, k),
+        )
 
     @staticmethod
     def _parse_metadata(metadata: dict | None) -> dict:
@@ -686,9 +822,11 @@ class PGVectorStore(BaseVectorStore):
     ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
         """Run a hybrid dense + full-text search with in-memory fusion.
 
-        Runs the dense and keyword searches independently, fuses their per-chunk
-        score maps with :class:`WeightedInMemoryAggregator`, and keeps the top
-        ``k`` results.
+        Runs the dense and keyword *database* queries concurrently — as a single
+        :func:`asyncio.gather` dispatched through one :meth:`_run` call, since the
+        keyword lookup has no dependency on the vector lookup or the embedding
+        step — then fuses their per-chunk score maps with
+        :class:`WeightedInMemoryAggregator` and keeps the top ``k`` results.
 
         Parameters
         ----------
@@ -711,10 +849,18 @@ class PGVectorStore(BaseVectorStore):
         list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
             Fused chunks, optionally paired with their scores.
         """
-        vector_results = self._search_vector(query, k, include_scores=True)
-        keyword_results = self._search_keyword(query, k)
+        # embed_query() runs here, on the caller's own thread, for the same reason
+        # given in _search_vector — and because the vector fetch below needs the
+        # embedding before it can be dispatched at all.
+        embedding = self.embedding_model.embed_query(query)
+        pool = self._ensure_db()
+        vector_rows, keyword_rows = self._run_with_retry(lambda: self._fetch_hybrid_rows(pool, embedding, query, k))
         chunk_map, combined_scores = self._fuse_results(
-            vector_results, keyword_results, ranker_strategy, ranker_k, ranker_alpha
+            self._vector_rows_to_results(vector_rows),
+            self._keyword_rows_to_results(keyword_rows),
+            ranker_strategy,
+            ranker_k,
+            ranker_alpha,
         )
 
         top_k_items = heapq.nlargest(k, combined_scores.items(), key=lambda x: x[1])
@@ -812,7 +958,9 @@ class PGVectorStore(BaseVectorStore):
         for idx in range(0, len(values), batch_size):
             self._insert_batch_with_retry(pool, values[idx : idx + batch_size])
 
-    def _insert_batch(self, pool: asyncpg.Pool, batch: list[tuple[str, dict, list[float], str, str]]) -> None:
+    async def _insert_batch_async(
+        self, pool: asyncpg.Pool, batch: list[tuple[str, dict, list[float], str, str]]
+    ) -> None:
         """Upsert a single batch of rows into the table.
 
         The trailing text of each row feeds ``to_tsvector`` for the full-text
@@ -826,12 +974,9 @@ class PGVectorStore(BaseVectorStore):
             Rows to upsert, each as ``(id, metadata, embedding, content text,
             text to tokenize)``.
         """
-        self._run(self._insert_batch_async(pool, batch))
-
-    async def _insert_batch_async(
-        self, pool: asyncpg.Pool, batch: list[tuple[str, dict, list[float], str, str]]
-    ) -> None:
-        async with pool.acquire() as conn:
+        # See the matching comment in _fetch_vector_rows: the acquire-time timeout also
+        # bounds this connection's release-time cleanup, not just the wait for a free slot.
+        async with pool.acquire(timeout=self._COMMAND_TIMEOUT) as conn:
             await conn.executemany(
                 f"""
                 INSERT INTO {self._quoted_table()} (id, metadata, embedding, content_text, tokenized_content)
@@ -843,6 +988,7 @@ class PGVectorStore(BaseVectorStore):
                     tokenized_content = EXCLUDED.tokenized_content
                 """,
                 batch,
+                timeout=self._COMMAND_TIMEOUT,
             )
 
     def _insert_batch_with_retry(
@@ -856,17 +1002,20 @@ class PGVectorStore(BaseVectorStore):
         no explicit reconnect. This recovers from *transient* drops (recycled backend,
         middlebox); it deliberately does not mask a deterministic failure — a batch that
         always kills the backend still surfaces after one retry.
+
+        Kept distinct from the generic :meth:`_run_with_retry` so the retry log line can
+        report the batch size; behaviorally identical otherwise.
         """
         try:
-            self._insert_batch(pool, batch)
+            self._run(self._insert_batch_async(pool, batch))
         except asyncpg.exceptions.PostgresConnectionError as exc:
             logger.warning("PGVector insert failed (%s); retrying batch of %d rows.", exc, len(batch))
-            self._insert_batch(pool, batch)
+            self._run(self._insert_batch_async(pool, batch))
 
     def clean_collection(self) -> None:
         """Drop the PostgreSQL table."""
         pool = self._ensure_pool()
-        self._run(self._drop_table(pool))
+        self._run_with_retry(lambda: self._drop_table(pool))
 
     async def _drop_table(self, pool: asyncpg.Pool) -> None:
         async with pool.acquire() as conn:
@@ -879,12 +1028,22 @@ class PGVectorStore(BaseVectorStore):
         immediately, rather than dispatching onto a loop that has already
         stopped — which would hang forever waiting for a callback the stopped
         loop can never run.
+
+        Safe to call while another thread is mid-:meth:`_run`: :attr:`_db` is
+        cleared up front (under :attr:`_inflight`) so no *new* call can start,
+        but the loop and pool are only stopped once every call that already
+        started has finished — see :meth:`_run`. A call that started before
+        this method clears :attr:`_db` still completes normally; one that
+        starts after gets a clear ``RuntimeError`` instead of racing the teardown.
         """
-        if self._db is None:
-            return
-        db = self._db
-        self._run(db.pool.close())
+        with self._inflight.cond:
+            if self._db is None:
+                return
+            db = self._db
+            self._db = None
+            while self._inflight.count > 0:
+                self._inflight.cond.wait()
+        self._dispatch(db.loop, db.pool.close())
         db.loop.call_soon_threadsafe(db.loop.stop)
         db.thread.join()
         db.loop.close()
-        self._db = None
