@@ -29,12 +29,16 @@ pytestmark = pytest.mark.skipif(
 
 def _table_exists(store: PGVectorStore) -> bool:
     """Return whether the store's backing table currently exists in the database."""
+
     # ``to_regclass`` resolves a relation name to its OID, or NULL if it does not
     # exist — a non-throwing existence check. The collection name IS the table
-    # name; ``_quoted_table`` supplies the safely-quoted identifier.
-    with store._pool.connection() as conn:
-        row = conn.execute("SELECT to_regclass(%s)", (store._quoted_table(),)).fetchone()
-    return row is not None and row[0] is not None
+    # name; ``_quoted_table`` supplies the safely-quoted identifier. Routed through
+    # store._run() since the pool's connections belong to the store's own event loop.
+    async def _check() -> object:
+        async with store._db.pool.acquire() as conn:
+            return await conn.fetchval("SELECT to_regclass($1)", store._quoted_table())
+
+    return store._run(_check()) is not None
 
 
 @pytest.mark.pgvector
@@ -114,11 +118,13 @@ class TestPGVectorIntegration:
 
 def _index_names(store: PGVectorStore) -> set[str]:
     """Return the names of every index currently defined on the store's table."""
-    with store._pool.connection() as conn:
-        rows = conn.execute(
-            "SELECT indexname FROM pg_indexes WHERE tablename = %s", (store.collection_name,)
-        ).fetchall()
-    return {row[0] for row in rows}
+
+    async def _fetch() -> list:
+        async with store._db.pool.acquire() as conn:
+            return await conn.fetch("SELECT indexname FROM pg_indexes WHERE tablename = $1", store.collection_name)
+
+    rows = store._run(_fetch())
+    return {row["indexname"] for row in rows}
 
 
 @pytest.mark.pgvector

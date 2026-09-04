@@ -62,7 +62,7 @@ Each config is a frozen dataclass with a `.from_env()` constructor and an `env_v
 
 ## Document processing
 
-ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`chromadb`, `pymilvus`, `pgvector`, `psycopg`) are all installed automatically with `ai4rag`.
+ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`chromadb`, `pymilvus`, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
 
 
 ## Quick start

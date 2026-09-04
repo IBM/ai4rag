@@ -35,8 +35,8 @@ dependencies = [
   "multiprocess>=0.70",
   "openai~=2.53.0",
   "pandas==2.2.*",
+  "asyncpg>=0.29",
   "pgvector~=0.5.0",
-  "psycopg[binary,pool]>=3.1",
   "pydantic==2.11.*",
   "pygam~=0.12.0",
   "pymilvus~=3.0.1",
@@ -64,11 +64,20 @@ dev = [
   "ipykernel",
 ]
 
-test = ["ai4rag[text-extraction]", "pytest", "pytest-cov", "pytest-mock", "psutil", "nbformat"]
+test = [
+  "ai4rag[text-extraction]",
+  "pytest",
+  "pytest-cov",
+  "pytest-mock",
+  "psutil",
+  "nbformat",
+]
 
 code_check = ["pylint", "black", "isort"]
 
-text-extraction = ["docling-slim[standard,format-opendocument,format-audio]~=2.107.0"]
+text-extraction = [
+  "docling-slim[standard,format-opendocument,format-audio]~=2.107.0",
+]
 
 docs = [
   "mkdocs~=1.6.0",
@@ -119,12 +128,6 @@ disable = [
   "import-outside-toplevel",
   "broad-exception-caught",
 ]
-# psycopg's connection type cannot be introspected by astroid: `connect()` is an
-# overloaded classmethod returning `Self`, and importing `pgvector.psycopg`
-# (whose API is annotated with `Connection[Any]`) poisons the inference to an
-# anonymous class, yielding spurious no-member errors on every `execute`/`cursor`
-# call. Skip member checks for objects typed as coming from psycopg.
-ignored-modules = ["psycopg"]
 max-line-length = 120
 max-args = 8
 max-positional-arguments = 8
