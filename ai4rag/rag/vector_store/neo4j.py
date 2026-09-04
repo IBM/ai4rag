@@ -316,6 +316,7 @@ class Neo4jGraphStore(BaseVectorStore):
             )
 
             for chunk, embedding in sorted_pairs:
+                clean_metadata = {**chunk.metadata, "source": chunk.metadata.get("source") or doc_id}
                 tx.run(
                     f"MERGE (c:{collection_name}:Chunk {{id: $id}}) "
                     f"SET c.text = $text, c.embedding = $embedding, "
@@ -326,7 +327,7 @@ class Neo4jGraphStore(BaseVectorStore):
                     embedding=embedding,
                     document_id=doc_id,
                     sequence_number=chunk.metadata.get("sequence_number", 0),
-                    metadata=json.dumps(chunk.metadata),
+                    metadata=json.dumps(clean_metadata),
                     collection=collection_name,
                 )
                 tx.run(
@@ -407,6 +408,8 @@ class Neo4jGraphStore(BaseVectorStore):
                     metadata = {}
             else:
                 metadata = raw_meta or {}
+            if metadata.get("source") is None:
+                metadata["source"] = ""
             return RetrieverResultItem(
                 content=text,
                 metadata={"score": record.get("score", 0.0), "_meta": metadata},
@@ -458,6 +461,8 @@ class Neo4jGraphStore(BaseVectorStore):
                 chunk_meta = raw_meta or {}
             if "document_id" not in chunk_meta and record.get("document_id"):
                 chunk_meta["document_id"] = record.get("document_id")
+            if chunk_meta.get("source") is None:
+                chunk_meta["source"] = ""
             return RetrieverResultItem(
                 content=record.get("text") or "",
                 metadata={"score": float(record.get("score", 0.0)), "_meta": chunk_meta},
