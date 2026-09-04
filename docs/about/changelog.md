@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.15.0](https://github.com/IBM/ai4rag/releases/tag/v0.15.0)
+
+### Changed
+- **Vector store (pgvector)** — `PGVectorStore` now uses `asyncpg` instead of `psycopg` to talk to Postgres, so installing ai4rag no longer requires a libpq binding in any form (bundled, compiled, or system-provided); the public sync API (`search`/`add_documents`/`clean_collection`/`close`) is unchanged, backed internally by a dedicated per-instance background event loop. **Breaking:** database errors now surface as `asyncpg` exceptions (e.g. `asyncpg.exceptions.PostgresConnectionError`) instead of `psycopg` ones
+- **Vector store (pgvector)** — hybrid search's dense and keyword queries now run concurrently instead of sequentially
+- **Vector store (pgvector)** — retry-on-dropped-connection behavior, previously insert-only, now also covers search, keyword search, and `clean_collection`
+- **Vector store (pgvector)** — hot-path queries (search, keyword search, insert) now enforce a 90s command timeout on both pool acquisition and query execution, so a connection silently killed by an idle middlebox fails fast instead of hanging on the OS's TCP retransmission timer; idle pooled connections are now recycled after 60s (was 300s)
+- **Dependencies** — replaced `psycopg[binary,pool]` with `asyncpg` as the pgvector backend client
+
+### Fixed
+- **Vector store (pgvector)** — fixed a latent ordering bug where `register_vector()` could look up the `vector` type's OID before `CREATE EXTENSION IF NOT EXISTS vector` had run, on a fresh database
+- **Vector store (pgvector)** — fixed a race between `close()` and in-flight queries that could raise a bare `AttributeError`; `close()` now drains in-flight calls before tearing down the event loop, and a store closed mid-call raises a clear `RuntimeError` instead
+
+### Removed
+- **Vector store (pgvector)** — `psycopg`/`psycopg_pool` are no longer dependencies of ai4rag
+
+---
+
 ## [0.14.0](https://github.com/IBM/ai4rag/releases/tag/v0.14.0)
 
 ### Added
