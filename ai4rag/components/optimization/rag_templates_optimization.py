@@ -317,12 +317,23 @@ def run_rag_optimization(  # pylint: disable=too-many-locals,too-many-arguments,
     # --- Run the optimization loop ---
     rag_exp.search()
 
+    # --- Select patterns for the leaderboard ---
+    patterns_raw = event_handler.patterns
+    if warm_start_strategy in ("greedy", "balanced") and hasattr(rag_exp, "optimizer"):
+        opt = rag_exp.optimizer
+        patterns_raw = _select_patterns_for_leaderboard(
+            patterns=patterns_raw,
+            warm_start_count=opt.warm_start_evaluation_count,
+            effective_warm_start=opt._compute_warm_start_effective_target(),
+            max_rag_patterns=max_rag_patterns,
+        )
+
     # --- Generate output artefacts ---
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     patterns = _generate_output_artifacts(
-        patterns_raw=event_handler.patterns,
+        patterns_raw=patterns_raw,
         output_dir=output_dir,
         input_data_key=input_data_key,
         test_data_key=test_data_key,
@@ -405,6 +416,51 @@ def _build_evaluators(  # pylint: disable=too-many-arguments,too-many-positional
         _logger.info("RAGAS evaluator enabled with model: %s", ragas_model.model_id)
 
     return evaluators
+
+
+def _get_pattern_score(pattern: dict) -> float:
+    """Extract the optimization metric mean score from a pattern dict."""
+    metrics = pattern.get("payload", {}).get("evaluation", {}).get("metrics", [])
+    for m in metrics:
+        if m.get("optimization_metric"):
+            score = m.get("scores", {}).get("mean")
+            if score is not None:
+                return float(score)
+    return 0.0
+
+
+def _select_patterns_for_leaderboard(
+    patterns: list[dict],
+    warm_start_count: int,
+    effective_warm_start: int,
+    max_rag_patterns: int,
+) -> list[dict]:
+    """Select the final patterns for the leaderboard from warm-start and GAM evaluations.
+
+    Takes the top ``effective_warm_start // 4`` patterns from the warm-start phase
+    and the top ``max_rag_patterns - effective_warm_start // 4`` from the GAM phase,
+    ordered best-first within each group.
+    """
+    n_from_warmstart = effective_warm_start // 4
+    n_from_gam = max_rag_patterns - n_from_warmstart
+
+    warm_start_patterns = patterns[:warm_start_count]
+    gam_patterns = patterns[warm_start_count:]
+
+    top_warmstart = sorted(warm_start_patterns, key=_get_pattern_score, reverse=True)[:n_from_warmstart]
+    top_gam = sorted(gam_patterns, key=_get_pattern_score, reverse=True)[:n_from_gam]
+
+    _logger.info(
+        "Pattern selection for leaderboard: %d from warm start (top %d of %d) + "
+        "%d from GAM iterations (top %d of %d).",
+        len(top_warmstart),
+        n_from_warmstart,
+        len(warm_start_patterns),
+        len(top_gam),
+        n_from_gam,
+        len(gam_patterns),
+    )
+    return top_warmstart + top_gam
 
 
 def _generate_output_artifacts(

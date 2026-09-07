@@ -1272,3 +1272,335 @@ class TestGAMOptimizerDeterminism:
         assert evals1 == evals2
         assert result1 == result2
         assert len(evals1) == 6
+
+
+class TestGreedyBalancedWarmStartAutoAdjust:
+    """Tests for the auto-adjusted warm start and fixed GAM iteration logic in greedy/balanced."""
+
+    def _make_space(self, n=8):
+        """Search space with 2 search_modes and 4 methods, totalling n combinations."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"search_mode": "vector", "method": m}
+            for m in ["a", "b", "c", "d"]
+        ] + [
+            {"search_mode": "hybrid", "method": m}
+            for m in ["a", "b", "c", "d"]
+        ]
+        mock_space.max_combinations = 8
+        return mock_space
+
+    # ------------------------------------------------------------------
+    # Auto-adjusted warm start (no ValueError when n_random_nodes < min_required)
+    # ------------------------------------------------------------------
+
+    def test_greedy_no_error_when_n_random_nodes_below_min_required(self):
+        """Greedy strategy no longer raises when n_random_nodes < min_required."""
+        mock_space = self._make_space()
+        # method has 4 unique values → max_unique=4, min_required=max(4,8)=8
+        # n_random_nodes=2 is well below 8 — should NOT raise.
+        settings = GAMOptSettings(max_evals=20, n_random_nodes=2, warm_start_strategy="greedy")
+        # Construction must succeed without ValueError.
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        assert optimizer is not None
+
+    def test_balanced_no_error_when_n_random_nodes_below_min_required(self):
+        """Balanced strategy no longer raises when n_random_nodes < min_required."""
+        mock_space = self._make_space()
+        # 2 search_mode values → n_balanced_tuples >= 2, min_required >= 4
+        settings = GAMOptSettings(
+            max_evals=20,
+            n_random_nodes=1,
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode"],
+        )
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        assert optimizer is not None
+
+    def test_greedy_warm_start_evaluates_min_required_when_n_random_nodes_is_smaller(self):
+        """Warm start evaluates min_required nodes even when n_random_nodes < min_required."""
+        mock_space = self._make_space()
+        # method has 4 unique values → min_required = max(4, 2*4) = 8
+        # n_random_nodes=2 < 8, so effective_target=8
+        settings = GAMOptSettings(max_evals=30, n_random_nodes=2, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+        successful = sum(1 for e in optimizer.evaluations if e["score"] is not None)
+        assert successful == 8
+
+    def test_balanced_warm_start_evaluates_min_required_when_n_random_nodes_is_smaller(self):
+        """Balanced warm start evaluates min_required nodes even when n_random_nodes is smaller."""
+        mock_space = self._make_space()
+        # search_mode has 2 unique tuples; method has 4 values → min_required = max(4,2,4)=4
+        settings = GAMOptSettings(
+            max_evals=30,
+            n_random_nodes=1,
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode"],
+        )
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluate_initial_random_nodes()
+        successful = sum(1 for e in optimizer.evaluations if e["score"] is not None)
+        assert successful >= 4
+
+    def test_compute_warm_start_effective_target_greedy(self):
+        """_compute_warm_start_effective_target respects max(n_random_nodes, min_required) for greedy."""
+        mock_space = self._make_space()
+        # method has 4 values → min_required = max(4, 8) = 8
+        settings = GAMOptSettings(max_evals=30, n_random_nodes=3, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        assert optimizer._compute_warm_start_effective_target() == 8
+
+    def test_compute_warm_start_effective_target_honours_larger_n_random_nodes(self):
+        """When n_random_nodes > min_required, effective_target uses n_random_nodes."""
+        mock_space = self._make_space()
+        # min_required=8, n_random_nodes=12 → effective_target=12
+        settings = GAMOptSettings(max_evals=30, n_random_nodes=12, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        assert optimizer._compute_warm_start_effective_target() == 12
+
+    def test_compute_warm_start_effective_target_random_unchanged(self):
+        """For random strategy, effective_target equals n_random_nodes."""
+        mock_space = self._make_space()
+        settings = GAMOptSettings(max_evals=30, n_random_nodes=3)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        assert optimizer._compute_warm_start_effective_target() == 3
+
+    # ------------------------------------------------------------------
+    # Fixed GAM iterations: max_evals - floor(max_evals / 4)
+    # ------------------------------------------------------------------
+
+    def test_greedy_search_runs_fixed_gam_iterations(self, mocker):
+        """Greedy search runs max_evals - floor(min_required/4) GAM iterations after warm start."""
+        mock_space = MagicMock(spec=SearchSpace)
+        # search_mode has 2 unique values, method has 4, size has 4 → max_unique=4
+        # min_required = max(4, 2*4) = 8
+        # max_evals=20, n_gam_iters = 20 - (8//4) = 20 - 2 = 18
+        # Space size: 2×4×4 = 32 combinations (>8+18=26 needed)
+        mock_space.combinations = [
+            {"search_mode": m, "method": x, "size": s}
+            for m in ["vector", "hybrid"]
+            for x in ["a", "b", "c", "d"]
+            for s in [100, 200, 300, 400]
+        ]
+        mock_space.max_combinations = 32
+
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.5] * 32)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        settings = GAMOptSettings(max_evals=20, n_random_nodes=2, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        # effective_target = max(n_random_nodes=2, min_required=8) = 8
+        effective_warm_start = optimizer._compute_warm_start_effective_target()
+        assert effective_warm_start == 8
+
+        run_iteration_calls = []
+        original_run = optimizer._run_iteration
+
+        def counting_run():
+            run_iteration_calls.append(1)
+            original_run()
+
+        optimizer._run_iteration = counting_run
+        optimizer.search()
+
+        expected_gam_iters = 20 - (effective_warm_start // 4)  # 20 - 2 = 18
+        assert len(run_iteration_calls) == expected_gam_iters
+
+    def test_balanced_search_runs_fixed_gam_iterations(self, mocker):
+        """Balanced search runs max_evals - floor(min_required/4) GAM iterations after warm start."""
+        mock_space = MagicMock(spec=SearchSpace)
+        # search_mode has 2 unique values, method has 20 unique values
+        # min_required = max(4, 2_balanced_tuples, 20_non_balanced) = 20
+        # max_evals=12, n_gam_iters = 12 - (20//4) = 12 - 5 = 7
+        mock_space.combinations = [
+            {"search_mode": m, "method": f"x{i}"}
+            for m in ["vector", "hybrid"]
+            for i in range(20)
+        ]
+        mock_space.max_combinations = 40
+
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.5] * 40)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        settings = GAMOptSettings(
+            max_evals=12,
+            n_random_nodes=1,
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode"],
+        )
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        # non_balanced "method" has 20 unique values → min_required = max(4, 2, 20) = 20
+        effective_warm_start = optimizer._compute_warm_start_effective_target()
+        assert effective_warm_start == 20
+
+        run_iteration_calls = []
+        original_run = optimizer._run_iteration
+
+        def counting_run():
+            run_iteration_calls.append(1)
+            original_run()
+
+        optimizer._run_iteration = counting_run
+        optimizer.search()
+
+        expected_gam_iters = 12 - (effective_warm_start // 4)  # 12 - 5 = 7
+        assert len(run_iteration_calls) == expected_gam_iters
+
+    # ------------------------------------------------------------------
+    # Trim to top max_evals by score
+    # ------------------------------------------------------------------
+
+    def test_trim_evaluations_to_top_keeps_best(self):
+        """_trim_evaluations_to_top retains the top n by score and discards the rest."""
+        mock_space = self._make_space()
+        settings = GAMOptSettings(max_evals=5, n_random_nodes=4, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluations = [
+            {"search_mode": "vector", "method": "a", "score": 0.9},
+            {"search_mode": "vector", "method": "b", "score": 0.3},
+            {"search_mode": "hybrid", "method": "a", "score": 0.7},
+            {"search_mode": "hybrid", "method": "b", "score": 0.5},
+            {"search_mode": "vector", "method": "c", "score": 0.1},
+            {"search_mode": "vector", "method": "d", "score": 0.8},
+            {"search_mode": "hybrid", "method": "c", "score": 0.6},
+        ]
+        optimizer._trim_evaluations_to_top(3)
+        assert len(optimizer.evaluations) == 3
+        scores = [e["score"] for e in optimizer.evaluations]
+        assert scores == [0.9, 0.8, 0.7]
+
+    def test_trim_evaluations_discards_failed_evaluations(self):
+        """_trim_evaluations_to_top drops entries with score=None."""
+        mock_space = self._make_space()
+        settings = GAMOptSettings(max_evals=5, n_random_nodes=4, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluations = [
+            {"search_mode": "vector", "method": "a", "score": 0.9},
+            {"search_mode": "vector", "method": "b", "score": None},
+            {"search_mode": "hybrid", "method": "a", "score": 0.7},
+        ]
+        optimizer._trim_evaluations_to_top(5)
+        assert all(e["score"] is not None for e in optimizer.evaluations)
+        assert len(optimizer.evaluations) == 2
+
+    def test_greedy_search_when_max_evals_smaller_than_min_required(self, mocker):
+        """When max_evals < min_required, warm start still evaluates min_required nodes."""
+        mock_space = MagicMock(spec=SearchSpace)
+        # search_mode(2) × method(4) × size(4) = 32 combinations; max_unique=4
+        # min_required = max(4, 2*4) = 8; max_evals=4 < 8
+        # n_gam_iters = 4 - (8//4) = 4 - 2 = 2
+        mock_space.combinations = [
+            {"search_mode": m, "method": x, "size": s}
+            for m in ["vector", "hybrid"]
+            for x in ["a", "b", "c", "d"]
+            for s in [100, 200, 300, 400]
+        ]
+        mock_space.max_combinations = 32
+
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.5] * 32)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        settings = GAMOptSettings(max_evals=4, n_random_nodes=2, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=settings,
+        )
+        effective_warm_start = optimizer._compute_warm_start_effective_target()
+        assert effective_warm_start == 8  # min_required, not n_random_nodes or max_evals
+
+        run_iteration_calls = []
+        original_run = optimizer._run_iteration
+
+        def counting_run():
+            run_iteration_calls.append(1)
+            original_run()
+
+        optimizer._run_iteration = counting_run
+        optimizer.search()
+
+        # Warm start evaluated 8 nodes (min_required)
+        # GAM iterations: 4 - (8//4) = 2
+        assert len(run_iteration_calls) == 2
+        # Final evaluations trimmed to top max_evals=4
+        assert len(optimizer.evaluations) <= 4
+
+    def test_greedy_search_evaluations_trimmed_to_max_evals(self, mocker):
+        """After greedy search, evaluations are trimmed to the top max_evals by score."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"search_mode": m, "method": f"x{i}"}
+            for m in ["vector", "hybrid"]
+            for i in range(20)
+        ]
+        mock_space.max_combinations = 40
+
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.5] * 40)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        call_count = [0]
+
+        def scoring_objective(params):
+            call_count[0] += 1
+            return call_count[0] * 0.01  # strictly increasing scores
+
+        settings = GAMOptSettings(max_evals=10, n_random_nodes=2, warm_start_strategy="greedy")
+        optimizer = GAMOptimizer(
+            objective_function=scoring_objective,
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.search()
+
+        assert len(optimizer.evaluations) <= 10
+        scores = [e["score"] for e in optimizer.evaluations]
+        assert scores == sorted(scores, reverse=True), "Evaluations should be sorted best-first"

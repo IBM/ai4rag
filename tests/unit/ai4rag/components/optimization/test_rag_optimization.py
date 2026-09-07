@@ -13,6 +13,8 @@ from ai4rag.components.optimization.rag_templates_optimization import (
     MIN_MAX_RAG_PATTERNS_RANGE,
     SUPPORTED_OPTIMIZATION_METRICS,
     _generate_output_artifacts,
+    _get_pattern_score,
+    _select_patterns_for_leaderboard,
     _validate_optimization_settings,
     run_rag_optimization,
 )
@@ -465,3 +467,119 @@ class TestRunRagOptimizationWarmStartParams:
                     test_data_key="bench.csv",
                     warm_start_strategy=strategy,
                 )
+
+
+def _make_scored_pattern(score: float, name: str = "p") -> dict:
+    """Build a minimal pattern dict with the given optimization metric score."""
+    return {
+        "payload": {
+            "name": name,
+            "evaluation": {
+                "metrics": [
+                    {"name": "overall_score", "scores": {"mean": score}, "optimization_metric": True},
+                ]
+            },
+        },
+        "evaluation_results": [],
+    }
+
+
+class TestGetPatternScore:
+    """Tests for _get_pattern_score helper."""
+
+    def test_returns_optimization_metric_mean(self):
+        pattern = _make_scored_pattern(0.75, name="p0")
+        assert _get_pattern_score(pattern) == 0.75
+
+    def test_returns_zero_when_no_optimization_metric(self):
+        pattern = {
+            "payload": {
+                "evaluation": {
+                    "metrics": [{"name": "faithfulness", "scores": {"mean": 0.9}, "optimization_metric": False}]
+                }
+            }
+        }
+        assert _get_pattern_score(pattern) == 0.0
+
+    def test_returns_zero_on_empty_payload(self):
+        assert _get_pattern_score({}) == 0.0
+
+    def test_skips_none_score(self):
+        pattern = {
+            "payload": {
+                "evaluation": {
+                    "metrics": [{"name": "overall_score", "scores": {"mean": None}, "optimization_metric": True}]
+                }
+            }
+        }
+        assert _get_pattern_score(pattern) == 0.0
+
+
+class TestSelectPatternsForLeaderboard:
+    """Tests for _select_patterns_for_leaderboard."""
+
+    def _patterns(self, scores: list[float]) -> list[dict]:
+        return [_make_scored_pattern(s, name=f"p{i}") for i, s in enumerate(scores)]
+
+    def test_selects_top_quarter_from_warmstart_and_rest_from_gam(self):
+        # warm_start=8 → n_from_warmstart=2; max_rag_patterns=10 → n_from_gam=8
+        warm = self._patterns([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2])
+        gam = self._patterns([0.85, 0.75, 0.65, 0.55, 0.45, 0.35, 0.25, 0.15, 0.05, 0.01])
+        result = _select_patterns_for_leaderboard(
+            patterns=warm + gam,
+            warm_start_count=8,
+            effective_warm_start=8,
+            max_rag_patterns=10,
+        )
+        assert len(result) == 10
+        # First 2 are top warm-start patterns (scores 0.9, 0.8)
+        assert _get_pattern_score(result[0]) == 0.9
+        assert _get_pattern_score(result[1]) == 0.8
+        # Next 8 are top GAM patterns (scores 0.85..0.05)
+        gam_scores = [_get_pattern_score(r) for r in result[2:]]
+        assert gam_scores == sorted(gam_scores, reverse=True)
+        assert len(gam_scores) == 8
+
+    def test_n_from_warmstart_uses_floor_division(self):
+        # effective_warm_start=9 → n_from_warmstart=9//4=2
+        warm = self._patterns([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1])
+        gam = self._patterns([0.85] * 20)
+        result = _select_patterns_for_leaderboard(
+            patterns=warm + gam,
+            warm_start_count=9,
+            effective_warm_start=9,
+            max_rag_patterns=10,
+        )
+        assert len(result) == 10
+        assert _get_pattern_score(result[0]) == 0.9
+        assert _get_pattern_score(result[1]) == 0.8
+        assert len(result[2:]) == 8  # n_from_gam = 10 - 2 = 8
+
+    def test_fewer_patterns_than_requested_returns_what_is_available(self):
+        # Only 3 warm + 2 gam available
+        warm = self._patterns([0.9, 0.8, 0.7])
+        gam = self._patterns([0.6, 0.5])
+        result = _select_patterns_for_leaderboard(
+            patterns=warm + gam,
+            warm_start_count=3,
+            effective_warm_start=8,
+            max_rag_patterns=10,
+        )
+        # n_from_warmstart=2, n_from_gam=8
+        assert len(result) == 4  # 2 from warm + 2 from gam (only 2 available)
+
+    def test_when_max_evals_smaller_than_effective_warm_start(self):
+        # max_rag_patterns=4, effective_warm_start=8 → n_from_warmstart=2, n_from_gam=2
+        warm = self._patterns([0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2])
+        gam = self._patterns([0.85, 0.75, 0.65])
+        result = _select_patterns_for_leaderboard(
+            patterns=warm + gam,
+            warm_start_count=8,
+            effective_warm_start=8,
+            max_rag_patterns=4,
+        )
+        assert len(result) == 4
+        assert _get_pattern_score(result[0]) == 0.9  # top warm
+        assert _get_pattern_score(result[1]) == 0.8  # 2nd warm
+        assert _get_pattern_score(result[2]) == 0.85  # top GAM
+        assert _get_pattern_score(result[3]) == 0.75  # 2nd GAM

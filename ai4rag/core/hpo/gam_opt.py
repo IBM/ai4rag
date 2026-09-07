@@ -111,11 +111,17 @@ class GAMOptSettings(OptimizerSettings):
     warm_start_strategy : {"random", "greedy", "balanced"}, default="random"
         Controls how the initial n_random_nodes observations are selected/ordered.
         "random"   — shuffle the candidate list and take the first n as-is.
-        "greedy"   — greedily pick n combinations so every string column value
-                     appears at least twice (raises if n_random_nodes is too small).
+        "greedy"   — greedily pick combinations so every discrete column value
+                     appears at least twice. If n_random_nodes is below the
+                     computed minimum (min_required), the warm start is
+                     auto-adjusted upward to meet coverage. After warm start,
+                     runs max_evals - floor(min_required/4) GAM iterations; the
+                     final evaluations list is trimmed to the top max_evals by
+                     score.
         "balanced" — round-robin across the tuple of fields_to_balance values;
                      non-balanced discrete column values each appear at least once.
-                     Requires fields_to_balance to be set.
+                     Requires fields_to_balance to be set. Same auto-adjustment,
+                     GAM iteration count, and trimming rules as "greedy".
     fields_to_balance : list[str] | None, default=None
         Field names to balance by round-robin when warm_start_strategy="balanced".
         Each unique value combination of these fields is guaranteed to appear at
@@ -183,6 +189,7 @@ class GAMOptimizer(BaseOptimizer):
         self.evaluations = []
         self._evaluated_combinations = []
         self._typed_encoders_with_columns: list[tuple[str, LabelEncoder]] = []
+        self.warm_start_evaluation_count: int = 0
 
         if known_observations:
             self._load_known_observations(known_observations)
@@ -230,10 +237,17 @@ class GAMOptimizer(BaseOptimizer):
         """
         self.evaluate_initial_random_nodes()
 
-        iterations_limit = self._get_iterations_limit()
-
-        for _ in range(iterations_limit):
-            self._run_iteration()
+        strategy = self.settings.warm_start_strategy
+        if strategy in ("greedy", "balanced"):
+            effective_warm_start = self._compute_warm_start_effective_target()
+            n_gam_iters = self.settings.max_evals - (effective_warm_start // 4)
+            for _ in range(n_gam_iters):
+                self._run_iteration()
+            self._trim_evaluations_to_top(self.settings.max_evals)
+        else:
+            iterations_limit = self._get_iterations_limit()
+            for _ in range(iterations_limit):
+                self._run_iteration()
 
         successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
         if not successful_evaluations:
@@ -254,15 +268,13 @@ class GAMOptimizer(BaseOptimizer):
         return iterations_limit
 
     def _validate_n_random_nodes(self) -> None:
-        """Raise ValueError when n_random_nodes is below the required minimum for the strategy.
+        """Log a warning when n_random_nodes is below the required minimum for the strategy.
 
         - random:   No minimum enforced — combinations are taken in shuffle order.
-        - greedy:   n_random_nodes >= 2 * max_unique_values_per_column, so every
-                    discrete column value (string or numeric) appears at least twice.
-        - balanced: n_random_nodes >= max(n_balanced_tuples, max_non_balanced_unique),
-                    where n_balanced_tuples is the number of unique value-tuples for
-                    fields_to_balance and max_non_balanced_unique is the max number of
-                    unique values among the remaining discrete columns.
+        - greedy:   If n_random_nodes < 2 * max_unique_values_per_column, warm start
+                    is auto-adjusted to the minimum required (no error raised).
+        - balanced: If n_random_nodes < max(n_balanced_tuples, max_non_balanced_unique),
+                    warm start is auto-adjusted to the minimum required (no error raised).
         """
         combinations = self._search_space.combinations
         if not combinations:
@@ -287,11 +299,14 @@ class GAMOptimizer(BaseOptimizer):
             max_unique = max(len(vals) for vals in str_cols.values())
             min_required = max(4, 2 * max_unique)
             if effective_budget < min_required:
-                raise ValueError(
-                    f"n_random_nodes={self.settings.n_random_nodes} is too small for "
-                    f"warm_start_strategy='greedy': each discrete column value must appear "
-                    f"at least twice (max unique values per column: {max_unique}). "
-                    f"Set n_random_nodes >= {min_required}."
+                logger.info(
+                    "n_random_nodes=%d is below the minimum required %d for "
+                    "warm_start_strategy='greedy' (max unique values per column: %d). "
+                    "Warm start will be auto-adjusted to %d nodes.",
+                    self.settings.n_random_nodes,
+                    min_required,
+                    max_unique,
+                    min_required,
                 )
 
         elif strategy == "balanced":
@@ -302,12 +317,45 @@ class GAMOptimizer(BaseOptimizer):
             max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
             min_required = max(4, n_balanced, max_non_balanced)
             if effective_budget < min_required:
-                raise ValueError(
-                    f"n_random_nodes={self.settings.n_random_nodes} is too small for "
-                    f"warm_start_strategy='balanced' with fields_to_balance={fields_to_balance!r}. "
-                    f"n_balanced_tuples={n_balanced}, max_non_balanced_unique={max_non_balanced}. "
-                    f"Set n_random_nodes >= {min_required}."
+                logger.info(
+                    "n_random_nodes=%d is below the minimum required %d for "
+                    "warm_start_strategy='balanced' with fields_to_balance=%r "
+                    "(n_balanced_tuples=%d, max_non_balanced_unique=%d). "
+                    "Warm start will be auto-adjusted to %d nodes.",
+                    self.settings.n_random_nodes,
+                    min_required,
+                    fields_to_balance,
+                    n_balanced,
+                    max_non_balanced,
+                    min_required,
                 )
+
+    def _compute_warm_start_effective_target(self) -> int:
+        """Return the effective number of successful warm-start nodes to evaluate.
+
+        For "greedy" and "balanced" strategies, this is
+        max(n_random_nodes, min_required) where min_required guarantees adequate
+        discrete-value coverage. For "random", returns n_random_nodes unchanged.
+        """
+        n = self.settings.n_random_nodes
+        strategy = self.settings.warm_start_strategy
+        if strategy == "random":
+            return n
+        combinations = self._search_space.combinations
+        if not combinations:
+            return n
+        str_cols = _get_discrete_column_values(combinations)
+        if strategy == "greedy":
+            if not str_cols:
+                return max(4, n)
+            max_unique = max(len(vals) for vals in str_cols.values())
+            return max(n, 4, 2 * max_unique)
+        # balanced
+        fields = self.settings.fields_to_balance or []
+        balanced_tuples = {tuple(_str_val(c.get(f)) for f in fields) for c in combinations}
+        non_balanced = {col: vals for col, vals in str_cols.items() if col not in fields}
+        max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
+        return max(n, 4, len(balanced_tuples), max_non_balanced)
 
     def _load_known_observations(self, known_observations: list[dict]) -> None:
         """
@@ -351,12 +399,13 @@ class GAMOptimizer(BaseOptimizer):
         "balanced" — round-robin across fields_to_balance value tuples.
         """
         successful_evaluations = sum(1 for e in self.evaluations if e["score"] is not None)
+        effective_target = self._compute_warm_start_effective_target()
 
-        if successful_evaluations >= self.settings.n_random_nodes:
+        if successful_evaluations >= effective_target:
             logger.info(
-                "Skipping random evaluation phase: %d known successful evaluations >= n_random_nodes (%d).",
+                "Skipping random evaluation phase: %d known successful evaluations >= warm_start_target (%d).",
                 successful_evaluations,
-                self.settings.n_random_nodes,
+                effective_target,
             )
             return
 
@@ -378,7 +427,7 @@ class GAMOptimizer(BaseOptimizer):
                     val = _str_val(obs.get(col))
                     if val in initial_coverage[col]:
                         initial_coverage[col][val] = min(initial_coverage[col][val] + 1, 2)
-            remaining_budget = self.settings.n_random_nodes - successful_evaluations
+            remaining_budget = effective_target - successful_evaluations
             combinations_local = self._get_greedy_combinations(
                 combinations_local, remaining_budget, initial_coverage=initial_coverage
             )
@@ -391,7 +440,7 @@ class GAMOptimizer(BaseOptimizer):
         discrete_cols_in_space = _get_discrete_column_values(combinations_local)
         gen = (x for x in combinations_local)
 
-        while successful_evaluations < self.settings.n_random_nodes:
+        while successful_evaluations < effective_target:
             params = next(gen)
             score = self._objective_function(params=params)
             if score is not None:
@@ -402,7 +451,8 @@ class GAMOptimizer(BaseOptimizer):
             if len(self.evaluations) == self.max_iterations:
                 break
 
-        self._log_uncovered_values(discrete_cols_in_space, self.evaluations, self.settings.n_random_nodes)
+        self._log_uncovered_values(discrete_cols_in_space, self.evaluations, effective_target)
+        self.warm_start_evaluation_count = len(self.evaluations)
 
     @staticmethod
     def _log_uncovered_values(
@@ -597,6 +647,19 @@ class GAMOptimizer(BaseOptimizer):
             score = self._objective_function(params)
             self._evaluated_combinations.append(params)
             self.evaluations.append(params | {"score": score})
+
+    def _trim_evaluations_to_top(self, n: int) -> None:
+        """Trim self.evaluations to the top n successful entries by score.
+
+        Failed evaluations (score is None) are discarded. Successful evaluations
+        are sorted descending by score and only the top n are retained.
+        """
+        successful = sorted(
+            [e for e in self.evaluations if e.get("score") is not None],
+            key=lambda d: d["score"],
+            reverse=True,
+        )
+        self.evaluations = successful[:n]
 
     @staticmethod
     def _get_remaining_evaluations(all_combinations: list[dict], evaluations: list[dict]) -> list[dict]:
