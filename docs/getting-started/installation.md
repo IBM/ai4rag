@@ -29,7 +29,7 @@ This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
 
-Vector store clients — `chromadb`, `pymilvus`, `pgvector`, and `psycopg` — are core dependencies and install automatically.
+Vector store clients — `chromadb`, `pymilvus`, `pgvector`, and `asyncpg` — are core dependencies and install automatically.
 No extra step is needed to use Chroma, Milvus, or PostgreSQL/pgvector as a vector store.
 
 !!! note "OCR and audio ingestion"
