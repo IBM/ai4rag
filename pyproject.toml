@@ -29,7 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "docling-slim[feat-chunking]~=2.107.0",
+  "docling-slim[feat-chunking]~=2.126.0",
   "chromadb>=1.5,<2",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
@@ -37,7 +37,7 @@ dependencies = [
   "pandas==2.2.*",
   "asyncpg>=0.29",
   "pgvector~=0.5.0",
-  "pydantic==2.11.*",
+  "pydantic==2.13.*",
   "pygam~=0.12.0",
   "pymilvus~=3.0.1",
   "ragas>=0.3,<0.5",
@@ -76,7 +76,7 @@ test = [
 code_check = ["pylint", "black", "isort"]
 
 text-extraction = [
-  "docling-slim[standard,format-opendocument,format-audio]~=2.107.0",
+  "docling-slim[standard,format-opendocument,format-audio]~=2.126.0",
 ]
 
 docs = [
