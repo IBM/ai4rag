@@ -97,19 +97,33 @@ client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 ### Prepare knowledge base documents
 Prepare a set of documents to serve as the knowledge base for retrieval.
-Documents are represented as `DoclingDocument` instances (from the [`docling-core`](https://github.com/DS4SD/docling-core) library) and should be stored in a local directory.
+Documents are represented as `DoclingDocument` instances (from the [`docling-core`](https://github.com/DS4SD/docling-core) library).
+A local folder is all you need — `ai4rag` does not require object storage.
 
-> [!note]
-> If you are using the project locally, you can load documents using the `FileStore` class from the `dev_utils` module.
-> Supported document formats can be found in the `FileStore` implementation.
+Convert the folder with Docling, naming each document by its path relative to that folder:
 
 ```python
 from pathlib import Path
-from dev_utils.file_store import FileStore
+from docling.document_converter import DocumentConverter
 
-documents_path = Path("<path to the documents folder>")
-documents = FileStore(documents_path).load_as_documents()
+documents_root = Path("<path to the documents folder>")
+converter = DocumentConverter()
+
+documents = []
+for file_path in sorted(p for p in documents_root.rglob("*") if p.is_file()):
+    document = converter.convert(file_path).document
+    # The document's key: what benchmark data references.
+    document.name = str(file_path.relative_to(documents_root))
+    documents.append(document)
 ```
+
+> [!important]
+> Each document's `name` is its **key** — the identifier carried through chunking, indexing and evaluation,
+> and the value `correct_answer_document_keys` must reference. Set it explicitly: Docling otherwise derives a
+> name from the file stem, so two files named `setup.pdf` in different folders would collide.
+
+Already keeping your corpus in a bucket? `discover_documents()` and `extract_text()` apply the same rule,
+keying each document by its path relative to the discovery prefix.
 
 
 ### Prepare `benchmark_data.json`
@@ -135,13 +149,19 @@ Create a `benchmark_data.json` file following this schema:
 ]
 ```
 
-All benchmark questions and answers must be derived from your knowledge base documents.
+All benchmark questions and answers must be derived from your knowledge base documents, and every
+`correct_answer_document_keys` entry must equal the `name` of one of the documents you loaded above.
+A key matching no document is skipped silently, lowering retrieval scores without failing the run.
 
 ```python
-from dev_utils.utils import read_benchmark_from_json
+import pandas as pd
 
-benchmark_data_path = Path("<path to benchmark_data.json>")
-benchmark_data = read_benchmark_from_json(benchmark_data_path)
+benchmark_data = pd.read_json("<path to benchmark_data.json>")
+
+# Catch typos before starting a long experiment.
+referenced = {key for keys in benchmark_data["correct_answer_document_keys"] for key in keys}
+missing = referenced - {document.name for document in documents}
+assert not missing, f"Benchmark references unknown documents: {sorted(missing)}"
 ```
 
 
