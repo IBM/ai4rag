@@ -388,9 +388,9 @@ This makes evaluation more robust to phrasing variations.
 
 ---
 
-**3. Accurate Document IDs**
+**3. Accurate Document Keys**
 
-Ensure `correct_answer_document_keys` match the `document_id` metadata in your knowledge base:
+Ensure `correct_answer_document_keys` match the document keys in your knowledge base (stored on each chunk as the `document_id` metadata field):
 
 ```python
 # When loading documents

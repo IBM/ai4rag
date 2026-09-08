@@ -83,7 +83,7 @@ def read_benchmark_from_json(file_path: str | Path) -> pd.DataFrame:
             {
                 "question": "q",
                 "answers": ["a"],
-                "document_ids": ["d1", "d2"]
+                "correct_answer_document_keys": ["d1", "d2"]
             }
         ]
     }
@@ -95,7 +95,7 @@ def read_benchmark_from_json(file_path: str | Path) -> pd.DataFrame:
 
     Returns
     -------
-    Dataframe made of question, correct_answer and correct_answer_document_ids
+    Dataframe made of question, correct_answer and correct_answer_document_keys
     """
     with open(file_path, "r", encoding="utf-8") as file:
         benchmark = json.load(file)
