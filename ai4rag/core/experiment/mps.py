@@ -148,19 +148,29 @@ class ModelsPreSelector:
         for each pattern.
         """
         logger.debug("MPS: Sampling documents")
-        benchmark_keys = []
+        benchmark_keys = set()
         for element in self.benchmark_data.document_keys:
-            benchmark_keys.extend(element)
+            benchmark_keys.update(element)
 
-        ingested_keys = {doc.name for doc in self.documents}
-        missing_keys = set(benchmark_keys) - ingested_keys
+        missing_keys = benchmark_keys - {document.name for document in self.documents}
         if missing_keys:
-            raise ValueError(
-                f"Benchmark data references {len(missing_keys)} document keys not ingested: "
-                f"{sorted(missing_keys)[:5]}{'...' if len(missing_keys) > 5 else ''}"
+            logger.warning(
+                "Benchmark data references %d document key(s) that were not ingested. "
+                "Those documents are skipped, which lowers the retrieval scores: %s%s",
+                len(missing_keys),
+                sorted(missing_keys)[:5],
+                "..." if len(missing_keys) > 5 else "",
             )
 
         documents = [document for document in self.documents if document.name in benchmark_keys]
+        if not documents:
+            raise ValueError(
+                "None of the document keys referenced by the benchmark data match an ingested "
+                "document, so there is nothing to pre-select on. Check that "
+                f"'{BenchmarkData.DOC_KEYS}' holds ingested document names, e.g. "
+                f"{sorted(benchmark_keys)[:3]} vs. {sorted(d.name for d in self.documents)[:3]}."
+            )
+
         chunked_documents = self._chunk_documents(documents)
 
         for i, embedding_model in enumerate(self.embedding_models):

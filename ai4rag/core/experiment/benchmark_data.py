@@ -31,12 +31,26 @@ class BenchmarkData:
         Validated answers from the benchmark dataset.
 
     document_keys : list[list[str]]
-        Validated S3 object keys of documents with correct context for given answers.
+        Validated keys of documents with correct context for given answers.
 
     Raises
     ------
     BenchmarkValueError
         Raised when any of the arguments in the dataset is considered invalid.
+
+    Notes
+    -----
+    A *document key* is whatever uniquely identifies a document within the
+    corpus given to the experiment -- ``ai4rag`` does not require any
+    particular storage backend, and object storage is not needed to run it.
+    Each key must equal the ``name`` of the corresponding ingested
+    ``DoclingDocument``:
+
+    - documents extracted by
+      :func:`~ai4rag.utils.data.text_extraction.extract_text` are named by
+      their object key, e.g. ``manuals/xr-200/setup.txt``
+    - documents loaded from a local folder are named by their file name,
+      e.g. ``setup.txt``
     """
 
     QUESTION = "question"
@@ -54,7 +68,10 @@ class BenchmarkData:
         if self.DOC_KEYS not in self._benchmark_data.columns:
             raise BenchmarkDataValueError(
                 f"Benchmark data must contain '{self.DOC_KEYS}'. "
-                "Each record needs a list of S3 object keys identifying the ground-truth documents."
+                "Each record needs a list of keys identifying the ground-truth documents. "
+                "A key is the name of an ingested document: its file name when documents are "
+                "loaded from a local folder, or its object key when they are extracted from "
+                "object storage."
             )
         self.document_keys: list[list[str]] = list(self._benchmark_data[self.DOC_KEYS])
 

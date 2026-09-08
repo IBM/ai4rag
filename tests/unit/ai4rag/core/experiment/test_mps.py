@@ -250,6 +250,26 @@ class TestModelsPreSelector:
                     in caplog.text
                 ), f"There are no proper pre-selection logs for {(em, fm)}"
 
+    def test_evaluate_patterns_warns_on_partially_missing_keys(self, fully_mocked_selector, caplog):
+        """Keys with no ingested document are skipped with a warning, not a failure."""
+        fully_mocked_selector.documents = [_make_docling_doc("id_1_1", "Page content 1")]
+
+        fully_mocked_selector.evaluate_patterns()
+
+        assert "references 1 document key(s) that were not ingested" in caplog.text
+        assert "['id_2_1']" in caplog.text
+        assert fully_mocked_selector.evaluation_results, "Evaluation should still run on the documents that matched."
+
+    def test_evaluate_patterns_raises_when_no_key_matches(self, fully_mocked_selector):
+        """A benchmark whose keys match nothing leaves nothing to pre-select on."""
+        fully_mocked_selector.documents = [_make_docling_doc("some/other/doc.txt", "Page content")]
+
+        with pytest.raises(ValueError) as err:
+            fully_mocked_selector.evaluate_patterns()
+
+        assert "None of the document keys referenced by the benchmark data match an ingested document" in str(err.value)
+        assert "correct_answer_document_keys" in str(err.value)
+
     def test_evaluate_patterns_with_errors(self, mocker, fully_mocked_selector, caplog):
         gen_exc = GenerationError(exception=ValueError("Dummy val error"), model_id="some-inference-model")
 
