@@ -5,21 +5,16 @@
 
 from typing import Any
 
-from docling_core.types.doc import DoclingDocument
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
-from ai4rag.rag.chunking.base_chunker import BaseChunker
-from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
-
-from ..embedding.base_model import BaseEmbeddingModel
-from ..foundation_models.base_model import BaseFoundationModel
-from .base_template import BaseRAGTemplate, RAGTemplateError
+from ..foundation_models.base_model import MessageTyped
+from .base_template import BaseRAGTemplate
 
 
 class SimpleRAG(BaseRAGTemplate):
     """
-    RAG template composing embedding, vector store, retrieval, and
-    foundation model components.
+    RAG template composing a retriever and a foundation model for retrieval
+    and generation.
 
     Parameters
     ----------
@@ -28,50 +23,38 @@ class SimpleRAG(BaseRAGTemplate):
 
     retriever : Retriever
         Initialized retriever for document retrieval.
-
-    chunker : BaseChunker | None, default=None
-        Initialized chunker for document splitting.
-
-    embedding_model : BaseEmbeddingModel | None, default=None
-        Initialized embedding model.
-
-    vector_store : BaseVectorStore | None, default=None
-        Initialized vector store.
     """
 
-    def __init__(
-        self,
-        foundation_model: BaseFoundationModel,
-        retriever: Retriever,
-        chunker: BaseChunker | None = None,
-        embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: BaseVectorStore | None = None,
-    ):
-        super().__init__(
-            foundation_model=foundation_model,
-            retriever=retriever,
-            embedding_model=embedding_model,
-            vector_store=vector_store,
-        )
-
-        self.chunker = chunker
-
-    def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
+    def _build_enriched_user_message(self, question: str, **kwargs) -> tuple[list[AI4RAGChunk], str]:
         """
-        Index documents into the vector store.
-
-        This method chunks the documents and adds them to the vector store.
+        Retrieve context for `question` and render the RAG-enriched user message.
 
         Parameters
         ----------
-        documents : list[DoclingDocument]
-            Parsed docling documents to index.
-        """
-        if self.chunker is None and self.embedding_model is None and self.vector_store is None:
-            raise RAGTemplateError()
-        chunks = self.chunker.split_documents(documents)
+        question : str
+            The question used as the retrieval query.
 
-        self.vector_store.add_documents(chunks)
+        **kwargs
+            Additional parameters forwarded to the retriever (e.g. number_of_chunks).
+
+        Returns
+        -------
+        tuple[list[AI4RAGChunk], str]
+            The retrieved chunks and the rendered user message containing them.
+        """
+        reference_documents = self.retriever.retrieve(question, **kwargs)
+
+        context = "\n\n".join(
+            self.foundation_model.context_template_text.format(document=chunk.text, doc_number=doc_number)
+            for doc_number, chunk in enumerate(reference_documents, start=1)
+        )
+
+        user_message = self.foundation_model.user_message_text.format(
+            reference_documents=context,
+            question=question,
+        )
+
+        return reference_documents, user_message
 
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         """
@@ -93,17 +76,7 @@ class SimpleRAG(BaseRAGTemplate):
             - "reference_documents": The retrieved document chunks
             - "question": The original question
         """
-        reference_documents = self.retriever.retrieve(question, **kwargs)
-
-        context = "\n\n".join(
-            self.foundation_model.context_template_text.format(document=chunk.text, doc_number=doc_number)
-            for doc_number, chunk in enumerate(reference_documents, start=1)
-        )
-
-        user_message = self.foundation_model.user_message_text.format(
-            reference_documents=context,
-            question=question,
-        )
+        reference_documents, user_message = self._build_enriched_user_message(question, **kwargs)
 
         messages = [
             {"role": "system", "content": self.foundation_model.system_message_text},
@@ -140,3 +113,41 @@ class SimpleRAG(BaseRAGTemplate):
         """
         result = self.generate(question, **kwargs)
         yield result["answer"]
+
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+        """
+        Run a RAG-enriched chat completion over a conversation history.
+
+        Mimics a chat-completions call: the message history is forwarded to the
+        foundation model as-is, except the last message (the current user turn),
+        whose content is used as the retrieval query and replaced with its
+        RAG-enriched version before being sent to the model. The template's own
+        system message is always prepended, so `messages` should not include one.
+
+        Parameters
+        ----------
+        messages : list[MessageTyped]
+            Conversation history, e.g. [{"role": "user", "content": "..."}].
+            Must contain at least one message.
+
+        **kwargs
+            Additional parameters forwarded to the retriever (e.g. number_of_chunks).
+
+        Returns
+        -------
+        list[Any]
+            Chat response choices from the foundation model.
+        """
+        if not messages:
+            raise ValueError("`messages` must contain at least one message.")
+
+        *history, last_message = messages
+        _, enriched_content = self._build_enriched_user_message(last_message["content"], **kwargs)
+
+        rag_messages = [
+            {"role": "system", "content": self.foundation_model.system_message_text},
+            *history,
+            {**last_message, "content": enriched_content},
+        ]
+
+        return self.foundation_model.chat(messages=rag_messages, **kwargs)
