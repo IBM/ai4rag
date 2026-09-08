@@ -2,7 +2,7 @@
 
 HTML leaderboard generation from RAG pattern evaluation results.
 
-::: ai4rag.utils.assets_generator.leaderboard
+::: ai4rag.assets_generator.leaderboard
     options:
       members:
         - build_leaderboard_html

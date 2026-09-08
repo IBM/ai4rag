@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai4rag.utils.assets_generator.notebook import Notebook, NotebookCell
+from ai4rag.assets_generator.notebook import Notebook, NotebookCell
 
 # ---------------------------------------------------------------------------
 # NotebookCell

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai4rag.utils.assets_generator.templates import create_placeholder_mapping, generate_notebook_from_template
+from ai4rag.assets_generator.templates import create_placeholder_mapping, generate_notebook_from_template
 
 # ---------------------------------------------------------------------------
 # create_placeholder_mapping
@@ -161,10 +161,10 @@ class TestGenerateNotebookFromTemplate:
         mock_notebook.cells = [mock_cell]
 
         mock_load = mocker.patch(
-            "ai4rag.utils.assets_generator.templates.Notebook.load",
+            "ai4rag.assets_generator.templates.Notebook.load",
             return_value=mock_notebook,
         )
-        mock_save = mocker.patch("ai4rag.utils.assets_generator.templates.Notebook.save")
+        mock_save = mocker.patch("ai4rag.assets_generator.templates.Notebook.save")
 
         output_path = tmp_path / "output.ipynb"
         generate_notebook_from_template(
@@ -186,10 +186,10 @@ class TestGenerateNotebookFromTemplate:
         mock_notebook = mocker.MagicMock()
         mock_notebook.cells = [mock_cell]
 
-        mocker.patch("ai4rag.utils.assets_generator.templates.Notebook.load", return_value=mock_notebook)
-        mocker.patch("ai4rag.utils.assets_generator.templates.Notebook.save")
+        mocker.patch("ai4rag.assets_generator.templates.Notebook.load", return_value=mock_notebook)
+        mocker.patch("ai4rag.assets_generator.templates.Notebook.save")
         mock_create = mocker.patch(
-            "ai4rag.utils.assets_generator.templates.create_placeholder_mapping",
+            "ai4rag.assets_generator.templates.create_placeholder_mapping",
             return_value={},
         )
 
