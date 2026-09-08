@@ -29,7 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "docling-slim[feat-chunking]~=2.122.0",
+  "docling-slim[feat-chunking]~=2.121.0",
   "chromadb>=1.5,<2",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
@@ -76,11 +76,7 @@ test = [
 code_check = ["pylint", "black", "isort"]
 
 text-extraction = [
-  # Pinned below 2.123: that release hashes pipeline options with
-  # serialize_as_any=True, which trips a false-positive "Circular reference
-  # detected" in pydantic-core <2.46 and fails every conversion. Bumping past
-  # 2.122 requires moving pydantic to >=2.12 as well.
-  "docling-slim[standard,format-opendocument,format-audio]~=2.122.0",
+  "docling-slim[standard,format-opendocument,format-audio]~=2.121.0",
 ]
 
 docs = [
