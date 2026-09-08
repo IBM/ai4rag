@@ -30,5 +30,6 @@ SUPPORTED_EXTENSIONS: frozenset[str] = frozenset(
         ".aac",
         ".ogg",
         ".flac",
+        ".msg",
     }
 )
