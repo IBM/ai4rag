@@ -29,7 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "docling-slim[feat-chunking]~=2.107.0",
+  "docling-slim[feat-chunking]~=2.121.0",
   "chromadb>=1.5,<2",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
@@ -76,7 +76,7 @@ test = [
 code_check = ["pylint", "black", "isort"]
 
 text-extraction = [
-  "docling-slim[standard,format-opendocument,format-audio]~=2.107.0",
+  "docling-slim[standard,format-opendocument,format-audio]~=2.121.0",
 ]
 
 docs = [

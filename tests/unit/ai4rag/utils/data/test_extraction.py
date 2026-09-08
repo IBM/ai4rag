@@ -584,6 +584,7 @@ class TestSupportedExtensionsAudio:
             ".qmd",
             ".rmd",
             ".xhtml",
+            ".msg",
         }
         for ext in original:
             assert ext in SUPPORTED_EXTENSIONS, f"{ext} missing from SUPPORTED_EXTENSIONS"

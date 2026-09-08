@@ -46,6 +46,7 @@ SUPPORTED_EXTENSIONS = {
     ".aac",
     ".ogg",
     ".flac",
+    ".msg",
 }
 
 _DEFAULT_CACHE_DIR = Path(__file__).parent / "local" / "docling_cache"
