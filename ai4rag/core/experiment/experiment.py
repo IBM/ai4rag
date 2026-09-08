@@ -747,6 +747,8 @@ class AI4RAGExperiment:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
 
+        self.optimizer = optimizer
+
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message="Experiment optimization process finished.",
