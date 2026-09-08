@@ -175,7 +175,6 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
     docling_config: DoclingExtractionConfig | None = None,
-    input_data_key: str = "",
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -191,6 +190,8 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         List of document descriptor dicts, each with at least a ``"key"``
         and ``"size_bytes"`` entry (as produced by
         :func:`~ai4rag.utils.data.documents_discovery.discover_documents`).
+        The optional ``"relative_key"`` entry names the extracted document;
+        it falls back to ``"key"`` when absent.
     bucket
         S3-compatible bucket name.
     output_dir
@@ -290,7 +291,6 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
             process_pool=process_pool,
             out_dir=out_dir,
             s3_creds=s3_creds,
-            input_data_key=input_data_key,
         )
         _logger.info(
             "Downloads finished in %.1fs; %d file(s) queued for extraction, %d download error(s).",
@@ -674,7 +674,7 @@ def _text_extraction_pool_initializer(
 
 
 def _worker_process_document(  # pylint: disable=too-many-locals
-    file_path_str: str, output_dir_str: str, s3_key: str = "", input_data_key: str = ""
+    file_path_str: str, output_dir_str: str, doc_key: str = ""
 ) -> tuple[bool, str | None]:
     """Convert a single document to a DoclingDocument JSON file.
 
@@ -689,10 +689,10 @@ def _worker_process_document(  # pylint: disable=too-many-locals
     output_dir_str
         Absolute path to the directory where the resulting JSON file
         will be written (named ``<original_filename>.json``).
-    s3_key
-        Original S3 object key (e.g., "datasets/rag/docs/readme.txt").
-        Used as document name to preserve full path through pipeline.
-        Falls back to filename if empty.
+    doc_key
+        Key identifying the document (e.g. ``"manuals/xr-200/setup.txt"``).
+        Used as the document name so that the full path is preserved through
+        the pipeline.  Falls back to the filename if empty.
 
     Returns
     -------
@@ -709,17 +709,9 @@ def _worker_process_document(  # pylint: disable=too-many-locals
         input_file = Path(file_path_str)
         output_dir = Path(output_dir_str)
 
-        # Use the original S3 key as document name, stripping the input_data_key prefix.
-        # S3 key: "datasets/rag/docs/documents/manuals/xr-200/file.txt"
-        # input_data_key: "datasets/rag/docs/documents"
-        # Result: "manuals/xr-200/file.txt"
-        if s3_key and input_data_key:
-            prefix = input_data_key.rstrip("/") + "/"
-            doc_name = s3_key[len(prefix) :] if s3_key.startswith(prefix) else s3_key
-        elif s3_key:
-            doc_name = s3_key
-        else:
-            doc_name = input_file.name
+        # The document is named by its key so that files sharing a basename in
+        # different folders stay distinct downstream.
+        doc_name = doc_key or input_file.name
 
         # Preserve directory structure in output to prevent collisions when multiple
         # files have the same basename from different S3 subdirectories
@@ -773,7 +765,6 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     process_pool: Any,
     out_dir: Path,
     s3_creds: dict[str, str | None],
-    input_data_key: str = "",
 ) -> tuple[list[tuple[str, Any]], list[dict]]:
     """Download all documents from S3, then submit for extraction largest-first.
 
@@ -825,10 +816,10 @@ def _download_and_submit(  # pylint: disable=too-many-locals
                 _logger.warning("Download failed for key=%s: %s", key, exc)
                 download_errors.append({"file": key, "traceback": exc_tb})
                 continue
-            # Carry the key alongside the path: ``_download_document`` normalizes
+            # Carry the name alongside the path: ``_download_document`` normalizes
             # the key before building the local path, so the path cannot be mapped
-            # back to its key afterwards without duplicating that normalization.
-            downloaded.append((local_path, key))
+            # back to its descriptor afterwards without duplicating that logic.
+            downloaded.append((local_path, doc.get("relative_key") or key))
 
     downloaded.sort(key=lambda item: item[0].stat().st_size, reverse=True)
     extraction_tasks = [
@@ -836,10 +827,10 @@ def _download_and_submit(  # pylint: disable=too-many-locals
             str(local_path),
             process_pool.apply_async(
                 _worker_process_document,
-                (str(local_path), str(out_dir), key, input_data_key),
+                (str(local_path), str(out_dir), doc_key),
             ),
         )
-        for local_path, key in downloaded
+        for local_path, doc_key in downloaded
     ]
     return extraction_tasks, download_errors
 

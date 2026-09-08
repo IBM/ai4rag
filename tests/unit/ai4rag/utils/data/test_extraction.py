@@ -636,7 +636,7 @@ class TestDownloadAndSubmitKeyPairing:
 
         assert not errors
         assert len(tasks) == len(keys)
-        # Worker args are (local_path, out_dir, key, input_data_key).
+        # Worker args are (local_path, out_dir, doc_key).
         return {args[2] for args in pool.calls}
 
     def test_nested_keys_are_passed_through(self, monkeypatch, tmp_path):

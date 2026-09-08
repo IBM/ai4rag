@@ -10,6 +10,7 @@ from ai4rag.utils.data.documents_discovery import (
     DOCUMENTS_DESCRIPTOR_FILENAME,
     DiscoveryResult,
     DocumentDescriptor,
+    _relative_key,
     discover_documents,
 )
 
@@ -82,8 +83,8 @@ class TestDiscoveryResult:
         assert d["total_size_bytes"] == 300
         assert d["count"] == 2
         assert len(d["documents"]) == 2
-        assert d["documents"][0] == {"key": "a.pdf", "size_bytes": 100}
-        assert d["documents"][1] == {"key": "b.docx", "size_bytes": 200}
+        assert d["documents"][0] == {"key": "a.pdf", "size_bytes": 100, "relative_key": "a.pdf"}
+        assert d["documents"][1] == {"key": "b.docx", "size_bytes": 200, "relative_key": "b.docx"}
 
     def test_to_dict_is_json_serialisable(self, result: DiscoveryResult):
         """``to_dict`` output must survive a JSON round-trip."""
@@ -409,3 +410,75 @@ class TestDiscoverDocuments:
         assert "data/recording.wav" in keys
         assert "data/image.png" in keys  # images are supported (OCR)
         assert "data/archive.zip" not in keys  # unsupported extension is filtered out
+
+
+# ---------------------------------------------------------------------------
+# relative_key
+# ---------------------------------------------------------------------------
+
+
+class TestRelativeKey:
+    """Tests for prefix stripping, which decides how documents are named."""
+
+    @pytest.mark.parametrize(
+        ("key", "prefix", "expected"),
+        [
+            ("docs/manuals/xr-200/setup.txt", "docs", "manuals/xr-200/setup.txt"),
+            ("docs/manuals/xr-200/setup.txt", "docs/", "manuals/xr-200/setup.txt"),
+            ("docs/manuals/xr-200/setup.txt", "/docs/", "manuals/xr-200/setup.txt"),
+            ("docs/setup.txt", "", "docs/setup.txt"),
+            # A prefix matching part of a filename is not a parent folder.
+            ("docs/2024-report.pdf", "docs/2024", "docs/2024-report.pdf"),
+            # A prefix that is not a parent of the key leaves it untouched.
+            ("other/setup.txt", "docs", "other/setup.txt"),
+        ],
+    )
+    def test_relative_key(self, key: str, prefix: str, expected: str):
+        assert _relative_key(key, prefix) == expected
+
+    def test_descriptor_defaults_relative_key_to_key(self):
+        """A descriptor built without a relative key stays usable."""
+        descriptor = DocumentDescriptor(key="docs/setup.txt", size_bytes=1)
+
+        assert descriptor.relative_key == "docs/setup.txt"
+
+    def test_discovery_strips_prefix_from_documents(self, mocker):
+        """Documents are named by their position inside the input folder."""
+        contents = [
+            _s3_object("datasets/rag/documents/manuals/xr-200/setup.txt", 100),
+            _s3_object("datasets/rag/documents/manuals/xr-300/setup.txt", 100),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefix="datasets/rag/documents",
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert [d.relative_key for d in result.documents] == [
+            "manuals/xr-200/setup.txt",
+            "manuals/xr-300/setup.txt",
+        ]
+        # The full key is still what fetches the object.
+        assert [d.key for d in result.documents] == [c["Key"] for c in contents]
+
+    def test_same_basename_in_different_folders_stays_distinct(self, mocker):
+        """The collision this naming scheme exists to prevent."""
+        contents = [
+            _s3_object("docs/a/setup.txt", 100),
+            _s3_object("docs/b/setup.txt", 100),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefix="docs",
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        relative_keys = [d.relative_key for d in result.documents]
+        assert relative_keys == ["a/setup.txt", "b/setup.txt"]
+        assert len(set(relative_keys)) == 2
