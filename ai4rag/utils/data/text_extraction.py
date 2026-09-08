@@ -803,7 +803,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
         Extraction tasks (path, AsyncResult) and download error dicts.
     """
     download_errors: list[dict] = []
-    downloaded_paths: list[Path] = []
+    downloaded: list[tuple[Path, str]] = []
 
     supported = [d for d in docs if Path(d["key"]).suffix.lower() in SUPPORTED_EXTENSIONS]
     skipped = [d for d in docs if Path(d["key"]).suffix.lower() not in SUPPORTED_EXTENSIONS]
@@ -825,21 +825,21 @@ def _download_and_submit(  # pylint: disable=too-many-locals
                 _logger.warning("Download failed for key=%s: %s", key, exc)
                 download_errors.append({"file": key, "traceback": exc_tb})
                 continue
-            downloaded_paths.append(local_path)
+            # Carry the key alongside the path: ``_download_document`` normalizes
+            # the key before building the local path, so the path cannot be mapped
+            # back to its key afterwards without duplicating that normalization.
+            downloaded.append((local_path, key))
 
-    # Map local paths back to their S3 keys for doc_name computation
-    local_to_key = {(download_path / d["key"]).resolve(): d["key"] for d in supported}
-
-    downloaded_paths.sort(key=lambda p: p.stat().st_size, reverse=True)
+    downloaded.sort(key=lambda item: item[0].stat().st_size, reverse=True)
     extraction_tasks = [
         (
-            str(lp),
+            str(local_path),
             process_pool.apply_async(
                 _worker_process_document,
-                (str(lp), str(out_dir), local_to_key.get(lp.resolve(), ""), input_data_key),
+                (str(local_path), str(out_dir), key, input_data_key),
             ),
         )
-        for lp in downloaded_paths
+        for local_path, key in downloaded
     ]
     return extraction_tasks, download_errors
 

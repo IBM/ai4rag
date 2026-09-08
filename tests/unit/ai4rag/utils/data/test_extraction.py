@@ -6,6 +6,7 @@ import os
 
 import pytest
 
+from ai4rag.utils.data import text_extraction
 from ai4rag.utils.data.text_extraction import (
     ExtractionResult,
     _build_docling_format_options,
@@ -588,3 +589,92 @@ class TestSupportedExtensionsAudio:
         }
         for ext in original:
             assert ext in SUPPORTED_EXTENSIONS, f"{ext} missing from SUPPORTED_EXTENSIONS"
+
+
+# ---------------------------------------------------------------------------
+# _download_and_submit
+# ---------------------------------------------------------------------------
+
+
+class _RecordingPool:
+    """Minimal stand-in for the process pool used by ``_download_and_submit``."""
+
+    def __init__(self):
+        self.calls = []
+
+    def apply_async(self, _func, args):
+        self.calls.append(args)
+        return args
+
+
+def _fake_download(doc, _bucket, base_path, _s3_creds):
+    """Mimic ``_download_document``: normalize the key, then write the file."""
+    safe_key = doc["key"].strip().lstrip("/")
+    local_path = (base_path / safe_key).resolve()
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    local_path.write_text("content", encoding="utf-8")
+    return local_path
+
+
+class TestDownloadAndSubmitKeyPairing:
+    """Each downloaded file must reach the worker with its own object key."""
+
+    def _submitted_keys(self, monkeypatch, tmp_path, keys):
+        monkeypatch.setattr(text_extraction, "_download_document", _fake_download)
+        pool = _RecordingPool()
+        download_path = tmp_path / "download"
+        download_path.mkdir()
+
+        tasks, errors = text_extraction._download_and_submit(
+            docs=[{"key": key, "size_bytes": 7} for key in keys],
+            bucket="bucket",
+            download_path=download_path,
+            process_pool=pool,
+            out_dir=tmp_path / "out",
+            s3_creds={},
+        )
+
+        assert not errors
+        assert len(tasks) == len(keys)
+        # Worker args are (local_path, out_dir, key, input_data_key).
+        return {args[2] for args in pool.calls}
+
+    def test_nested_keys_are_passed_through(self, monkeypatch, tmp_path):
+        keys = ["docs/manuals/xr-200/setup.txt", "docs/manuals/xr-300/setup.txt"]
+
+        assert self._submitted_keys(monkeypatch, tmp_path, keys) == set(keys)
+
+    def test_leading_slash_key_keeps_its_key(self, monkeypatch, tmp_path):
+        """A key the downloader normalizes must still reach the worker verbatim."""
+        keys = ["/docs/setup.txt"]
+
+        assert self._submitted_keys(monkeypatch, tmp_path, keys) == set(keys)
+
+    def test_leading_whitespace_key_keeps_its_key(self, monkeypatch, tmp_path):
+        keys = [" docs/setup.txt"]
+
+        assert self._submitted_keys(monkeypatch, tmp_path, keys) == set(keys)
+
+    def test_no_key_is_lost_when_a_download_fails(self, monkeypatch, tmp_path):
+        def flaky_download(doc, bucket, base_path, s3_creds):
+            if doc["key"].endswith("broken.txt"):
+                raise RuntimeError("boom")
+            return _fake_download(doc, bucket, base_path, s3_creds)
+
+        monkeypatch.setattr(text_extraction, "_download_document", flaky_download)
+        pool = _RecordingPool()
+        download_path = tmp_path / "download"
+        download_path.mkdir()
+
+        tasks, errors = text_extraction._download_and_submit(
+            docs=[{"key": k, "size_bytes": 7} for k in ("docs/ok.txt", "docs/broken.txt")],
+            bucket="bucket",
+            download_path=download_path,
+            process_pool=pool,
+            out_dir=tmp_path / "out",
+            s3_creds={},
+        )
+
+        assert len(tasks) == 1
+        assert [e["file"] for e in errors] == ["docs/broken.txt"]
+        assert {args[2] for args in pool.calls} == {"docs/ok.txt"}
