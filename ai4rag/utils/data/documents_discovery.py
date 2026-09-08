@@ -128,9 +128,9 @@ def discover_documents(
     prefix : str, default=""
         Object-key prefix to narrow the listing.
     test_data_doc_names : list[str] | None, default=None
-        Filenames (stem + extension, no path) of documents referenced by
-        the benchmark test data.  These are sorted first so that sampling
-        picks them before other files.
+        Keys of documents referenced by the benchmark test data, matched
+        against either the prefix-relative key or the bare file name.  These
+        are sorted first so that sampling picks them before other files.
     sampling_enabled : bool, default=True
         When ``True``, only documents up to *sampling_max_size_gb* total
         are returned.
@@ -172,7 +172,13 @@ def discover_documents(
 
     if test_data_doc_names:
         test_names_set = set(test_data_doc_names)
-        test_keys = {c["Key"] for c in supported_files if Path(c["Key"]).name in test_names_set}
+        # Benchmark data references documents by their relative key, but a bare
+        # file name is still a valid identifier for a flat corpus, so accept both.
+        test_keys = {
+            c["Key"]
+            for c in supported_files
+            if _relative_key(c["Key"], prefix) in test_names_set or Path(c["Key"]).name in test_names_set
+        }
         supported_files.sort(key=lambda c: c["Key"] not in test_keys)
 
     total_size = 0
