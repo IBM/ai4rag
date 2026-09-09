@@ -167,7 +167,7 @@ graph TB
 - Language detection for multilingual benchmark support
 - Built on top of `ai4rag.search_space` and `ai4rag.core`; not part of this repo
 
-**Assets Generator** (`ai4rag/utils/assets_generator/`)
+**Assets Generator** (`ai4rag/assets_generator/`)
 
 - Programmatic Jupyter notebook generation from templates
 - HTML leaderboard rendering from pattern evaluations

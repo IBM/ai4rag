@@ -91,7 +91,7 @@ docs = [
 version = { attr = "ai4rag.__version__" }
 
 [tool.setuptools.package-data]
-"ai4rag.utils.assets_generator" = ["notebook_templates/*.ipynb"]
+"ai4rag.assets_generator" = ["notebook_templates/*.ipynb"]
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "dev_utils*"]

@@ -220,7 +220,7 @@ class Notebook:
             with resolved_path.open("r", encoding="utf-8") as f:
                 nb_dict = json_load(f)
         else:
-            template_path = importlib.resources.files("ai4rag.utils.assets_generator").joinpath(
+            template_path = importlib.resources.files("ai4rag.assets_generator").joinpath(
                 "notebook_templates", notebook_name
             )
             with importlib.resources.as_file(template_path) as resolved_path:

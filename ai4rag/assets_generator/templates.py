@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from ai4rag import __version__
+from ai4rag.assets_generator.notebook import Notebook
 from ai4rag.rag.vector_store import get_vector_store_env_vars
-from ai4rag.utils.assets_generator.notebook import Notebook
 
 
 def _format_required_env_vars(provider: str) -> str:
