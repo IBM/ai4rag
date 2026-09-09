@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai4rag.utils.assets_generator.leaderboard import _get_aggregate_scores, _get_nested, build_leaderboard_html
+from ai4rag.assets_generator.leaderboard import _get_aggregate_scores, _get_nested, build_leaderboard_html
 
 # ---------------------------------------------------------------------------
 # Helpers

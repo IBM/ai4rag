@@ -4,19 +4,9 @@
 # -----------------------------------------------------------------------------
 
 import pytest
-from docling_core.types.doc import DoclingDocument
-from docling_core.types.doc.labels import DocItemLabel
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.template.base_template import RAGTemplateError
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
-
-
-def _make_docling_doc(name: str, text: str) -> DoclingDocument:
-    """Create a minimal DoclingDocument for testing."""
-    doc = DoclingDocument(name=name)
-    doc.add_text(label=DocItemLabel.PARAGRAPH, text=text)
-    return doc
 
 
 class TestSimpleRAGInitialization:
@@ -37,97 +27,14 @@ class TestSimpleRAGInitialization:
         """Create a mock retriever."""
         return mocker.MagicMock()
 
-    @pytest.fixture
-    def mock_chunker(self, mocker):
-        """Create a mock LangChain chunker."""
-        return mocker.MagicMock()
-
-    @pytest.fixture
-    def mock_embedding_model(self, mocker):
-        """Create a mock embedding model."""
-        return mocker.MagicMock()
-
-    @pytest.fixture
-    def mock_vector_store(self, mocker):
-        """Create a mock vector store."""
-        return mocker.MagicMock()
-
-    def test_init_with_required_params_only(self, mock_foundation_model, mock_retriever):
-        """Test initialization with only required parameters."""
+    def test_init_with_required_params(self, mock_foundation_model, mock_retriever):
+        """Test initialization with the only supported parameters."""
         rag = SimpleRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
         assert rag.foundation_model == mock_foundation_model
         assert rag.retriever == mock_retriever
-        assert rag.chunker is None
-        assert rag.embedding_model is None
-        assert rag.vector_store is None
-
-    def test_init_with_all_params(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_chunker,
-        mock_embedding_model,
-        mock_vector_store,
-    ):
-        """Test initialization with all parameters."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-            embedding_model=mock_embedding_model,
-            vector_store=mock_vector_store,
-        )
-        assert rag.foundation_model == mock_foundation_model
-        assert rag.retriever == mock_retriever
-        assert rag.chunker == mock_chunker
-        assert rag.embedding_model == mock_embedding_model
-        assert rag.vector_store == mock_vector_store
-
-    def test_init_with_optional_chunker(self, mock_foundation_model, mock_retriever, mock_chunker):
-        """Test initialization with optional chunker."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-        )
-        assert rag.chunker == mock_chunker
-        assert rag.embedding_model is None
-        assert rag.vector_store is None
-
-    def test_init_with_optional_embedding_model(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_embedding_model,
-    ):
-        """Test initialization with optional embedding model."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            embedding_model=mock_embedding_model,
-        )
-        assert rag.embedding_model == mock_embedding_model
-        assert rag.chunker is None
-        assert rag.vector_store is None
-
-    def test_init_with_optional_vector_store(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_vector_store,
-    ):
-        """Test initialization with optional vector store."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            vector_store=mock_vector_store,
-        )
-        assert rag.vector_store == mock_vector_store
-        assert rag.chunker is None
-        assert rag.embedding_model is None
 
     def test_init_inherits_from_base_template(
         self,
@@ -139,200 +46,11 @@ class TestSimpleRAGInitialization:
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
-        # BaseRAGTemplate attributes should be accessible
         assert hasattr(rag, "foundation_model")
         assert hasattr(rag, "retriever")
-        assert hasattr(rag, "embedding_model")
-        assert hasattr(rag, "vector_store")
-
-
-class TestSimpleRAGBuildIndex:
-    """Test suite for SimpleRAG.build_index method."""
-
-    @pytest.fixture
-    def mock_foundation_model(self, mocker):
-        """Create a mock foundation model."""
-        return mocker.MagicMock()
-
-    @pytest.fixture
-    def mock_retriever(self, mocker):
-        """Create a mock retriever."""
-        return mocker.MagicMock()
-
-    @pytest.fixture
-    def mock_chunker(self, mocker):
-        """Create a mock chunker."""
-        mock = mocker.MagicMock()
-        mock.split_documents.return_value = [
-            AI4RAGChunk(text="chunk1", metadata={"document_id": "doc1", "sequence_number": 1}),
-            AI4RAGChunk(text="chunk2", metadata={"document_id": "doc1", "sequence_number": 2}),
-        ]
-        return mock
-
-    @pytest.fixture
-    def mock_vector_store(self, mocker):
-        """Create a mock vector store."""
-        mock = mocker.MagicMock()
-        mock.add_documents.return_value = None
-        return mock
-
-    @pytest.fixture
-    def sample_documents(self):
-        """Create sample DoclingDocuments for testing."""
-        return [
-            _make_docling_doc("doc1", "This is test document 1."),
-            _make_docling_doc("doc2", "This is test document 2."),
-        ]
-
-    def test_build_index_chunks_and_adds_to_vector_store(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_chunker,
-        mock_vector_store,
-        sample_documents,
-    ):
-        """Test that build_index chunks documents and adds them to vector store."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-            vector_store=mock_vector_store,
-        )
-
-        rag.build_index(sample_documents)
-
-        # Verify chunker was called with documents
-        mock_chunker.split_documents.assert_called_once_with(sample_documents)
-
-        # Verify vector store received the chunks
-        mock_vector_store.add_documents.assert_called_once()
-        added_chunks = mock_vector_store.add_documents.call_args[0][0]
-        assert len(added_chunks) == 2
-        assert added_chunks[0].text == "chunk1"
-        assert added_chunks[1].text == "chunk2"
-
-    def test_build_index_raises_error_when_chunker_is_none(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-    ):
-        """Test that build_index raises RAGTemplateError when chunker is None."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=None,
-        )
-
-        with pytest.raises(RAGTemplateError):
-            rag.build_index([_make_docling_doc("test", "test")])
-
-    def test_build_index_fails_when_vector_store_is_none(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_chunker,
-        mocker,
-    ):
-        """Test that build_index fails with AttributeError when vector_store is None."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-            embedding_model=mocker.MagicMock(),
-            vector_store=None,
-        )
-
-        with pytest.raises(AttributeError):
-            rag.build_index([_make_docling_doc("test", "test")])
-
-    def test_build_index_works_with_embedding_model_none(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_chunker,
-        mock_vector_store,
-    ):
-        """Test that build_index works when embedding_model is None but other components are present."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-            embedding_model=None,
-            vector_store=mock_vector_store,
-        )
-
-        # Should not raise RAGTemplateError - embedding_model is not used in build_index
-        rag.build_index([_make_docling_doc("test", "test")])
-        mock_chunker.split_documents.assert_called_once()
-        mock_vector_store.add_documents.assert_called_once()
-
-    def test_build_index_raises_error_when_all_components_are_none(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-    ):
-        """Test that build_index raises RAGTemplateError when all components are None."""
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=None,
-            embedding_model=None,
-            vector_store=None,
-        )
-
-        with pytest.raises(RAGTemplateError):
-            rag.build_index([_make_docling_doc("test", "test")])
-
-    def test_build_index_with_empty_document_list(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_chunker,
-        mock_vector_store,
-    ):
-        """Test build_index with empty document list."""
-        mock_chunker.split_documents.return_value = []
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-            vector_store=mock_vector_store,
-        )
-
-        rag.build_index([])
-
-        mock_chunker.split_documents.assert_called_once_with([])
-        mock_vector_store.add_documents.assert_called_once_with([])
-
-    def test_build_index_with_large_document_list(
-        self,
-        mock_foundation_model,
-        mock_retriever,
-        mock_chunker,
-        mock_vector_store,
-    ):
-        """Test build_index with large document list."""
-        large_doc_list = [_make_docling_doc(f"doc{i}", f"Document {i}") for i in range(100)]
-        large_chunk_list = [
-            AI4RAGChunk(text=f"Chunk {i}", metadata={"document_id": f"doc{i % 100}", "sequence_number": i})
-            for i in range(500)
-        ]
-        mock_chunker.split_documents.return_value = large_chunk_list
-
-        rag = SimpleRAG(
-            foundation_model=mock_foundation_model,
-            retriever=mock_retriever,
-            chunker=mock_chunker,
-            vector_store=mock_vector_store,
-        )
-
-        rag.build_index(large_doc_list)
-
-        mock_chunker.split_documents.assert_called_once_with(large_doc_list)
-        mock_vector_store.add_documents.assert_called_once()
-        added_chunks = mock_vector_store.add_documents.call_args[0][0]
-        assert len(added_chunks) == 500
+        assert not hasattr(rag, "vector_store")
+        assert not hasattr(rag, "embedding_model")
+        assert not hasattr(rag, "chunker")
 
 
 class TestSimpleRAGGenerate:
@@ -788,26 +506,141 @@ class TestSimpleRAGGenerateStream:
             assert result[0] == "This is the generated answer."
 
 
-class TestSimpleRAGIntegration:
-    """Integration tests for SimpleRAG full workflow."""
+class TestSimpleRAGChat:
+    """Test suite for SimpleRAG.chat method."""
 
     @pytest.fixture
-    def complete_rag_system(self, mocker):
-        """Create a complete RAG system with all components."""
-        # Foundation model
+    def mock_foundation_model(self, mocker):
+        """Create a mock foundation model."""
+        mock = mocker.MagicMock()
+        mock.system_message_text = "You are a helpful assistant."
+        mock.user_message_text = "Question: {question}\nReferences: {reference_documents}"
+        mock.context_template_text = "Document: {document}"
+
+        mock_message = mocker.MagicMock()
+        mock_message.content = "This is the generated answer."
+        mock_choice = mocker.MagicMock()
+        mock_choice.message = mock_message
+        mock.chat.return_value = [mock_choice]
+        return mock
+
+    @pytest.fixture
+    def mock_retriever(self, mocker):
+        """Create a mock retriever."""
+        mock = mocker.MagicMock()
+        mock.retrieve.return_value = [
+            AI4RAGChunk(text="Relevant document", metadata={"document_id": "doc1"}),
+        ]
+        return mock
+
+    def test_chat_raises_on_empty_messages(self, mock_foundation_model, mock_retriever):
+        """Test that chat rejects an empty message list."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        with pytest.raises(ValueError):
+            rag.chat([])
+
+    def test_chat_retrieves_using_last_message_content(self, mock_foundation_model, mock_retriever):
+        """Test that chat uses the last message's content as the retrieval query."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        rag.chat([{"role": "user", "content": "What is AI?"}])
+
+        mock_retriever.retrieve.assert_called_once_with("What is AI?")
+
+    def test_chat_passes_retrieval_kwargs(self, mock_foundation_model, mock_retriever):
+        """Test that chat forwards kwargs to the retriever."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        rag.chat([{"role": "user", "content": "What is AI?"}], number_of_chunks=5)
+
+        mock_retriever.retrieve.assert_called_once_with("What is AI?", number_of_chunks=5)
+
+    def test_chat_prepends_system_message(self, mock_foundation_model, mock_retriever):
+        """Test that chat always prepends the template's system message."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        rag.chat([{"role": "user", "content": "What is AI?"}])
+
+        messages = mock_foundation_model.chat.call_args.kwargs["messages"]
+        assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
+
+    def test_chat_preserves_earlier_history_untouched(self, mock_foundation_model, mock_retriever):
+        """Test that only the last message is enriched; earlier turns pass through unchanged."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        rag.chat(
+            [
+                {"role": "user", "content": "Hi there"},
+                {"role": "assistant", "content": "Hello! How can I help?"},
+                {"role": "user", "content": "What is AI?"},
+            ]
+        )
+
+        messages = mock_foundation_model.chat.call_args.kwargs["messages"]
+        assert messages[0] == {"role": "system", "content": "You are a helpful assistant."}
+        assert messages[1] == {"role": "user", "content": "Hi there"}
+        assert messages[2] == {"role": "assistant", "content": "Hello! How can I help?"}
+        assert messages[3]["role"] == "user"
+        assert "What is AI?" in messages[3]["content"]
+
+    def test_chat_enriches_last_message_with_context(self, mock_foundation_model, mock_retriever):
+        """Test that the last message's content is replaced with the RAG-enriched version."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        rag.chat([{"role": "user", "content": "What is AI?"}])
+
+        messages = mock_foundation_model.chat.call_args.kwargs["messages"]
+        enriched_content = messages[-1]["content"]
+        assert "Document: Relevant document" in enriched_content
+        assert "What is AI?" in enriched_content
+
+    def test_chat_preserves_last_message_role(self, mock_foundation_model, mock_retriever):
+        """Test that the role of the last message is preserved after enrichment."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        rag.chat([{"role": "user", "content": "What is AI?"}])
+
+        messages = mock_foundation_model.chat.call_args.kwargs["messages"]
+        assert messages[-1]["role"] == "user"
+
+    def test_chat_returns_foundation_model_chat_response(self, mock_foundation_model, mock_retriever):
+        """Test that chat returns the foundation model's chat response verbatim."""
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        result = rag.chat([{"role": "user", "content": "What is AI?"}])
+
+        assert result == mock_foundation_model.chat.return_value
+
+    def test_chat_with_no_retrieved_documents(self, mock_foundation_model, mock_retriever):
+        """Test chat when the retriever returns no documents."""
+        mock_retriever.retrieve.return_value = []
+        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+
+        result = rag.chat([{"role": "user", "content": "What is AI?"}])
+
+        assert result == mock_foundation_model.chat.return_value
+        messages = mock_foundation_model.chat.call_args.kwargs["messages"]
+        assert "What is AI?" in messages[-1]["content"]
+
+
+class TestSimpleRAGIntegration:
+    """Integration tests for SimpleRAG retrieval-and-generation workflow."""
+
+    @pytest.fixture
+    def rag_system(self, mocker):
+        """Create a complete RAG system for retrieval and generation."""
         foundation_model = mocker.MagicMock()
         foundation_model.system_message_text = "You are a helpful assistant."
         foundation_model.user_message_text = "Question: {question}\nReferences: {reference_documents}"
         foundation_model.context_template_text = "Document: {document}"
 
-        # Mock the chat response to match new API (returns list of choices)
         mock_message = mocker.MagicMock()
         mock_message.content = "The answer is 42."
         mock_choice = mocker.MagicMock()
         mock_choice.message = mock_message
         foundation_model.chat.return_value = [mock_choice]
 
-        # Retriever
         retriever = mocker.MagicMock()
         retriever.retrieve.return_value = [
             AI4RAGChunk(
@@ -816,91 +649,38 @@ class TestSimpleRAGIntegration:
             ),
         ]
 
-        # Chunker
-        chunker = mocker.MagicMock()
-        chunker.split_documents.return_value = [
-            AI4RAGChunk(
-                text="The answer to everything is 42.",
-                metadata={"document_id": "doc1", "sequence_number": 1},
-            ),
-        ]
+        return {"foundation_model": foundation_model, "retriever": retriever}
 
-        # Embedding model
-        embedding_model = mocker.MagicMock()
-
-        # Vector store
-        vector_store = mocker.MagicMock()
-        vector_store.add_documents.return_value = None
-
-        return {
-            "foundation_model": foundation_model,
-            "retriever": retriever,
-            "chunker": chunker,
-            "embedding_model": embedding_model,
-            "vector_store": vector_store,
-        }
-
-    def test_full_rag_workflow(self, complete_rag_system):
-        """Test complete RAG workflow: build index then generate answer."""
+    def test_multiple_generate_calls(self, rag_system):
+        """Test multiple generate calls against a single SimpleRAG instance."""
         rag = SimpleRAG(
-            foundation_model=complete_rag_system["foundation_model"],
-            retriever=complete_rag_system["retriever"],
-            chunker=complete_rag_system["chunker"],
-            embedding_model=complete_rag_system["embedding_model"],
-            vector_store=complete_rag_system["vector_store"],
+            foundation_model=rag_system["foundation_model"],
+            retriever=rag_system["retriever"],
         )
 
-        # Step 1: Build index
-        documents = [
-            _make_docling_doc("doc1", "The answer to everything is 42."),
-        ]
-        rag.build_index(documents)
-
-        # Verify build_index worked
-        complete_rag_system["chunker"].split_documents.assert_called_once_with(documents)
-        complete_rag_system["vector_store"].add_documents.assert_called_once()
-
-        # Step 2: Generate answer
-        result = rag.generate("What is the answer?")
-
-        # Verify generate worked
-        complete_rag_system["retriever"].retrieve.assert_called_once_with("What is the answer?")
-        complete_rag_system["foundation_model"].chat.assert_called_once()
-
-        assert result["answer"] == "The answer is 42."
-        assert result["question"] == "What is the answer?"
-        assert len(result["reference_documents"]) == 1
-
-    def test_multiple_generate_calls_after_single_build_index(self, complete_rag_system):
-        """Test multiple generate calls after a single build_index."""
-        rag = SimpleRAG(
-            foundation_model=complete_rag_system["foundation_model"],
-            retriever=complete_rag_system["retriever"],
-            chunker=complete_rag_system["chunker"],
-            embedding_model=complete_rag_system["embedding_model"],
-            vector_store=complete_rag_system["vector_store"],
-        )
-
-        # Build index once
-        documents = [
-            _make_docling_doc("doc1", "Test content"),
-        ]
-        rag.build_index(documents)
-
-        # Generate multiple answers
         questions = ["Question 1?", "Question 2?", "Question 3?"]
         for question in questions:
             result = rag.generate(question)
             assert result["question"] == question
             assert result["answer"] == "The answer is 42."
 
-        # Verify build_index was called only once
-        assert complete_rag_system["chunker"].split_documents.call_count == 1
-        assert complete_rag_system["vector_store"].add_documents.call_count == 1
+        assert rag_system["retriever"].retrieve.call_count == 3
+        assert rag_system["foundation_model"].chat.call_count == 3
 
-        # Verify generate was called three times
-        assert complete_rag_system["retriever"].retrieve.call_count == 3
-        assert complete_rag_system["foundation_model"].chat.call_count == 3
+    def test_generate_then_chat_share_the_same_retrieval_and_context_logic(self, rag_system):
+        """Test that generate and chat produce equivalent enriched content for the same question."""
+        rag = SimpleRAG(
+            foundation_model=rag_system["foundation_model"],
+            retriever=rag_system["retriever"],
+        )
+
+        rag.generate("What is the answer?")
+        generate_messages = rag_system["foundation_model"].chat.call_args.kwargs["messages"]
+
+        rag.chat([{"role": "user", "content": "What is the answer?"}])
+        chat_messages = rag_system["foundation_model"].chat.call_args.kwargs["messages"]
+
+        assert generate_messages[1]["content"] == chat_messages[-1]["content"]
 
 
 class TestSimpleRAGEdgeCases:
