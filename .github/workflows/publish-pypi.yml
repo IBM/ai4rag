@@ -37,18 +37,18 @@ jobs:
               username: actor,
             });
 
-            const permission = data.permission; // one of: admin, maintain, write, triage, read, none
+            const role = data.role_name;
             const allowed = ['admin', 'maintain'];
 
-            core.info(`Actor @${actor} has repository permission: ${permission}`);
+            core.info(`Actor @${actor} has repository role: ${role}`);
 
-            if (!allowed.includes(permission)) {
+            if (!allowed.includes(role)) {
               core.setFailed(
                 `❌ @${actor} is not a maintainer or administrator of this repository ` +
-                `(permission: ${permission}). Only maintainers/admins may run this workflow.`
+                `(role: ${role}). Only maintainers/admins may run this workflow.`
               );
             } else {
-              core.info(`✅ @${actor} is authorized (${permission}) to publish.`);
+              core.info(`✅ @${actor} is authorized (${role}) to publish.`);
             }
 
   get-version:
