@@ -115,9 +115,9 @@ class GAMOptSettings(OptimizerSettings):
                      appears at least twice. If n_random_nodes is below the
                      computed minimum (min_required), the warm start is
                      auto-adjusted upward to meet coverage. After warm start,
-                     runs max_evals - floor(min_required/4) GAM iterations; the
-                     final evaluations list is trimmed to the top max_evals by
-                     score.
+                     runs max_evals - floor(min_required/4) GAM iterations;
+                     the final evaluations list is trimmed to the top max_evals
+                     by score.
         "balanced" — round-robin across the tuple of fields_to_balance values;
                      non-balanced discrete column values each appear at least once.
                      Requires fields_to_balance to be set. Same auto-adjustment,
@@ -240,7 +240,7 @@ class GAMOptimizer(BaseOptimizer):
         strategy = self.settings.warm_start_strategy
         if strategy in ("greedy", "balanced"):
             effective_warm_start = self._compute_warm_start_effective_target()
-            n_gam_iters = self.settings.max_evals - (effective_warm_start // 4)
+            n_gam_iters = max(0, self.settings.max_evals - (effective_warm_start // 4))
             for _ in range(n_gam_iters):
                 self._run_iteration()
             self._trim_evaluations_to_top(self.settings.max_evals)
@@ -265,7 +265,7 @@ class GAMOptimizer(BaseOptimizer):
         already evaluated random nodes and settings for the optimizer.
         """
         iterations_limit = ceil((self.max_iterations - len(self.evaluations)) / self.settings.evals_per_trial)
-        return iterations_limit
+        return max(0, iterations_limit)
 
     def _validate_n_random_nodes(self) -> None:
         """Log a warning when n_random_nodes is below the required minimum for the strategy.
@@ -385,9 +385,10 @@ class GAMOptimizer(BaseOptimizer):
 
     def evaluate_initial_random_nodes(self) -> None:
         """
-        Perform evaluation of randomly chosen n nodes from the solutions space.
-        Evaluations are performed until desired number of successful evaluations
-        is reached or maximum number of evaluations is reached.
+        Perform evaluation of randomly chosen nodes from the solutions space.
+        Random warm starts stop at the configured maximum evaluation count;
+        greedy and balanced warm starts continue until their required number
+        of successful evaluations is reached.
 
         When the optimizer has been warm-started with known observations,
         already-successful evaluations count toward the n_random_nodes target
@@ -409,7 +410,7 @@ class GAMOptimizer(BaseOptimizer):
             )
             return
 
-        if len(self.evaluations) >= self.max_iterations:
+        if self.settings.warm_start_strategy == "random" and len(self.evaluations) >= self.max_iterations:
             return
 
         combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
@@ -441,14 +442,16 @@ class GAMOptimizer(BaseOptimizer):
         gen = (x for x in combinations_local)
 
         while successful_evaluations < effective_target:
-            params = next(gen)
+            params = next(gen, None)
+            if params is None:
+                break
             score = self._objective_function(params=params)
             if score is not None:
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
             self.evaluations.append(params | {"score": score})
 
-            if len(self.evaluations) == self.max_iterations:
+            if self.settings.warm_start_strategy == "random" and len(self.evaluations) >= self.max_iterations:
                 break
 
         self._log_uncovered_values(discrete_cols_in_space, self.evaluations, effective_target)
@@ -518,8 +521,6 @@ class GAMOptimizer(BaseOptimizer):
                 if score is not None:
                     for other_col in non_balanced:
                         seen[other_col].add(_str_val(candidate.get(other_col)))
-                if len(self.evaluations) == self.max_iterations:
-                    return
 
     @staticmethod
     def _get_greedy_combinations(
@@ -639,10 +640,10 @@ class GAMOptimizer(BaseOptimizer):
         Run single optimization iteration using typed LinearGAM terms.
 
         String-typed columns receive f() (factor) terms; numeric columns receive
-        s() (spline) terms. Random warm starts use s() for every column so a
-        category absent from the small initial sample remains in-domain during
-        prediction. Constant columns are excluded. Dict-valued model columns
-        are serialized to model_id strings before encoding.
+        s() (spline) terms. Random warm starts and sparse categorical training
+        data use s() so a category absent from the sample remains in-domain
+        during prediction. Constant columns are excluded. Dict-valued model
+        columns are serialized to model_id strings before encoding.
         """
         self._prepare_typed_encoder()
         encoders = self._typed_encoders_with_columns
@@ -666,7 +667,13 @@ class GAMOptimizer(BaseOptimizer):
 
         terms = None
         for i, (_, enc) in enumerate(encoders):
-            use_spline = self.settings.warm_start_strategy == "random" or not isinstance(enc.classes_[0], str)
+            observed_values = set(x_train_enc[:, i])
+            all_values = set(range(len(enc.classes_)))
+            use_spline = (
+                self.settings.warm_start_strategy == "random"
+                or not isinstance(enc.classes_[0], str)
+                or observed_values != all_values
+            )
             term = gam_s(i) if use_spline else gam_f(i)
             terms = term if terms is None else terms + term
 

@@ -405,6 +405,28 @@ class TestGAMOptimizer:
         assert result["score"] == 0.5
         assert objective_func.call_count == 3
 
+    def test_sparse_non_random_warm_start_handles_unseen_categorical_values(self):
+        """Sparse greedy data falls back to splines for unseen categorical values."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [{"category": value} for value in ("a", "b", "c")]
+        mock_space.max_combinations = 3
+        settings = GAMOptSettings(max_evals=3, n_random_nodes=1, warm_start_strategy="greedy")
+        objective_func = MagicMock(return_value=0.5)
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_space,
+            settings=settings,
+        )
+        optimizer.evaluations = [{"category": "c", "score": 0.5}]
+        optimizer._evaluated_combinations = [{"category": "c"}]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            optimizer._run_iteration()
+
+        assert len(optimizer.evaluations) == 2
+        assert objective_func.call_count == 1
+
     def test_search_successful(self, mock_search_space, mocker):
         """Test the search method with successful optimization."""
         settings = GAMOptSettings(max_evals=5, n_random_nodes=2, evals_per_trial=1)
@@ -1341,7 +1363,7 @@ class TestGAMOptimizerDeterminism:
 
 
 class TestGreedyBalancedWarmStartAutoAdjust:
-    """Tests for the auto-adjusted warm start and fixed GAM iteration logic in greedy/balanced."""
+    """Tests for the auto-adjusted warm start and GAM iteration logic in greedy/balanced."""
 
     def _make_space(self, n=8):
         """Search space with 2 search_modes and 4 methods, totalling n combinations."""
@@ -1461,15 +1483,15 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         assert optimizer._compute_warm_start_effective_target() == 3
 
     # ------------------------------------------------------------------
-    # Fixed GAM iterations: max_evals - floor(max_evals / 4)
+    # GAM iterations: max_evals - floor(min_required / 4)
     # ------------------------------------------------------------------
 
-    def test_greedy_search_runs_fixed_gam_iterations(self, mocker):
-        """Greedy search runs max_evals - floor(min_required/4) GAM iterations after warm start."""
+    def test_greedy_search_runs_gam_iterations_after_warm_start(self, mocker):
+        """Greedy search runs max_evals minus the warm-start iteration allowance."""
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode has 2 unique values, method has 4, size has 4 → max_unique=4
         # min_required = max(4, 2*4) = 8
-        # max_evals=20, n_gam_iters = 20 - (8//4) = 20 - 2 = 18
+        # max_evals=20, n_gam_iters = 20 - (8//4) = 18.
         # Space size: 2×4×4 = 32 combinations (>8+18=26 needed)
         mock_space.combinations = [
             {"search_mode": m, "method": x, "size": s}
@@ -1506,12 +1528,12 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         expected_gam_iters = 20 - (effective_warm_start // 4)  # 20 - 2 = 18
         assert len(run_iteration_calls) == expected_gam_iters
 
-    def test_balanced_search_runs_fixed_gam_iterations(self, mocker):
-        """Balanced search runs max_evals - floor(min_required/4) GAM iterations after warm start."""
+    def test_balanced_search_runs_gam_iterations_after_warm_start(self, mocker):
+        """Balanced search runs max_evals minus the warm-start iteration allowance."""
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode has 2 unique values, method has 20 unique values
         # min_required = max(4, 2_balanced_tuples, 20_non_balanced) = 20
-        # max_evals=12, n_gam_iters = 12 - (20//4) = 12 - 5 = 7
+        # max_evals=12, n_gam_iters = 12 - (20//4) = 7.
         mock_space.combinations = [
             {"search_mode": m, "method": f"x{i}"}
             for m in ["vector", "hybrid"]
@@ -1601,7 +1623,7 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode(2) × method(4) × size(4) = 32 combinations; max_unique=4
         # min_required = max(4, 2*4) = 8; max_evals=4 < 8
-        # n_gam_iters = 4 - (8//4) = 4 - 2 = 2
+        # n_gam_iters = 4 - (8//4) = 2
         mock_space.combinations = [
             {"search_mode": m, "method": x, "size": s}
             for m in ["vector", "hybrid"]
@@ -1633,10 +1655,9 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        # Warm start evaluated 8 nodes (min_required)
-        # GAM iterations: 4 - (8//4) = 2
+        # Warm start evaluates min_required=8 despite max_evals=4.
+        # Final evaluations are trimmed to top max_evals=4.
         assert len(run_iteration_calls) == 2
-        # Final evaluations trimmed to top max_evals=4
         assert len(optimizer.evaluations) <= 4
 
     def test_greedy_search_evaluations_trimmed_to_max_evals(self, mocker):
