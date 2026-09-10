@@ -4,8 +4,8 @@
 # -----------------------------------------------------------------------------
 """End-to-end checks that a document's key is the identity carried through ingestion.
 
-The unit suites cover each hop in isolation (prefix stripping in
-``test_discovery``, path/key pairing in ``test_extraction``).  This module wires
+The unit suites cover each hop in isolation (discovery in ``test_discovery``,
+path/key pairing in ``test_extraction``).  This module wires
 the real components together -- discovery, download, extraction, and benchmark
 validation -- against an in-memory bucket, and asserts the property those hops
 exist to guarantee: the key a document is discovered under is the name it is
@@ -131,24 +131,16 @@ def _extracted_names(out_dir: Path) -> set[str]:
 
 
 class TestObjectKeyPreservation:
-    """A document's prefix-relative key must survive ingestion as its name."""
+    """A document's full object key must survive ingestion as its name."""
 
-    def test_relative_keys_survive_discovery_to_extraction(self, extracted):
-        """Documents are named by their position inside the discovery prefix."""
-        assert _extracted_names(extracted) == {
-            "manuals/xr-200/setup.txt",
-            "manuals/xr-300/setup.txt",
-            "overview.txt",
-        }
+    def test_object_keys_survive_discovery_to_extraction(self, extracted):
+        """Documents are named by the key they were discovered under."""
+        assert _extracted_names(extracted) == set(CORPUS)
 
     def test_output_layout_mirrors_the_keys(self, extracted):
         """The on-disk layout mirrors the keys, so nothing overwrites anything."""
         written = sorted(str(p.relative_to(extracted)) for p in extracted.rglob("*.json"))
-        assert written == [
-            "manuals/xr-200/setup.txt.json",
-            "manuals/xr-300/setup.txt.json",
-            "overview.txt.json",
-        ]
+        assert written == [f"{key}.json" for key in sorted(CORPUS)]
 
     def test_same_basename_documents_keep_their_own_content(self, extracted):
         """The collision regression: two ``setup.txt`` files must not merge.
@@ -156,20 +148,20 @@ class TestObjectKeyPreservation:
         Naming by basename alone gave both documents the name ``setup.txt`` and
         the same output path, so one silently overwrote the other.
         """
-        xr200 = DoclingDocument.load_from_json(str(extracted / "manuals/xr-200/setup.txt.json"))
-        xr300 = DoclingDocument.load_from_json(str(extracted / "manuals/xr-300/setup.txt.json"))
+        xr200 = DoclingDocument.load_from_json(str(extracted / f"{PREFIX}/manuals/xr-200/setup.txt.json"))
+        xr300 = DoclingDocument.load_from_json(str(extracted / f"{PREFIX}/manuals/xr-300/setup.txt.json"))
 
         assert xr200.name != xr300.name
         assert xr200.texts[0].text == "Set up the XR-200."
         assert xr300.texts[0].text == "Set up the XR-300."
 
-    def test_full_keys_are_preserved_when_discovery_has_no_prefix(self, fake_bucket, tmp_path):
-        """Without a prefix to strip, the full object key is the document name."""
+    def test_names_do_not_depend_on_the_discovery_prefix(self, fake_bucket, tmp_path):
+        """Narrowing the listing prefix must not rename the documents it returns."""
         out_dir = _ingest(discover_documents(bucket_name="bucket", s3_client=fake_bucket), tmp_path)
 
         assert _extracted_names(out_dir) == set(CORPUS)
 
-    def test_leading_slash_key_still_names_the_document(self, monkeypatch, tmp_path):
+    def test_key_needing_normalisation_still_names_the_document(self, monkeypatch, tmp_path):
         """A key needing normalisation must not fall back to the bare filename.
 
         ``_download_document`` strips the leading slash before building the local
@@ -184,7 +176,7 @@ class TestObjectKeyPreservation:
         out_dir = tmp_path / "extracted"
 
         tasks, errors = text_extraction._download_and_submit(
-            docs=[{"key": "/docs/a/setup.txt", "size_bytes": 7, "relative_key": "a/setup.txt"}],
+            docs=[{"key": "/docs/a/setup.txt", "size_bytes": 7}],
             bucket="bucket",
             download_path=download_dir,
             process_pool=_InlinePool(),
@@ -194,7 +186,7 @@ class TestObjectKeyPreservation:
 
         assert not errors
         assert all(task.get()[0] for _, task in tasks)
-        assert _extracted_names(out_dir) == {"a/setup.txt"}
+        assert _extracted_names(out_dir) == {"/docs/a/setup.txt"}
 
 
 # ---------------------------------------------------------------------------
@@ -219,20 +211,20 @@ class TestBenchmarkKeysMatchExtractedDocuments:
             )
         )
 
-    def test_relative_keys_select_the_intended_document(self, extracted):
-        """A benchmark written against relative keys resolves to exactly one document."""
-        benchmark = self._benchmark(["manuals/xr-300/setup.txt"])
+    def test_object_keys_select_the_intended_document(self, extracted):
+        """A benchmark written against object keys resolves to exactly one document."""
+        benchmark = self._benchmark([f"{PREFIX}/manuals/xr-300/setup.txt"])
         referenced = {key for keys in benchmark.document_keys for key in keys}
 
-        assert referenced & _extracted_names(extracted) == {"manuals/xr-300/setup.txt"}
+        assert referenced & _extracted_names(extracted) == {f"{PREFIX}/manuals/xr-300/setup.txt"}
 
-    def test_full_object_keys_match_nothing(self, extracted):
-        """The misconfiguration to recognise: keys that still carry the prefix.
+    def test_prefix_relative_keys_match_nothing(self, extracted):
+        """The misconfiguration to recognise: keys written without the bucket prefix.
 
-        Nothing raises here -- the documents simply never match, which is why
-        ``ModelsPreSelector`` reports unmatched keys rather than scoring zero.
+        Nothing raises here -- the documents simply never match, so the run
+        completes with no grounding for that question and the scores reflect it.
         """
-        benchmark = self._benchmark([f"{PREFIX}/manuals/xr-300/setup.txt"])
+        benchmark = self._benchmark(["manuals/xr-300/setup.txt"])
         referenced = {key for keys in benchmark.document_keys for key in keys}
 
         assert not referenced & _extracted_names(extracted)

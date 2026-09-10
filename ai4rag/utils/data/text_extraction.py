@@ -190,8 +190,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         List of document descriptor dicts, each with at least a ``"key"``
         and ``"size_bytes"`` entry (as produced by
         :func:`~ai4rag.utils.data.documents_discovery.discover_documents`).
-        The optional ``"relative_key"`` entry names the extracted document;
-        it falls back to ``"key"`` when absent.
+        The ``"key"`` entry also names the extracted document.
     bucket
         S3-compatible bucket name.
     output_dir
@@ -714,8 +713,11 @@ def _worker_process_document(  # pylint: disable=too-many-locals
         doc_name = doc_key or input_file.name
 
         # Preserve directory structure in output to prevent collisions when multiple
-        # files have the same basename from different S3 subdirectories
-        output_rel_path = Path(doc_name).with_suffix(Path(doc_name).suffix + ".json")
+        # files have the same basename from different S3 subdirectories.  The key is
+        # normalized the same way ``_download_document`` normalizes it, so a leading
+        # slash cannot turn the output path absolute and escape *output_dir*.
+        safe_name = doc_name.strip().lstrip("/")
+        output_rel_path = Path(safe_name).with_suffix(Path(safe_name).suffix + ".json")
         output_file = output_dir / output_rel_path
 
         if input_file.suffix.lower() == ".txt":
@@ -819,7 +821,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
             # Carry the name alongside the path: ``_download_document`` normalizes
             # the key before building the local path, so the path cannot be mapped
             # back to its descriptor afterwards without duplicating that logic.
-            downloaded.append((local_path, doc.get("relative_key") or key))
+            downloaded.append((local_path, key))
 
     downloaded.sort(key=lambda item: item[0].stat().st_size, reverse=True)
     extraction_tasks = [

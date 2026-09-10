@@ -28,25 +28,15 @@ class DocumentDescriptor:
     Attributes
     ----------
     key : str
-        Full S3 object key, used to fetch the object.
+        Full S3 object key.  It both fetches the object and identifies the
+        document downstream: it becomes the ``DoclingDocument`` name and is
+        what benchmark data must reference.
     size_bytes : int
         Object size in bytes.
-    relative_key : str
-        Key with the discovery prefix removed, e.g. ``manuals/xr-200/setup.txt``
-        for prefix ``datasets/rag/documents``.  This is the document's identity
-        downstream: it becomes the ``DoclingDocument`` name and is what
-        benchmark data must reference.  Defaults to ``key``.
     """
 
     key: str
     size_bytes: int
-    relative_key: str = ""
-
-    def __post_init__(self) -> None:
-        # Keep the descriptor usable when built without an explicit relative
-        # key -- the full key is always a valid identifier on its own.
-        if not self.relative_key:
-            object.__setattr__(self, "relative_key", self.key)
 
 
 @dataclass(frozen=True)
@@ -78,9 +68,7 @@ class DiscoveryResult:
         return {
             "bucket": self.bucket,
             "prefix": self.prefix,
-            "documents": [
-                {"key": d.key, "size_bytes": d.size_bytes, "relative_key": d.relative_key} for d in self.documents
-            ],
+            "documents": [{"key": d.key, "size_bytes": d.size_bytes} for d in self.documents],
             "total_size_bytes": self.total_size_bytes,
             "count": self.count,
         }
@@ -129,8 +117,8 @@ def discover_documents(
         Object-key prefix to narrow the listing.
     test_data_doc_names : list[str] | None, default=None
         Keys of documents referenced by the benchmark test data, matched
-        against either the prefix-relative key or the bare file name.  These
-        are sorted first so that sampling picks them before other files.
+        against either the full object key or the bare file name.  These are
+        sorted first so that sampling picks them before other files.
     sampling_enabled : bool, default=True
         When ``True``, only documents up to *sampling_max_size_gb* total
         are returned.
@@ -172,12 +160,10 @@ def discover_documents(
 
     if test_data_doc_names:
         test_names_set = set(test_data_doc_names)
-        # Benchmark data references documents by their relative key, but a bare
+        # Benchmark data names documents by their full object key, but a bare
         # file name is still a valid identifier for a flat corpus, so accept both.
         test_keys = {
-            c["Key"]
-            for c in supported_files
-            if _relative_key(c["Key"], prefix) in test_names_set or Path(c["Key"]).name in test_names_set
+            c["Key"] for c in supported_files if c["Key"] in test_names_set or Path(c["Key"]).name in test_names_set
         }
         supported_files.sort(key=lambda c: c["Key"] not in test_keys)
 
@@ -187,13 +173,7 @@ def discover_documents(
         size = file_info["Size"]
         if total_size + size > max_size_bytes:
             continue
-        selected.append(
-            DocumentDescriptor(
-                key=file_info["Key"],
-                size_bytes=size,
-                relative_key=_relative_key(file_info["Key"], prefix),
-            )
-        )
+        selected.append(DocumentDescriptor(key=file_info["Key"], size_bytes=size))
         total_size += size
 
     if not selected:
@@ -210,37 +190,6 @@ def discover_documents(
     )
     _logger.info("Discovered %d document(s), total size %d bytes", result.count, result.total_size_bytes)
     return result
-
-
-def _relative_key(key: str, prefix: str) -> str:
-    """Strip the discovery *prefix* from *key*.
-
-    Documents are identified by their position inside the input folder rather
-    than by their absolute location, so that the same corpus keeps the same
-    document names regardless of where it is uploaded.
-
-    A prefix that does not denote a folder (S3 prefixes are arbitrary strings
-    and may match part of a filename) leaves the key untouched.
-
-    Parameters
-    ----------
-    key : str
-        Full S3 object key.
-    prefix : str
-        Prefix used during listing.
-
-    Returns
-    -------
-    str
-        The key relative to *prefix*, or the full key when *prefix* is empty
-        or is not a parent folder of *key*.
-    """
-    folder = prefix.strip().strip("/")
-    if not folder:
-        return key
-
-    marker = f"{folder}/"
-    return key[len(marker) :] if key.startswith(marker) else key
 
 
 def _list_objects_with_ssl_fallback(bucket_name: str, prefix: str) -> tuple[Any, list[dict]]:

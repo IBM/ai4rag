@@ -122,8 +122,8 @@ for file_path in sorted(p for p in documents_root.rglob("*") if p.is_file()):
 > and the value `correct_answer_document_keys` must reference. Set it explicitly: Docling otherwise derives a
 > name from the file stem, so two files named `setup.pdf` in different folders would collide.
 
-Already keeping your corpus in a bucket? `discover_documents()` and `extract_text()` apply the same rule,
-keying each document by its path relative to the discovery prefix.
+Already keeping your corpus in a bucket? `discover_documents()` and `extract_text()` name each document by
+its full S3 object key, so that is what `correct_answer_document_keys` must reference — prefix included.
 
 
 ### Prepare `benchmark_data.json`

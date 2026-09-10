@@ -16,9 +16,9 @@ Whatever the source, one rule decides whether your experiment scores correctly:
 !!! important "A document's key is its `name`"
     Each document's `DoclingDocument.name` is its **key** — the identifier that follows it through chunking,
     indexing and evaluation, and the value your benchmark data must reference in
-    `correct_answer_document_keys`. Pick keys that are unique across the corpus: a path relative to your
-    documents folder (`manuals/xr-200/setup.pdf`) rather than a bare file name, so that two files sharing a
-    basename in different folders stay distinct.
+    `correct_answer_document_keys`. Pick keys that are unique across the corpus — a path relative to your
+    documents folder locally (`manuals/xr-200/setup.pdf`), or the full object key when reading from a bucket
+    — rather than a bare file name, so that two files sharing a basename in different folders stay distinct.
 
 ---
 
@@ -109,8 +109,9 @@ documents = load_docling_documents(extracted_dir)
 ```
 
 !!! tip "Reading from object storage instead"
-    If your corpus already lives in a bucket, `discover_documents()` and `extract_text()` do the same job and
-    apply the same naming rule, keying each document by its path relative to the discovery prefix. See
+    If your corpus already lives in a bucket, `discover_documents()` and `extract_text()` do the same job,
+    naming each document by its **full S3 object key** — so a benchmark written against a bucket must spell
+    keys out in full, prefix included (`datasets/rag/docs/manuals/xr-200/setup.pdf`). See
     [Pipeline Components](../user-guide/pipeline-components.md).
 
 !!! note "`dev_utils.file_store.FileStore`"

@@ -10,7 +10,6 @@ from ai4rag.utils.data.documents_discovery import (
     DOCUMENTS_DESCRIPTOR_FILENAME,
     DiscoveryResult,
     DocumentDescriptor,
-    _relative_key,
     discover_documents,
 )
 
@@ -83,8 +82,8 @@ class TestDiscoveryResult:
         assert d["total_size_bytes"] == 300
         assert d["count"] == 2
         assert len(d["documents"]) == 2
-        assert d["documents"][0] == {"key": "a.pdf", "size_bytes": 100, "relative_key": "a.pdf"}
-        assert d["documents"][1] == {"key": "b.docx", "size_bytes": 200, "relative_key": "b.docx"}
+        assert d["documents"][0] == {"key": "a.pdf", "size_bytes": 100}
+        assert d["documents"][1] == {"key": "b.docx", "size_bytes": 200}
 
     def test_to_dict_is_json_serialisable(self, result: DiscoveryResult):
         """``to_dict`` output must survive a JSON round-trip."""
@@ -413,59 +412,15 @@ class TestDiscoverDocuments:
 
 
 # ---------------------------------------------------------------------------
-# relative_key
+# Document identity
 # ---------------------------------------------------------------------------
 
 
-class TestRelativeKey:
-    """Tests for prefix stripping, which decides how documents are named."""
+class TestDocumentIdentity:
+    """The full object key is what names a document downstream."""
 
-    @pytest.mark.parametrize(
-        ("key", "prefix", "expected"),
-        [
-            ("docs/manuals/xr-200/setup.txt", "docs", "manuals/xr-200/setup.txt"),
-            ("docs/manuals/xr-200/setup.txt", "docs/", "manuals/xr-200/setup.txt"),
-            ("docs/manuals/xr-200/setup.txt", "/docs/", "manuals/xr-200/setup.txt"),
-            ("docs/setup.txt", "", "docs/setup.txt"),
-            # A prefix matching part of a filename is not a parent folder.
-            ("docs/2024-report.pdf", "docs/2024", "docs/2024-report.pdf"),
-            # A prefix that is not a parent of the key leaves it untouched.
-            ("other/setup.txt", "docs", "other/setup.txt"),
-        ],
-    )
-    def test_relative_key(self, key: str, prefix: str, expected: str):
-        assert _relative_key(key, prefix) == expected
-
-    def test_descriptor_defaults_relative_key_to_key(self):
-        """A descriptor built without a relative key stays usable."""
-        descriptor = DocumentDescriptor(key="docs/setup.txt", size_bytes=1)
-
-        assert descriptor.relative_key == "docs/setup.txt"
-
-    def test_discovery_strips_prefix_from_documents(self, mocker):
-        """Documents are named by their position inside the input folder."""
-        contents = [
-            _s3_object("datasets/rag/documents/manuals/xr-200/setup.txt", 100),
-            _s3_object("datasets/rag/documents/manuals/xr-300/setup.txt", 100),
-        ]
-        mock_client = _make_mock_s3_client(mocker, contents)
-
-        result = discover_documents(
-            bucket_name="bucket",
-            prefix="datasets/rag/documents",
-            sampling_enabled=False,
-            s3_client=mock_client,
-        )
-
-        assert [d.relative_key for d in result.documents] == [
-            "manuals/xr-200/setup.txt",
-            "manuals/xr-300/setup.txt",
-        ]
-        # The full key is still what fetches the object.
-        assert [d.key for d in result.documents] == [c["Key"] for c in contents]
-
-    def test_nested_benchmark_keys_are_prioritised(self, mocker):
-        """Benchmark data names documents by relative key, so sampling must match on it."""
+    def test_nested_keys_are_prioritised(self, mocker):
+        """Benchmark data names documents by their full key, so sampling must match on it."""
         contents = [
             _s3_object("docs/other.pdf", 400),
             _s3_object("docs/manuals/xr-200/setup.pdf", 400),
@@ -475,13 +430,13 @@ class TestRelativeKey:
         result = discover_documents(
             bucket_name="bucket",
             prefix="docs",
-            test_data_doc_names=["manuals/xr-200/setup.pdf"],
+            test_data_doc_names=["docs/manuals/xr-200/setup.pdf"],
             sampling_enabled=True,
             sampling_max_size_gb=400 / 1024**3,
             s3_client=mock_client,
         )
 
-        assert [d.relative_key for d in result.documents] == ["manuals/xr-200/setup.pdf"]
+        assert [d.key for d in result.documents] == ["docs/manuals/xr-200/setup.pdf"]
 
     def test_bare_filename_benchmark_keys_still_prioritised(self, mocker):
         """A flat corpus may reference documents by file name alone."""
@@ -500,7 +455,7 @@ class TestRelativeKey:
             s3_client=mock_client,
         )
 
-        assert [d.relative_key for d in result.documents] == ["benchmark.pdf"]
+        assert [d.key for d in result.documents] == ["docs/benchmark.pdf"]
 
     def test_same_basename_in_different_folders_stays_distinct(self, mocker):
         """The collision this naming scheme exists to prevent."""
@@ -517,6 +472,6 @@ class TestRelativeKey:
             s3_client=mock_client,
         )
 
-        relative_keys = [d.relative_key for d in result.documents]
-        assert relative_keys == ["a/setup.txt", "b/setup.txt"]
-        assert len(set(relative_keys)) == 2
+        keys = [d.key for d in result.documents]
+        assert keys == ["docs/a/setup.txt", "docs/b/setup.txt"]
+        assert len(set(keys)) == 2
