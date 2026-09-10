@@ -155,6 +155,7 @@ class AI4RAGExperiment:
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
 
         self.results: ExperimentResults = ExperimentResults()
+        self.optimizer: BaseOptimizer | None = None
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
 
         if kwargs:
@@ -741,17 +742,56 @@ class AI4RAGExperiment:
             self.optimizer_settings.to_dict(),
         )
 
+        self.optimizer = optimizer
         try:
             _ = optimizer.search()
         except OptimizationError as err:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
 
-        self.optimizer = optimizer
+        self._select_optimization_patterns()
 
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message="Experiment optimization process finished.",
+        )
+
+    def _select_optimization_patterns(self) -> None:
+        """Keep the configured output allocation between warm start and GAM phases.
+
+        The warm start evaluates extra configurations to provide enough training data
+        for the GAM. Those evaluations are not all output patterns: one output slot is
+        allocated for every four effective warm-start evaluations, and the remaining
+        slots are filled by GAM evaluations.
+        """
+        if not isinstance(self.optimizer, GAMOptimizer):
+            return
+
+        patterns = getattr(self.event_handler, "patterns", None)
+        if not isinstance(patterns, list) or not patterns:
+            return
+
+        if not all("optimization_phase" in pattern for pattern in patterns):
+            return
+
+        warm_start_output_count = self.optimizer._compute_warm_start_effective_target() // 4
+        gam_output_count = max(0, self.optimizer.settings.max_evals - warm_start_output_count)
+        warm_start_patterns = [p for p in patterns if p.get("optimization_phase") == "warm_start"]
+        gam_patterns = [p for p in patterns if p.get("optimization_phase") == "gam"]
+        selected = warm_start_patterns[:warm_start_output_count] + gam_patterns[:gam_output_count]
+
+        for index, pattern in enumerate(selected, start=1):
+            payload = pattern.get("payload")
+            if isinstance(payload, dict):
+                payload["name"] = f"Pattern{index}"
+                payload["iteration"] = index - 1
+
+        self.event_handler.patterns = selected
+        logger.info(
+            "Selected %d output patterns: %d from warm start and %d from GAM.",
+            len(selected),
+            min(len(warm_start_patterns), warm_start_output_count),
+            min(len(gam_patterns), gam_output_count),
         )
 
     def _stream_finished_pattern(
@@ -838,6 +878,7 @@ class AI4RAGExperiment:
         self.event_handler.on_pattern_creation(
             payload=payload,
             evaluation_results=evaluation_results_json,
+            optimization_phase=getattr(self.optimizer, "current_phase", None),
         )
 
     def _evaluate_response(
