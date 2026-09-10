@@ -77,7 +77,7 @@ result = extract_text(
 print(f"Processed {result.processed_count}/{result.total_documents}")
 ```
 
-Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email, Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
+Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email (`.eml`, `.msg`), Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
 OCR is **off by default**. Conversion behaviour (table structure and OCR) is
 controlled through a single `DoclingExtractionConfig` instance. To enable

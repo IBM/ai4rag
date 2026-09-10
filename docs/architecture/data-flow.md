@@ -451,6 +451,16 @@ answer = response.choices[0].message.content
 }
 ```
 
+**Alternative Entry Point: `chat()`**
+
+`SimpleRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged:
+
+```python
+response = rag.chat(messages=[
+    {"role": "user", "content": "What is the capital of France?"},
+])
+```
+
 ---
 
 ## Evaluation Phase

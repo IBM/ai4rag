@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.16.0](https://github.com/IBM/ai4rag/releases/tag/v0.16.0)
+
+### Added
+- **Document discovery / extraction** — `.msg` (Outlook email) files are now a supported extension for discovery and text extraction
+- **RAG template** — `SimpleRAG.chat()`, a chat-completions-style entry point that RAG-enriches the last user turn of a conversation while passing prior history through untouched
+
+### Changed
+- **Benchmark data** — `BenchmarkData` now requires `correct_answer_document_keys` instead of `correct_answer_document_ids`; a *document key* is a document's `DoclingDocument.name`, the identifier carried through chunking, indexing, and evaluation. **Breaking:** `correct_answer_document_ids` is rejected with a message explaining what a key is; evaluation results report `document_key` instead of `document_id`
+- **Document discovery / extraction** — documents extracted from object storage are now named by their full object key (prefix included) instead of the bare file name, so two documents with the same basename under different prefixes no longer collide on the output path and silently overwrite one another
+- **Assets generator** — relocated from `ai4rag.utils.assets_generator` to `ai4rag.assets_generator`, alongside other top-level packages instead of under the general-purpose utils namespace. **Breaking:** `ai4rag.utils.assets_generator` no longer exists; import from `ai4rag.assets_generator` instead
+- **RAG template** — `BaseRAGTemplate` and `SimpleRAG` now only compose a retriever and a foundation model for retrieval-and-generation; index building is an upstream concern owned by `ai4rag.rag.vector_store`. **Breaking:** `chunker`, `embedding_model`, and `vector_store` constructor arguments and `build_index` have been removed; build indexes via `ai4rag.rag.vector_store` directly before constructing a template
+- **Dependencies** — bumped `docling-slim` from `~=2.107.0` to `~=2.121.0` (base and `text-extraction` extras)
+
+### Fixed
+- **Notebooks** — the indexing notebook template now declares the `text-extraction` extras it requires
+- **Search space preparation** — MaaS foundation/embedding model validation failures now log the underlying root cause (status code, error code, and message extracted from the `openai` client error, with traceback) instead of discarding it and logging only the model id
+
+---
+
 ## [0.15.0](https://github.com/IBM/ai4rag/releases/tag/v0.15.0)
 
 ### Changed
