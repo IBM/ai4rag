@@ -190,6 +190,7 @@ class GAMOptimizer(BaseOptimizer):
         self._evaluated_combinations = []
         self._typed_encoders_with_columns: list[tuple[str, LabelEncoder]] = []
         self.warm_start_evaluation_count: int = 0
+        self.current_phase = "idle"
 
         if known_observations:
             self._load_known_observations(known_observations)
@@ -235,9 +236,11 @@ class GAMOptimizer(BaseOptimizer):
         OptimizationError
             When there were no successful evaluations for given constraints.
         """
+        self.current_phase = "warm_start"
         self.evaluate_initial_random_nodes()
 
         strategy = self.settings.warm_start_strategy
+        self.current_phase = "gam"
         if strategy in ("greedy", "balanced"):
             effective_warm_start = self._compute_warm_start_effective_target()
             n_gam_iters = max(0, self.settings.max_evals - (effective_warm_start // 4))
@@ -248,6 +251,8 @@ class GAMOptimizer(BaseOptimizer):
             iterations_limit = self._get_iterations_limit()
             for _ in range(iterations_limit):
                 self._run_iteration()
+
+        self.current_phase = "complete"
 
         successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
         if not successful_evaluations:

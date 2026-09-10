@@ -185,6 +185,35 @@ class TestMetricEvaluatorValidation:
         _build_experiment(evaluators=evals, optimization_metric=Metrics.JUDGE_ANSWER_RELEVANCE)
 
 
+class TestOptimizationPatternSelection:
+    """Output pattern allocation between warm start and GAM phases."""
+
+    def test_selects_warm_start_quota_and_renumbers_patterns(self):
+        from ai4rag.core.hpo.gam_opt import GAMOptSettings, GAMOptimizer
+
+        experiment = _build_experiment()
+        experiment.event_handler = MagicMock()
+        experiment.event_handler.patterns = [
+            {"payload": {"name": f"old-warm-{i}"}, "optimization_phase": "warm_start"} for i in range(3)
+        ] + [{"payload": {"name": f"old-gam-{i}"}, "optimization_phase": "gam"} for i in range(4)]
+
+        search_space = MagicMock()
+        search_space.combinations = [{"category": value} for value in ("a", "b", "c")]
+        search_space.max_combinations = 3
+        experiment.optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=search_space,
+            settings=GAMOptSettings(max_evals=4, n_random_nodes=4, warm_start_strategy="greedy"),
+        )
+
+        experiment._select_optimization_patterns()
+
+        selected = experiment.event_handler.patterns
+        assert len(selected) == 4  # effective warm start=6: 6//4 warm + 3 GAM
+        assert [p["optimization_phase"] for p in selected] == ["warm_start", "gam", "gam", "gam"]
+        assert [p["payload"]["name"] for p in selected] == ["Pattern1", "Pattern2", "Pattern3", "Pattern4"]
+
+
 class TestResolveOptimizationScore:
     """Selecting the optimization metric's score from a pattern's results."""
 
