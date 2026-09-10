@@ -636,11 +636,13 @@ class GAMOptimizer(BaseOptimizer):
     # pylint: disable=too-many-locals
     def _run_iteration(self) -> None:
         """
-        Run single optimization iteration using a factor-typed LinearGAM.
+        Run single optimization iteration using typed LinearGAM terms.
 
         String-typed columns receive f() (factor) terms; numeric columns receive
-        s() (spline) terms. Constant columns are excluded. Dict-valued model
-        columns are serialized to model_id strings before encoding.
+        s() (spline) terms. Random warm starts use s() for every column so a
+        category absent from the small initial sample remains in-domain during
+        prediction. Constant columns are excluded. Dict-valued model columns
+        are serialized to model_id strings before encoding.
         """
         self._prepare_typed_encoder()
         encoders = self._typed_encoders_with_columns
@@ -664,7 +666,8 @@ class GAMOptimizer(BaseOptimizer):
 
         terms = None
         for i, (_, enc) in enumerate(encoders):
-            term = gam_f(i) if isinstance(enc.classes_[0], str) else gam_s(i)
+            use_spline = self.settings.warm_start_strategy == "random" or not isinstance(enc.classes_[0], str)
+            term = gam_s(i) if use_spline else gam_f(i)
             terms = term if terms is None else terms + term
 
         gam = LinearGAM(terms)

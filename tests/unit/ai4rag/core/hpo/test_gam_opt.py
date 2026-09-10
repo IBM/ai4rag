@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import warnings
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -383,6 +384,26 @@ class TestGAMOptimizer:
         assert len(optimizer.evaluations) == 3
         assert mock_gam_instance.fit.called
         assert mock_gam_instance.predict.called
+
+    def test_random_warm_start_handles_unseen_categorical_values(self):
+        """A small random warm start can still predict every categorical value."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [{"category": value} for value in ("a", "b", "c")]
+        mock_space.max_combinations = 3
+        settings = GAMOptSettings(max_evals=3, n_random_nodes=1)
+        objective_func = MagicMock(return_value=0.5)
+        optimizer = GAMOptimizer(
+            objective_function=objective_func,
+            search_space=mock_space,
+            settings=settings,
+        )
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            result = optimizer.search()
+
+        assert result["score"] == 0.5
+        assert objective_func.call_count == 3
 
     def test_search_successful(self, mock_search_space, mocker):
         """Test the search method with successful optimization."""
