@@ -104,18 +104,15 @@ classDiagram
         <<abstract>>
         +foundation_model: BaseFoundationModel
         +retriever: Retriever
-        +build_index(docs)* void
         +generate(question)* dict
         +generate_stream(question)* iterator
+        +chat(messages)* list
     }
 
     class SimpleRAG {
-        +chunker: BaseChunker
-        +embedding_model: BaseEmbeddingModel
-        +vector_store: BaseVectorStore
-        +build_index(DoclingDocument[]) void
         +generate(question) dict
         +generate_stream(question) iterator
+        +chat(messages) list
     }
 
     BaseFoundationModel <|-- OpenAIFoundationModel
@@ -131,7 +128,6 @@ classDiagram
     Retriever --> BaseVectorStore : uses
     BaseRAGTemplate --> BaseFoundationModel : uses
     BaseRAGTemplate --> Retriever : uses
-    SimpleRAG --> BaseChunker : uses
 ```
 
 ---
@@ -1180,7 +1176,10 @@ docs = retriever.retrieve("What is X?")
 
 ## RAG Templates
 
-RAG templates combine all components into end-to-end retrieval-augmented generation pipelines.
+RAG templates compose a retriever and a foundation model into end-to-end
+retrieval-augmented generation. Index building is a separate, upstream concern
+owned by `ai4rag.rag.vector_store` — build the index (chunk → embed → store)
+before constructing a template.
 
 ### BaseRAGTemplate
 
@@ -1192,8 +1191,6 @@ class BaseRAGTemplate(ABC):
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: BaseVectorStore | None = None,
     ):
 ```
 
@@ -1201,21 +1198,22 @@ class BaseRAGTemplate(ABC):
 
 ```python
 @abstractmethod
-def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
-    """Index documents into vector store."""
-
-@abstractmethod
 def generate(self, question: str, **kwargs) -> dict[str, Any]:
     """Generate answer for question using RAG pipeline."""
 
 @abstractmethod
 def generate_stream(self, question: str, **kwargs):
     """Generate streaming answer (for future streaming support)."""
+
+@abstractmethod
+def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+    """Run a RAG-enriched chat completion over a conversation history."""
 ```
 
 ### SimpleRAG
 
-Complete RAG implementation using OpenAI-compatible models and LangChain:
+RAG implementation composing a retriever and a foundation model for retrieval
+and generation:
 
 ```python
 class SimpleRAG(BaseRAGTemplate):
@@ -1223,19 +1221,7 @@ class SimpleRAG(BaseRAGTemplate):
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        chunker: BaseChunker | None = None,
-        embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: BaseVectorStore | None = None,
     ):
-```
-
-**build_index() Method:**
-
-```python
-def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
-    """Index documents: chunk → embed → store."""
-    chunks = self.chunker.split_documents(documents)
-    self.vector_store.add_documents(chunks)
 ```
 
 **generate() Method:**
@@ -1244,39 +1230,30 @@ def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
 def generate(self, question: str, **kwargs) -> dict[str, Any]:
     """Generate answer using RAG pipeline."""
 
-    # 1. Retrieve relevant chunks
-    reference_documents = self.retriever.retrieve(question, **kwargs)
+    # 1. Retrieve relevant chunks and render the enriched user message
+    reference_documents, user_message = self._build_enriched_user_message(question, **kwargs)
 
-    # 2. Format context
-    context = "\n".join([
-        self.foundation_model.context_template_text.format(
-            document=chunk.text
-        )
-        for chunk in reference_documents
-    ])
-
-    # 3. Format user message
-    user_message = self.foundation_model.user_message_text.format(
-        reference_documents=context,
-        question=question
-    )
-
-    # 4. Create messages
+    # 2. Create messages
     messages = [
         {"role": "system", "content": self.foundation_model.system_message_text},
         {"role": "user", "content": user_message}
     ]
 
-    # 5. Generate answer
-    chat_response = self.foundation_model.chat(messages)
+    # 3. Generate answer
+    chat_response = self.foundation_model.chat(messages=messages)
 
-    # 6. Return result
+    # 4. Return result
     return {
         "answer": chat_response[0].message.content,
         "reference_documents": reference_documents,
         "question": question
     }
 ```
+
+`_build_enriched_user_message` (shared by `generate` and `chat`) retrieves
+chunks via `self.retriever.retrieve(question, **kwargs)`, formats each with
+`foundation_model.context_template_text`, and renders the final user message
+with `foundation_model.user_message_text`.
 
 **generate_stream() Method:**
 
@@ -1287,20 +1264,40 @@ def generate_stream(self, question: str, **kwargs):
     yield result["answer"]
 ```
 
+**chat() Method:**
+
+Chat-completions-style entry point: forwards prior conversation history to the
+foundation model unchanged, RAG-enriching only the last (current) user turn.
+The template's own system message is always prepended, so `messages` should
+not include one:
+
+```python
+def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+    if not messages:
+        raise ValueError("`messages` must contain at least one message.")
+
+    *history, last_message = messages
+    _, enriched_content = self._build_enriched_user_message(last_message["content"], **kwargs)
+
+    rag_messages = [
+        {"role": "system", "content": self.foundation_model.system_message_text},
+        *history,
+        {**last_message, "content": enriched_content},
+    ]
+
+    return self.foundation_model.chat(messages=rag_messages, **kwargs)
+```
+
 **Usage:**
 
 ```python
-# Create RAG template
+# Build the index upstream, then construct the template
+vector_store.add_documents(chunker.split_documents(documents))
+
 rag = SimpleRAG(
     foundation_model=foundation_model,
     retriever=retriever,
-    chunker=chunker,
-    embedding_model=embedding_model,
-    vector_store=vector_store
 )
-
-# Index documents (if building index manually)
-rag.build_index(documents)
 
 # Generate answer
 result = rag.generate("What is the capital of France?")
@@ -1309,19 +1306,25 @@ print(result["answer"])
 
 print(result["reference_documents"])
 # [AI4RAGChunk(...), AI4RAGChunk(...), ...]
+
+# Or drive it as a chat completion over conversation history
+response = rag.chat(messages=[
+    {"role": "user", "content": "What is the capital of France?"},
+])
 ```
 
 **Within AI4RAGExperiment:**
 
-The experiment creates SimpleRAG instances automatically during evaluation:
+The experiment creates SimpleRAG instances automatically during evaluation,
+after indexing has already populated the vector store:
 
 ```python
 rag_pattern = SimpleRAG(
     foundation_model=foundation_model,
     retriever=retriever
 )
-# Note: chunker, embedding_model, vector_store handled separately
-#       by experiment during indexing phase
+# Note: chunking, embedding, and vector store insertion happen separately,
+#       upstream, during the experiment's indexing phase
 ```
 
 ---
@@ -1376,7 +1379,10 @@ chunker = LangChainChunker(
     chunk_overlap=128
 )
 
-# 6. Create retriever
+# 6. Index documents: chunk -> embed -> store (upstream of the template)
+vector_store.add_documents(chunker.split_documents(documents))
+
+# 7. Create retriever
 retriever = Retriever(
     vector_store=vector_store,
     number_of_chunks=5,
@@ -1386,17 +1392,11 @@ retriever = Retriever(
     ranker_k=60
 )
 
-# 7. Create RAG template
+# 8. Create RAG template
 rag = SimpleRAG(
     foundation_model=foundation_model,
     retriever=retriever,
-    chunker=chunker,
-    embedding_model=embedding_model,
-    vector_store=vector_store
 )
-
-# 8. Index documents
-rag.build_index(documents)
 
 # 9. Generate answer
 result = rag.generate("What is X?")
@@ -1452,16 +1452,16 @@ class CustomVectorStore(BaseVectorStore):
 
 ```python
 class CustomRAG(BaseRAGTemplate):
-    def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
-        # Your indexing logic
-        pass
-
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         # Your generation logic
         pass
 
     def generate_stream(self, question: str, **kwargs):
         # Your streaming logic
+        pass
+
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+        # Your chat-completion logic
         pass
 ```
 
