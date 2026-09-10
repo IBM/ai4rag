@@ -774,7 +774,7 @@ class AI4RAGExperiment:
         if not all("optimization_phase" in pattern for pattern in patterns):
             return
 
-        warm_start_output_count = self.optimizer._compute_warm_start_effective_target() // 4
+        warm_start_output_count = self.optimizer.compute_warm_start_effective_target() // 4
         gam_output_count = max(0, self.optimizer.settings.max_evals - warm_start_output_count)
         warm_start_patterns = [p for p in patterns if p.get("optimization_phase") == "warm_start"]
         gam_patterns = [p for p in patterns if p.get("optimization_phase") == "gam"]

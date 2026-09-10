@@ -362,6 +362,16 @@ class GAMOptimizer(BaseOptimizer):
         max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
         return max(n, 4, len(balanced_tuples), max_non_balanced)
 
+    def compute_warm_start_effective_target(self) -> int:
+        """Return the effective number of successful warm-start nodes to evaluate.
+
+        Returns
+        -------
+        int
+            The effective warm-start target for the configured strategy.
+        """
+        return self._compute_warm_start_effective_target()
+
     def _load_known_observations(self, known_observations: list[dict]) -> None:
         """
         Load known observations to warm-start the optimizer.
@@ -418,6 +428,19 @@ class GAMOptimizer(BaseOptimizer):
         if self.settings.warm_start_strategy == "random" and len(self.evaluations) >= self.max_iterations:
             return
 
+        combinations_local = self._prepare_warm_start_combinations(effective_target, successful_evaluations)
+        discrete_cols_in_space = _get_discrete_column_values(combinations_local)
+        self._evaluate_warm_start_combinations(combinations_local, effective_target, successful_evaluations)
+
+        self._log_uncovered_values(discrete_cols_in_space, self.evaluations, effective_target)
+
+        if self.settings.warm_start_strategy == "balanced":
+            self._cover_non_balanced_values(discrete_cols_in_space)
+
+        self.warm_start_evaluation_count = len(self.evaluations)
+
+    def _prepare_warm_start_combinations(self, effective_target: int, successful_evaluations: int) -> list[dict]:
+        """Prepare candidate combinations according to the warm-start strategy."""
         combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
         random.Random(self.settings.random_state).shuffle(combinations_local)
 
@@ -434,17 +457,21 @@ class GAMOptimizer(BaseOptimizer):
                     if val in initial_coverage[col]:
                         initial_coverage[col][val] = min(initial_coverage[col][val] + 1, 2)
             remaining_budget = effective_target - successful_evaluations
-            combinations_local = self._get_greedy_combinations(
+            return self._get_greedy_combinations(
                 combinations_local, remaining_budget, initial_coverage=initial_coverage
             )
-        elif self.settings.warm_start_strategy == "balanced":
-            combinations_local = self._get_balanced_combinations(
-                combinations_local, self.settings.fields_to_balance or []
-            )
-        # "random": use shuffled list as-is
 
-        discrete_cols_in_space = _get_discrete_column_values(combinations_local)
-        gen = (x for x in combinations_local)
+        if self.settings.warm_start_strategy == "balanced":
+            return self._get_balanced_combinations(combinations_local, self.settings.fields_to_balance or [])
+
+        # "random": use shuffled list as-is
+        return combinations_local
+
+    def _evaluate_warm_start_combinations(
+        self, combinations: list[dict], effective_target: int, successful_evaluations: int
+    ) -> None:
+        """Evaluate warm-start candidates until the target or candidate list is exhausted."""
+        gen = (x for x in combinations)
 
         while successful_evaluations < effective_target:
             params = next(gen, None)
@@ -458,13 +485,6 @@ class GAMOptimizer(BaseOptimizer):
 
             if self.settings.warm_start_strategy == "random" and len(self.evaluations) >= self.max_iterations:
                 break
-
-        self._log_uncovered_values(discrete_cols_in_space, self.evaluations, effective_target)
-
-        if self.settings.warm_start_strategy == "balanced":
-            self._cover_non_balanced_values(discrete_cols_in_space)
-
-        self.warm_start_evaluation_count = len(self.evaluations)
 
     @staticmethod
     def _log_uncovered_values(
