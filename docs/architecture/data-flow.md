@@ -518,7 +518,7 @@ sequenceDiagram
 BenchmarkData with:
 - questions: ["What is X?", ...]
 - correct_answers: [["X is...", "Alternative answer"], ...]
-- document_ids: [["doc1", "doc3"], ...]  # Ground truth source docs
+- document_keys: [["doc1", "doc3"], ...]  # Ground truth source docs
 - questions_ids: ["q0", "q1", ...]
 ```
 

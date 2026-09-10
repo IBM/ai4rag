@@ -184,7 +184,7 @@ def build_evaluation_data(
                 context_ids=context_ids,
                 ground_truths=benchmark_data.correct_answers[idx],
                 question_id=benchmark_data.questions_ids[idx],
-                ground_truths_context_ids=benchmark_data.document_ids[idx] if benchmark_data.document_ids else None,
+                ground_truths_context_ids=benchmark_data.document_keys[idx],
             )
         )
 

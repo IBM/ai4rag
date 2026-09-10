@@ -27,7 +27,7 @@ def benchmark_data() -> BenchmarkData:
             {
                 "question": ["Question 1", "Questions 2"],
                 "correct_answers": [["Answer 1"], ["Answer 2"]],
-                "correct_answer_document_ids": [["id_1_1"], ["id_2_1"]],
+                "correct_answer_document_keys": [["id_1_1"], ["id_2_1"]],
             }
         )
     )
@@ -249,6 +249,32 @@ class TestModelsPreSelector:
                     f"Starting pre-evaluation of foundation model: {fm.model_id} and embedding model: {em.model_id}"
                     in caplog.text
                 ), f"There are no proper pre-selection logs for {(em, fm)}"
+
+    def test_evaluate_patterns_samples_only_documents_the_benchmark_references(self, mocker, fully_mocked_selector):
+        """Pre-selection runs on the benchmark's grounding documents, not the whole corpus."""
+        chunk_spy = mocker.spy(fully_mocked_selector, "_chunk_documents")
+        fully_mocked_selector.documents = [
+            _make_docling_doc("id_1_1", "Page content 1"),
+            _make_docling_doc("unreferenced/doc.txt", "Not in the benchmark"),
+        ]
+
+        fully_mocked_selector.evaluate_patterns()
+
+        sampled = [document.name for document in chunk_spy.call_args.args[0]]
+        assert sampled == ["id_1_1"]
+
+    def test_evaluate_patterns_does_not_validate_benchmark_keys(self, fully_mocked_selector):
+        """Unmatched keys are not the pre-selector's problem to police.
+
+        A benchmark referencing documents that were never ingested leaves nothing to
+        ground answers in.  That belongs in the scores rather than in an exception
+        raised here, so the run proceeds instead of failing.
+        """
+        fully_mocked_selector.documents = [_make_docling_doc("some/other/doc.txt", "Page content")]
+
+        fully_mocked_selector.evaluate_patterns()
+
+        assert fully_mocked_selector.evaluation_results
 
     def test_evaluate_patterns_with_errors(self, mocker, fully_mocked_selector, caplog):
         gen_exc = GenerationError(exception=ValueError("Dummy val error"), model_id="some-inference-model")

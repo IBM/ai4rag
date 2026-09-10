@@ -6,8 +6,21 @@ For the sake of quick-start OpenShift AI Models-as-a-Service (MaaS) will be used
 ---
 
 ## Data loading
+
 To run the experiment you need to provide documents as `DoclingDocument` instances (from the `docling-core` library).
-For the development purposes you may use `FileStore` implementation from `dev_utils`, but this will be available only when cloning the repository, as this is not part of the project.
+Where those documents come from is up to you — **`ai4rag` does not require object storage.** A local folder is
+enough; S3 is only involved if you use the pipeline components that read from a bucket.
+
+Whatever the source, one rule decides whether your experiment scores correctly:
+
+!!! important "A document's key is its `name`"
+    Each document's `DoclingDocument.name` is its **key** — the identifier that follows it through chunking,
+    indexing and evaluation, and the value your benchmark data must reference in
+    `correct_answer_document_keys`. Pick keys that are unique across the corpus — a path relative to your
+    documents folder locally (`manuals/xr-200/setup.pdf`), or the full object key when reading from a bucket
+    — rather than a bare file name, so that two files sharing a basename in different folders stay distinct.
+
+---
 
 ---
 
@@ -54,47 +67,80 @@ client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 ### 2. Prepare Knowledge Base Documents
 
-Load your knowledge base documents from a local directory:
+Convert a local folder of documents with Docling, naming each one by its path relative to that folder.
+No object storage is involved:
 
 ```python
 from pathlib import Path
-from dev_utils.file_store import FileStore
+from docling.document_converter import DocumentConverter
 
-# Path to your documents folder
-documents_path = Path("path/to/your/documents")
+documents_root = Path("path/to/your/documents")
+converter = DocumentConverter()
 
-# Load documents (supports PDF, HTML, TXT, MD, etc.)
-documents = FileStore(documents_path).load_as_documents()
+documents = []
+for file_path in sorted(p for p in documents_root.rglob("*") if p.is_file()):
+    document = converter.convert(file_path).document
+    # The key: unique across the corpus, and what benchmark data references.
+    document.name = str(file_path.relative_to(documents_root))
+    documents.append(document)
 
-print(f"Loaded {len(documents)} documents")
+print(f"Loaded {len(documents)} documents: {[d.name for d in documents]}")
 ```
 
-!!! info "Document Format"
-    Documents must include a `document_id` in their metadata.
-    `FileStore` handles this automatically.
+!!! warning "Always set `name` yourself"
+    Docling derives a name from the file stem, dropping both the folder and the extension — `notes.txt`
+    becomes `notes`. Two files named `setup.pdf` in different folders would end up sharing a key, and the
+    second would displace the first during indexing. Assigning `document.name` explicitly, as above, avoids
+    this.
+
+Conversion is the slow part, so save the results and reload them on later runs:
+
+```python
+from ai4rag.utils.docling_io import load_docling_documents
+
+extracted_dir = Path("./extracted_text")
+for document in documents:
+    output_path = extracted_dir / f"{document.name}.json"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    document.save_as_json(output_path)
+
+# On subsequent runs, skip conversion entirely -- names are preserved in the JSON.
+documents = load_docling_documents(extracted_dir)
+```
+
+!!! tip "Reading from object storage instead"
+    If your corpus already lives in a bucket, `discover_documents()` and `extract_text()` do the same job,
+    naming each document by its **full S3 object key** — so a benchmark written against a bucket must spell
+    keys out in full, prefix included (`datasets/rag/docs/manuals/xr-200/setup.pdf`). See
+    [Pipeline Components](../user-guide/pipeline-components.md).
+
+!!! note "`dev_utils.file_store.FileStore`"
+    The repository also ships a `FileStore` helper used by the examples and tests. It is development-only —
+    it is excluded from the installed package and it names documents by bare file name, so it is not suitable
+    for a corpus with nested folders.
 
 ---
 
 ### 3. Prepare Benchmark Data
 
-Create a `benchmark_data.json` file with questions and ground truth answers:
+Create a `benchmark_data.json` file with questions and ground truth answers. Each
+`correct_answer_document_keys` entry must be the `name` of a document you loaded in step 2:
 
 ```json
 [
   {
-    "question": "What is the main purpose of ai4rag?",
+    "question": "How do I set up the XR-200?",
     "correct_answers": [
-      "ai4rag optimizes RAG templates using hyperparameter optimization",
-      "ai4rag finds optimal RAG configurations"
+      "Connect the power supply, then run the setup wizard."
     ],
-    "correct_answer_document_ids": ["doc_001.pdf", "doc_002.pdf"]
+    "correct_answer_document_keys": ["manuals/xr-200/setup.pdf"]
   },
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
       "Milvus and ChromaDB are supported."
     ],
-    "correct_answer_document_ids": ["doc_005.txt"]
+    "correct_answer_document_keys": ["overview.md", "reference/stores.md"]
   }
 ]
 ```
@@ -102,10 +148,9 @@ Create a `benchmark_data.json` file with questions and ground truth answers:
 Load the benchmark data:
 
 ```python
-from dev_utils.utils import read_benchmark_from_json
+import pandas as pd
 
-benchmark_data_path = Path("path/to/benchmark_data.json")
-benchmark_data = read_benchmark_from_json(benchmark_data_path)
+benchmark_data = pd.read_json("path/to/benchmark_data.json")
 ```
 
 !!! tip "Benchmark Quality"
@@ -247,6 +292,9 @@ Here's the full code in one place:
 
 ```python
 from pathlib import Path
+
+import pandas as pd
+from docling.document_converter import DocumentConverter
 from dotenv import load_dotenv
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
@@ -256,18 +304,23 @@ from ai4rag.rag.vector_store import MilvusConfig
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.utils.event_handler import LocalEventHandler
 
-from dev_utils.file_store import FileStore
-from dev_utils.utils import build_maas_model, create_dev_maas_client, read_benchmark_from_json
+from dev_utils.utils import build_maas_model, create_dev_maas_client
 
 # 1. Setup client
 load_dotenv()
 client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
-# 2. Load documents
-documents = FileStore(Path("./knowledge_base")).load_as_documents()
+# 2. Load documents from a local folder, keyed by their relative path
+documents_root = Path("./knowledge_base")
+converter = DocumentConverter()
+documents = []
+for file_path in sorted(p for p in documents_root.rglob("*") if p.is_file()):
+    document = converter.convert(file_path).document
+    document.name = str(file_path.relative_to(documents_root))
+    documents.append(document)
 
-# 3. Load benchmark data
-benchmark_data = read_benchmark_from_json(Path("./benchmark_data.json"))
+# 3. Load benchmark data -- its keys must match the document names above
+benchmark_data = pd.read_json("./benchmark_data.json")
 
 # 4. Define search space
 search_space = AI4RAGSearchSpace(

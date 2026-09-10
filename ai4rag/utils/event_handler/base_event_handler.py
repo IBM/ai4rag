@@ -127,7 +127,7 @@ class AnswerContext(TypedDict):
     """Single retrieved chunk with its source document."""
 
     text: str
-    document_id: str
+    document_key: str
 
 
 class EvaluationMetricRecord(TypedDict):
@@ -242,8 +242,8 @@ class BaseEventHandler(ABC):
                     "question": "<question_1>",
                     "answer": "<model's answer>",
                     "answer_contexts": [
-                        {"text": "<content1_text>", "document_id": "document_1.pdf"},
-                        {"text": "<content2_text>", "document_id": "document_2.pdf"},
+                        {"text": "<content1_text>", "document_key": "document_1.pdf"},
+                        {"text": "<content2_text>", "document_key": "document_2.pdf"},
                     ],
                     "correct_answers": ["correct_answer_for_question_1"],
                     "metrics": [
@@ -256,8 +256,8 @@ class BaseEventHandler(ABC):
                     "question": "<question_2>",
                     "answer": "<model's answer>",
                     "answer_contexts": [
-                        {"text": "<content3_text>", "document_id": "document_3.pdf"},
-                        {"text": "<content4_text>", "document_id": "document_4.pdf"},
+                        {"text": "<content3_text>", "document_key": "document_3.pdf"},
+                        {"text": "<content4_text>", "document_key": "document_4.pdf"},
                     ],
                     "correct_answers": ["correct_answer_1_for_question_2", "correct_answer_2_for_question_3"],
                     "metrics": [

@@ -29,7 +29,7 @@ _BENCHMARK_DF = pd.DataFrame(
     {
         "question": ["What is Python?"],
         "correct_answers": [["A programming language."]],
-        "correct_answer_document_ids": [["doc1"]],
+        "correct_answer_document_keys": [["doc1"]],
     }
 )
 

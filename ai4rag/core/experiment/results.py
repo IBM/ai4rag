@@ -208,7 +208,7 @@ class ExperimentResults:
                     "question_id": "0",
                     "answer": "<model's answer>",
                     "answer_contexts": [
-                        {"text": "<content1_text>", "document_id": "document_1.pdf"},
+                        {"text": "<content1_text>", "document_key": "document_1.pdf"},
                     ],
                     "metrics": [
                         {"name": "answer_correctness", "evaluator": "unitxt", "score": 0.79},
@@ -240,7 +240,7 @@ class ExperimentResults:
                     "correct_answers": ev.ground_truths,
                     "answer": ev.answer,
                     "answer_contexts": [
-                        {"text": text, "document_id": doc_id} for text, doc_id in zip(ev.contexts, ev.context_ids)
+                        {"text": text, "document_key": doc_id} for text, doc_id in zip(ev.contexts, ev.context_ids)
                     ],
                     "metrics": [
                         {"name": m["name"], "evaluator": m["evaluator"], "score": m["value"]}

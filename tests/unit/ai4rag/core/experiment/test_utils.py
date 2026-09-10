@@ -6,7 +6,7 @@
 import pandas as pd
 import pytest
 
-from ai4rag.core.experiment.benchmark_data import BenchmarkData
+from ai4rag.core.experiment.benchmark_data import BenchmarkData, BenchmarkDataValueError
 from ai4rag.core.experiment.exception_handler import GenerationError
 from ai4rag.core.experiment.utils import (
     RAGExperimentError,
@@ -107,7 +107,7 @@ class TestBuildEvaluationData:
             {
                 "question": ["What is AI?", "What is ML?"],
                 "correct_answers": [["AI is artificial intelligence"], ["ML is machine learning"]],
-                "correct_answer_document_ids": [["doc1"], ["doc2"]],
+                "correct_answer_document_keys": [["doc1"], ["doc2"]],
             }
         )
         return BenchmarkData(df)
@@ -176,22 +176,17 @@ class TestBuildEvaluationData:
         first_entry = result[0]
         assert first_entry.ground_truths_context_ids == ["doc1"]
 
-    def test_build_evaluation_data_with_empty_document_ids(self, inference_response):
-        """Test build_evaluation_data when benchmark_data has empty document_ids."""
+    def test_empty_document_keys_rejected(self, inference_response):
+        """BenchmarkData must reject empty document key lists."""
         df = pd.DataFrame(
             {
                 "question": ["What is AI?", "What is ML?"],
                 "correct_answers": [["AI is artificial intelligence"], ["ML is machine learning"]],
-                "correct_answer_document_ids": [[], []],
+                "correct_answer_document_keys": [[], []],
             }
         )
-        benchmark_data = BenchmarkData(df)
-
-        result = build_evaluation_data(benchmark_data, inference_response)
-
-        # Should still work with empty document IDs
-        assert result[0].ground_truths_context_ids == []
-        assert result[1].ground_truths_context_ids == []
+        with pytest.raises(BenchmarkDataValueError, match="at least one document key"):
+            BenchmarkData(df)
 
     def test_build_evaluation_data_with_empty_text(self, benchmark_data):
         """Test handling of chunks with empty text."""

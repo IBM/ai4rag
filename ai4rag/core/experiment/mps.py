@@ -148,11 +148,11 @@ class ModelsPreSelector:
         for each pattern.
         """
         logger.debug("MPS: Sampling documents")
-        document_ids = []
-        for element in self.benchmark_data.document_ids:
-            document_ids.extend(element)
+        benchmark_keys = set()
+        for element in self.benchmark_data.document_keys:
+            benchmark_keys.update(element)
 
-        documents = [document for document in self.documents if document.name in document_ids]
+        documents = [document for document in self.documents if document.name in benchmark_keys]
         chunked_documents = self._chunk_documents(documents)
 
         for i, embedding_model in enumerate(self.embedding_models):

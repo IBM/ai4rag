@@ -49,7 +49,7 @@ EVALUATION_RESULTS = [
         "question": "What is topic_0 about?",
         "correct_answers": ["topic_0 is about AI."],
         "answer": "It is about AI.",
-        "answer_contexts": [{"text": "AI content", "document_id": "doc_1"}],
+        "answer_contexts": [{"text": "AI content", "document_key": "doc_1"}],
         "scores": {"answer_correctness": 0.8, "faithfulness": 0.9},
     }
 ]
