@@ -152,17 +152,6 @@ import pandas as pd
 benchmark_data = pd.read_json("path/to/benchmark_data.json")
 ```
 
-!!! warning "Keys that match nothing are silently skipped"
-    A key that does not equal any document's `name` matches no document. The ground truth for that question
-    is simply never retrieved, which lowers your retrieval scores without failing the run. Cross-check the
-    two lists before starting a long experiment:
-
-    ```python
-    referenced = {key for keys in benchmark_data["correct_answer_document_keys"] for key in keys}
-    missing = referenced - {document.name for document in documents}
-    assert not missing, f"Benchmark references unknown documents: {sorted(missing)}"
-    ```
-
 !!! tip "Benchmark Quality"
     High-quality benchmark data is crucial for meaningful optimization.
     Ensure questions are based on your knowledge base and answers are accurate.

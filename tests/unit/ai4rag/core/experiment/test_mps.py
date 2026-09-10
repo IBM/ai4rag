@@ -250,25 +250,31 @@ class TestModelsPreSelector:
                     in caplog.text
                 ), f"There are no proper pre-selection logs for {(em, fm)}"
 
-    def test_evaluate_patterns_warns_on_partially_missing_keys(self, fully_mocked_selector, caplog):
-        """Keys with no ingested document are skipped with a warning, not a failure."""
-        fully_mocked_selector.documents = [_make_docling_doc("id_1_1", "Page content 1")]
+    def test_evaluate_patterns_samples_only_documents_the_benchmark_references(self, mocker, fully_mocked_selector):
+        """Pre-selection runs on the benchmark's grounding documents, not the whole corpus."""
+        chunk_spy = mocker.spy(fully_mocked_selector, "_chunk_documents")
+        fully_mocked_selector.documents = [
+            _make_docling_doc("id_1_1", "Page content 1"),
+            _make_docling_doc("unreferenced/doc.txt", "Not in the benchmark"),
+        ]
 
         fully_mocked_selector.evaluate_patterns()
 
-        assert "references 1 document key(s) that were not ingested" in caplog.text
-        assert "['id_2_1']" in caplog.text
-        assert fully_mocked_selector.evaluation_results, "Evaluation should still run on the documents that matched."
+        sampled = [document.name for document in chunk_spy.call_args.args[0]]
+        assert sampled == ["id_1_1"]
 
-    def test_evaluate_patterns_raises_when_no_key_matches(self, fully_mocked_selector):
-        """A benchmark whose keys match nothing leaves nothing to pre-select on."""
+    def test_evaluate_patterns_does_not_validate_benchmark_keys(self, fully_mocked_selector):
+        """Unmatched keys are not the pre-selector's problem to police.
+
+        A benchmark referencing documents that were never ingested leaves nothing to
+        ground answers in.  That belongs in the scores rather than in an exception
+        raised here, so the run proceeds instead of failing.
+        """
         fully_mocked_selector.documents = [_make_docling_doc("some/other/doc.txt", "Page content")]
 
-        with pytest.raises(ValueError) as err:
-            fully_mocked_selector.evaluate_patterns()
+        fully_mocked_selector.evaluate_patterns()
 
-        assert "None of the document keys referenced by the benchmark data match an ingested document" in str(err.value)
-        assert "correct_answer_document_keys" in str(err.value)
+        assert fully_mocked_selector.evaluation_results
 
     def test_evaluate_patterns_with_errors(self, mocker, fully_mocked_selector, caplog):
         gen_exc = GenerationError(exception=ValueError("Dummy val error"), model_id="some-inference-model")

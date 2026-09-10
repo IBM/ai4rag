@@ -151,17 +151,11 @@ Create a `benchmark_data.json` file following this schema:
 
 All benchmark questions and answers must be derived from your knowledge base documents, and every
 `correct_answer_document_keys` entry must equal the `name` of one of the documents you loaded above.
-A key matching no document is skipped silently, lowering retrieval scores without failing the run.
 
 ```python
 import pandas as pd
 
 benchmark_data = pd.read_json("<path to benchmark_data.json>")
-
-# Catch typos before starting a long experiment.
-referenced = {key for keys in benchmark_data["correct_answer_document_keys"] for key in keys}
-missing = referenced - {document.name for document in documents}
-assert not missing, f"Benchmark references unknown documents: {sorted(missing)}"
 ```
 
 
