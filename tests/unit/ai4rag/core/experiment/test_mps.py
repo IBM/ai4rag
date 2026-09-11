@@ -2,6 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from contextlib import contextmanager
+
 import pandas as pd
 import pytest
 from docling_core.types.doc import DoclingDocument
@@ -11,13 +13,28 @@ from ai4rag.core.experiment.mps import (
     AI4RAGChunk,
     BaseEmbeddingModel,
     BaseFoundationModel,
+    BaseVectorStore,
     BenchmarkData,
-    ChromaVectorStore,
     GenerationError,
     ModelsPreSelector,
     PreSelectorError,
 )
 from ai4rag.evaluator.metric import Metrics
+
+
+def _patch_temporary_store(mocker, store):
+    """Patch ``temporary_milvus_lite_store`` to yield *store* from a context manager.
+
+    Mirrors the real helper's contract (a context manager wrapping a disposable
+    Milvus Lite store) without touching disk, so pre-selection can be exercised
+    against a fully mocked store.
+    """
+
+    @contextmanager
+    def _cm(*_args, **_kwargs):
+        yield store
+
+    return mocker.patch("ai4rag.core.experiment.mps.temporary_milvus_lite_store", side_effect=_cm)
 
 
 @pytest.fixture
@@ -160,7 +177,7 @@ def _make_evaluate_metrics_result(evaluation_data, metrics):
 
 @pytest.fixture
 def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, foundation_models) -> ModelsPreSelector:
-    mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", autospec=True)
+    _patch_temporary_store(mocker, mocker.MagicMock(spec=BaseVectorStore))
 
     def side_effect(**kwargs):
         questions = kwargs.pop("questions")
@@ -291,10 +308,9 @@ class TestModelsPreSelector:
             assert expected_log in caplog.text
 
     def test_evaluate_pattern_with_failing_embedding(self, mocker, fully_mocked_selector, caplog):
-        vs = mocker.MagicMock(ChromaVectorStore)
-        val_err = ValueError("Fake error in embeddings")
-        vs.add_documents.side_effect = val_err
-        mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", return_value=vs)
+        vs = mocker.MagicMock(spec=BaseVectorStore)
+        vs.add_documents.side_effect = ValueError("Fake error in embeddings")
+        _patch_temporary_store(mocker, vs)
 
         with pytest.raises(PreSelectorError) as err:
             fully_mocked_selector.evaluate_patterns()
@@ -305,23 +321,18 @@ class TestModelsPreSelector:
 
         assert expected_msg in str(err.value)
 
-    def test_create_vector_store(self, mocker, fully_mocked_selector, caplog):
-        vs = mocker.MagicMock(ChromaVectorStore)
+    def test_index_documents_retries_then_propagates(self, mocker, fully_mocked_selector, caplog):
+        vs = mocker.MagicMock(spec=BaseVectorStore)
         document = mocker.MagicMock(AI4RAGChunk)
         val_err = ValueError("Fake embeddings error")
         vs.add_documents.side_effect = val_err
-        mocker.patch("ai4rag.core.experiment.mps.ChromaVectorStore", return_value=vs)
-        mocked_em = mocker.MagicMock(BaseEmbeddingModel)
-        mocked_em.model_id = "embedding_model_id"
 
-        with pytest.raises(PreSelectorError) as err:
-            fully_mocked_selector._create_vector_store(
-                embedding_model=mocked_em, chunked_documents=[document], collection_name="ai4rag_mps_collection_1"
-            )
+        with pytest.raises(ValueError) as err:
+            fully_mocked_selector._index_documents(vs, [document])
 
-        exp_msg = f"Failed to create in-memory vector index due to: {repr(val_err)}."
-        assert exp_msg in caplog.text, "Warning after first embedding fail was not logged"
-        assert str(err.value) == exp_msg
+        assert vs.add_documents.call_count == 2, "Indexing should be attempted twice (initial + one retry)."
+        assert "Failed to build the vector index due to:" in caplog.text, "Retry warning was not logged."
+        assert err.value is val_err
 
     def test_mean_based_scoring(self, pre_selector):
         top_models_with_scores = pre_selector._mean_based_scoring()

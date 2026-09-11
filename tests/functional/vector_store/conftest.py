@@ -4,14 +4,11 @@
 # -----------------------------------------------------------------------------
 """Shared fixtures for the vector store functional (semantic-retrieval) suite.
 
-Each backend gets its own module (``test_chroma``, ``test_milvus``,
-``test_pgvector``) rather than a single parametrized test, because the backends
-diverge:
-
-* **Chroma** runs fully in-memory and needs no server; it has no lexical search,
-  so it only ever exercises dense semantic retrieval.
-* **Milvus** and **pgvector** require a live database and will additionally grow
-  lexical / hybrid-search tests that do not apply to Chroma.
+Each backend gets its own module (``test_milvus``, ``test_pgvector``) rather than
+a single parametrized test, because the backends diverge in setup and in the
+lexical / hybrid-search tests they grow. **Milvus** covers both a remote server
+and the embedded Milvus Lite engine (a local ``.db`` file, no server); both
+Milvus and pgvector support dense and hybrid (dense + lexical) search.
 
 Per-backend modules keep each backend's setup, teardown, and future
 backend-specific tests isolated, while everything the backends *share* lives

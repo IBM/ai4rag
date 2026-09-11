@@ -18,9 +18,9 @@ Two levels of coverage that the unit tests deliberately skip:
    results in the unit range.
 
 2. ``TestRagasEvaluatorInExperiment`` wires a ``RagasEvaluator`` into a full
-   :class:`AI4RAGExperiment` run (real Chroma, mocked search-space models) with
-   only the RAGAS scoring step stubbed, verifying that RAGAS metrics are routed
-   to the evaluator and land in the experiment results.
+   :class:`AI4RAGExperiment` run (real Milvus Lite, mocked search-space models)
+   with only the RAGAS scoring step stubbed, verifying that RAGAS metrics are
+   routed to the evaluator and land in the experiment results.
 """
 
 import importlib.util
@@ -36,7 +36,7 @@ from ai4rag.evaluator.base_evaluator import EvaluationData
 from ai4rag.evaluator.metric import Metrics
 from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.vector_store.config import ChromaConfig
+from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
@@ -230,7 +230,7 @@ def benchmark_data():
 class TestRagasEvaluatorInExperiment:
     """RAGAS evaluator wired into a full AI4RAGExperiment run."""
 
-    def test_ragas_metric_flows_into_experiment_results(self, documents, benchmark_data, monkeypatch):
+    def test_ragas_metric_flows_into_experiment_results(self, documents, benchmark_data, monkeypatch, tmp_path):
         """A ``RagasEvaluator`` in the evaluator list must score RAGAS metrics.
 
         The RAGAS scoring call itself is stubbed (``_run_ragas`` returns a fixed
@@ -252,7 +252,6 @@ class TestRagasEvaluatorInExperiment:
             for i in range(2)
         ]
         search_space = AI4RAGSearchSpace(
-            vector_store_type="chroma",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=foundation_models),
                 Parameter(name="embedding_model", param_type="C", values=embedding_models),
@@ -263,7 +262,7 @@ class TestRagasEvaluatorInExperiment:
             documents=documents,
             benchmark_data=benchmark_data,
             search_space=search_space,
-            vector_store_config=ChromaConfig(),
+            vector_store_config=MilvusLiteConfig(db_path=str(tmp_path / "ai4rag.db")),
             optimizer_settings=RandomOptSettings(max_evals=2),
             event_handler=LocalEventHandler(),
             evaluators=[UnitxtEvaluator(), ragas_evaluator],

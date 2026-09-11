@@ -45,12 +45,11 @@ class AggregateMetricPayload(TypedDict):
     optimization_metric: NotRequired[bool]
 
 
-class VectorStoreSettings(TypedDict, total=False):
+class VectorStoreSettings(TypedDict):
     """Vector store configuration used by a RAG pattern."""
 
-    provider_id: str
-    vector_store_id: str
     provider_type: str
+    collection_name: str
 
 
 class ChunkingSettings(TypedDict):
@@ -214,7 +213,9 @@ class BaseEventHandler(ABC):
                 },
                 'duration_seconds': 42,
                 'settings': {
-                    'vector_store_binding': {'provider_id': 'local_chroma', 'vector_store_id': 'ai4rag_20260317092550'},
+                    'vector_store_binding': {
+                        'provider_type': 'local_milvus', 'collection_name': 'ai4rag_20260317092550'
+                    },
                     'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},
                     'embedding': {
                         'model_id': 'mock-em-1',

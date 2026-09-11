@@ -38,7 +38,6 @@ if __name__ == "__main__":
 
     # Edit configurations of search space
     search_space = AI4RAGSearchSpace(
-        vector_store_type="milvus",
         params=[
             Parameter(
                 name="foundation_model",

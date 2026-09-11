@@ -31,7 +31,7 @@ __all__ = [
 
 _semantic_chunker_cache = {}
 
-VectorStoreType: TypeAlias = Literal["milvus", "chroma"]
+VectorStoreType: TypeAlias = Literal["milvus", "milvus_lite", "pgvector"]
 
 
 class RAGExperimentError(Exception):

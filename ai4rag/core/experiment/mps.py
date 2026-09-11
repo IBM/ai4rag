@@ -26,7 +26,7 @@ from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
-from ai4rag.rag.vector_store.chroma import ChromaVectorStore
+from ai4rag.rag.vector_store.local_store import temporary_milvus_lite_store
 from ai4rag.utils.constants import AI4RAGParamNames, PreSelectorConstants
 
 __all__ = ["PreSelectorError", "ModelsPreSelector"]
@@ -140,8 +140,9 @@ class ModelsPreSelector:
         If knowledge base references were provided, the retriever is created once and reused.
         Otherwise, a separate vector store is built for each embedding model, and the best-performing ones are selected.
 
-        For evaluation only sample of the documents is used, embedded and added
-        to chroma vector store.
+        For evaluation only a sample of the documents is used, embedded and added
+        to a throwaway, file-backed Milvus Lite vector store that is torn down as
+        soon as the embedding model's evaluation finishes.
 
         This method does not return anything, but in the end changes attributes
         of the instance: self.evaluation_results is a mapping holding results
@@ -156,17 +157,16 @@ class ModelsPreSelector:
         chunked_documents = self._chunk_documents(documents)
 
         for i, embedding_model in enumerate(self.embedding_models):
+            collection_name = f"ai4rag_mps_collection_{i}"
             try:
-                collection_name = f"ai4rag_mps_collection_{i}"
-                try:
-                    vector_store = self._create_vector_store(
-                        embedding_model, chunked_documents, collection_name=collection_name
-                    )
-                except Exception as exc:
-                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
+                with temporary_milvus_lite_store(embedding_model, collection_name=collection_name) as vector_store:
+                    try:
+                        self._index_documents(vector_store, chunked_documents)
+                    except Exception as exc:
+                        raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
-                retriever = Retriever(vector_store, **self.retrieval_params)
-                self._evaluate_foundation_models(retriever=retriever, embedding_model=embedding_model)
+                    retriever = Retriever(vector_store, **self.retrieval_params)
+                    self._evaluate_foundation_models(retriever=retriever, embedding_model=embedding_model)
 
             except IndexingError as exc:
                 self._exception_handler.handle_exception(exc)
@@ -221,55 +221,34 @@ class ModelsPreSelector:
                 continue
 
     @staticmethod
-    def _create_vector_store(
-        embedding_model: BaseEmbeddingModel,
-        chunked_documents: list[AI4RAGChunk],
-        collection_name: str,
-    ) -> BaseVectorStore:
-        """
-        Create instance of vector store with given chunked documents and embedding model.
+    def _index_documents(vector_store: BaseVectorStore, chunked_documents: list[AI4RAGChunk]) -> None:
+        """Embed and add the chunked documents to *vector_store*, retrying once.
+
+        A single retry absorbs transient embedding-service hiccups. If the retry
+        also fails, the exception propagates so the caller can wrap it in an
+        :class:`IndexingError` and skip this embedding model.
 
         Parameters
         ----------
-        embedding_model : BaseEmbeddingModel
-            Embedding model used for collection creation.
+        vector_store : BaseVectorStore
+            Store the chunks are embedded into.
 
         chunked_documents : list[AI4RAGChunk]
             Chunked documents for the embedding process.
 
-        collection_name : str
-            Name of the collection in the chroma vector database.
-
-        Returns
-        -------
-        VectorStore
-            Instance for communication with properly created index in the
-            vector database.
-
         Raises
         ------
-        PreSelectorError
-            When 2 attempts of embedding documents are failing
+        Exception
+            Propagates the second failure when both the initial embedding attempt
+            and the retry fail.
         """
-        logger.info("Building index for pre-evaluation using embedding model: '%s'.", embedding_model.model_id)
-
-        vector_store = ChromaVectorStore(
-            embedding_model=embedding_model,
-            collection_name=collection_name,
-        )
-
         logger.debug("MPS: Embedding documents ...")
         try:
             vector_store.add_documents(chunked_documents)
         except Exception as err:  # pylint: disable=broad-exception-caught
-            logger.warning("Failed to create in-memory vector index due to: %s.", repr(err), exc_info=True)
-            try:
-                vector_store.add_documents(chunked_documents)
-            except Exception as exc:  # pylint: disable=broad-exception-caught
-                raise PreSelectorError(f"Failed to create in-memory vector index due to: {repr(exc)}.") from exc
+            logger.warning("Failed to build the vector index due to: %s. Retrying once.", repr(err), exc_info=True)
+            vector_store.add_documents(chunked_documents)
         logger.debug("MPS: Embedding documents finished!")
-
-        return vector_store
 
     def _evaluate_single_pattern(
         self, foundation_model: BaseFoundationModel, retriever: Retriever

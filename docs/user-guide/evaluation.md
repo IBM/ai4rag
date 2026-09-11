@@ -60,8 +60,8 @@ Faithfulness: High (answer is fully grounded in the context)
 
 ```
 Question: "What vector databases does ai4rag support?"
-Ground truth: ["ChromaDB and Milvus", "Milvus and ChromaDB"]
-Answer: "ai4rag supports ChromaDB and Milvus."
+Ground truth: ["Milvus and PGVector", "PGVector and Milvus"]
+Answer: "ai4rag supports Milvus and PGVector."
 Answer Correctness: High (matches ground truth)
 ```
 
@@ -337,7 +337,7 @@ Your `benchmark_data.json` must follow this schema:
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
-      "ChromaDB and Milvus"
+      "Milvus and PGVector"
     ],
     "correct_answer_document_keys": ["vector_stores.md", "quick_start.md"]
   }
@@ -377,9 +377,9 @@ Provide alternative phrasings for the same correct answer:
 {
   "question": "What vector databases does ai4rag support?",
   "correct_answers": [
-    "ChromaDB and Milvus",
-    "Milvus and ChromaDB",
-    "ChromaDB (in-memory) and Milvus"
+    "Milvus and PGVector",
+    "PGVector and Milvus",
+    "Milvus (including embedded Milvus Lite) and PGVector"
   ]
 }
 ```

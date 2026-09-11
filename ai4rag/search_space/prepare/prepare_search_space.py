@@ -90,7 +90,6 @@ def _apply_language_detection(foundation_models: list, benchmark_data: pd.DataFr
 def prepare_search_space_with_maas(
     payload: dict[str, Any],
     client: OpenAI,
-    vector_store_type: str = "milvus",
     benchmark_data: pd.DataFrame | None = None,
 ) -> AI4RAGSearchSpace:
     """Prepare an AI4RAGSearchSpace using OpenShift MaaS for model validation.
@@ -123,11 +122,6 @@ def prepare_search_space_with_maas(
 
     client : OpenAI
         General MaaS client used for model discovery and validation.
-
-    vector_store_type : str, default="milvus"
-        Type of vector store. When "chroma", hybrid search parameters are
-        excluded from the default search space since ChromaDB does not support
-        hybrid search.
 
     benchmark_data : pd.DataFrame | None, default=None
         Benchmark data used for language detection.
@@ -176,5 +170,4 @@ def prepare_search_space_with_maas(
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],
-        vector_store_type=vector_store_type,
     )

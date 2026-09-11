@@ -29,7 +29,7 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 > [!IMPORTANT]
 > `ai4rag` is **provider-agnostic**. It reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so any **OpenAI-compatible endpoint** works — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box. You can also plug in your **own** foundation model, embedding model, or vector store by implementing the matching `Base*` interface.
-> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (Chroma, Milvus, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
+> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
 
 ## Model providers
 
@@ -48,21 +48,24 @@ When using the MaaS backend, ai4rag relies on:
 - **Embeddings** — Text embeddings via the `embeddings` endpoint (e.g. for indexing and query encoding). Because `models.list()` carries no metadata, embedding dimension and context length are auto-detected at construction (or supplied via `params`).
 - **Chat / completions** — Foundation model integration for answer generation when evaluating RAG patterns.
 
-Vector storage is independent of MaaS: `ai4rag` connects directly to Chroma, Milvus, or PostgreSQL/pgvector via the config classes in `ai4rag.rag.vector_store` (see [Vector stores](#vector-stores) below).
+Vector storage is independent of MaaS: `ai4rag` connects directly to remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector via the config classes in `ai4rag.rag.vector_store` (see [Vector stores](#vector-stores) below).
 
 ## Vector stores
 
 ai4RAG talks to the vector store directly through provider-specific clients — no MaaS deployment is required for this part. Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
 
-- **`ChromaConfig`** — Chroma. Ephemeral in-memory by default; persistent (via `persist_directory`) or client/server (via `host`/`port`) modes are also supported. Vector-only search.
-- **`MilvusConfig`** — Milvus. Requires a `uri`; supports TLS (`https://` scheme) and self-signed CAs via `server_cert`. Hybrid search (dense + BM25).
+- **`MilvusConfig`** — remote Milvus server or Zilliz Cloud only. `uri` must be a `http(s)://` URL (TLS and self-signed CAs via `server_cert`); anything else (a bare host, a file path, an empty string) raises `ValueError`. This is a deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly instead of silently falling back to a throwaway local database. Supports hybrid search (dense + BM25).
+- **`MilvusLiteConfig`** — the embedded, zero-server **Milvus Lite** engine, backed by a local `db_path` file (default `"./ai4rag_milvus_lite.db"`) — no setup required, ideal for local development and small-scale workloads. Also supports hybrid search (dense + BM25); rejects `http(s)://` values (use `MilvusConfig` for those).
 - **`PGVectorConfig`** — PostgreSQL with the `pgvector` extension. Hybrid search (dense + `tsvector` full-text).
 
-Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI`, `PGVECTOR_HOST`).
+Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI` for `MilvusConfig`, `MILVUS_LITE_DB_PATH` for `MilvusLiteConfig`, `PGVECTOR_HOST` for `PGVectorConfig`).
+
+> [!note]
+> Milvus Lite is intended for local development, tests, and small-scale workloads (prototyping, up to roughly 1M vectors) — not production serving. For production or large corpora, use a remote Milvus server (`MilvusConfig`), Zilliz Cloud, or pgvector.
 
 ## Document processing
 
-ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`chromadb`, `pymilvus`, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
+ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
 
 
 ## Quick start
@@ -232,8 +235,8 @@ Using the information from the previous steps, create an experiment and run the 
 
 > [!note]
 > Select the vector store by passing a `vector_store_config` to `AI4RAGExperiment`:
-> `ChromaConfig()` for a zero-config in-memory store (vector-only search), or
-> `MilvusConfig.from_env()` / `PGVectorConfig.from_env()` for a server-backed store with hybrid (dense + keyword) search.
+> `MilvusLiteConfig()` (or `MilvusLiteConfig(db_path="./ai4rag.db")`) for a zero-config, local Milvus Lite store, or
+> `MilvusConfig.from_env()` / `PGVectorConfig.from_env()` for a server-backed store. All support hybrid (dense + keyword) search.
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment

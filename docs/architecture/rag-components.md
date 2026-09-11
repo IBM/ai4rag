@@ -52,12 +52,6 @@ classDiagram
         +add_documents(AI4RAGChunk[])* void
     }
 
-    class ChromaVectorStore {
-        +search(query, k, include_scores) AI4RAGChunk[]
-        +window_search(query, k, window_size) AI4RAGChunk[]
-        +add_documents(AI4RAGChunk[]) void
-    }
-
     class MilvusVectorStore {
         +search(query, k, search_mode, ranker_*) AI4RAGChunk[]
         +add_documents(AI4RAGChunk[]) void
@@ -117,7 +111,6 @@ classDiagram
 
     BaseFoundationModel <|-- OpenAIFoundationModel
     BaseEmbeddingModel <|-- OpenAIEmbeddingModel
-    BaseVectorStore <|-- ChromaVectorStore
     BaseVectorStore <|-- MilvusVectorStore
     BaseVectorStore <|-- PGVectorStore
     BaseChunker <|-- DoclingChunker
@@ -445,7 +438,7 @@ class BaseVectorStore(ABC):
 
 **Configuration:**
 
-Every concrete store is constructed from a typed, frozen `config` dataclass (`ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"chroma"`, `"milvus"`, `"pgvector"`). Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
+Every concrete store is constructed from a typed, frozen `config` dataclass (`MilvusConfig`, `MilvusLiteConfig`, or `PGVectorConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"milvus"`, `"milvus_lite"`, `"pgvector"`). `MilvusConfig` and `MilvusLiteConfig` are separate, validated classes rather than two modes of a single config: `MilvusConfig.uri` must be an `http(s)://` URL (remote server or Zilliz Cloud) and raises `ValueError` otherwise, while `MilvusLiteConfig.db_path` is a local file path and raises `ValueError` if given an `http(s)://` value. Both are served by the same `MilvusVectorStore` implementation. Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
 
 **Collection naming (shared across all backends):**
 
@@ -463,8 +456,8 @@ behaves identically:
   silently coerced.
 - **Identifier safety** — the name is sanitized into a valid identifier
   (non-alphanumeric characters become underscores) and bounded to 63 characters
-  (the tightest limit across PostgreSQL and Chroma), so it is usable verbatim as
-  a backend collection name *and* as a physical SQL table name.
+  (PostgreSQL's identifier limit), so it is usable verbatim as a backend
+  collection name *and* as a physical SQL table name.
 
 **Interface Methods:**
 
@@ -506,7 +499,7 @@ vector_store = get_vector_store(
 ```python
 def get_vector_store(
     embedding_model: BaseEmbeddingModel,
-    config: ChromaConfig | MilvusConfig | PGVectorConfig,
+    config: MilvusConfig | MilvusLiteConfig | PGVectorConfig,
     collection_name: str | None = None,
 ) -> BaseVectorStore:
     """Backend selected by ``config.provider``; raises TypeError on a
@@ -517,128 +510,41 @@ def get_vector_store(
 
 | Config | `provider` | Key Fields | Env Vars |
 |--------|------------|------------|----------|
-| `ChromaConfig` | `"chroma"` | `persist_directory`, `host`, `port` | `CHROMA_HOST`, `CHROMA_PORT`, `CHROMA_PERSIST_DIR` |
-| `MilvusConfig` | `"milvus"` | `uri` (required), `token`, `server_cert` | `MILVUS_URI` (required), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusConfig` | `"milvus"` | `uri` (required, must be an `http(s)://` URL — a remote server or Zilliz Cloud; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusLiteConfig` | `"milvus_lite"` | `db_path` (a local file path, default `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given an `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
+
+!!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
+    Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite purely from
+    the shape of `uri` (a server URL vs. a local file path). That meant a mistyped or unreachable `MILVUS_URI`
+    could be silently reinterpreted as a local path, creating an unintended throwaway local database instead
+    of failing — a real risk in production. `MilvusConfig` now validates `uri` and raises `ValueError` for
+    anything that is not an `http(s)://` URL, so a bad `MILVUS_URI` fails loudly. `MilvusLiteConfig` is the
+    explicit, separate opt-in for the embedded engine.
 
 `get_vector_store_config(provider)` and `get_vector_store_env_vars(provider)` complement `get_vector_store` when only a provider string is available (e.g. when building a config from the `vector_store_type` selected on the search space):
 
 ```python
 from ai4rag.rag.vector_store import get_vector_store_config, get_vector_store_env_vars
 
-config = get_vector_store_config("milvus")           # MilvusConfig.from_env()
+config = get_vector_store_config("milvus")            # MilvusConfig.from_env()
+config = get_vector_store_config("milvus_lite")        # MilvusLiteConfig.from_env()
 env_vars = get_vector_store_env_vars("milvus")        # (("MILVUS_URI", "..."), ...)
-```
-
-### ChromaVectorStore
-
-In-memory ChromaDB implementation for development and testing. Chroma is **vector-only** — it does not support hybrid (dense + keyword) search:
-
-```python
-class ChromaVectorStore(BaseVectorStore):
-    def __init__(
-        self,
-        embedding_model: BaseEmbeddingModel,
-        config: ChromaConfig | None = None,
-        distance_metric: str = "cosine",
-        collection_name: str | None = None,
-        **kwargs
-    ):
-```
-
-**Supported Distance Metrics:**
-
-- `"cosine"`: Cosine similarity (default)
-- `"l2"`: Euclidean distance
-
-**Search Methods:**
-
-**1. Standard Search:**
-
-```python
-def search(
-    self,
-    query: str,
-    k: int = 5,
-    include_scores: bool = False,
-    **kwargs
-) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
-    """Vector similarity search."""
-```
-
-**2. Window Search:**
-
-```python
-def window_search(
-    self,
-    query: str,
-    k: int = 5,
-    window_size: int = 2,
-    include_scores: bool = False,
-    **kwargs
-) -> list[AI4RAGChunk]:
-    """Retrieve chunks + adjacent chunks (window) from same document."""
-```
-
-**Window Search Details:**
-
-For each retrieved chunk:
-1. Extract `document_id` and `sequence_number` from metadata
-2. Query vector store for chunks with:
-   - Same `document_id`
-   - `sequence_number` in `[seq - window_size, seq + window_size]`
-3. Sort by `sequence_number`
-4. Merge into single chunk (concatenate text)
-
-**Example:**
-
-```python
-# Retrieved chunk: document_id="doc1", sequence_number=5
-# window_size=2
-# Fetches chunks with sequence_number in [3, 4, 5, 6, 7]
-# Returns merged document with all 5 chunks concatenated
-```
-
-**Batch Document Addition:**
-
-```python
-def add_documents(self, documents: list[AI4RAGChunk], max_batch_size: int = 2048) -> list[str]:
-    """Add chunks in batches of max_batch_size."""
-    for batch_start in range(0, len(docs), max_batch_size):
-        batch = docs[batch_start : batch_start + max_batch_size]
-        self._vector_store.add_documents(batch, ids=ids)
-```
-
-**Usage:**
-
-```python
-vector_store = ChromaVectorStore(
-    embedding_model=embedding_model,
-    distance_metric="cosine"
-)
-
-# Index documents
-vector_store.add_documents(chunked_documents)
-
-# Search
-results = vector_store.search(query="What is X?", k=5)
-# Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]
-
-# Window search
-results = vector_store.window_search(query="What is X?", k=5, window_size=2)
-# Returns: [merged_chunk_1, merged_chunk_2, ...]
 ```
 
 ### MilvusVectorStore
 
-Vector store backed by a remote Milvus instance via `pymilvus`, supporting both pure dense vector search and hybrid search (dense + BM25 sparse) with **server-side** fusion:
+Vector store backed by `pymilvus`, supporting both pure dense vector search and hybrid search (dense + BM25 sparse) with **server-side** fusion. The same class serves two deployment modes, each configured through its own dedicated config class:
+
+- **Remote Milvus server** (or Zilliz Cloud) — configured via `MilvusConfig`, whose `uri` must be a `http(s)://host:port` URL.
+- **Milvus Lite** — configured via `MilvusLiteConfig`, whose `db_path` (e.g. `"./ai4rag.db"`) starts the embedded, zero-server Milvus Lite engine backed by that local file. This is the local, zero-setup replacement for the previously used in-memory Chroma store: recommended for local development, tests, and small-scale workloads (prototyping, up to roughly 1M vectors), not production. Milvus Lite computes BM25 IDF statistics segment-locally rather than corpus-wide, so hybrid-search ranking fidelity — and any benchmark/HPO scores measured against it — may not transfer exactly to a production server; it also serializes writes, so only one process should open a given `.db` file at a time.
 
 ```python
 class MilvusVectorStore(BaseVectorStore):
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        config: MilvusConfig,
+        config: MilvusConfig | MilvusLiteConfig,
         distance_metric: str = "cosine",
         collection_name: str | None = None,
     ):
@@ -646,16 +552,19 @@ class MilvusVectorStore(BaseVectorStore):
 
 **Connection Configuration:**
 
-TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `server_cert`.
+For `MilvusConfig`, TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `server_cert`. `MilvusLiteConfig` has no network/TLS concerns — it only takes a local `db_path`.
 
 ```python
-from ai4rag.rag.vector_store import MilvusConfig
+from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig
 
-# From environment: MILVUS_URI (required), MILVUS_TOKEN, MILVUS_SERVER_CERT
+# Remote server, from environment: MILVUS_URI (required, http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
 config = MilvusConfig.from_env()
 
-# Or explicit
+# Remote server, explicit
 config = MilvusConfig(uri="https://localhost:19530", token="user:pass")
+
+# Embedded Milvus Lite, explicit local file (or MilvusLiteConfig() for the default path)
+config = MilvusLiteConfig(db_path="./ai4rag.db")
 ```
 
 **Collection Schema:**
@@ -1110,7 +1019,7 @@ class Retriever:
 - **number_of_chunks**: Top-k parameter (how many chunks to retrieve)
 - **method**: Retrieval method
   - `"simple"`: Return top-k chunks as-is
-  - `"window"`: Expand each chunk to include adjacent chunks (ChromaDB only)
+  - `"window"`: Reserved for expanding each chunk with adjacent chunks; not distinctly implemented by the current backends (see below)
 - **search_mode**: Search type
   - `"vector"`: Dense semantic search only
   - `"hybrid"`: Dense + sparse (keyword) search
@@ -1137,12 +1046,7 @@ def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
 
 **Simple vs Window Retrieval:**
 
-The `method` parameter determines retrieval strategy but actual implementation depends on vector store:
-
-- **MilvusVectorStore** / **PGVectorStore**: Always return simple chunks (no window expansion)
-- **ChromaVectorStore**:
-  - `method="simple"`: Returns top-k chunks
-  - `method="window"`: Returns top-k chunks expanded with adjacent chunks
+Both current backends — **MilvusVectorStore** and **PGVectorStore** — always return simple top-k chunks; neither expands a retrieved chunk with its adjacent chunks, so `method="window"` currently behaves the same as `method="simple"`.
 
 **Usage:**
 
@@ -1158,7 +1062,7 @@ retriever = Retriever(
 docs = retriever.retrieve("What is X?")
 # Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]  (5 chunks)
 
-# Hybrid retrieval with RRF (Milvus or PGVector; Chroma is vector-only)
+# Hybrid retrieval with RRF (Milvus, incl. Milvus Lite, or PGVector)
 retriever = Retriever(
     vector_store=milvus_vector_store,
     number_of_chunks=5,
@@ -1366,7 +1270,8 @@ embedding_model = OpenAIEmbeddingModel(
 )
 
 # 4. Create vector store — a direct-client store selected by config.provider
-#    (swap MilvusConfig for ChromaConfig/PGVectorConfig to change backend)
+#    (swap MilvusConfig for MilvusLiteConfig(db_path=...) for embedded local
+#    storage, or PGVectorConfig for PostgreSQL/pgvector)
 vector_store = get_vector_store(
     embedding_model=embedding_model,
     config=MilvusConfig.from_env(),
@@ -1483,9 +1388,9 @@ class CustomRAG(BaseRAGTemplate):
 
 **Vector Stores:**
 
-1. **Use Milvus or PGVector for production** hybrid search (server-side fusion for Milvus, in-memory fusion for PGVector); Chroma is vector-only
-2. **Use ChromaVectorStore** for development/testing (in-memory, simpler setup)
-3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical) — not supported on Chroma
+1. **Use a remote Milvus server or PGVector for production** hybrid search (server-side fusion for Milvus, in-memory fusion for PGVector)
+2. **Use Milvus Lite** (`MilvusLiteConfig` with a local `db_path`) for development/testing (embedded, zero-server, simpler setup)
+3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical) — supported by both backends, including Milvus Lite
 4. **Tune ranker parameters** (ranker_k, ranker_alpha) via optimization
 
 **Chunking:**

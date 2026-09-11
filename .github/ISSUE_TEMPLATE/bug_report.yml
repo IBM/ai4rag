@@ -56,7 +56,7 @@ body:
         - ai4rag version:
         - Python version:
         - openai SDK version:
-        - Vector Store (Milvus/ChromaDB):
+        - Vector Store (Milvus/pgvector):
         - Operating System:
       render: markdown
     validations:

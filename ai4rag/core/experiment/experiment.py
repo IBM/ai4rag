@@ -425,11 +425,6 @@ class AI4RAGExperiment:
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
 
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
-        if search_mode != "vector" and self.vector_store_config.provider == "chroma":
-            raise RAGExperimentError(
-                f"Search mode '{search_mode}' is not supported with chroma vector store. "
-                "Only 'vector' mode is supported for chroma."
-            )
 
         context_template_text = foundation_model.context_template_text
         system_message_text = foundation_model.system_message_text
@@ -500,11 +495,6 @@ class AI4RAGExperiment:
 
         collection_name = vector_store.collection_name
 
-        # The store's connection/client is only needed for indexing and retrieval,
-        # both of which finish before scoring; closing it deterministically here
-        # (rather than waiting on garbage collection) keeps a long HPO search from
-        # accumulating one open connection per evaluated pattern, including on
-        # trials that fail and get caught by search()'s objective_function.
         with vector_store:
             if not self._collection_exists(collection_name=collection_name):
                 chunking_method = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD)
@@ -903,9 +893,10 @@ class AI4RAGExperiment:
     def _collection_exists(self, collection_name: str) -> bool:
         """
         This method checks if a collection with a given name already exists.
-        The trick comes with chromadb. We always need to assume that collection
-        does not exist, as we create new instance of chroma in memory per each
-        run.
+        Existence is tracked by this run's own bookkeeping
+        (``self.results.collection_names``) rather than by querying the backend,
+        so the check is backend-agnostic and reflects only collections this
+        experiment created and can safely reuse.
 
         Parameters
         ----------

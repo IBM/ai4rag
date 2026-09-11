@@ -138,7 +138,7 @@ Create a `benchmark_data.json` file with questions and ground truth answers. Eac
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
-      "Milvus and ChromaDB are supported."
+      "Milvus and PostgreSQL/pgvector are supported."
     ],
     "correct_answer_document_keys": ["overview.md", "reference/stores.md"]
   }
@@ -246,8 +246,8 @@ optimizer_settings = GAMOptSettings(
 !!! note "Choosing a Vector Store"
     The vector store is selected by passing a `vector_store_config` to `AI4RAGExperiment`:
 
-    - `ChromaConfig()` — zero-config, in-memory. Vector-only search (no hybrid/BM25).
-    - `MilvusConfig.from_env()` or `MilvusConfig(uri=...)` — a running Milvus server. Supports hybrid search (dense + BM25).
+    - `MilvusLiteConfig(db_path="./ai4rag.db")` (or `MilvusLiteConfig()`) — zero-config, embedded **Milvus Lite** backed by a local file. Supports hybrid search (dense + BM25); intended for local development, tests, and small-scale workloads, not production.
+    - `MilvusConfig.from_env()` or `MilvusConfig(uri="http(s)://host:19530")` — a running Milvus server (or Zilliz Cloud). `uri` must be an `http(s)://` URL — anything else (a bare host, a local file path, an empty string) raises `ValueError` rather than silently falling back to a local database. Supports hybrid search (dense + BM25).
     - `PGVectorConfig.from_env()` or `PGVectorConfig(host=...)` — a running PostgreSQL instance with `pgvector`. Supports hybrid search (dense + full-text).
 
     All three classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.

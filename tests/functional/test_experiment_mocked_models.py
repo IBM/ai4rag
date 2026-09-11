@@ -24,7 +24,7 @@ from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.rag.vector_store.config import ChromaConfig
+from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
@@ -99,9 +99,14 @@ def benchmark_data():
     )
 
 
+@pytest.fixture
+def milvus_lite_config(tmp_path):
+    """A Milvus Lite config on a per-test temporary database (embedded, no server)."""
+    return MilvusLiteConfig(db_path=str(tmp_path / "ai4rag.db"))
+
+
 def _build_search_space(foundation_models, embedding_models):
     return AI4RAGSearchSpace(
-        vector_store_type="chroma",
         params=[
             Parameter(name="foundation_model", param_type="C", values=foundation_models),
             Parameter(name="embedding_model", param_type="C", values=embedding_models),
@@ -109,23 +114,23 @@ def _build_search_space(foundation_models, embedding_models):
     )
 
 
-def _make_experiment(documents, benchmark_data, foundation_models, embedding_models, **kwargs):
+def _make_experiment(documents, benchmark_data, foundation_models, embedding_models, vector_store_config, **kwargs):
     return AI4RAGExperiment(
         documents=documents,
         benchmark_data=benchmark_data,
         search_space=_build_search_space(foundation_models, embedding_models),
-        vector_store_config=ChromaConfig(),
+        vector_store_config=vector_store_config,
         optimizer_settings=RandomOptSettings(max_evals=3),
         event_handler=LocalEventHandler(),
         **kwargs,
     )
 
 
-class TestExperimentChromaWithMockedModels:
-    """Full experiment runs with mocked models, real Chroma, and real UnitxtEvaluator."""
+class TestExperimentMilvusLiteWithMockedModels:
+    """Full experiment runs with mocked models, real Milvus Lite, and real UnitxtEvaluator."""
 
     def test_mps_is_triggered_and_reduces_model_pool(
-        self, documents, benchmark_data, foundation_models, embedding_models
+        self, documents, benchmark_data, foundation_models, embedding_models, milvus_lite_config
     ):
         """
         With 4 FMs (> DEFAULT_N_FOUNDATION_MODELS=3) and 3 EMs (> DEFAULT_N_EMBEDDING_MODELS=2),
@@ -133,7 +138,9 @@ class TestExperimentChromaWithMockedModels:
         at most DEFAULT_N_FOUNDATION_MODELS FMs and DEFAULT_N_EMBEDDING_MODELS EMs, and
         every selected model must belong to the original input pool.
         """
-        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
+        experiment = _make_experiment(
+            documents, benchmark_data, foundation_models, embedding_models, milvus_lite_config
+        )
 
         assert len(experiment.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values) == _N_FOUNDATION_MODELS
         assert len(experiment.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values) == _N_EMBEDDING_MODELS
@@ -158,12 +165,16 @@ class TestExperimentChromaWithMockedModels:
             em in embedding_models for em in em_selected
         ), "MPS selected an embedding model that was not in the original pool"
 
-    def test_skip_mps_preserves_full_model_pool(self, documents, benchmark_data, foundation_models, embedding_models):
+    def test_skip_mps_preserves_full_model_pool(
+        self, documents, benchmark_data, foundation_models, embedding_models, milvus_lite_config
+    ):
         """
         When skip_mps=True, MPS is bypassed entirely. The search space must retain all
         originally provided models after search() completes.
         """
-        experiment = _make_experiment(documents, benchmark_data, foundation_models, embedding_models)
+        experiment = _make_experiment(
+            documents, benchmark_data, foundation_models, embedding_models, milvus_lite_config
+        )
 
         experiment.search(optimizer=RandomOptimizer, skip_mps=True)
 
@@ -177,7 +188,9 @@ class TestExperimentChromaWithMockedModels:
             f"With skip_mps=True, all {_N_EMBEDDING_MODELS} embedding models should remain, " f"got {len(em_after)}"
         )
 
-    def test_evaluation_scores_are_in_valid_range(self, documents, benchmark_data, foundation_models, embedding_models):
+    def test_evaluation_scores_are_in_valid_range(
+        self, documents, benchmark_data, foundation_models, embedding_models, milvus_lite_config
+    ):
         """
         Every EvaluationResult produced by the experiment must have a final_score in [0, 1]
         and per-metric mean scores that are either None or in [0, 1].
@@ -188,6 +201,7 @@ class TestExperimentChromaWithMockedModels:
             benchmark_data,
             foundation_models,
             embedding_models,
+            milvus_lite_config,
             optimization_metric=Metrics.FAITHFULNESS,
             metrics=(Metrics.FAITHFULNESS, Metrics.ANSWER_CORRECTNESS, Metrics.CONTEXT_CORRECTNESS),
         )

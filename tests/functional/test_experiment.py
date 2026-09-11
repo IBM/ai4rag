@@ -12,7 +12,7 @@ from dotenv import find_dotenv, load_dotenv
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.rag.vector_store.config import MilvusConfig, MilvusLiteConfig, PGVectorConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
@@ -77,13 +77,14 @@ def _make_event_handler(test_name):
     return LocalEventHandler()
 
 
-@pytest.mark.chroma
-class TestExperimentChroma:
-    """Run experiment with chroma vector store and MaaS models."""
+@pytest.mark.milvus
+class TestExperimentMilvusLite:
+    """Run experiment with a local, embedded Milvus Lite store and MaaS models."""
 
-    def test_experiment_chroma_maas_models(self, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_milvus_lite_maas_models(
+        self, documents, benchmark_data, foundation_model, embedding_model, tmp_path
+    ):
         search_space = AI4RAGSearchSpace(
-            vector_store_type="chroma",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -97,8 +98,8 @@ class TestExperimentChroma:
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("chroma_maas_models"),
-            vector_store_config=ChromaConfig(),
+            event_handler=_make_event_handler("milvus_lite_maas_models"),
+            vector_store_config=MilvusLiteConfig(db_path=str(tmp_path / "ai4rag.db")),
         )
 
         experiment.search(skip_mps=True)
@@ -119,7 +120,6 @@ class TestExperimentMilvus:
 
     def test_experiment_milvus_maas_models(self, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
-            vector_store_type="milvus",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -155,7 +155,6 @@ class TestExperimentPGVector:
 
     def test_experiment_pgvector_maas_models(self, documents, benchmark_data, foundation_model, embedding_model):
         search_space = AI4RAGSearchSpace(
-            vector_store_type="pgvector",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -185,11 +184,13 @@ class TestExperimentPGVector:
         assert 0 <= best_eval.final_score <= 1
 
 
-@pytest.mark.chroma
-class TestExperimentChromaWithKnownObservations:
-    """Run experiment with chroma, MaaS models, and known observations."""
+@pytest.mark.milvus
+class TestExperimentMilvusLiteWithKnownObservations:
+    """Run experiment with a local Milvus Lite store, MaaS models, and known observations."""
 
-    def test_experiment_chroma_known_observations(self, documents, benchmark_data, foundation_model, embedding_model):
+    def test_experiment_milvus_lite_known_observations(
+        self, documents, benchmark_data, foundation_model, embedding_model, tmp_path
+    ):
         known_observations = [
             {
                 "foundation_model": foundation_model,
@@ -230,7 +231,6 @@ class TestExperimentChromaWithKnownObservations:
         ]
 
         search_space = AI4RAGSearchSpace(
-            vector_store_type="chroma",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -244,8 +244,8 @@ class TestExperimentChromaWithKnownObservations:
             benchmark_data=benchmark_data,
             search_space=search_space,
             optimizer_settings=optimizer_settings,
-            event_handler=_make_event_handler("chroma_known_observations"),
-            vector_store_config=ChromaConfig(),
+            event_handler=_make_event_handler("milvus_lite_known_observations"),
+            vector_store_config=MilvusLiteConfig(db_path=str(tmp_path / "ai4rag.db")),
             known_observations=known_observations,
         )
 

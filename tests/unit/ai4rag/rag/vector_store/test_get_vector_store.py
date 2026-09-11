@@ -8,8 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
-from ai4rag.rag.vector_store.chroma import ChromaVectorStore
-from ai4rag.rag.vector_store.config import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.rag.vector_store.config import MilvusConfig, MilvusLiteConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 
 
@@ -41,45 +40,6 @@ def mock_embedding_model():
     return MockEmbeddingModel()
 
 
-class TestGetVectorStoreChroma:
-    """Test suite for get_vector_store with Chroma provider."""
-
-    def test_get_vector_store_chroma_default(self, mock_embedding_model):
-        """Test getting Chroma vector store with default parameters."""
-
-        vector_store = get_vector_store(
-            embedding_model=mock_embedding_model,
-            config=ChromaConfig(),
-        )
-
-        assert isinstance(vector_store, ChromaVectorStore)
-        assert vector_store.embedding_model == mock_embedding_model
-
-    def test_get_vector_store_chroma_with_collection_name(self, mock_embedding_model):
-        """Test getting Chroma vector store with custom collection name."""
-
-        vector_store = get_vector_store(
-            embedding_model=mock_embedding_model,
-            config=ChromaConfig(),
-            collection_name="ai4rag_my_collection",
-        )
-
-        assert isinstance(vector_store, ChromaVectorStore)
-        assert vector_store.collection_name == "ai4rag_my_collection"
-
-    def test_get_vector_store_chroma_with_none_collection_name(self, mock_embedding_model):
-        """Test Chroma with None collection name uses an auto-generated default."""
-
-        vector_store = get_vector_store(
-            embedding_model=mock_embedding_model,
-            config=ChromaConfig(),
-            collection_name=None,
-        )
-
-        assert isinstance(vector_store, ChromaVectorStore)
-        assert vector_store.collection_name is not None
-
-
 class TestGetVectorStoreMilvus:
     """Test suite for get_vector_store with Milvus provider."""
 
@@ -103,6 +63,37 @@ class TestGetVectorStoreMilvus:
             get_vector_store(
                 embedding_model=mock_embedding_model,
                 config=PGVectorConfig(provider="milvus"),
+            )
+
+
+class TestGetVectorStoreMilvusLite:
+    """Test suite for get_vector_store with the Milvus Lite provider."""
+
+    @patch("ai4rag.rag.vector_store.milvus.MilvusClient")
+    def test_milvus_lite_returns_vector_store(self, MockClient, mock_embedding_model):
+        """A MilvusLiteConfig selects the embedded engine via the shared MilvusVectorStore."""
+        MockClient.return_value.has_collection.return_value = False
+
+        vector_store = get_vector_store(
+            embedding_model=mock_embedding_model,
+            config=MilvusLiteConfig(db_path="./ai4rag.db"),
+            collection_name="ai4rag_my_collection",
+        )
+
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        assert isinstance(vector_store, MilvusVectorStore)
+        assert vector_store.collection_name == "ai4rag_my_collection"
+        # The embedded engine connects with the local db_path as its uri, and no
+        # auth/TLS kwargs.
+        MockClient.assert_called_once_with(uri="./ai4rag.db")
+
+    def test_milvus_lite_with_wrong_config_type_raises_type_error(self, mock_embedding_model):
+        """A config whose provider claims 'milvus_lite' but isn't a MilvusLiteConfig must raise TypeError."""
+        with pytest.raises(TypeError, match="MilvusLiteConfig is required"):
+            get_vector_store(
+                embedding_model=mock_embedding_model,
+                config=PGVectorConfig(provider="milvus_lite"),
             )
 
 
@@ -165,21 +156,25 @@ class TestGetVectorStoreInvalidProvider:
 class TestGetVectorStoreEdgeCases:
     """Test suite for edge cases in get_vector_store."""
 
-    def test_get_vector_store_case_sensitive(self, mock_embedding_model):
+    @patch("ai4rag.rag.vector_store.milvus.MilvusClient")
+    def test_get_vector_store_case_sensitive(self, MockClient, mock_embedding_model):
         """Test that config.provider is case-sensitive."""
+        MockClient.return_value.has_collection.return_value = False
 
-        # "chroma" should work
+        # "milvus" should work
         vector_store = get_vector_store(
             embedding_model=mock_embedding_model,
-            config=ChromaConfig(),
+            config=MilvusConfig(uri="http://localhost:19530"),
         )
-        assert isinstance(vector_store, ChromaVectorStore)
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
-        # "CHROMA" should not work
+        assert isinstance(vector_store, MilvusVectorStore)
+
+        # "MILVUS" should not work
         with pytest.raises(ValueError):
             get_vector_store(
                 embedding_model=mock_embedding_model,
-                config=_fake_config("CHROMA"),
+                config=_fake_config("MILVUS"),
             )
 
     def test_get_vector_store_whitespace_provider(self, mock_embedding_model):
@@ -187,12 +182,12 @@ class TestGetVectorStoreEdgeCases:
         with pytest.raises(ValueError):
             get_vector_store(
                 embedding_model=mock_embedding_model,
-                config=_fake_config(" chroma "),
+                config=_fake_config(" milvus "),
             )
 
     def test_get_vector_store_similar_provider_names(self, mock_embedding_model):
         """Test that similar but incorrect provider names raise errors."""
-        invalid_providers = ["chromadb", "chroma_db", "ogx_milvus"]
+        invalid_providers = ["chromadb", "milvuslite", "ogx_milvus"]
 
         for invalid_provider in invalid_providers:
             with pytest.raises(ValueError):
@@ -205,12 +200,14 @@ class TestGetVectorStoreEdgeCases:
 class TestGetVectorStoreReturnTypes:
     """Test suite for verifying return types from get_vector_store."""
 
-    def test_chroma_returns_base_vector_store_interface(self, mock_embedding_model):
-        """Test that Chroma vector store implements BaseVectorStore interface."""
+    @patch("ai4rag.rag.vector_store.milvus.MilvusClient")
+    def test_milvus_returns_base_vector_store_interface(self, MockClient, mock_embedding_model):
+        """Test that the Milvus vector store implements the BaseVectorStore interface."""
+        MockClient.return_value.has_collection.return_value = False
 
         vector_store = get_vector_store(
             embedding_model=mock_embedding_model,
-            config=ChromaConfig(),
+            config=MilvusConfig(uri="http://localhost:19530"),
         )
 
         assert hasattr(vector_store, "search")

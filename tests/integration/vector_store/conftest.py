@@ -4,9 +4,9 @@
 # -----------------------------------------------------------------------------
 """Shared fixtures for the vector store integration suite.
 
-Unlike the unit tests — which run against in-memory or mocked backends — the
+Unlike the unit tests — which run against embedded or mocked backends — the
 modules in this package exercise the concrete vector stores against **real,
-externally provisioned databases** (Chroma server, Milvus, PostgreSQL+pgvector).
+externally provisioned databases** (a Milvus server and PostgreSQL+pgvector).
 Each backend module is skipped unless the connection settings for that backend
 are present in the environment, so the suite is safe to run anywhere: it simply
 skips the backends that are not reachable.
