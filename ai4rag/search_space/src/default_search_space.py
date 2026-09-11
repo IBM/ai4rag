@@ -15,8 +15,6 @@ _default_chunk_sizes = (512, 1024, 2048)
 _default_chunk_overlaps = (0, 128, 256)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
-_default_chroma_retrieval_methods = ("simple",)
-_default_chroma_window_sizes = (0, 1, 3, 5)
 _default_numbers_of_chunks = (3, 5, 10)
 _default_search_modes = ("vector", "hybrid")
 _default_ranker_strategies = ("", "rrf", "weighted")
@@ -24,50 +22,25 @@ _default_ranker_k = (0, 60)
 _default_ranker_alpha = (1, 0.5)
 
 
-def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus") -> list[Parameter]:
+def get_default_ai4rag_search_space_parameters() -> list[Parameter]:
     """Return the default search space parameters for an AI4RAG experiment.
-
-    Parameters
-    ----------
-    vector_store_type : str, default="milvus"
-        Type of vector store. Supported values: ``"milvus"``, ``"pgvector"``,
-        and ``"chroma"``. When ``"chroma"``, hybrid search parameters are
-        excluded since ChromaDB does not support hybrid search.
 
     Returns
     -------
     list[Parameter]
         Parameters that will be used for creating AI4RAGSearchSpace.
     """
-
-    if vector_store_type == "chroma":
-        retrieval_methods = _default_chroma_retrieval_methods
-        window_sizes = _default_chroma_window_sizes
-    else:
-        retrieval_methods = _default_retrieval_methods
-        window_sizes = _default_window_sizes
-
     default_search_space_parameters = [
         Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
         Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=_default_chunk_sizes),
         Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=_default_chunk_overlaps),
-        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=retrieval_methods),
-        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=window_sizes),
+        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=_default_retrieval_methods),
+        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=_default_window_sizes),
         Parameter(name=AI4RAGParamNames.NUMBER_OF_CHUNKS, values=_default_numbers_of_chunks),
+        Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=_default_search_modes),
+        Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, values=_default_ranker_strategies),
+        Parameter(name=AI4RAGParamNames.RANKER_K, values=_default_ranker_k),
+        Parameter(name=AI4RAGParamNames.RANKER_ALPHA, values=_default_ranker_alpha),
     ]
-
-    if vector_store_type == "chroma":
-        default_search_space_parameters.append(
-            Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("vector",)),
-        )
-    else:
-        default_search_space_parameters.extend(
-            [
-                Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=_default_search_modes),
-                Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, values=_default_ranker_strategies),
-                Parameter(name=AI4RAGParamNames.RANKER_K, values=_default_ranker_k),
-                Parameter(name=AI4RAGParamNames.RANKER_ALPHA, values=_default_ranker_alpha),
-            ]
-        )
 
     return default_search_space_parameters

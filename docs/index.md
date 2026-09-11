@@ -38,7 +38,7 @@ It accepts benchmark data, search space definition, optimizer configuration then
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
-from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.rag.vector_store import MilvusLiteConfig
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.event_handler import LocalEventHandler
 from pathlib import Path
@@ -54,7 +54,7 @@ experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_config=ChromaConfig(),
+    vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),  # local Milvus Lite, zero setup
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(
         output_path=Path(__file__).parent / "ai4rag_results"
@@ -128,7 +128,7 @@ graph TB
 
 - **Foundation Model**: any OpenAI-compatible chat endpoint via `OpenAIFoundationModel` — or bring your own via the `BaseFoundationModel` interface
 - **Embedding Model**: any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` — or bring your own via the `BaseEmbeddingModel` interface
-- **Vector Store**: Milvus, PostgreSQL/pgvector, or Chroma via direct clients — or bring your own via the `BaseVectorStore` interface
+- **Vector Store**: remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector via direct clients — or bring your own via the `BaseVectorStore` interface
 - **Chunking**: document splitting into smaller chunks
 - **Retrieval**: simple and window-based retrieval strategies
 - **Templates**: complete RAG implementations defined as a `RAGTemplate`
@@ -142,7 +142,7 @@ To run an optimization you need a **foundation model** (for text generation) and
 !!! tip "Bring your own models"
     Not using an OpenAI-compatible endpoint? Provide your own model classes instead: any implementation of `BaseFoundationModel` / `BaseEmbeddingModel` plugs straight into an experiment. See [Provider-Agnostic Design](user-guide/provider-agnostic.md).
 
-The vector store is independent of the model provider: connect directly to Chroma, Milvus, or PostgreSQL/pgvector via `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`.
+The vector store is independent of the model provider: connect directly to a remote Milvus server via `MilvusConfig`, embedded Milvus Lite via `MilvusLiteConfig`, or PostgreSQL/pgvector via `PGVectorConfig`.
 
 ---
 

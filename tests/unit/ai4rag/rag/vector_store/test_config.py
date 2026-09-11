@@ -2,57 +2,18 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import os
 from dataclasses import FrozenInstanceError
 
 import pytest
 
 from ai4rag.rag.vector_store.config import (
-    ChromaConfig,
+    DEFAULT_MILVUS_LITE_DB_PATH,
     MilvusConfig,
+    MilvusLiteConfig,
     PGVectorConfig,
     get_vector_store_config,
     get_vector_store_env_vars,
 )
-
-
-class TestChromaConfig:
-    """Tests for ChromaConfig dataclass."""
-
-    def test_defaults_are_ephemeral(self):
-        cfg = ChromaConfig()
-        assert cfg.persist_directory is None
-        assert cfg.host is None
-        assert cfg.port == 8000
-        assert cfg.provider == "chroma"
-
-    def test_custom_values(self):
-        cfg = ChromaConfig(persist_directory="/data/chroma", host="chroma.local", port=9000)
-        assert cfg.persist_directory == "/data/chroma"
-        assert cfg.host == "chroma.local"
-        assert cfg.port == 9000
-
-    def test_frozen(self):
-        cfg = ChromaConfig()
-        with pytest.raises(FrozenInstanceError):
-            cfg.host = "other"
-
-    def test_from_env_defaults(self, monkeypatch):
-        for var in ("CHROMA_PERSIST_DIR", "CHROMA_HOST", "CHROMA_PORT"):
-            monkeypatch.delenv(var, raising=False)
-        cfg = ChromaConfig.from_env()
-        assert cfg.persist_directory is None
-        assert cfg.host is None
-        assert cfg.port == 8000
-
-    def test_from_env_custom(self, monkeypatch):
-        monkeypatch.setenv("CHROMA_PERSIST_DIR", "/tmp/chroma")
-        monkeypatch.setenv("CHROMA_HOST", "chroma-server")
-        monkeypatch.setenv("CHROMA_PORT", "9001")
-        cfg = ChromaConfig.from_env()
-        assert cfg.persist_directory == "/tmp/chroma"
-        assert cfg.host == "chroma-server"
-        assert cfg.port == 9001
 
 
 class TestMilvusConfig:
@@ -63,6 +24,16 @@ class TestMilvusConfig:
         assert cfg.uri == "https://milvus:19530"
         assert cfg.token is None
         assert cfg.server_cert is None
+
+    @pytest.mark.parametrize("bad_uri", ["./ai4rag.db", "ai4rag.db", "/tmp/x.db", "localhost:19530", "milvus", ""])
+    def test_non_url_uri_is_rejected(self, bad_uri):
+        """A uri that is not an http(s) server URL must raise, not silently become Milvus Lite.
+
+        This is the guard against a mistyped MILVUS_URI in production spinning up a
+        throwaway local database instead of connecting to the intended server.
+        """
+        with pytest.raises(ValueError, match="must be a Milvus server URL"):
+            MilvusConfig(uri=bad_uri)
 
     def test_constructor_uri_and_token(self):
         cfg = MilvusConfig(uri="https://milvus:19530", token="root:Milvus")
@@ -106,6 +77,40 @@ class TestMilvusConfig:
         monkeypatch.delenv("MILVUS_URI", raising=False)
         with pytest.raises(KeyError):
             MilvusConfig.from_env()
+
+
+class TestMilvusLiteConfig:
+    """Tests for the MilvusLiteConfig dataclass (embedded, local database)."""
+
+    def test_defaults(self):
+        cfg = MilvusLiteConfig()
+        assert cfg.db_path == DEFAULT_MILVUS_LITE_DB_PATH
+        assert cfg.provider == "milvus_lite"
+
+    def test_custom_db_path(self):
+        cfg = MilvusLiteConfig(db_path="/data/store.db")
+        assert cfg.db_path == "/data/store.db"
+
+    @pytest.mark.parametrize("bad_path", ["http://host:19530", "https://host:19530"])
+    def test_server_url_db_path_is_rejected(self, bad_path):
+        """A server URL is not a local database file; it belongs in MilvusConfig."""
+        with pytest.raises(ValueError, match="must be a local filesystem path"):
+            MilvusLiteConfig(db_path=bad_path)
+
+    def test_frozen(self):
+        cfg = MilvusLiteConfig()
+        with pytest.raises(FrozenInstanceError):
+            cfg.db_path = "other.db"
+
+    def test_from_env_default(self, monkeypatch):
+        monkeypatch.delenv("MILVUS_LITE_DB_PATH", raising=False)
+        cfg = MilvusLiteConfig.from_env()
+        assert cfg.db_path == DEFAULT_MILVUS_LITE_DB_PATH
+
+    def test_from_env_custom(self, monkeypatch):
+        monkeypatch.setenv("MILVUS_LITE_DB_PATH", "/tmp/custom.db")
+        cfg = MilvusLiteConfig.from_env()
+        assert cfg.db_path == "/tmp/custom.db"
 
 
 class TestPGVectorConfig:
@@ -165,13 +170,6 @@ class TestPGVectorConfig:
 class TestGetVectorStoreConfig:
     """Tests for the ``get_vector_store_config`` provider factory."""
 
-    def test_returns_chroma_config(self, monkeypatch):
-        for var in ("CHROMA_PERSIST_DIR", "CHROMA_HOST", "CHROMA_PORT"):
-            monkeypatch.delenv(var, raising=False)
-        cfg = get_vector_store_config("chroma")
-        assert isinstance(cfg, ChromaConfig)
-        assert cfg.provider == "chroma"
-
     def test_returns_pgvector_config(self, monkeypatch):
         for var in ("PGVECTOR_HOST", "PGVECTOR_PORT", "PGVECTOR_DB", "PGVECTOR_USER", "PGVECTOR_PASSWORD"):
             monkeypatch.delenv(var, raising=False)
@@ -186,6 +184,12 @@ class TestGetVectorStoreConfig:
         cfg = get_vector_store_config("milvus")
         assert isinstance(cfg, MilvusConfig)
         assert cfg.uri == "http://host:19530"
+
+    def test_returns_milvus_lite_config_from_env(self, monkeypatch):
+        monkeypatch.setenv("MILVUS_LITE_DB_PATH", "/tmp/lite.db")
+        cfg = get_vector_store_config("milvus_lite")
+        assert isinstance(cfg, MilvusLiteConfig)
+        assert cfg.db_path == "/tmp/lite.db"
 
     def test_milvus_missing_uri_raises_key_error(self, monkeypatch):
         """The factory must surface the backend's own ``from_env`` failure."""
@@ -203,7 +207,7 @@ class TestGetVectorStoreEnvVars:
 
     @pytest.mark.parametrize(
         ("provider", "config_cls"),
-        [("chroma", ChromaConfig), ("milvus", MilvusConfig), ("pgvector", PGVectorConfig)],
+        [("milvus", MilvusConfig), ("milvus_lite", MilvusLiteConfig), ("pgvector", PGVectorConfig)],
     )
     def test_matches_config_class_env_vars(self, provider, config_cls):
         """The helper must return the exact ``env_vars`` tuple declared on the config class."""

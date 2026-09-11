@@ -23,9 +23,9 @@ COLLECTION_NAME_PREFIX = "ai4rag"
 
 #: Maximum collection name length, bounded by the tightest identifier limit
 #: across supported backends: PostgreSQL truncates identifiers at 63 bytes
-#: (``NAMEDATALEN - 1``) and Chroma caps collection names at 63 characters.
-#: Enforcing it up front turns a silent, collision-inducing truncation into an
-#: explicit error.
+#: (``NAMEDATALEN - 1``); Milvus allows longer names, so this is the binding
+#: constraint. Enforcing it up front turns a silent, collision-inducing
+#: truncation into an explicit error.
 _MAX_COLLECTION_NAME_LENGTH = 63
 
 _COLLECTION_NAME_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits

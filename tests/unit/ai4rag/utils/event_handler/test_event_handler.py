@@ -30,7 +30,7 @@ PAYLOAD = {
     "duration_seconds": 42,
     "final_score": 0.9,
     "settings": {
-        "vector_store_binding": {"provider_id": "local_chroma", "vector_store_id": "col_1"},
+        "vector_store_binding": {"provider_type": "local_milvus", "collection_name": "col_1"},
         "chunking": {"method": "recursive", "chunk_size": 512, "chunk_overlap": 64},
         "embedding": {"model_id": "em-1", "distance_metric": "cosine", "embedding_params": {}},
         "retrieval": {"method": "simple", "number_of_chunks": 3, "search_mode": "vector"},

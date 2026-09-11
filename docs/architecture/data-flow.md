@@ -26,7 +26,7 @@ sequenceDiagram
     participant EM as OpenAIEmbeddingModel
     participant VS as VectorStore
     participant MaaSClient as MaaS Client
-    participant DB as Vector DB (Milvus/Chroma/PGVector)
+    participant DB as Vector DB (Milvus, incl. Milvus Lite/PGVector)
 
     Exp->>Exp: check if collection exists
     alt Collection exists
@@ -50,7 +50,7 @@ sequenceDiagram
         EM-->>VS: all embeddings
         deactivate EM
 
-        loop Batches (backend-specific size: Milvus/Chroma 2048, PGVector 1024)
+        loop Batches (backend-specific size: Milvus 2048, PGVector 1024)
             VS->>DB: upsert(chunks + embeddings)
             DB-->>VS: success
         end
@@ -155,7 +155,7 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
 
 ### Vector Store Insertion
 
-The backend is selected by `vector_store_config` (a `ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) passed to `AI4RAGExperiment`. The experiment resolves the concrete store once via `get_vector_store`, which talks **directly** to the configured backend (Milvus, Chroma, or PostgreSQL/pgvector) — there is no intermediary API server between ai4rag and the vector database.
+The backend is selected by `vector_store_config` (a `MilvusConfig`, `MilvusLiteConfig`, or `PGVectorConfig`) passed to `AI4RAGExperiment`. The experiment resolves the concrete store once via `get_vector_store`, which talks **directly** to the configured backend (a remote Milvus server, embedded Milvus Lite, or PostgreSQL/pgvector) — there is no intermediary API server between ai4rag and the vector database.
 
 **Vector Store Selection:**
 
@@ -172,7 +172,7 @@ collection_name = vector_store.collection_name  # Resolved, ai4rag-prefixed name
 
 **Batch Insertion (Milvus example):**
 
-Chunks are embedded once, then upserted directly into the backend in batches (Milvus/Chroma: 2048, PGVector: 1024):
+Chunks are embedded once, then upserted directly into the backend in batches (Milvus: 2048, PGVector: 1024):
 
 ```python
 embeddings = embedding_model.embed_documents([chunk.text for chunk in chunks])
@@ -238,7 +238,7 @@ sequenceDiagram
     participant EM as OpenAIEmbeddingModel
     participant FM as OpenAIFoundationModel
     participant MaaSClient as MaaS Client
-    participant DB as Vector DB (Milvus/Chroma/PGVector)
+    participant DB as Vector DB (Milvus, incl. Milvus Lite/PGVector)
 
     Note over QR: Parallel execution (ThreadPoolExecutor)
     par Question 1
@@ -355,7 +355,7 @@ reference_documents = vector_store.search(
 )
 ```
 
-Combines the dense vector search with a backend-native sparse/keyword search — Milvus's server-side BM25 field fused via `RRFRanker`/`WeightedRanker`, or PGVector's `tsvector` full-text search fused in-memory via `WeightedInMemoryAggregator` — then returns the fused top-k chunks. Chroma does not support `search_mode="hybrid"`.
+Combines the dense vector search with a backend-native sparse/keyword search — Milvus's server-side BM25 field fused via `RRFRanker`/`WeightedRanker` (available on both a remote server and the embedded Milvus Lite engine, though Milvus Lite computes BM25 IDF statistics segment-locally rather than corpus-wide), or PGVector's `tsvector` full-text search fused in-memory via `WeightedInMemoryAggregator` — then returns the fused top-k chunks.
 
 ### Context Formatting
 
@@ -933,8 +933,8 @@ DoclingDocument(name="doc1", ...)
 
 ```python
 [{"content": "Chunk 1", "embedding": [0.1, ...], "metadata": {...}}, ...]
-↓ (MilvusVectorStore.add_documents / ChromaVectorStore.add_documents / PGVectorStore.add_documents)
-Collection "xyz" in the configured backend (Milvus, Chroma, or PGVector)
+↓ (MilvusVectorStore.add_documents / PGVectorStore.add_documents)
+Collection "xyz" in the configured backend (Milvus — server or embedded Milvus Lite — or PGVector)
 ```
 
 **Question → Retrieved Chunks:**
@@ -942,8 +942,8 @@ Collection "xyz" in the configured backend (Milvus, Chroma, or PGVector)
 ```python
 "What is the capital of France?"
 ↓ (MilvusVectorStore.search — embeds via OpenAIEmbeddingModel.embed_query internally,
-   then queries Milvus directly; ChromaVectorStore/PGVectorStore follow the same
-   embed-then-query pattern against their own backend)
+   then queries Milvus directly (server or embedded Milvus Lite); PGVectorStore
+   follows the same embed-then-query pattern against its own backend)
 [
     AI4RAGChunk(text="Paris is the capital...", metadata={...}),
     AI4RAGChunk(text="France's capital city...", metadata={...}),

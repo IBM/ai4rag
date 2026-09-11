@@ -19,7 +19,7 @@ from ai4rag.evaluator.base_evaluator import (
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.vector_store.config import ChromaConfig
+from ai4rag.rag.vector_store.config import MilvusLiteConfig
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -74,7 +74,7 @@ def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS,
         documents=[],
         benchmark_data=_BENCHMARK_DF,
         search_space=MagicMock(),
-        vector_store_config=ChromaConfig(),
+        vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),
         optimizer_settings=MagicMock(),
         event_handler=MagicMock(),
         client=MagicMock(),

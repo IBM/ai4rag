@@ -130,23 +130,8 @@ class TestPrepareSearchSpaceWithMaas:
         with pytest.raises(SearchSpaceValueError, match="Provide both 'foundation_models' and 'embedding_models'"):
             prepare_search_space_with_maas(_payload(embedding_ids=None), client)
 
-    def test_chroma_vector_store_excludes_hybrid_params(self, mocker):
-        """The chroma vector store type excludes hybrid search parameters."""
-        client = _setup_client(mocker, ["default-llm", "default-embedding"])
-
-        result = prepare_search_space_with_maas(_payload(), client, vector_store_type="chroma")
-
-        param_names = [p.name for p in result.params]
-        assert "search_mode" in param_names
-        assert "ranker_strategy" not in param_names
-        assert "ranker_k" not in param_names
-        assert "ranker_alpha" not in param_names
-
-        search_mode_param = result["search_mode"]
-        assert search_mode_param.values == ("vector",)
-
-    def test_non_chroma_vector_store_includes_hybrid_params_by_default(self, mocker):
-        """Non-chroma vector stores (default milvus) include hybrid search parameters."""
+    def test_search_space_includes_hybrid_params_by_default(self, mocker):
+        """All supported vector store backends support hybrid search, so it is always included."""
         client = _setup_client(mocker, ["default-llm", "default-embedding"])
 
         result = prepare_search_space_with_maas(_payload(), client)

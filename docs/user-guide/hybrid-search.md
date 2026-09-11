@@ -39,19 +39,26 @@ Consider enabling hybrid search when:
 
 ## Prerequisites
 
-!!! warning "Vector Store Requirement"
-    Hybrid search is **supported with Milvus** (`MilvusConfig`) **and PGVector** (`PGVectorConfig`). It is **NOT available with Chroma**, which is vector-only.
+!!! note "Vector Store Requirement"
+    Hybrid search is supported by **all** built-in backends: **Milvus** (`MilvusConfig` — remote server only),
+    **Milvus Lite** (`MilvusLiteConfig` — embedded, local file only), and **PGVector** (`PGVectorConfig`).
 
-Ensure your experiment is configured with:
+Ensure your experiment is configured with one of these backends:
 
 ```python
 from ai4rag.rag.vector_store import MilvusConfig
 
 experiment = AI4RAGExperiment(
-    vector_store_config=MilvusConfig.from_env(),  # Required for hybrid search; PGVectorConfig also works
+    vector_store_config=MilvusConfig.from_env(),  # or MilvusLiteConfig(db_path="./ai4rag.db") for Milvus Lite; PGVectorConfig also works
     # ... other parameters
 )
 ```
+
+!!! warning "Milvus Lite hybrid-ranking fidelity"
+    Milvus Lite (`MilvusLiteConfig`, backed by a local file) computes BM25 IDF statistics segment-locally rather
+    than corpus-wide, so hybrid-search ranking fidelity is lower than on a full Milvus server — benchmark or HPO
+    scores obtained against Milvus Lite may not transfer exactly to a production deployment. It is intended for
+    local development, tests, and small-scale workloads, not production serving.
 
 ---
 
@@ -533,23 +540,6 @@ print("Hybrid avg score:", hybrid_results["objective_value"].mean())
 
 ## Troubleshooting
 
-### Error: "Search mode ... is not supported with chroma vector store"
-
-**Cause**: Your `vector_store_config` is a `ChromaConfig` (Chroma is vector-only).
-
-**Solution**: Switch to Milvus or PGVector:
-
-```python
-from ai4rag.rag.vector_store import MilvusConfig
-
-experiment = AI4RAGExperiment(
-    vector_store_config=MilvusConfig.from_env(),  # or PGVectorConfig.from_env()
-    # ...
-)
-```
-
----
-
 ### Error: "Invalid parameter combination"
 
 **Cause**: Validation rules are rejecting your configuration.
@@ -592,7 +582,7 @@ experiment = AI4RAGExperiment(
 
 Hybrid search in `ai4rag` combines the best of semantic and keyword-based retrieval:
 
-- **Use `search_mode="hybrid"`** to enable hybrid search (requires Milvus or PGVector, i.e., `vector_store_config=MilvusConfig(...)` or `PGVectorConfig(...)`)
+- **Use `search_mode="hybrid"`** to enable hybrid search (requires Milvus, Milvus Lite, or PGVector, i.e., `vector_store_config=MilvusConfig(...)`, `MilvusLiteConfig(...)`, or `PGVectorConfig(...)`)
 - **Choose a ranker strategy**: `"rrf"` (general-purpose), `"weighted"` (fine control), or `"normalized"`
 - **Configure strategy parameters**: `ranker_k` for RRF, `ranker_alpha` for weighted
 - **Let the optimizer explore**: Include both vector and hybrid modes to find the best approach

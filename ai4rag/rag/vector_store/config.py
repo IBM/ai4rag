@@ -9,13 +9,28 @@ from types import MappingProxyType
 from typing import ClassVar
 
 __all__ = [
+    "SUPPORTED_PROVIDERS",
     "BaseVectorStoreConfig",
     "MilvusConfig",
+    "MilvusLiteConfig",
     "PGVectorConfig",
-    "ChromaConfig",
     "get_vector_store_config",
     "get_vector_store_env_vars",
 ]
+
+#: Default on-disk location for an embedded Milvus Lite database when the caller
+#: does not specify one. A relative path lands in the current working directory.
+DEFAULT_MILVUS_LITE_DB_PATH = "./ai4rag_milvus_lite.db"
+
+
+def _is_server_url(value: object) -> bool:
+    """Return whether *value* is a Milvus server URL (``http://``/``https://``).
+
+    Shared by :meth:`MilvusConfig.__post_init__` and
+    :meth:`MilvusLiteConfig.__post_init__` so the two mirror-image guards can
+    never drift apart on which schemes count as a "server" endpoint.
+    """
+    return isinstance(value, str) and value.startswith(("http://", "https://"))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -25,7 +40,7 @@ class BaseVectorStoreConfig(ABC):
     Attributes
     ----------
     provider : str
-        Backend discriminator (e.g. ``"chroma"``, ``"milvus"``, ``"pgvector"``)
+        Backend discriminator (``"milvus"``, ``"milvus_lite"``, or ``"pgvector"``)
         used by :func:`ai4rag.rag.vector_store.get_vector_store.get_vector_store`
         to select the concrete store class.
     """
@@ -40,88 +55,30 @@ class BaseVectorStoreConfig(ABC):
 
 
 @dataclass(frozen=True, kw_only=True)
-class ChromaConfig(BaseVectorStoreConfig):
-    """Connection parameters for a Chroma instance.
-
-    The running mode is inferred from which fields are set, so the same config
-    class drives all three Chroma deployment styles:
-
-    * **Ephemeral (default)** — fully in-memory, nothing persisted, when both
-      ``persist_directory`` and ``host`` are ``None``.
-    * **Persistent** — local on-disk storage when ``persist_directory`` is set.
-    * **Client/server** — connect to a remote Chroma server when ``host`` is
-      set (``host`` takes precedence over ``persist_directory``).
-
-    Parameters
-    ----------
-    persist_directory : str | None, default=None
-        Filesystem path backing a local persistent client. ``None`` selects an
-        ephemeral in-memory client.
-    host : str | None, default=None
-        Hostname of a remote Chroma server. ``None`` keeps operation local
-        (ephemeral or persistent).
-    port : int, default=8000
-        Port of the remote Chroma server. Used only when ``host`` is set.
-    provider : str, default="chroma"
-        Name of the provider used in the system.
-
-    Attributes
-    ----------
-    env_vars : ClassVar[tuple[tuple[str, str], ...]]
-        ``(name, description)`` pairs for the environment variables consulted by
-        :meth:`from_env`. Exposed for documentation and notebook generation.
-    """
-
-    env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
-        ("CHROMA_HOST", "Hostname of a remote Chroma server. Leave unset to run locally."),
-        ("CHROMA_PORT", "Port of the remote Chroma server (used with CHROMA_HOST; default 8000)."),
-        (
-            "CHROMA_PERSIST_DIR",
-            "Filesystem path for a local persistent store. Unset uses an ephemeral in-memory store.",
-        ),
-    )
-
-    persist_directory: str | None = None
-    host: str | None = None
-    port: int = 8000
-    provider: str = "chroma"
-
-    @classmethod
-    def from_env(cls) -> "ChromaConfig":
-        """Build config from ``CHROMA_*`` environment variables.
-
-        Reads ``CHROMA_PERSIST_DIR``, ``CHROMA_HOST`` and ``CHROMA_PORT``.
-        Unset variables fall back to the ephemeral in-memory defaults.
-
-        Returns
-        -------
-        ChromaConfig
-            Config populated from the ``CHROMA_*`` environment variables.
-        """
-        return cls(
-            persist_directory=os.environ.get("CHROMA_PERSIST_DIR"),
-            host=os.environ.get("CHROMA_HOST"),
-            port=int(os.environ.get("CHROMA_PORT", "8000")),
-        )
-
-
-@dataclass(frozen=True, kw_only=True)
 class MilvusConfig(BaseVectorStoreConfig):
-    """Connection parameters for a Milvus instance.
+    """Connection parameters for a **remote** Milvus server.
 
-    TLS is driven entirely by the ``uri`` scheme, matching the ``MilvusClient``
-    contract: an ``https://`` URI opens a secure gRPC channel, an ``http://`` URI
-    stays plaintext. When the endpoint presents a certificate signed by a
-    self-signed or private CA, pass the CA/server certificate as PEM text via
-    ``server_cert``; :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore`
-    materializes it to a temporary file for pymilvus to verify against. Endpoints
-    with publicly trusted certificates need no ``server_cert``.
+    This config targets a running Milvus (or Zilliz Cloud) instance reached over
+    gRPC. For an embedded, local, zero-server database use
+    :class:`MilvusLiteConfig` instead — the two are deliberately separate so that
+    a mistyped or unreachable server ``uri`` fails loudly rather than silently
+    spinning up a throwaway local database (a dangerous surprise in production).
+
+    To enforce that, ``uri`` **must** be an ``http://`` or ``https://`` URL;
+    anything else (a bare host, a file path, an empty string) is rejected at
+    construction. TLS is driven by the scheme: ``https://`` opens a secure gRPC
+    channel, ``http://`` stays plaintext. When a remote endpoint presents a
+    certificate signed by a self-signed or private CA, pass the CA/server
+    certificate as PEM text via ``server_cert``;
+    :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore` materializes it to
+    a temporary file for pymilvus to verify against. Endpoints with publicly
+    trusted certificates need no ``server_cert``.
 
     Parameters
     ----------
     uri : str
-        Milvus server URI. Use ``https://host:port`` for TLS,
-        ``http://host:port`` for plaintext.
+        Milvus server endpoint. Must start with ``http://`` (plaintext) or
+        ``https://`` (TLS), e.g. ``https://host:19530``.
     token : str | None
         Authentication token (``"user:password"``). ``None`` for unauthenticated.
     server_cert : str | None
@@ -136,12 +93,18 @@ class MilvusConfig(BaseVectorStoreConfig):
     env_vars : ClassVar[tuple[tuple[str, str], ...]]
         ``(name, description)`` pairs for the environment variables consulted by
         :meth:`from_env`. Exposed for documentation and notebook generation.
+
+    Raises
+    ------
+    ValueError
+        If ``uri`` is not an ``http://`` or ``https://`` URL.
     """
 
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
         (
             "MILVUS_URI",
-            "Milvus server URI. Use https://host:port for TLS or http://host:port for plaintext. (required)",
+            "Milvus server endpoint URL: https://host:port (TLS) or http://host:port (plaintext). "
+            "For a local embedded database, use the milvus_lite provider instead. (required)",
         ),
         ("MILVUS_TOKEN", "Authentication token in 'user:password' form. (optional)"),
         ("MILVUS_SERVER_CERT", "PEM-encoded CA/server certificate for self-signed TLS endpoints. (optional)"),
@@ -151,6 +114,22 @@ class MilvusConfig(BaseVectorStoreConfig):
     token: str | None = None
     server_cert: str | None = None
     provider: str = "milvus"
+
+    def __post_init__(self) -> None:
+        """Reject any ``uri`` that is not an explicit Milvus server URL.
+
+        Guards against the footgun where an incorrect ``uri`` (a typo, a bare
+        hostname, or a stray path) is silently interpreted by ``MilvusClient`` as
+        a local Milvus Lite database file, creating a throwaway store instead of
+        connecting to the intended server. Local, embedded use must go through
+        :class:`MilvusLiteConfig`.
+        """
+        if not _is_server_url(self.uri):
+            raise ValueError(
+                f"MilvusConfig.uri must be a Milvus server URL starting with 'http://' or 'https://', "
+                f"got {self.uri!r}. For a local, embedded database use MilvusLiteConfig(db_path=...) "
+                "(provider 'milvus_lite') instead."
+            )
 
     @classmethod
     def from_env(cls) -> "MilvusConfig":
@@ -169,12 +148,94 @@ class MilvusConfig(BaseVectorStoreConfig):
         ------
         KeyError
             If the required ``MILVUS_URI`` variable is not set.
+        ValueError
+            If ``MILVUS_URI`` is not an ``http://``/``https://`` URL.
         """
         return cls(
             uri=os.environ["MILVUS_URI"],
             token=os.environ.get("MILVUS_TOKEN"),
             server_cert=os.environ.get("MILVUS_SERVER_CERT"),
         )
+
+
+@dataclass(frozen=True, kw_only=True)
+class MilvusLiteConfig(BaseVectorStoreConfig):
+    """Connection parameters for an **embedded, local** Milvus Lite database.
+
+    Milvus Lite is the zero-server Milvus engine bundled with
+    ``pymilvus[milvus-lite]``; it stores everything in a single local file and is
+    the recommended lightweight option for local development, tests, and
+    small-scale workloads (prototyping, up to roughly one million vectors) — not
+    production serving. For a remote server use :class:`MilvusConfig`.
+
+    Choosing the embedded engine is explicit: it happens only when this config is
+    used (provider ``"milvus_lite"``), never as a silent fallback from a
+    misconfigured :class:`MilvusConfig`.
+
+    Parameters
+    ----------
+    db_path : str, default=:data:`DEFAULT_MILVUS_LITE_DB_PATH`
+        Local filesystem path to the Milvus Lite database file. Created on first
+        use; a relative path resolves against the current working directory.
+    provider : str, default="milvus_lite"
+        Name of the provider used in the system.
+
+    Attributes
+    ----------
+    env_vars : ClassVar[tuple[tuple[str, str], ...]]
+        ``(name, description)`` pairs for the environment variables consulted by
+        :meth:`from_env`. Exposed for documentation and notebook generation.
+
+    Raises
+    ------
+    ValueError
+        If ``db_path`` is empty/blank, or looks like a server URL
+        (``http://``/``https://``).
+    """
+
+    env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
+        (
+            "MILVUS_LITE_DB_PATH",
+            f"Local file path for the embedded Milvus Lite database "
+            f"(default {DEFAULT_MILVUS_LITE_DB_PATH}). (optional)",
+        ),
+    )
+
+    db_path: str = DEFAULT_MILVUS_LITE_DB_PATH
+    provider: str = "milvus_lite"
+
+    def __post_init__(self) -> None:
+        """Reject a ``db_path`` that is blank or is actually a server URL.
+
+        The symmetric guard to :meth:`MilvusConfig.__post_init__`: a value like
+        ``https://host:19530`` is a server endpoint, not a local database file,
+        and belongs in :class:`MilvusConfig`. An empty or whitespace-only path
+        is rejected here too, rather than being handed to ``MilvusClient`` where
+        it would surface as an opaque, hard-to-trace pymilvus error.
+        """
+        if not isinstance(self.db_path, str) or not self.db_path.strip():
+            raise ValueError(
+                f"MilvusLiteConfig.db_path must be a non-empty local filesystem path, got {self.db_path!r}."
+            )
+        if _is_server_url(self.db_path):
+            raise ValueError(
+                f"MilvusLiteConfig.db_path must be a local filesystem path, not a server URL, "
+                f"got {self.db_path!r}. For a remote Milvus server use MilvusConfig(uri=...) "
+                "(provider 'milvus') instead."
+            )
+
+    @classmethod
+    def from_env(cls) -> "MilvusLiteConfig":
+        """Build config from the ``MILVUS_LITE_DB_PATH`` environment variable.
+
+        An unset variable falls back to :data:`DEFAULT_MILVUS_LITE_DB_PATH`.
+
+        Returns
+        -------
+        MilvusLiteConfig
+            Config populated from ``MILVUS_LITE_DB_PATH`` (or the default path).
+        """
+        return cls(db_path=os.environ.get("MILVUS_LITE_DB_PATH", DEFAULT_MILVUS_LITE_DB_PATH))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -253,12 +314,26 @@ class PGVectorConfig(BaseVectorStoreConfig):
 # class's ``provider`` default so the provider string has a single source of truth.
 # Wrapped in a read-only view so importers cannot mutate the shared mapping.
 _CONFIG_BY_PROVIDER: MappingProxyType[str, type[BaseVectorStoreConfig]] = MappingProxyType(
-    {config_cls.provider: config_cls for config_cls in (ChromaConfig, MilvusConfig, PGVectorConfig)}
+    {config_cls.provider: config_cls for config_cls in (MilvusConfig, MilvusLiteConfig, PGVectorConfig)}
 )
+
+#: Provider discriminators accepted by :func:`get_vector_store_config` and
+#: :func:`ai4rag.rag.vector_store.get_vector_store.get_vector_store`, derived from
+#: the registry above so callers outside this package (e.g. the search space
+#: defaults) never have to hand-maintain a second copy of this list.
+SUPPORTED_PROVIDERS: tuple[str, ...] = tuple(sorted(_CONFIG_BY_PROVIDER))
 
 
 def _resolve_config_cls(provider: str) -> type[BaseVectorStoreConfig]:
     """Return the config class registered for *provider*.
+
+    The single source of truth for which config class a provider discriminator
+    maps to; used both to build a config from the environment (below) and by
+    :func:`ai4rag.rag.vector_store.get_vector_store.get_vector_store` to check
+    that a caller-supplied config matches its declared ``provider``. Not part of
+    the package's public API (see ``ai4rag/rag/vector_store/__init__.py``) —
+    both call sites live inside this package, so a leading-underscore, directly
+    imported helper is enough without widening the public surface.
 
     Raises
     ------
@@ -268,8 +343,9 @@ def _resolve_config_cls(provider: str) -> type[BaseVectorStoreConfig]:
     try:
         return _CONFIG_BY_PROVIDER[provider]
     except KeyError as exc:
-        supported = ", ".join(sorted(_CONFIG_BY_PROVIDER))
-        raise ValueError(f"Vector store provider '{provider}' is not supported. Choose one of: {supported}.") from exc
+        raise ValueError(
+            f"Vector store provider '{provider}' is not supported. Choose one of: {', '.join(SUPPORTED_PROVIDERS)}."
+        ) from exc
 
 
 def get_vector_store_config(provider: str) -> BaseVectorStoreConfig:
@@ -284,7 +360,8 @@ def get_vector_store_config(provider: str) -> BaseVectorStoreConfig:
     Parameters
     ----------
     provider : str
-        Backend discriminator, one of ``"chroma"``, ``"milvus"`` or ``"pgvector"``.
+        Backend discriminator, one of ``"milvus"``, ``"milvus_lite"`` or
+        ``"pgvector"``.
 
     Returns
     -------
@@ -314,7 +391,8 @@ def get_vector_store_env_vars(provider: str) -> tuple[tuple[str, str], ...]:
     Parameters
     ----------
     provider : str
-        Backend discriminator, one of ``"chroma"``, ``"milvus"`` or ``"pgvector"``.
+        Backend discriminator, one of ``"milvus"``, ``"milvus_lite"`` or
+        ``"pgvector"``.
 
     Returns
     -------

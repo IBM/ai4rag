@@ -357,17 +357,17 @@ def benchmark_data():
 ### Example Functional Test
 
 ```python
-from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.rag.vector_store import MilvusLiteConfig
 
 
-class TestExperimentChroma:
-    """Run experiment with chroma vector store and MaaS models."""
+class TestExperimentMilvusLite:
+    """Run experiment with an embedded Milvus Lite vector store and MaaS models."""
 
-    def test_experiment_chroma_maas_models(
-        self, client, documents, benchmark_data, foundation_model, embedding_model
+    def test_experiment_milvus_lite_maas_models(
+        self, client, documents, benchmark_data, foundation_model, embedding_model, tmp_path
     ):
         search_space = AI4RAGSearchSpace(
-            vector_store_type="chroma",
+            vector_store_type="milvus_lite",
             params=[
                 Parameter(name="foundation_model", param_type="C", values=[foundation_model]),
                 Parameter(name="embedding_model", param_type="C", values=[embedding_model]),
@@ -382,7 +382,7 @@ class TestExperimentChroma:
             search_space=search_space,
             optimizer_settings=optimizer_settings,
             event_handler=LocalEventHandler(),
-            vector_store_config=ChromaConfig(),
+            vector_store_config=MilvusLiteConfig(db_path=str(tmp_path / "ai4rag.db")),  # embedded Milvus Lite
         )
 
         experiment.search(skip_mps=True)

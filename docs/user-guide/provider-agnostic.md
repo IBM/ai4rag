@@ -13,13 +13,13 @@ Rather than locking you into a specific vendor or technology stack, `ai4rag` def
 2. **Embedding Models** (for document and query embeddings)
 3. **Vector Stores** (for storing and retrieving document chunks)
 
-Concrete implementations for different providers — an OpenAI-compatible endpoint (OpenShift MaaS out of the box, accessed through the OpenAI SDK) for foundation and embedding models; Chroma, Milvus, and PGVector for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
+Concrete implementations for different providers — an OpenAI-compatible endpoint (OpenShift MaaS out of the box, accessed through the OpenAI SDK) for foundation and embedding models; Milvus (remote server), Milvus Lite (embedded, local), and PGVector for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
 
 ---
 
 ## Supported Providers
 
-For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint works — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or OpenShift MaaS (the integration shipped out of the box, detailed below). Not OpenAI-compatible? Implement `BaseFoundationModel` / `BaseEmbeddingModel` (see [Extending with Custom Providers](#extending-with-custom-providers)). For **vector stores**, pick from the built-in Chroma / Milvus / PGVector backends or add your own via `BaseVectorStore`.
+For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint works — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or OpenShift MaaS (the integration shipped out of the box, detailed below). Not OpenAI-compatible? Implement `BaseFoundationModel` / `BaseEmbeddingModel` (see [Extending with Custom Providers](#extending-with-custom-providers)). For **vector stores**, pick from the built-in Milvus (remote server, via `MilvusConfig`), Milvus Lite (embedded, local, via `MilvusLiteConfig`), or PGVector backends, or add your own via `BaseVectorStore`.
 
 ### OpenShift MaaS Integration
 
@@ -64,7 +64,7 @@ embedding_model = OpenAIEmbeddingModel(
 # Vector store: chosen independently of the model clients via a typed config
 from ai4rag.rag.vector_store import MilvusConfig
 
-vector_store_config = MilvusConfig.from_env()
+vector_store_config = MilvusConfig.from_env()  # remote Milvus server; reads MILVUS_URI (http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
 ```
 
 !!! tip "Discovering models automatically"
@@ -72,34 +72,41 @@ vector_store_config = MilvusConfig.from_env()
 
 ---
 
-### ChromaDB (In-Memory)
+### Milvus Lite (Embedded, Local File)
 
-**What it is**: An in-memory vector database perfect for development, testing, and small-scale deployments.
+**What it is**: The embedded, zero-server counterpart to the Milvus backend, served by the same `MilvusVectorStore` implementation but configured through its own dedicated **`MilvusLiteConfig`** class (provider `"milvus_lite"`), distinct from `MilvusConfig`. It is the local, zero-setup option for development, testing, and small-scale deployments.
 
 **What ai4rag supports**:
 
-- **Vector Store**: ChromaDB for document storage and retrieval
+- **Vector Store**: Milvus Lite (via `MilvusLiteConfig(db_path="./ai4rag.db")`) for document storage and retrieval, including hybrid (dense + BM25) search
 
-**Key advantage**: No external services required. Great for quick experimentation.
+**Key advantage**: No external services required — data is persisted to the local file at `db_path` (default `"./ai4rag_milvus_lite.db"`, exported as `DEFAULT_MILVUS_LITE_DB_PATH`). Great for quick experimentation.
+
+!!! note "Why a separate config class"
+    `MilvusConfig` and `MilvusLiteConfig` are kept separate on purpose. `MilvusConfig` validates that `uri` is
+    an `http(s)://` URL and raises `ValueError` otherwise, so a mistyped or unreachable `MILVUS_URI` fails
+    loudly instead of silently being treated as a local file path and creating a throwaway local database.
+    `MilvusLiteConfig` is the explicit opt-in for the embedded engine — it validates that `db_path` is *not*
+    an `http(s)://` URL, rejecting that case in favor of `MilvusConfig`.
 
 **Limitations**:
 
-- **No hybrid search**: ChromaDB doesn't support sparse embeddings or hybrid retrieval
-- **In-memory by default**: Data isn't persisted between runs unless you set `persist_directory` on `ChromaConfig`
-- **Not for production**: Suitable for development, not large-scale deployments
+- **Not for production**: Suitable for local development and small-scale workloads (prototyping, up to roughly 1M vectors), not large-scale or production deployments — use a remote Milvus server (`MilvusConfig`), Zilliz Cloud, or pgvector instead
+- **Lower hybrid-ranking fidelity**: BM25 statistics are computed segment-locally rather than corpus-wide, so hybrid search scores (and benchmark/HPO results measured against them) may not transfer exactly to a production Milvus server
+- **Single writer**: Writes are serialized — only one process should open a given `.db` file at a time
 
 **Usage**:
 
 ```python
 # Can use with any foundation/embedding models
-from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.rag.vector_store import MilvusLiteConfig
 from ai4rag.utils.event_handler import LocalEventHandler
 
 experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_config=ChromaConfig(),  # In-memory vector store
+    vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),  # embedded Milvus Lite, backed by a local file
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="./output"),  # required
 )
@@ -211,8 +218,7 @@ class BaseVectorStore(ABC):
 
 **Current implementations**:
 
-- `ChromaVectorStore`: ChromaDB (vector-only)
-- `MilvusVectorStore`: Milvus (hybrid: server-side dense + BM25)
+- `MilvusVectorStore`: Milvus — serves both a remote server (`MilvusConfig`) and the embedded, local-file Milvus Lite engine (`MilvusLiteConfig`) (hybrid: dense + BM25)
 - `PGVectorStore`: PostgreSQL + pgvector (hybrid: dense + tsvector full-text)
 
 ---
@@ -250,12 +256,12 @@ experiment = AI4RAGExperiment(
 
 ---
 
-### Example 2: MaaS Models with ChromaDB
+### Example 2: MaaS Models with Milvus Lite
 
-Use MaaS for models, but ChromaDB for quick local development:
+Use MaaS for models, but embedded Milvus Lite for quick local development:
 
 ```python
-from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.rag.vector_store import MilvusLiteConfig
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.utils.event_handler import LocalEventHandler
 
@@ -269,29 +275,32 @@ experiment = AI4RAGExperiment(
             # ... other params
         ]
     ),
-    vector_store_config=ChromaConfig(),  # In-memory ChromaDB
+    vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),  # embedded Milvus Lite, local file
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="./output"),  # required
 )
 ```
 
-!!! warning "No Hybrid Search with ChromaDB"
-    Remember that ChromaDB doesn't support hybrid search. If your search space includes `search_mode="hybrid"`, use `MilvusConfig` or `PGVectorConfig` instead (Chroma is vector-only).
+!!! warning "Milvus Lite Is Not for Production"
+    Milvus Lite fully supports `search_mode="hybrid"`, but its BM25 statistics are computed segment-locally
+    rather than corpus-wide, so hybrid-search ranking fidelity (and any scores measured against it) may not
+    transfer exactly to a production server. Use a remote Milvus server, Zilliz Cloud, or `PGVectorConfig` for
+    production workloads.
 
 ---
 
-## ChromaDB for Development
+## Milvus Lite for Development
 
-ChromaDB is the fastest way to get started with ai4rag without setting up external services.
+Milvus Lite is the fastest way to get started with ai4rag without setting up external services — it's the embedded, local-file counterpart to a full Milvus deployment, configured via its own `MilvusLiteConfig` class rather than `MilvusConfig` (which is reserved for a remote server and validates its `uri` accordingly).
 
 ### Quick Setup
 
-No configuration needed - just pass `vector_store_config=ChromaConfig()`:
+No configuration needed beyond a local file path — just pass `vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db")` (or `MilvusLiteConfig()` for the default path):
 
 ```python
 from pathlib import Path
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.rag.vector_store import ChromaConfig
+from ai4rag.rag.vector_store import MilvusLiteConfig
 from ai4rag.utils.event_handler import LocalEventHandler
 
 from dev_utils.file_store import FileStore
@@ -301,12 +310,12 @@ from dev_utils.utils import read_benchmark_from_json
 documents = FileStore(Path("./docs")).load_as_documents()
 benchmark_data = read_benchmark_from_json(Path("./benchmark.json"))
 
-# Run experiment with ChromaDB (no vector database setup needed!)
+# Run experiment with Milvus Lite (no external vector database setup needed!)
 experiment = AI4RAGExperiment(
     documents=documents,
     benchmark_data=benchmark_data,
     search_space=search_space,
-    vector_store_config=ChromaConfig(),  # In-memory, zero config
+    vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),  # embedded, zero-server, local file
     optimizer_settings=optimizer_settings,
     event_handler=LocalEventHandler(output_path="./output"),  # required
 )
@@ -314,19 +323,19 @@ experiment = AI4RAGExperiment(
 best_pattern = experiment.search()
 ```
 
-**When to use ChromaDB**:
+**When to use Milvus Lite**:
 
 - Local development and testing
-- Prototyping RAG configurations
-- Small document sets (<1000 documents)
+- Prototyping RAG configurations, including hybrid search
+- Small-to-medium document sets (up to roughly 1M vectors)
 - Quick experiments without infrastructure setup
 
-**When NOT to use ChromaDB**:
+**When NOT to use Milvus Lite**:
 
-- Production deployments
-- Large document collections (>10,000 documents)
-- Hybrid search requirements
-- Persistent storage requirements
+- Production deployments — use a remote Milvus server, Zilliz Cloud, or pgvector instead
+- Large-scale corpora beyond the embedded engine's target range
+- Workloads needing corpus-global BM25 fidelity for hybrid search
+- Concurrent writers to the same store (Milvus Lite serializes writes to its `.db` file)
 
 ---
 
@@ -453,19 +462,21 @@ class MyCustomVectorStore(BaseVectorStore):
 
 | Config class | Provider | Key connection params | Env vars (`.from_env()`) |
 |---|---|---|---|
-| `ChromaConfig` | ChromaDB (vector-only) | `persist_directory`, `host`, `port` | `CHROMA_PERSIST_DIR`, `CHROMA_HOST`, `CHROMA_PORT` |
-| `MilvusConfig` | Milvus (hybrid: dense + BM25) | `uri` (required), `token`, `server_cert` | `MILVUS_URI` (required), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusConfig` | Milvus — remote server or Zilliz Cloud only (hybrid: dense + BM25) | `uri` (required, must be `http(s)://`; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusLiteConfig` | Milvus Lite — embedded, local file only (hybrid: dense + BM25) | `db_path` (local file path; defaults to `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given a `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | PostgreSQL + pgvector (hybrid: dense + full-text) | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
+
+Both `MilvusConfig` and `MilvusLiteConfig` are served by the same `MilvusVectorStore` implementation; they only differ in where the data lives (remote server vs. local file) and are validated to prevent mixing the two up (see the note under [Milvus Lite (Embedded, Local File)](#milvus-lite-embedded-local-file)).
 
 Each config class is a frozen, keyword-only dataclass with a `.from_env()` classmethod that builds an instance from the environment variables above:
 
 ```python
-from ai4rag.rag.vector_store import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, PGVectorConfig
 
-# Ephemeral in-memory Chroma (default) — no env vars required
-chroma_config = ChromaConfig()
+# Embedded Milvus Lite backed by a local file — no external service, no env vars required
+milvus_lite_config = MilvusLiteConfig(db_path="./ai4rag.db")
 
-# Milvus, reading MILVUS_URI / MILVUS_TOKEN / MILVUS_SERVER_CERT from the environment
+# Remote Milvus server (or Zilliz Cloud), reading MILVUS_URI / MILVUS_TOKEN / MILVUS_SERVER_CERT
 milvus_config = MilvusConfig.from_env()
 
 # PGVector, reading PGVECTOR_HOST / PGVECTOR_PORT / PGVECTOR_DB / PGVECTOR_USER / PGVECTOR_PASSWORD
@@ -478,15 +489,15 @@ Pass the resulting config as `vector_store_config` to `AI4RAGExperiment`, or bui
 
 ## Provider Comparison
 
-| Feature | OpenShift MaaS | ChromaDB | Milvus | PGVector |
+| Feature | OpenShift MaaS | Milvus Lite (embedded) | Milvus (server) | PGVector |
 |---------|------------|----------|--------|----------|
 | **Foundation Models** | Yes (any deployed chat model) | N/A | N/A | N/A |
 | **Embedding Models** | Yes (any deployed embedding model) | N/A | N/A | N/A |
-| **Vector Store** | No (models only) | Yes (in-memory) | Yes | Yes |
-| **Hybrid Search** | N/A | No | Yes (dense + BM25) | Yes (dense + full-text) |
+| **Vector Store** | No (models only) | Yes (local file) | Yes | Yes |
+| **Hybrid Search** | N/A | Yes (dense + BM25, segment-local IDF) | Yes (dense + BM25) | Yes (dense + full-text) |
 | **Setup Complexity** | Medium (MaaS deployment required) | None | Medium (server required) | Medium (server required) |
 | **Cost** | Self-hosted (infra cost) | Free | Self-hosted (infra cost) | Self-hosted (infra cost) |
-| **Best For** | On-prem, self-hosted OpenAI-compatible models | Local dev, testing | Production, hybrid search | Production, hybrid search, existing Postgres infra |
+| **Best For** | On-prem, self-hosted OpenAI-compatible models | Local dev, testing, prototyping | Production, hybrid search | Production, hybrid search, existing Postgres infra |
 
 ---
 
@@ -497,6 +508,6 @@ Pass the resulting config as `vector_store_config` to `AI4RAGExperiment`, or bui
 - **Abstract base classes**: `BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`
 - **Extensible**: Add support for new providers by implementing base classes
 - **OpenShift MaaS**: OpenAI-SDK access to any deployed foundation and embedding model
-- **Direct-client vector stores**: `ChromaConfig`/`ChromaVectorStore` for zero-config local development, `MilvusConfig`/`MilvusVectorStore` and `PGVectorConfig`/`PGVectorStore` for production deployments with hybrid search
+- **Direct-client vector stores**: `MilvusVectorStore`, backed by either `MilvusLiteConfig` (embedded Milvus Lite for zero-config local development) or `MilvusConfig` (remote server/Zilliz Cloud for production), plus `PGVectorConfig`/`PGVectorStore` for production deployments — all with hybrid search
 
 The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of which model you're using. Focus on finding the best RAG configuration for your use case, not your infrastructure.
