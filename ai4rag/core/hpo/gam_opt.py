@@ -103,7 +103,13 @@ class GAMOptSettings(OptimizerSettings):
     Parameters
     ----------
     max_evals : int
-        Maximum number of evaluations performed during optimization process.
+        Maximum number of objective-function evaluations performed during
+        optimization, including warm-start and GAM evaluations.
+    max_iterations : int | None, default=None
+        Maximum number of evaluated RAG patterns retained and published when the
+        search completes. It controls the warm-start/GAM output allocation, not
+        the hard evaluation budget; use ``max_evals`` to bound objective-function
+        calls. When omitted, ``max_evals`` is used. It cannot exceed ``max_evals``.
     n_random_nodes : int, default=4
         Number of random configurations to evaluate before starting GAM iterations.
     evals_per_trial : int, default=1
@@ -114,14 +120,13 @@ class GAMOptSettings(OptimizerSettings):
         "greedy"   — greedily pick combinations so every discrete column value
                      appears at least twice. If n_random_nodes is below the
                      computed minimum (min_required), the warm start is
-                     auto-adjusted upward to meet coverage. After warm start,
-                     runs max_evals - floor(min_required/4) GAM iterations;
-                     the final evaluations list is trimmed to the top max_evals
-                     by score.
+                     auto-adjusted upward to meet coverage. One output slot is
+                     allocated per four effective warm-start evaluations; GAM
+                     fills the remaining ``max_iterations`` slots.
         "balanced" — round-robin across the tuple of fields_to_balance values;
                      non-balanced discrete column values each appear at least once.
                      Requires fields_to_balance to be set. Same auto-adjustment,
-                     GAM iteration count, and trimming rules as "greedy".
+                     and output allocation rules as "greedy".
     fields_to_balance : list[str] | None, default=None
         Field names to balance by round-robin when warm_start_strategy="balanced".
         Each unique value combination of these fields is guaranteed to appear at
@@ -132,6 +137,7 @@ class GAMOptSettings(OptimizerSettings):
         (GAM training is deterministic).
     """
 
+    max_iterations: int | None = None
     n_random_nodes: int = 4
     evals_per_trial: int = 1
     warm_start_strategy: Literal["random", "greedy", "balanced"] = "random"
@@ -145,6 +151,11 @@ class GAMOptSettings(OptimizerSettings):
             )
         if self.warm_start_strategy == "balanced" and not self.fields_to_balance:
             raise ValueError("fields_to_balance must be a non-empty list when warm_start_strategy='balanced'.")
+        if self.max_iterations is not None:
+            if self.max_iterations < 1:
+                raise ValueError("max_iterations must be at least 1 when provided.")
+            if self.max_iterations > self.max_evals:
+                raise ValueError("max_iterations cannot exceed max_evals.")
 
 
 class GAMOptimizer(BaseOptimizer):
@@ -174,7 +185,9 @@ class GAMOptimizer(BaseOptimizer):
         Already evaluated hyperparameters combinations with corresponding score.
 
     max_iterations : int
-        Validated maximum number of iterations during HPO.
+        Effective maximum number of evaluated patterns retained as search results
+        and published to the event handler. This is bounded by ``max_evals`` and
+        the number of available search-space combinations.
     """
 
     def __init__(
@@ -195,29 +208,32 @@ class GAMOptimizer(BaseOptimizer):
         if known_observations:
             self._load_known_observations(known_observations)
 
+        self._validate_fields_to_balance()
         self._validate_n_random_nodes()
 
-        self.max_iterations = self.settings.max_evals
+        self.max_evals = min(self.settings.max_evals, self._search_space.max_combinations)
+        self.max_iterations = self.settings.max_iterations
 
     @property
     def max_iterations(self) -> int:
-        """Get max possible number of iterations for the HPO."""
+        """Get the effective maximum number of retained result patterns."""
         return self._max_iterations
 
     @max_iterations.setter
-    def max_iterations(self, val: int) -> None:
-        """Set maximum number of iterations that should be performed during HPO."""
+    def max_iterations(self, val: int | None) -> None:
+        """Set maximum number of result patterns retained after HPO."""
         max_comb = self._search_space.max_combinations
-        if val > max_comb:
+        if val is None:
+            self._max_iterations = self.max_evals
+            return
+        max_results = min(self.max_evals, max_comb)
+        if val > max_results:
             logger.info(
-                (
-                    "'max_number_of_rag_patterns' exceeded number of possible combinations: %s. "
-                    "Setting 'max_number_of_rag_patterns' to: %s"
-                ),
-                max_comb,
-                max_comb,
+                ("'max_iterations' exceeded the available evaluation budget: %s. " "Setting 'max_iterations' to: %s"),
+                max_results,
+                max_results,
             )
-            self._max_iterations = max_comb
+            self._max_iterations = max_results
         else:
             self._max_iterations = val
 
@@ -243,14 +259,19 @@ class GAMOptimizer(BaseOptimizer):
         self.current_phase = "gam"
         if strategy in ("greedy", "balanced"):
             effective_warm_start = self._compute_warm_start_effective_target()
-            n_gam_iters = max(0, self.settings.max_evals - (effective_warm_start // 4))
-            for _ in range(n_gam_iters):
+            output_limit = self.max_iterations
+            gam_output_count = max(0, output_limit - (effective_warm_start // 4))
+            gam_iterations = ceil(gam_output_count / self.settings.evals_per_trial)
+            remaining_evaluation_capacity = max(0, self.max_evals - len(self.evaluations))
+            capacity_iterations = ceil(remaining_evaluation_capacity / self.settings.evals_per_trial)
+            for _ in range(min(gam_iterations, capacity_iterations)):
                 self._run_iteration()
-            self._trim_evaluations_to_top(self.settings.max_evals)
         else:
             iterations_limit = self._get_iterations_limit()
             for _ in range(iterations_limit):
                 self._run_iteration()
+
+        self._trim_evaluations_to_top(self.max_iterations)
 
         self.current_phase = "complete"
 
@@ -269,7 +290,7 @@ class GAMOptimizer(BaseOptimizer):
         Calculate maximum number of iterations that can be proceeded based on the
         already evaluated random nodes and settings for the optimizer.
         """
-        iterations_limit = ceil((self.max_iterations - len(self.evaluations)) / self.settings.evals_per_trial)
+        iterations_limit = ceil((self.max_evals - len(self.evaluations)) / self.settings.evals_per_trial)
         return max(0, iterations_limit)
 
     def _validate_n_random_nodes(self) -> None:
@@ -334,6 +355,23 @@ class GAMOptimizer(BaseOptimizer):
                     max_non_balanced,
                     min_required,
                 )
+
+    def _validate_fields_to_balance(self) -> None:
+        """Reject balanced warm-start fields that are absent from the search space."""
+        if self.settings.warm_start_strategy != "balanced":
+            return
+
+        combinations = self._search_space.combinations
+        if not combinations:
+            return
+
+        available_fields = set(combinations[0])
+        unknown_fields = set(self.settings.fields_to_balance or []) - available_fields
+        if unknown_fields:
+            raise ValueError(
+                "fields_to_balance contains field(s) absent from the search space: "
+                f"{sorted(unknown_fields)}. Available fields: {sorted(available_fields)}."
+            )
 
     def _compute_warm_start_effective_target(self) -> int:
         """Return the effective number of successful warm-start nodes to evaluate.
@@ -401,9 +439,9 @@ class GAMOptimizer(BaseOptimizer):
     def evaluate_initial_random_nodes(self) -> None:
         """
         Perform evaluation of randomly chosen nodes from the solutions space.
-        Random warm starts stop at the configured maximum evaluation count;
-        greedy and balanced warm starts continue until their required number
-        of successful evaluations is reached.
+        All strategies stop at the configured maximum evaluation count. Greedy
+        and balanced starts may therefore finish before their coverage target
+        when the evaluation budget is smaller than the coverage requirement.
 
         When the optimizer has been warm-started with known observations,
         already-successful evaluations count toward the n_random_nodes target
@@ -425,7 +463,7 @@ class GAMOptimizer(BaseOptimizer):
             )
             return
 
-        if self.settings.warm_start_strategy == "random" and len(self.evaluations) >= self.max_iterations:
+        if len(self.evaluations) >= self.max_evals:
             return
 
         combinations_local = self._prepare_warm_start_combinations(effective_target, successful_evaluations)
@@ -483,7 +521,7 @@ class GAMOptimizer(BaseOptimizer):
             self._evaluated_combinations.append(params)
             self.evaluations.append(params | {"score": score})
 
-            if self.settings.warm_start_strategy == "random" and len(self.evaluations) >= self.max_iterations:
+            if len(self.evaluations) >= self.max_evals:
                 break
 
     @staticmethod
@@ -529,7 +567,7 @@ class GAMOptimizer(BaseOptimizer):
 
         for col, vals in non_balanced.items():
             for val in vals:
-                if val in seen[col] or not remaining:
+                if val in seen[col] or not remaining or len(self.evaluations) >= self.max_evals:
                     continue
                 candidate = next((c for c in remaining if _str_val(c.get(col)) == val), None)
                 if candidate is None:
@@ -724,7 +762,8 @@ class GAMOptimizer(BaseOptimizer):
 
         best_predictions = sorted(remaining_evaluations, key=lambda d: d["score"], reverse=True)
 
-        for params in best_predictions[: self.settings.evals_per_trial]:
+        remaining_evaluation_capacity = max(0, self.max_evals - len(self.evaluations))
+        for params in best_predictions[: min(self.settings.evals_per_trial, remaining_evaluation_capacity)]:
             params.pop("score", None)
             score = self._objective_function(params)
             self._evaluated_combinations.append(params)
