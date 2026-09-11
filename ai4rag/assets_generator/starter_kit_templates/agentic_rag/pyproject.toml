@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agentic-rag"
+version = "0.1.0"
+description = "Agentic RAG starter kit"
+requires-python = ">=3.12,<3.15"
+
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "langchain>=0.3",
+    "langchain-openai>=0.3",
+    "langgraph-prebuilt>=0.1",
+    "pymilvus>=3.0,<4",
+    "ai4rag>=0.15",
+    "flask>=3.1",
+    "requests>=2.32",
+    "python-dotenv>=1.1",
+    "openai>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+tracing = ["mlflow>=2.21"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
