@@ -155,6 +155,8 @@ class AI4RAGExperiment:
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
 
         self.results: ExperimentResults = ExperimentResults()
+        self.optimizer: BaseOptimizer | None = None
+        self._optimization_patterns: list[dict[str, Any]] = []
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
 
         if kwargs:
@@ -741,16 +743,61 @@ class AI4RAGExperiment:
             self.optimizer_settings.to_dict(),
         )
 
+        self.optimizer = optimizer
         try:
             _ = optimizer.search()
         except OptimizationError as err:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
 
+        self._publish_optimization_patterns()
+
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message="Experiment optimization process finished.",
         )
+
+    def _select_optimization_patterns(self) -> list[dict[str, Any]]:
+        """Select and renumber the configured number of GAM output patterns."""
+        patterns = self._optimization_patterns
+        if not isinstance(self.optimizer, GAMOptimizer) or not patterns:
+            return patterns
+
+        output_limit = self.optimizer.max_iterations
+        warm_start_output_count = min(
+            output_limit,
+            self.optimizer.compute_warm_start_effective_target() // 4,
+        )
+        warm_start_patterns = [p for p in patterns if p.get("optimization_phase") == "warm_start"]
+        gam_patterns = [p for p in patterns if p.get("optimization_phase") == "gam"]
+        selected = warm_start_patterns[:warm_start_output_count]
+        selected.extend(gam_patterns[: output_limit - len(selected)])
+
+        for index, pattern in enumerate(selected, start=1):
+            payload = pattern.get("payload")
+            if isinstance(payload, dict):
+                payload["name"] = f"Pattern{index}"
+                payload["iteration"] = index - 1
+
+        logger.info(
+            "Selected %d output patterns: %d from warm start and %d from GAM.",
+            len(selected),
+            min(len(warm_start_patterns), warm_start_output_count),
+            min(len(gam_patterns), output_limit - len(warm_start_patterns[:warm_start_output_count])),
+        )
+        return selected
+
+    def _publish_optimization_patterns(self) -> None:
+        """Publish GAM patterns only after their final output selection is known."""
+        for pattern in self._select_optimization_patterns():
+            payload = pattern["payload"]
+            evaluation_results = pattern["evaluation_results"]
+            metadata = {key: value for key, value in pattern.items() if key not in {"payload", "evaluation_results"}}
+            self.event_handler.on_pattern_creation(
+                payload=payload,
+                evaluation_results=evaluation_results,
+                **metadata,
+            )
 
     def _stream_finished_pattern(
         self,
@@ -833,10 +880,15 @@ class AI4RAGExperiment:
             "iteration": len(self.results) + n_known,
         }
 
-        self.event_handler.on_pattern_creation(
-            payload=payload,
-            evaluation_results=evaluation_results_json,
-        )
+        pattern = {
+            "payload": payload,
+            "evaluation_results": evaluation_results_json,
+            "optimization_phase": getattr(self.optimizer, "current_phase", None),
+        }
+        if isinstance(self.optimizer, GAMOptimizer):
+            self._optimization_patterns.append(pattern)
+        else:
+            self.event_handler.on_pattern_creation(**pattern)
 
     def _evaluate_response(
         self,
