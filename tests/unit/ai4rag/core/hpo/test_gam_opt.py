@@ -38,6 +38,7 @@ class TestGAMOptSettings:
         )
 
         assert settings.max_evals == 50
+        assert settings.max_iterations is None
         assert settings.n_random_nodes == 10
         assert settings.evals_per_trial == 2
         assert settings.random_state == 42
@@ -73,6 +74,11 @@ class TestGAMOptSettings:
         GAMOptSettings(max_evals=10, warm_start_strategy="random")
         GAMOptSettings(max_evals=10, warm_start_strategy="greedy")
         GAMOptSettings(max_evals=10, warm_start_strategy="balanced", fields_to_balance=["search_mode"])
+
+    def test_gam_opt_settings_rejects_result_limit_above_evaluation_limit(self):
+        """The output count cannot be greater than the objective evaluation budget."""
+        with pytest.raises(ValueError, match="max_iterations cannot exceed max_evals"):
+            GAMOptSettings(max_evals=4, max_iterations=5)
 
 
 class TestGAMOptimizer:
@@ -114,6 +120,21 @@ class TestGAMOptimizer:
         assert optimizer.evaluations == []
         assert optimizer._evaluated_combinations == []
         assert optimizer._typed_encoders_with_columns == []
+
+    def test_balanced_strategy_rejects_unknown_balance_fields(self, mock_search_space):
+        """Balanced warm starts fail fast when a requested field is not searchable."""
+        settings = GAMOptSettings(
+            max_evals=6,
+            warm_start_strategy="balanced",
+            fields_to_balance=["param1", "missing_field"],
+        )
+
+        with pytest.raises(ValueError, match="absent from the search space.*missing_field"):
+            GAMOptimizer(
+                objective_function=MagicMock(return_value=0.5),
+                search_space=mock_search_space,
+                settings=settings,
+            )
 
     def test_max_iterations_getter(self, mock_search_space, optimizer_settings):
         """Test the max_iterations property getter."""
@@ -992,10 +1013,9 @@ class TestGetBalancedCombinations:
 
     def test_round_robins_between_two_field_values(self):
         """Combinations alternate between the two values of the balanced field."""
-        combos = (
-            [{"search_mode": "vector", "n": i} for i in range(3)] +
-            [{"search_mode": "hybrid", "n": i} for i in range(3)]
-        )
+        combos = [{"search_mode": "vector", "n": i} for i in range(3)] + [
+            {"search_mode": "hybrid", "n": i} for i in range(3)
+        ]
         result = GAMOptimizer._get_balanced_combinations(combos, ["search_mode"])
         assert len(result) == 6
         assert result[0]["search_mode"] != result[1]["search_mode"]
@@ -1018,10 +1038,9 @@ class TestGetBalancedCombinations:
 
     def test_returns_all_combinations(self):
         """All input combinations appear in the output."""
-        combos = (
-            [{"search_mode": "vector", "n": i} for i in range(4)] +
-            [{"search_mode": "hybrid", "n": i} for i in range(4)]
-        )
+        combos = [{"search_mode": "vector", "n": i} for i in range(4)] + [
+            {"search_mode": "hybrid", "n": i} for i in range(4)
+        ]
         result = GAMOptimizer._get_balanced_combinations(combos, ["search_mode"])
         assert len(result) == 8
 
@@ -1069,14 +1088,15 @@ class TestInitialSamplingStrategies:
         fm1, fm2 = {"model_id": "fm1"}, {"model_id": "fm2"}
         em = {"model_id": "em1"}
         mock_space.combinations = (
-            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
-            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)] +
-            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)] +
-            [{"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)]
+            [{"foundation_model": fm1, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)]
+            + [{"foundation_model": fm1, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)]
+            + [{"foundation_model": fm2, "embedding_model": em, "search_mode": "vector", "size": i} for i in range(3)]
+            + [{"foundation_model": fm2, "embedding_model": em, "search_mode": "hybrid", "size": i} for i in range(3)]
         )
         mock_space.max_combinations = 12
         settings = GAMOptSettings(
-            max_evals=12, n_random_nodes=4,
+            max_evals=12,
+            n_random_nodes=4,
             warm_start_strategy="balanced",
             fields_to_balance=["foundation_model", "embedding_model", "search_mode"],
         )
@@ -1086,7 +1106,7 @@ class TestInitialSamplingStrategies:
             settings=settings,
         )
         optimizer.evaluate_initial_random_nodes()
-        initial = optimizer.evaluations[:settings.n_random_nodes]
+        initial = optimizer.evaluations[: settings.n_random_nodes]
         buckets = {(e["foundation_model"]["model_id"], e["search_mode"]) for e in initial}
         assert len(buckets) == 4
 
@@ -1102,8 +1122,13 @@ class TestInitialSamplingStrategies:
         ]
         mock_space.max_combinations = 5
         known = [{"search_mode": "hybrid", "size": 256, "score": 0.5}]
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=4, random_state=42,
-                                  warm_start_strategy="balanced", fields_to_balance=["search_mode"])
+        settings = GAMOptSettings(
+            max_evals=5,
+            n_random_nodes=4,
+            random_state=42,
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode"],
+        )
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
@@ -1111,7 +1136,7 @@ class TestInitialSamplingStrategies:
             known_observations=known,
         )
         optimizer.evaluate_initial_random_nodes()
-        new_evals = optimizer.evaluations[len(known):]
+        new_evals = optimizer.evaluations[len(known) :]
         assert "vector" in {e["search_mode"] for e in new_evals}
 
     def test_balanced_strategy_covers_non_balanced_column_values(self):
@@ -1130,8 +1155,11 @@ class TestInitialSamplingStrategies:
         ]
         mock_space.max_combinations = 12
         settings = GAMOptSettings(
-            max_evals=12, n_random_nodes=6, random_state=64,
-            warm_start_strategy="balanced", fields_to_balance=["search_mode"],
+            max_evals=12,
+            n_random_nodes=6,
+            random_state=64,
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode"],
         )
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
@@ -1139,7 +1167,7 @@ class TestInitialSamplingStrategies:
             settings=settings,
         )
         optimizer.evaluate_initial_random_nodes()
-        initial = optimizer.evaluations[:settings.n_random_nodes]
+        initial = optimizer.evaluations[: settings.n_random_nodes]
         chunk_sizes_seen = {e["chunk_size"] for e in initial}
         assert len(chunk_sizes_seen) > 1, (
             f"Only one chunk_size ({chunk_sizes_seen}) appeared in the first "
@@ -1176,8 +1204,11 @@ class TestInitialSamplingStrategies:
             return 0.5 if params.get("chunking_method") == "recursive" else None
 
         settings = GAMOptSettings(
-            max_evals=20, n_random_nodes=4, random_state=64,
-            warm_start_strategy="balanced", fields_to_balance=["search_mode"],
+            max_evals=20,
+            n_random_nodes=4,
+            random_state=64,
+            warm_start_strategy="balanced",
+            fields_to_balance=["search_mode"],
         )
         optimizer = GAMOptimizer(
             objective_function=objective,
@@ -1187,18 +1218,19 @@ class TestInitialSamplingStrategies:
         optimizer.evaluate_initial_random_nodes()
 
         attempted = {e["chunking_method"] for e in optimizer.evaluations}
-        assert attempted == {"recursive", "flat", "sentence"}, (
-            f"Expected all chunking_method values to be attempted, but got: {attempted}"
-        )
+        assert attempted == {
+            "recursive",
+            "flat",
+            "sentence",
+        }, f"Expected all chunking_method values to be attempted, but got: {attempted}"
 
     def test_greedy_strategy_covers_each_value_twice(self):
         """'greedy' strategy puts every discrete column value at least twice in first n."""
         mock_space = MagicMock(spec=SearchSpace)
         # size has 2 unique values so max_unique=2, min_required=max(4,4)=4
-        mock_space.combinations = (
-            [{"search_mode": "vector", "method": "recursive", "size": i} for i in range(2)] +
-            [{"search_mode": "hybrid", "method": "hybrid", "size": i} for i in range(2)]
-        )
+        mock_space.combinations = [{"search_mode": "vector", "method": "recursive", "size": i} for i in range(2)] + [
+            {"search_mode": "hybrid", "method": "hybrid", "size": i} for i in range(2)
+        ]
         mock_space.max_combinations = 4
         settings = GAMOptSettings(max_evals=4, n_random_nodes=4, warm_start_strategy="greedy")
         optimizer = GAMOptimizer(
@@ -1214,10 +1246,9 @@ class TestInitialSamplingStrategies:
     def test_sampling_is_deterministic_with_same_seed(self):
         """Sampling is reproducible given the same random_state."""
         mock_space = MagicMock(spec=SearchSpace)
-        mock_space.combinations = (
-            [{"search_mode": "hybrid", "size": i} for i in range(5)] +
-            [{"search_mode": "vector", "size": i} for i in range(5)]
-        )
+        mock_space.combinations = [{"search_mode": "hybrid", "size": i} for i in range(5)] + [
+            {"search_mode": "vector", "size": i} for i in range(5)
+        ]
         mock_space.max_combinations = 10
         settings = GAMOptSettings(max_evals=10, n_random_nodes=4, random_state=42)
 
@@ -1368,12 +1399,8 @@ class TestGreedyBalancedWarmStartAutoAdjust:
     def _make_space(self, n=8):
         """Search space with 2 search_modes and 4 methods, totalling n combinations."""
         mock_space = MagicMock(spec=SearchSpace)
-        mock_space.combinations = [
-            {"search_mode": "vector", "method": m}
-            for m in ["a", "b", "c", "d"]
-        ] + [
-            {"search_mode": "hybrid", "method": m}
-            for m in ["a", "b", "c", "d"]
+        mock_space.combinations = [{"search_mode": "vector", "method": m} for m in ["a", "b", "c", "d"]] + [
+            {"search_mode": "hybrid", "method": m} for m in ["a", "b", "c", "d"]
         ]
         mock_space.max_combinations = 8
         return mock_space
@@ -1483,16 +1510,15 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         assert optimizer._compute_warm_start_effective_target() == 3
 
     # ------------------------------------------------------------------
-    # GAM iterations: max_evals - floor(min_required / 4)
+    # GAM iterations fill the output slots remaining after warm-start allocation.
     # ------------------------------------------------------------------
 
     def test_greedy_search_runs_gam_iterations_after_warm_start(self, mocker):
-        """Greedy search runs max_evals minus the warm-start iteration allowance."""
+        """Greedy search fills output slots remaining after warm start."""
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode has 2 unique values, method has 4, size has 4 → max_unique=4
         # min_required = max(4, 2*4) = 8
-        # max_evals=20, n_gam_iters = 20 - (8//4) = 18.
-        # Space size: 2×4×4 = 32 combinations (>8+18=26 needed)
+        # max_iterations=20 allocates two warm-start outputs and 18 GAM outputs.
         mock_space.combinations = [
             {"search_mode": m, "method": x, "size": s}
             for m in ["vector", "hybrid"]
@@ -1505,7 +1531,13 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         mock_gam.predict.return_value = np.array([0.5] * 32)
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
-        settings = GAMOptSettings(max_evals=20, n_random_nodes=2, warm_start_strategy="greedy")
+        settings = GAMOptSettings(
+            max_evals=32,
+            max_iterations=20,
+            n_random_nodes=2,
+            evals_per_trial=2,
+            warm_start_strategy="greedy",
+        )
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
@@ -1525,19 +1557,18 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        expected_gam_iters = 20 - (effective_warm_start // 4)  # 20 - 2 = 18
+        expected_gam_iters = 9  # ceil((20 output - 2 warm-start slots) / 2 per trial)
         assert len(run_iteration_calls) == expected_gam_iters
+        assert optimizer.objective_function.call_count == effective_warm_start + 18
 
     def test_balanced_search_runs_gam_iterations_after_warm_start(self, mocker):
-        """Balanced search runs max_evals minus the warm-start iteration allowance."""
+        """Balanced search fills output slots after its coverage warm start."""
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode has 2 unique values, method has 20 unique values
         # min_required = max(4, 2_balanced_tuples, 20_non_balanced) = 20
-        # max_evals=12, n_gam_iters = 12 - (20//4) = 7.
+        # max_iterations=12 allocates five warm-start outputs and seven GAM outputs.
         mock_space.combinations = [
-            {"search_mode": m, "method": f"x{i}"}
-            for m in ["vector", "hybrid"]
-            for i in range(20)
+            {"search_mode": m, "method": f"x{i}"} for m in ["vector", "hybrid"] for i in range(20)
         ]
         mock_space.max_combinations = 40
 
@@ -1546,7 +1577,8 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
         settings = GAMOptSettings(
-            max_evals=12,
+            max_evals=40,
+            max_iterations=12,
             n_random_nodes=1,
             warm_start_strategy="balanced",
             fields_to_balance=["search_mode"],
@@ -1570,8 +1602,40 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        expected_gam_iters = 12 - (effective_warm_start // 4)  # 12 - 5 = 7
-        assert len(run_iteration_calls) == expected_gam_iters
+        assert len(run_iteration_calls) == 7
+
+    def test_greedy_search_caps_partial_gam_trial_at_max_evals(self, mocker):
+        """A final GAM trial evaluates only the capacity remaining in max_evals."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"search_mode": mode, "method": method, "size": size}
+            for mode in ["vector", "hybrid"]
+            for method in ["a", "b", "c", "d"]
+            for size in [100, 200]
+        ]
+        mock_space.max_combinations = 16
+
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.5] * 16)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+
+        objective = MagicMock(return_value=0.5)
+        optimizer = GAMOptimizer(
+            objective_function=objective,
+            search_space=mock_space,
+            settings=GAMOptSettings(
+                max_evals=10,
+                max_iterations=10,
+                n_random_nodes=2,
+                evals_per_trial=3,
+                warm_start_strategy="greedy",
+            ),
+        )
+
+        optimizer.search()
+
+        assert objective.call_count == 10
+        assert len(optimizer.evaluations) == 10
 
     # ------------------------------------------------------------------
     # Trim to top max_evals by score
@@ -1619,11 +1683,10 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         assert len(optimizer.evaluations) == 2
 
     def test_greedy_search_when_max_evals_smaller_than_min_required(self, mocker):
-        """When max_evals < min_required, warm start still evaluates min_required nodes."""
+        """A small output limit does not cap the required warm-start evaluations."""
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode(2) × method(4) × size(4) = 32 combinations; max_unique=4
-        # min_required = max(4, 2*4) = 8; max_evals=4 < 8
-        # n_gam_iters = 4 - (8//4) = 2
+        # min_required = max(4, 2*4) = 8; max_iterations=4
         mock_space.combinations = [
             {"search_mode": m, "method": x, "size": s}
             for m in ["vector", "hybrid"]
@@ -1636,7 +1699,7 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         mock_gam.predict.return_value = np.array([0.5] * 32)
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
 
-        settings = GAMOptSettings(max_evals=4, n_random_nodes=2, warm_start_strategy="greedy")
+        settings = GAMOptSettings(max_evals=32, max_iterations=4, n_random_nodes=2, warm_start_strategy="greedy")
         optimizer = GAMOptimizer(
             objective_function=MagicMock(return_value=0.5),
             search_space=mock_space,
@@ -1655,18 +1718,15 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        # Warm start evaluates min_required=8 despite max_evals=4.
-        # Final evaluations are trimmed to top max_evals=4.
         assert len(run_iteration_calls) == 2
-        assert len(optimizer.evaluations) <= 4
+        assert optimizer.objective_function.call_count == 10
+        assert len(optimizer.evaluations) == settings.max_iterations
 
-    def test_greedy_search_evaluations_trimmed_to_max_evals(self, mocker):
-        """After greedy search, evaluations are trimmed to the top max_evals by score."""
+    def test_greedy_search_does_not_exceed_max_evals(self, mocker):
+        """The greedy coverage target never causes more than max_evals objective calls."""
         mock_space = MagicMock(spec=SearchSpace)
         mock_space.combinations = [
-            {"search_mode": m, "method": f"x{i}"}
-            for m in ["vector", "hybrid"]
-            for i in range(20)
+            {"search_mode": m, "method": f"x{i}"} for m in ["vector", "hybrid"] for i in range(20)
         ]
         mock_space.max_combinations = 40
 
@@ -1688,6 +1748,7 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         )
         optimizer.search()
 
+        assert call_count[0] == settings.max_evals
         assert len(optimizer.evaluations) <= 10
         scores = [e["score"] for e in optimizer.evaluations]
         assert scores == sorted(scores, reverse=True), "Evaluations should be sorted best-first"
