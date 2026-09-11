@@ -18,9 +18,9 @@ class TestGAMOptSettings:
 
     def test_gam_opt_settings_creation_with_defaults(self):
         """Test that GAMOptSettings can be instantiated with default values."""
-        settings = GAMOptSettings(max_evals=20)
+        settings = GAMOptSettings()
 
-        assert settings.max_evals == 20
+        assert settings.max_evals is None
         assert settings.n_random_nodes == 4
         assert settings.evals_per_trial == 1
         assert settings.random_state == 64
@@ -120,6 +120,24 @@ class TestGAMOptimizer:
         assert optimizer.evaluations == []
         assert optimizer._evaluated_combinations == []
         assert optimizer._typed_encoders_with_columns == []
+
+    def test_omitted_max_evals_evaluates_entire_search_space(self, mock_search_space, mocker):
+        """An omitted evaluation limit uses every available search-space combination."""
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.5] * mock_search_space.max_combinations)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+        objective = MagicMock(return_value=0.5)
+        optimizer = GAMOptimizer(
+            objective_function=objective,
+            search_space=mock_search_space,
+            settings=GAMOptSettings(n_random_nodes=2),
+        )
+
+        optimizer.search()
+
+        assert optimizer.max_evals == mock_search_space.max_combinations
+        assert objective.call_count == mock_search_space.max_combinations
+        assert len(optimizer.evaluations) == mock_search_space.max_combinations
 
     def test_balanced_strategy_rejects_unknown_balance_fields(self, mock_search_space):
         """Balanced warm starts fail fast when a requested field is not searchable."""

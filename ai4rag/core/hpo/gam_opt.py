@@ -102,14 +102,16 @@ class GAMOptSettings(OptimizerSettings):
 
     Parameters
     ----------
-    max_evals : int
+    max_evals : int | None, default=None
         Maximum number of objective-function evaluations performed during
-        optimization, including warm-start and GAM evaluations.
+        optimization, including warm-start and GAM evaluations. When omitted,
+        every available search-space combination is evaluated.
     max_iterations : int | None, default=None
         Maximum number of evaluated RAG patterns retained and published when the
         search completes. It controls the warm-start/GAM output allocation, not
         the hard evaluation budget; use ``max_evals`` to bound objective-function
-        calls. When omitted, ``max_evals`` is used. It cannot exceed ``max_evals``.
+        calls. When omitted, it is set to the effective ``max_evals`` value. It
+        cannot exceed an explicitly configured ``max_evals``.
     n_random_nodes : int, default=4
         Number of random configurations to evaluate before starting GAM iterations.
     evals_per_trial : int, default=1
@@ -137,6 +139,7 @@ class GAMOptSettings(OptimizerSettings):
         (GAM training is deterministic).
     """
 
+    max_evals: int | None = None
     max_iterations: int | None = None
     n_random_nodes: int = 4
     evals_per_trial: int = 1
@@ -154,7 +157,7 @@ class GAMOptSettings(OptimizerSettings):
         if self.max_iterations is not None:
             if self.max_iterations < 1:
                 raise ValueError("max_iterations must be at least 1 when provided.")
-            if self.max_iterations > self.max_evals:
+            if self.max_evals is not None and self.max_iterations > self.max_evals:
                 raise ValueError("max_iterations cannot exceed max_evals.")
 
 
@@ -211,7 +214,11 @@ class GAMOptimizer(BaseOptimizer):
         self._validate_fields_to_balance()
         self._validate_n_random_nodes()
 
-        self.max_evals = min(self.settings.max_evals, self._search_space.max_combinations)
+        self.max_evals = (
+            self._search_space.max_combinations
+            if self.settings.max_evals is None
+            else min(self.settings.max_evals, self._search_space.max_combinations)
+        )
         self.max_iterations = self.settings.max_iterations
 
     @property
