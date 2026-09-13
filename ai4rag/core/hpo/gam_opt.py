@@ -236,7 +236,7 @@ class GAMOptimizer(BaseOptimizer):
         max_results = min(self.max_evals, max_comb)
         if val > max_results:
             logger.info(
-                ("'max_iterations' exceeded the available evaluation budget: %s. " "Setting 'max_iterations' to: %s"),
+                "'max_iterations' exceeded the available evaluation budget: %s. Setting 'max_iterations' to: %s",
                 max_results,
                 max_results,
             )
