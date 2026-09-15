@@ -9,6 +9,11 @@ from sqlite_shim import patch_sqlite3
 
 patch_sqlite3()
 
+from agentic_rag.config import AgentConfig  # noqa: E402
+from langchain_core.tools import tool  # noqa: E402
+from openai import OpenAI  # noqa: E402
+from pydantic import BaseModel, Field  # noqa: E402
+
 from ai4rag.rag.embedding.openai_model import (  # noqa: E402
     OpenAIEmbeddingModel,
     OpenAIEmbeddingParams,
@@ -18,11 +23,6 @@ from ai4rag.rag.vector_store import (  # noqa: E402
     get_vector_store,
     get_vector_store_config,
 )
-from langchain_core.tools import tool  # noqa: E402
-from openai import OpenAI  # noqa: E402
-from pydantic import BaseModel, Field  # noqa: E402
-
-from agentic_rag.config import AgentConfig  # noqa: E402
 
 try:
     import mlflow
