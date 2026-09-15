@@ -6,11 +6,34 @@ for a single backend, and [`get_vector_store`](#store-selection) instantiates th
 matching store — the backend is chosen entirely from `config.provider`, so no
 separate type string is needed. Three backends are supported today:
 
-| Backend | Config | Store | Hybrid search |
-|---------|--------|-------|---------------|
-| Chroma | `ChromaConfig` | `ChromaVectorStore` | ❌ vector only |
-| Milvus | `MilvusConfig` | `MilvusVectorStore` | ✅ server-side dense + BM25 |
-| PostgreSQL + pgvector | `PGVectorConfig` | `PGVectorStore` | ✅ dense + full-text |
+| Backend | Config | Provider | Store | Hybrid search |
+|---------|--------|----------|-------|---------------|
+| Milvus (remote server only) | `MilvusConfig` | `"milvus"` | `MilvusVectorStore` | ✅ server-side dense + BM25 |
+| Milvus Lite (embedded, local file only) | `MilvusLiteConfig` | `"milvus_lite"` | `MilvusVectorStore` | ✅ embedded dense + BM25 |
+| PostgreSQL + pgvector | `PGVectorConfig` | `"pgvector"` | `PGVectorStore` | ✅ dense + full-text |
+
+`MilvusConfig` and `MilvusLiteConfig` both construct a `MilvusVectorStore`, but they are separate,
+mutually-exclusive config classes rather than two modes of one config:
+
+!!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate — and why that matters"
+    `MilvusConfig.uri` is validated to be an `http(s)://` URL and **raises `ValueError`** for anything else
+    (a bare host, a local file path, an empty string). This is a deliberate safety fix: previously, a
+    mistyped or unreachable `MILVUS_URI` could be silently interpreted as a local file path, creating an
+    unintended local Milvus Lite database instead of failing — dangerous in production, where it could mask a
+    misconfigured deployment. That silent fallback is no longer possible: a bad `MILVUS_URI` now fails loudly
+    at construction time.
+
+    To use the embedded engine, opt in explicitly with **`MilvusLiteConfig(db_path="./ai4rag.db")`** (or
+    `MilvusLiteConfig()` for the default path, `DEFAULT_MILVUS_LITE_DB_PATH` = `"./ai4rag_milvus_lite.db"`).
+    `MilvusLiteConfig` validates the inverse — it rejects `http(s)://` values in `db_path`, since those belong
+    in `MilvusConfig`.
+
+!!! warning "Milvus Lite limitations"
+    Milvus Lite is intended for local development, tests, and small-scale workloads, not production. It
+    computes BM25 statistics segment-locally rather than corpus-wide, so hybrid-search ranking fidelity (and
+    any benchmark/HPO scores measured against it) may not transfer exactly to a production Milvus server; and
+    it serializes writes, so only one process should open a given `.db` file at a time. For production or
+    large corpora, use a remote Milvus server (`MilvusConfig`), Zilliz Cloud, or pgvector.
 
 Every config is a frozen dataclass exposing a `from_env()` classmethod, so
 connection details (and secrets) can be sourced from environment variables and
@@ -33,13 +56,6 @@ never embedded in generated artefacts.
 ## Store Selection
 
 ::: ai4rag.rag.vector_store.get_vector_store
-    options:
-      show_root_heading: true
-      show_source: true
-
-## Chroma
-
-::: ai4rag.rag.vector_store.chroma
     options:
       show_root_heading: true
       show_source: true

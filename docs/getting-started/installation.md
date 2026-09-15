@@ -5,14 +5,14 @@
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
 - **A model provider**: a foundation model and an embedding model reachable over any OpenAI-compatible endpoint (a hosted API, a self-managed vLLM/TGI/Ollama server, or an OpenShift MaaS deployment), accessed through the `openai` SDK — or your own `BaseFoundationModel` / `BaseEmbeddingModel` implementation
-- **A vector store**: Chroma (in-memory by default, no setup required), or a running Milvus/PostgreSQL (pgvector) instance for hybrid retrieval
+- **A vector store**: Milvus Lite (embedded, local-file, no setup required), or a running Milvus server/PostgreSQL (pgvector) instance for server-backed retrieval — all support hybrid search
 
 
 !!! note "External models and vector store integration"
     `ai4rag` is designed to be provider-agnostic.
     It means you can use any model from any source as long as it satisfies `BaseFoundationModel` interface.
     The same rule applies to embedding model.
-    Vector stores are selected via a typed `vector_store_config` (`ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) passed directly to the experiment.
+    Vector stores are selected via a typed `vector_store_config` (`MilvusConfig` for a remote server, `MilvusLiteConfig` for embedded local storage, or `PGVectorConfig`) passed directly to the experiment.
     A custom vector store can also be plugged in by delivering your own `BaseVectorStore` implementation.
 
 ---
@@ -29,8 +29,8 @@ This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
 
-Vector store clients — `chromadb`, `pymilvus`, `pgvector`, and `asyncpg` — are core dependencies and install automatically.
-No extra step is needed to use Chroma, Milvus, or PostgreSQL/pgvector as a vector store.
+Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, and `asyncpg` — are core dependencies and install automatically. There is no separate vector-store extra to install.
+No extra step is needed to use a remote Milvus server, embedded Milvus Lite, or PostgreSQL/pgvector as a vector store.
 
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
@@ -100,7 +100,7 @@ self-managed server (vLLM, TGI, Ollama, …), or an
 The steps below use MaaS, the provider `ai4rag` ships helpers for; to use a different endpoint,
 point the same `openai` client at its URL (or supply your own `BaseFoundationModel` /
 `BaseEmbeddingModel` implementation). The vector store is configured independently, via direct
-clients (Chroma, Milvus, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
+clients (remote Milvus, embedded Milvus Lite, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
 
 ### 1. Get Access to a MaaS Deployment
 
@@ -129,22 +129,39 @@ Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_confi
 
 | Provider | Config | Hybrid search (dense + keyword) | Setup |
 |----------|--------|:---:|-------|
-| Chroma | `ChromaConfig` | :material-close: vector-only | None — defaults to an ephemeral in-memory client |
-| Milvus | `MilvusConfig` | :material-check: dense + BM25 | Requires a reachable Milvus instance |
+| Milvus Lite (embedded, local file) | `MilvusLiteConfig(db_path="./ai4rag.db")` | :material-check: dense + BM25 | None — zero-server, backed by a local file |
+| Milvus (server) | `MilvusConfig(uri="http(s)://host:19530")` | :material-check: dense + BM25 | Requires a reachable Milvus (or Zilliz Cloud) instance |
 | PGVector | `PGVectorConfig` | :material-check: dense + tsvector full-text | Requires a reachable PostgreSQL instance with the `pgvector` extension |
 
 ```python
-from ai4rag.rag.vector_store import ChromaConfig, MilvusConfig, PGVectorConfig
+from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, PGVectorConfig
 
-# Zero-config, in-memory (great for local experimentation)
-vector_store_config = ChromaConfig()
+# Zero-config, embedded Milvus Lite backed by a local file (great for local experimentation)
+vector_store_config = MilvusLiteConfig(db_path="./ai4rag.db")
 
-# Or build a config from environment variables
-vector_store_config = MilvusConfig.from_env()      # reads MILVUS_URI, MILVUS_TOKEN, MILVUS_SERVER_CERT
+# Or build configs from environment variables
+vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
+vector_store_config = MilvusLiteConfig.from_env()   # reads MILVUS_LITE_DB_PATH (optional; defaults to "./ai4rag_milvus_lite.db")
 vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
 ```
 
-Each config class exposes the environment variables it reads via its `env_vars` attribute, and can be constructed explicitly instead of from the environment, e.g. `MilvusConfig(uri="https://localhost:19530")`.
+Each config class exposes the environment variables it reads via its `env_vars` attribute, and can be constructed explicitly instead of from the environment, e.g. `MilvusConfig(uri="https://localhost:19530")` for a remote server or `MilvusLiteConfig(db_path="./ai4rag.db")` for embedded local storage.
+
+!!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
+    `MilvusConfig` (remote Milvus server / Zilliz Cloud) validates that `uri` is an `http(s)://` URL and
+    **raises `ValueError`** for anything else — a bare host, a local file path, or an empty string. This is a
+    deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly at construction time
+    instead of silently being interpreted as a local file path and creating a throwaway Milvus Lite database.
+    To opt into the embedded local engine explicitly, use `MilvusLiteConfig(db_path=...)` instead, which in
+    turn rejects `http(s)://` values.
+
+!!! warning "Milvus Lite is not a production store"
+    `MilvusLiteConfig` is intended for local development, tests, and small-scale workloads
+    (prototyping, up to roughly 1M vectors) — not production serving. For production or large corpora, use a
+    remote Milvus server or Zilliz Cloud via `MilvusConfig`, or pgvector. Milvus Lite
+    also computes BM25 statistics segment-locally rather than corpus-wide, so hybrid-search ranking fidelity —
+    and any benchmark/HPO scores measured on it — may not transfer exactly to a production server; and it
+    serializes writes, so only one process should open a given `.db` file at a time.
 
 ---
 

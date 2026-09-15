@@ -11,7 +11,7 @@ ai4rag is designed as a modular RAG optimization engine with clear separation of
 ai4rag is **LLM and Vector Database provider agnostic**. It integrates with various backends through:
 
 - **OpenAI-compatible model endpoints**: Foundation and embedding models are reached through the stock `openai` SDK, so any OpenAI-compatible endpoint works (OpenShift MaaS is the built-in integration)
-- **Direct Vector Store Clients**: Chroma, Milvus, and PGVector are integrated directly
+- **Direct Vector Store Clients**: Milvus (remote server, via `MilvusConfig`), Milvus Lite (embedded, local file, via `MilvusLiteConfig`), and PGVector are integrated directly
 - **Pluggable Components**: Foundation models, embeddings, and vector stores are all defined by abstract base classes — implement one to plug in your own provider
 
 ### Template-Based Approach
@@ -119,7 +119,7 @@ graph TB
 **Vector Stores** (`ai4rag/rag/vector_store/`)
 
 - Stores and retrieves document embeddings
-- Supports Milvus, PostgreSQL/pgvector, and ChromaDB via direct clients
+- Supports Milvus (remote server, `MilvusConfig`), Milvus Lite (embedded, local file, `MilvusLiteConfig`), and PostgreSQL/pgvector via direct clients
 - Provides similarity search capabilities
 
 **Retrieval** (`ai4rag/rag/retrieval/`)
@@ -201,7 +201,7 @@ Chunking (chunk_size, chunk_overlap)
     ↓
 Embedding Model (embedding_model)
     ↓
-Vector Store (Milvus / PGVector / Chroma via vector_store_config)
+Vector Store (Milvus / Milvus Lite / PGVector via vector_store_config)
 ```
 
 ### Query Phase (Per Configuration)

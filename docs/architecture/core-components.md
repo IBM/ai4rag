@@ -50,7 +50,7 @@ The `AI4RAGExperiment` class is the central orchestrator for the entire optimiza
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
-from ai4rag.rag.vector_store import MilvusConfig  # or ChromaConfig, PGVectorConfig
+from ai4rag.rag.vector_store import MilvusConfig  # or MilvusLiteConfig / PGVectorConfig
 
 experiment = AI4RAGExperiment(
     documents=documents,
@@ -433,7 +433,7 @@ class AI4RAGSearchSpace(SearchSpace):
     ):
 ```
 
-`vector_store_type` selects which backend's hybrid-search rules apply during validation; supported values are `"milvus"`, `"pgvector"`, and `"chroma"`.
+`vector_store_type` selects the target backend for search-space defaults; supported values are `"milvus"` (remote server, `MilvusConfig`), `"milvus_lite"` (embedded, local file, `MilvusLiteConfig`), and `"pgvector"` — an unsupported value raises `ValueError`. All three backends support hybrid search, so the same validation rules and defaults apply across them.
 
 **Built-in Validation Rules:**
 
@@ -454,7 +454,7 @@ class AI4RAGSearchSpace(SearchSpace):
    - Verifies `chunk_size <= context_length * 0.9` (both in tokens)
    - 10% safety margin accounts for tokenizer divergence
 
-**Hybrid Search Rules (only for `vector_store_type != "chroma"`):**
+**Hybrid Search Rules (always applied — both `"milvus"` and `"pgvector"` support hybrid search):**
 
 5. **Search mode ↔ ranker parameter consistency**
    - When `search_mode == "vector"`: all ranker params must be sentinels (`""`, `0`, `1`)

@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 from ..embedding.base_model import BaseEmbeddingModel
 from .base_vector_store import BaseVectorStore
-from .config import BaseVectorStoreConfig, ChromaConfig, MilvusConfig, PGVectorConfig
+from .config import BaseVectorStoreConfig, MilvusConfig, MilvusLiteConfig, PGVectorConfig
 
 
 def get_vector_store(
@@ -23,8 +23,10 @@ def get_vector_store(
     embedding_model : BaseEmbeddingModel
         Embedding model used for embeddings creation.
 
-    config : ChromaConfig | MilvusConfig | PGVectorConfig
-        Connection config for the chosen backend.
+    config : MilvusConfig | MilvusLiteConfig | PGVectorConfig
+        Connection config for the chosen backend. :class:`MilvusConfig` targets a
+        remote Milvus server; :class:`MilvusLiteConfig` selects the embedded,
+        local Milvus Lite engine.
 
     collection_name : str | None, default=None
         Name of an existing collection to reuse. When omitted, a new name
@@ -46,21 +48,21 @@ def get_vector_store(
     """
 
     match config.provider:
-        case "chroma":
-            if not isinstance(config, ChromaConfig):
-                raise TypeError("ChromaConfig is required when provider='chroma'.")
+        case "milvus":
+            if not isinstance(config, MilvusConfig):
+                raise TypeError("MilvusConfig is required when provider='milvus'.")
 
-            from .chroma import ChromaVectorStore
+            from .milvus import MilvusVectorStore
 
-            return ChromaVectorStore(
+            return MilvusVectorStore(
                 embedding_model=embedding_model,
                 config=config,
                 collection_name=collection_name,
             )
 
-        case "milvus":
-            if not isinstance(config, MilvusConfig):
-                raise TypeError("MilvusConfig is required when provider='milvus'.")
+        case "milvus_lite":
+            if not isinstance(config, MilvusLiteConfig):
+                raise TypeError("MilvusLiteConfig is required when provider='milvus_lite'.")
 
             from .milvus import MilvusVectorStore
 

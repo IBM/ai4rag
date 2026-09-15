@@ -22,7 +22,7 @@ from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
-from ai4rag.rag.vector_store.config import MilvusConfig
+from ai4rag.rag.vector_store.config import MilvusConfig, MilvusLiteConfig
 from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension, validate_search_params
 
 __all__ = ["MilvusVectorStore"]
@@ -84,20 +84,25 @@ def _cleanup_server_certs() -> None:
 
 
 class MilvusVectorStore(BaseVectorStore):
-    """Vector store backed by a remote Milvus instance via ``pymilvus``.
+    """Vector store backed by Milvus via ``pymilvus`` (remote server or Milvus Lite).
 
-    Supports both pure vector search and hybrid search (dense + BM25 sparse)
-    with RRF or weighted reranking, using Milvus native server-side fusion.
+    A single store class serves both deployment styles, selected by the config
+    type: :class:`~ai4rag.rag.vector_store.config.MilvusConfig` connects to a
+    remote server, while :class:`~ai4rag.rag.vector_store.config.MilvusLiteConfig`
+    opens the embedded, local Milvus Lite engine. Both support pure vector search
+    and hybrid search (dense + BM25 sparse) with RRF or weighted reranking, using
+    Milvus native server-side fusion.
 
     Parameters
     ----------
     embedding_model : BaseEmbeddingModel
         Model used to embed documents and queries.
-    config : MilvusConfig
-        Connection parameters for the Milvus server. TLS is enabled by an
-        ``https://`` URI; when ``config.server_cert`` is set, its PEM text is
-        written to a temporary file and passed to ``MilvusClient`` as
-        ``server_pem_path`` for certificate verification.
+    config : MilvusConfig | MilvusLiteConfig
+        Connection parameters. A :class:`MilvusConfig` connects to a remote server
+        (TLS via an ``https://`` URI; ``config.server_cert`` supplies a self-signed
+        CA certificate, materialized to a temporary file and passed to
+        ``MilvusClient`` as ``server_pem_path``). A :class:`MilvusLiteConfig` opens
+        the embedded engine backed by its local ``db_path``.
     distance_metric : str
         Distance metric for vector similarity (default ``"cosine"``).
     collection_name : str | None
@@ -111,24 +116,27 @@ class MilvusVectorStore(BaseVectorStore):
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        config: MilvusConfig,
+        config: MilvusConfig | MilvusLiteConfig,
         distance_metric: str = "cosine",
         collection_name: str | None = None,
     ):
         """Initialize the store, open a client, and ensure the collection exists.
 
-        A ``MilvusClient`` is built from *config*; when ``config.server_cert`` is
-        set, its PEM text is materialized to a temporary file (see
-        :func:`_materialize_server_cert`) and passed as ``server_pem_path`` for
-        TLS verification. The target collection — with its dense, sparse/BM25, and
-        JSON fields — is created only when it does not already exist.
+        The ``MilvusClient`` is built according to the config type: a
+        :class:`MilvusLiteConfig` opens the embedded engine at its local
+        ``db_path``; a :class:`MilvusConfig` connects to a remote server and, when
+        ``config.server_cert`` is set, materializes its PEM text to a temporary
+        file (see :func:`_materialize_server_cert`) passed as ``server_pem_path``
+        for TLS verification. The target collection — with its dense, sparse/BM25,
+        and JSON fields — is created only when it does not already exist.
 
         Parameters
         ----------
         embedding_model : BaseEmbeddingModel
             Model used to embed documents and queries.
-        config : MilvusConfig
-            Connection parameters for the Milvus server.
+        config : MilvusConfig | MilvusLiteConfig
+            Connection parameters for a remote Milvus server or the embedded
+            Milvus Lite engine.
         distance_metric : str, default="cosine"
             Distance metric used for dense vector similarity.
         collection_name : str | None, default=None
@@ -138,15 +146,40 @@ class MilvusVectorStore(BaseVectorStore):
         super().__init__(embedding_model, config, distance_metric, collection_name)
         self._embedding_dimension = resolve_embedding_dimension(self.embedding_model)
 
+        self._client = MilvusClient(**self._build_connect_kwargs(config))
+
+        if not self._client.has_collection(self._collection_name):
+            self._create_collection()
+
+    @staticmethod
+    def _build_connect_kwargs(config: MilvusConfig | MilvusLiteConfig) -> dict[str, Any]:
+        """Return the ``MilvusClient`` keyword arguments for *config*.
+
+        For :class:`MilvusLiteConfig` the ``uri`` is the local database file path
+        (the embedded engine needs no auth or TLS). For :class:`MilvusConfig` the
+        ``uri`` is the server URL, with an optional ``token`` and, when a
+        self-signed ``server_cert`` is supplied, a ``server_pem_path`` pointing at
+        the materialized certificate file.
+
+        Parameters
+        ----------
+        config : MilvusConfig | MilvusLiteConfig
+            Connection parameters for a remote server or the embedded engine.
+
+        Returns
+        -------
+        dict[str, Any]
+            Keyword arguments to pass to ``MilvusClient``.
+        """
+        if isinstance(config, MilvusLiteConfig):
+            return {"uri": config.db_path}
+
         connect_kwargs: dict[str, Any] = {"uri": config.uri}
         if config.token:
             connect_kwargs["token"] = config.token
         if config.server_cert:
             connect_kwargs["server_pem_path"] = _materialize_server_cert(config.server_cert)
-        self._client = MilvusClient(**connect_kwargs)
-
-        if not self._client.has_collection(self._collection_name):
-            self._create_collection()
+        return connect_kwargs
 
     def _create_collection(self) -> None:
         """Create the Milvus collection with its schema, indexes, and BM25 function.

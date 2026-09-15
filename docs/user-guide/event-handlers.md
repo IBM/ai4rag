@@ -89,7 +89,7 @@ def on_pattern_creation(
         "embedding":   {"model_id": "...", "embedding_params": {"embedding_dimension": 768}},
         "retrieval":   {"method": "simple", "number_of_chunks": 5, "search_mode": "vector"},
         "generation":  {"model_id": "...", ...},
-        "vector_store_binding": {"provider_id": "local_chroma", "vector_store_id": "..."},
+        "vector_store_binding": {"provider_id": "local_milvus", "vector_store_id": "..."},
     },
 }
 ```

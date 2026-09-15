@@ -27,7 +27,7 @@ def load_docling_documents(path: str | Path) -> list[DoclingDocument]:
     if path.is_dir():
         return [
             DoclingDocument.load_from_json(p)
-            for p in sorted(path.iterdir())
+            for p in sorted(path.rglob("*"))
             if p.is_file() and p.suffix.lower() == ".json"
         ]
 

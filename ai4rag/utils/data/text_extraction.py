@@ -190,6 +190,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         List of document descriptor dicts, each with at least a ``"key"``
         and ``"size_bytes"`` entry (as produced by
         :func:`~ai4rag.utils.data.documents_discovery.discover_documents`).
+        The ``"key"`` entry also names the extracted document.
     bucket
         S3-compatible bucket name.
     output_dir
@@ -671,7 +672,9 @@ def _text_extraction_pool_initializer(
     )
 
 
-def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[bool, str | None]:
+def _worker_process_document(  # pylint: disable=too-many-locals
+    file_path_str: str, output_dir_str: str, doc_key: str = ""
+) -> tuple[bool, str | None]:
     """Convert a single document to a DoclingDocument JSON file.
 
     Plain-text (``.txt``) files are wrapped in a minimal
@@ -685,6 +688,10 @@ def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[b
     output_dir_str
         Absolute path to the directory where the resulting JSON file
         will be written (named ``<original_filename>.json``).
+    doc_key
+        Key identifying the document (e.g. ``"manuals/xr-200/setup.txt"``).
+        Used as the document name so that the full path is preserved through
+        the pipeline.  Falls back to the filename if empty.
 
     Returns
     -------
@@ -700,11 +707,23 @@ def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[b
     try:
         input_file = Path(file_path_str)
         output_dir = Path(output_dir_str)
-        output_file = output_dir / f"{input_file.name}.json"
+
+        # The document is named by its key so that files sharing a basename in
+        # different folders stay distinct downstream.
+        doc_name = doc_key or input_file.name
+
+        # Preserve directory structure in output to prevent collisions when multiple
+        # files have the same basename from different S3 subdirectories.  The key is
+        # normalized the same way ``_download_document`` normalizes it, so a leading
+        # slash cannot turn the output path absolute and escape *output_dir*.
+        safe_name = doc_name.strip().lstrip("/")
+        output_rel_path = Path(safe_name).with_suffix(Path(safe_name).suffix + ".json")
+        output_file = output_dir / output_rel_path
 
         if input_file.suffix.lower() == ".txt":
-            doc = DoclingDocument(name=input_file.name)
+            doc = DoclingDocument(name=doc_name)
             doc.add_text(label=DocItemLabel.TEXT, text=input_file.read_text(encoding="utf-8"))
+            output_file.parent.mkdir(parents=True, exist_ok=True)
             doc.save_as_json(output_file)
             return True, None
 
@@ -719,17 +738,18 @@ def _worker_process_document(file_path_str: str, output_dir_str: str) -> tuple[b
         worker_log.info(
             "pid=%s docling convert start: %s (%.1f MiB on disk)",
             os.getpid(),
-            input_file.name,
+            doc_name,
             file_size_mib,
         )
         conversion_result = converter.convert(input_file)
-        conversion_result.document.name = input_file.name
+        conversion_result.document.name = doc_name
+        output_file.parent.mkdir(parents=True, exist_ok=True)
         conversion_result.document.save_as_json(output_file)
         worker_log.info(
             "pid=%s docling convert done: %s -> %s (%.1fs)",
             os.getpid(),
-            input_file.name,
-            output_file.name,
+            doc_name,
+            output_file,
             time.perf_counter() - start,
         )
         return True, None
@@ -776,7 +796,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
         Extraction tasks (path, AsyncResult) and download error dicts.
     """
     download_errors: list[dict] = []
-    downloaded_paths: list[Path] = []
+    downloaded: list[tuple[Path, str]] = []
 
     supported = [d for d in docs if Path(d["key"]).suffix.lower() in SUPPORTED_EXTENSIONS]
     skipped = [d for d in docs if Path(d["key"]).suffix.lower() not in SUPPORTED_EXTENSIONS]
@@ -798,12 +818,21 @@ def _download_and_submit(  # pylint: disable=too-many-locals
                 _logger.warning("Download failed for key=%s: %s", key, exc)
                 download_errors.append({"file": key, "traceback": exc_tb})
                 continue
-            downloaded_paths.append(local_path)
+            # Carry the name alongside the path: ``_download_document`` normalizes
+            # the key before building the local path, so the path cannot be mapped
+            # back to its descriptor afterwards without duplicating that logic.
+            downloaded.append((local_path, key))
 
-    downloaded_paths.sort(key=lambda p: p.stat().st_size, reverse=True)
+    downloaded.sort(key=lambda item: item[0].stat().st_size, reverse=True)
     extraction_tasks = [
-        (str(lp), process_pool.apply_async(_worker_process_document, (str(lp), str(out_dir))))
-        for lp in downloaded_paths
+        (
+            str(local_path),
+            process_pool.apply_async(
+                _worker_process_document,
+                (str(local_path), str(out_dir), doc_key),
+            ),
+        )
+        for local_path, doc_key in downloaded
     ]
     return extraction_tasks, download_errors
 

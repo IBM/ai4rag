@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Removed
+- **BREAKING CHANGE: Vector store** — removed the ChromaDB vector store backend (`ChromaConfig`, `ChromaVectorStore`) and the `chromadb` dependency, due to known security vulnerabilities in the `chromadb` package. `ai4rag.rag.vector_store` no longer exports `ChromaConfig`; the `"chroma"` value for `vector_store_type` is no longer accepted (only `"milvus"`, `"milvus_lite"`, and `"pgvector"` are supported)
+
+### Added
+- **Vector store** — Milvus Lite, the embedded, zero-server mode of the Milvus backend, is now the recommended local/zero-config replacement for the removed Chroma store: use the new `MilvusLiteConfig(db_path="./ai4rag.db")` (or `MilvusLiteConfig()` for the default path). Unlike Chroma, Milvus Lite supports hybrid (dense + BM25) search. `pymilvus[milvus-lite]` is now a core dependency, so no extra installation step is needed
+- **Vector store** — the Milvus config was split into `MilvusConfig` (remote server / Zilliz Cloud only, which now validates that `uri` is an `http(s)://` URL and raises `ValueError` otherwise) and a new `MilvusLiteConfig` (embedded, local only, configured via `db_path`, which conversely rejects `http(s)://` values). Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite based on whether `uri` looked like a URL or a local file path; a mistyped or unreachable `MILVUS_URI` could therefore be silently interpreted as a local path and create an unintended throwaway local database. That silent fallback is no longer possible — a misconfigured server URI now fails loudly instead. `ai4rag.rag.vector_store` now also exports `MilvusLiteConfig`, and the `vector_store_type` search-space parameter accepts `"milvus_lite"` in addition to `"milvus"` and `"pgvector"`
+
+---
+
+## [0.16.0](https://github.com/IBM/ai4rag/releases/tag/v0.16.0)
+
+### Added
+- **Document discovery / extraction** — `.msg` (Outlook email) files are now a supported extension for discovery and text extraction
+- **RAG template** — `SimpleRAG.chat()`, a chat-completions-style entry point that RAG-enriches the last user turn of a conversation while passing prior history through untouched
+
+### Changed
+- **Benchmark data** — `BenchmarkData` now requires `correct_answer_document_keys` instead of `correct_answer_document_ids`; a *document key* is a document's `DoclingDocument.name`, the identifier carried through chunking, indexing, and evaluation. **Breaking:** `correct_answer_document_ids` is rejected with a message explaining what a key is; evaluation results report `document_key` instead of `document_id`
+- **Document discovery / extraction** — documents extracted from object storage are now named by their full object key (prefix included) instead of the bare file name, so two documents with the same basename under different prefixes no longer collide on the output path and silently overwrite one another
+- **Assets generator** — relocated from `ai4rag.utils.assets_generator` to `ai4rag.assets_generator`, alongside other top-level packages instead of under the general-purpose utils namespace. **Breaking:** `ai4rag.utils.assets_generator` no longer exists; import from `ai4rag.assets_generator` instead
+- **RAG template** — `BaseRAGTemplate` and `SimpleRAG` now only compose a retriever and a foundation model for retrieval-and-generation; index building is an upstream concern owned by `ai4rag.rag.vector_store`. **Breaking:** `chunker`, `embedding_model`, and `vector_store` constructor arguments and `build_index` have been removed; build indexes via `ai4rag.rag.vector_store` directly before constructing a template
+- **Dependencies** — bumped `docling-slim` from `~=2.107.0` to `~=2.121.0` (base and `text-extraction` extras)
+
+### Fixed
+- **Notebooks** — the indexing notebook template now declares the `text-extraction` extras it requires
+- **Search space preparation** — MaaS foundation/embedding model validation failures now log the underlying root cause (status code, error code, and message extracted from the `openai` client error, with traceback) instead of discarding it and logging only the model id
+
+---
+
 ## [0.15.0](https://github.com/IBM/ai4rag/releases/tag/v0.15.0)
 
 ### Changed

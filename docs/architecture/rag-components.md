@@ -52,12 +52,6 @@ classDiagram
         +add_documents(AI4RAGChunk[])* void
     }
 
-    class ChromaVectorStore {
-        +search(query, k, include_scores) AI4RAGChunk[]
-        +window_search(query, k, window_size) AI4RAGChunk[]
-        +add_documents(AI4RAGChunk[]) void
-    }
-
     class MilvusVectorStore {
         +search(query, k, search_mode, ranker_*) AI4RAGChunk[]
         +add_documents(AI4RAGChunk[]) void
@@ -104,23 +98,19 @@ classDiagram
         <<abstract>>
         +foundation_model: BaseFoundationModel
         +retriever: Retriever
-        +build_index(docs)* void
         +generate(question)* dict
         +generate_stream(question)* iterator
+        +chat(messages)* list
     }
 
     class SimpleRAG {
-        +chunker: BaseChunker
-        +embedding_model: BaseEmbeddingModel
-        +vector_store: BaseVectorStore
-        +build_index(DoclingDocument[]) void
         +generate(question) dict
         +generate_stream(question) iterator
+        +chat(messages) list
     }
 
     BaseFoundationModel <|-- OpenAIFoundationModel
     BaseEmbeddingModel <|-- OpenAIEmbeddingModel
-    BaseVectorStore <|-- ChromaVectorStore
     BaseVectorStore <|-- MilvusVectorStore
     BaseVectorStore <|-- PGVectorStore
     BaseChunker <|-- DoclingChunker
@@ -131,7 +121,6 @@ classDiagram
     Retriever --> BaseVectorStore : uses
     BaseRAGTemplate --> BaseFoundationModel : uses
     BaseRAGTemplate --> Retriever : uses
-    SimpleRAG --> BaseChunker : uses
 ```
 
 ---
@@ -449,7 +438,7 @@ class BaseVectorStore(ABC):
 
 **Configuration:**
 
-Every concrete store is constructed from a typed, frozen `config` dataclass (`ChromaConfig`, `MilvusConfig`, or `PGVectorConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"chroma"`, `"milvus"`, `"pgvector"`). Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
+Every concrete store is constructed from a typed, frozen `config` dataclass (`MilvusConfig`, `MilvusLiteConfig`, or `PGVectorConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"milvus"`, `"milvus_lite"`, `"pgvector"`). `MilvusConfig` and `MilvusLiteConfig` are separate, validated classes rather than two modes of a single config: `MilvusConfig.uri` must be an `http(s)://` URL (remote server or Zilliz Cloud) and raises `ValueError` otherwise, while `MilvusLiteConfig.db_path` is a local file path and raises `ValueError` if given an `http(s)://` value. Both are served by the same `MilvusVectorStore` implementation. Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
 
 **Collection naming (shared across all backends):**
 
@@ -467,8 +456,8 @@ behaves identically:
   silently coerced.
 - **Identifier safety** — the name is sanitized into a valid identifier
   (non-alphanumeric characters become underscores) and bounded to 63 characters
-  (the tightest limit across PostgreSQL and Chroma), so it is usable verbatim as
-  a backend collection name *and* as a physical SQL table name.
+  (PostgreSQL's identifier limit), so it is usable verbatim as a backend
+  collection name *and* as a physical SQL table name.
 
 **Interface Methods:**
 
@@ -510,7 +499,7 @@ vector_store = get_vector_store(
 ```python
 def get_vector_store(
     embedding_model: BaseEmbeddingModel,
-    config: ChromaConfig | MilvusConfig | PGVectorConfig,
+    config: MilvusConfig | MilvusLiteConfig | PGVectorConfig,
     collection_name: str | None = None,
 ) -> BaseVectorStore:
     """Backend selected by ``config.provider``; raises TypeError on a
@@ -521,128 +510,41 @@ def get_vector_store(
 
 | Config | `provider` | Key Fields | Env Vars |
 |--------|------------|------------|----------|
-| `ChromaConfig` | `"chroma"` | `persist_directory`, `host`, `port` | `CHROMA_HOST`, `CHROMA_PORT`, `CHROMA_PERSIST_DIR` |
-| `MilvusConfig` | `"milvus"` | `uri` (required), `token`, `server_cert` | `MILVUS_URI` (required), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusConfig` | `"milvus"` | `uri` (required, must be an `http(s)://` URL — a remote server or Zilliz Cloud; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusLiteConfig` | `"milvus_lite"` | `db_path` (a local file path, default `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given an `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
+
+!!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
+    Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite purely from
+    the shape of `uri` (a server URL vs. a local file path). That meant a mistyped or unreachable `MILVUS_URI`
+    could be silently reinterpreted as a local path, creating an unintended throwaway local database instead
+    of failing — a real risk in production. `MilvusConfig` now validates `uri` and raises `ValueError` for
+    anything that is not an `http(s)://` URL, so a bad `MILVUS_URI` fails loudly. `MilvusLiteConfig` is the
+    explicit, separate opt-in for the embedded engine.
 
 `get_vector_store_config(provider)` and `get_vector_store_env_vars(provider)` complement `get_vector_store` when only a provider string is available (e.g. when building a config from the `vector_store_type` selected on the search space):
 
 ```python
 from ai4rag.rag.vector_store import get_vector_store_config, get_vector_store_env_vars
 
-config = get_vector_store_config("milvus")           # MilvusConfig.from_env()
+config = get_vector_store_config("milvus")            # MilvusConfig.from_env()
+config = get_vector_store_config("milvus_lite")        # MilvusLiteConfig.from_env()
 env_vars = get_vector_store_env_vars("milvus")        # (("MILVUS_URI", "..."), ...)
-```
-
-### ChromaVectorStore
-
-In-memory ChromaDB implementation for development and testing. Chroma is **vector-only** — it does not support hybrid (dense + keyword) search:
-
-```python
-class ChromaVectorStore(BaseVectorStore):
-    def __init__(
-        self,
-        embedding_model: BaseEmbeddingModel,
-        config: ChromaConfig | None = None,
-        distance_metric: str = "cosine",
-        collection_name: str | None = None,
-        **kwargs
-    ):
-```
-
-**Supported Distance Metrics:**
-
-- `"cosine"`: Cosine similarity (default)
-- `"l2"`: Euclidean distance
-
-**Search Methods:**
-
-**1. Standard Search:**
-
-```python
-def search(
-    self,
-    query: str,
-    k: int = 5,
-    include_scores: bool = False,
-    **kwargs
-) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
-    """Vector similarity search."""
-```
-
-**2. Window Search:**
-
-```python
-def window_search(
-    self,
-    query: str,
-    k: int = 5,
-    window_size: int = 2,
-    include_scores: bool = False,
-    **kwargs
-) -> list[AI4RAGChunk]:
-    """Retrieve chunks + adjacent chunks (window) from same document."""
-```
-
-**Window Search Details:**
-
-For each retrieved chunk:
-1. Extract `document_id` and `sequence_number` from metadata
-2. Query vector store for chunks with:
-   - Same `document_id`
-   - `sequence_number` in `[seq - window_size, seq + window_size]`
-3. Sort by `sequence_number`
-4. Merge into single chunk (concatenate text)
-
-**Example:**
-
-```python
-# Retrieved chunk: document_id="doc1", sequence_number=5
-# window_size=2
-# Fetches chunks with sequence_number in [3, 4, 5, 6, 7]
-# Returns merged document with all 5 chunks concatenated
-```
-
-**Batch Document Addition:**
-
-```python
-def add_documents(self, documents: list[AI4RAGChunk], max_batch_size: int = 2048) -> list[str]:
-    """Add chunks in batches of max_batch_size."""
-    for batch_start in range(0, len(docs), max_batch_size):
-        batch = docs[batch_start : batch_start + max_batch_size]
-        self._vector_store.add_documents(batch, ids=ids)
-```
-
-**Usage:**
-
-```python
-vector_store = ChromaVectorStore(
-    embedding_model=embedding_model,
-    distance_metric="cosine"
-)
-
-# Index documents
-vector_store.add_documents(chunked_documents)
-
-# Search
-results = vector_store.search(query="What is X?", k=5)
-# Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]
-
-# Window search
-results = vector_store.window_search(query="What is X?", k=5, window_size=2)
-# Returns: [merged_chunk_1, merged_chunk_2, ...]
 ```
 
 ### MilvusVectorStore
 
-Vector store backed by a remote Milvus instance via `pymilvus`, supporting both pure dense vector search and hybrid search (dense + BM25 sparse) with **server-side** fusion:
+Vector store backed by `pymilvus`, supporting both pure dense vector search and hybrid search (dense + BM25 sparse) with **server-side** fusion. The same class serves two deployment modes, each configured through its own dedicated config class:
+
+- **Remote Milvus server** (or Zilliz Cloud) — configured via `MilvusConfig`, whose `uri` must be a `http(s)://host:port` URL.
+- **Milvus Lite** — configured via `MilvusLiteConfig`, whose `db_path` (e.g. `"./ai4rag.db"`) starts the embedded, zero-server Milvus Lite engine backed by that local file. This is the local, zero-setup replacement for the previously used in-memory Chroma store: recommended for local development, tests, and small-scale workloads (prototyping, up to roughly 1M vectors), not production. Milvus Lite computes BM25 IDF statistics segment-locally rather than corpus-wide, so hybrid-search ranking fidelity — and any benchmark/HPO scores measured against it — may not transfer exactly to a production server; it also serializes writes, so only one process should open a given `.db` file at a time.
 
 ```python
 class MilvusVectorStore(BaseVectorStore):
     def __init__(
         self,
         embedding_model: BaseEmbeddingModel,
-        config: MilvusConfig,
+        config: MilvusConfig | MilvusLiteConfig,
         distance_metric: str = "cosine",
         collection_name: str | None = None,
     ):
@@ -650,16 +552,19 @@ class MilvusVectorStore(BaseVectorStore):
 
 **Connection Configuration:**
 
-TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `server_cert`.
+For `MilvusConfig`, TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `server_cert`. `MilvusLiteConfig` has no network/TLS concerns — it only takes a local `db_path`.
 
 ```python
-from ai4rag.rag.vector_store import MilvusConfig
+from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig
 
-# From environment: MILVUS_URI (required), MILVUS_TOKEN, MILVUS_SERVER_CERT
+# Remote server, from environment: MILVUS_URI (required, http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
 config = MilvusConfig.from_env()
 
-# Or explicit
+# Remote server, explicit
 config = MilvusConfig(uri="https://localhost:19530", token="user:pass")
+
+# Embedded Milvus Lite, explicit local file (or MilvusLiteConfig() for the default path)
+config = MilvusLiteConfig(db_path="./ai4rag.db")
 ```
 
 **Collection Schema:**
@@ -1114,7 +1019,7 @@ class Retriever:
 - **number_of_chunks**: Top-k parameter (how many chunks to retrieve)
 - **method**: Retrieval method
   - `"simple"`: Return top-k chunks as-is
-  - `"window"`: Expand each chunk to include adjacent chunks (ChromaDB only)
+  - `"window"`: Reserved for expanding each chunk with adjacent chunks; not distinctly implemented by the current backends (see below)
 - **search_mode**: Search type
   - `"vector"`: Dense semantic search only
   - `"hybrid"`: Dense + sparse (keyword) search
@@ -1141,12 +1046,7 @@ def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
 
 **Simple vs Window Retrieval:**
 
-The `method` parameter determines retrieval strategy but actual implementation depends on vector store:
-
-- **MilvusVectorStore** / **PGVectorStore**: Always return simple chunks (no window expansion)
-- **ChromaVectorStore**:
-  - `method="simple"`: Returns top-k chunks
-  - `method="window"`: Returns top-k chunks expanded with adjacent chunks
+Both current backends — **MilvusVectorStore** and **PGVectorStore** — always return simple top-k chunks; neither expands a retrieved chunk with its adjacent chunks, so `method="window"` currently behaves the same as `method="simple"`.
 
 **Usage:**
 
@@ -1162,7 +1062,7 @@ retriever = Retriever(
 docs = retriever.retrieve("What is X?")
 # Returns: [AI4RAGChunk(...), AI4RAGChunk(...), ...]  (5 chunks)
 
-# Hybrid retrieval with RRF (Milvus or PGVector; Chroma is vector-only)
+# Hybrid retrieval with RRF (Milvus, incl. Milvus Lite, or PGVector)
 retriever = Retriever(
     vector_store=milvus_vector_store,
     number_of_chunks=5,
@@ -1180,7 +1080,10 @@ docs = retriever.retrieve("What is X?")
 
 ## RAG Templates
 
-RAG templates combine all components into end-to-end retrieval-augmented generation pipelines.
+RAG templates compose a retriever and a foundation model into end-to-end
+retrieval-augmented generation. Index building is a separate, upstream concern
+owned by `ai4rag.rag.vector_store` — build the index (chunk → embed → store)
+before constructing a template.
 
 ### BaseRAGTemplate
 
@@ -1192,8 +1095,6 @@ class BaseRAGTemplate(ABC):
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: BaseVectorStore | None = None,
     ):
 ```
 
@@ -1201,21 +1102,22 @@ class BaseRAGTemplate(ABC):
 
 ```python
 @abstractmethod
-def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
-    """Index documents into vector store."""
-
-@abstractmethod
 def generate(self, question: str, **kwargs) -> dict[str, Any]:
     """Generate answer for question using RAG pipeline."""
 
 @abstractmethod
 def generate_stream(self, question: str, **kwargs):
     """Generate streaming answer (for future streaming support)."""
+
+@abstractmethod
+def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+    """Run a RAG-enriched chat completion over a conversation history."""
 ```
 
 ### SimpleRAG
 
-Complete RAG implementation using OpenAI-compatible models and LangChain:
+RAG implementation composing a retriever and a foundation model for retrieval
+and generation:
 
 ```python
 class SimpleRAG(BaseRAGTemplate):
@@ -1223,19 +1125,7 @@ class SimpleRAG(BaseRAGTemplate):
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        chunker: BaseChunker | None = None,
-        embedding_model: BaseEmbeddingModel | None = None,
-        vector_store: BaseVectorStore | None = None,
     ):
-```
-
-**build_index() Method:**
-
-```python
-def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
-    """Index documents: chunk → embed → store."""
-    chunks = self.chunker.split_documents(documents)
-    self.vector_store.add_documents(chunks)
 ```
 
 **generate() Method:**
@@ -1244,39 +1134,30 @@ def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
 def generate(self, question: str, **kwargs) -> dict[str, Any]:
     """Generate answer using RAG pipeline."""
 
-    # 1. Retrieve relevant chunks
-    reference_documents = self.retriever.retrieve(question, **kwargs)
+    # 1. Retrieve relevant chunks and render the enriched user message
+    reference_documents, user_message = self._build_enriched_user_message(question, **kwargs)
 
-    # 2. Format context
-    context = "\n".join([
-        self.foundation_model.context_template_text.format(
-            document=chunk.text
-        )
-        for chunk in reference_documents
-    ])
-
-    # 3. Format user message
-    user_message = self.foundation_model.user_message_text.format(
-        reference_documents=context,
-        question=question
-    )
-
-    # 4. Create messages
+    # 2. Create messages
     messages = [
         {"role": "system", "content": self.foundation_model.system_message_text},
         {"role": "user", "content": user_message}
     ]
 
-    # 5. Generate answer
-    chat_response = self.foundation_model.chat(messages)
+    # 3. Generate answer
+    chat_response = self.foundation_model.chat(messages=messages)
 
-    # 6. Return result
+    # 4. Return result
     return {
         "answer": chat_response[0].message.content,
         "reference_documents": reference_documents,
         "question": question
     }
 ```
+
+`_build_enriched_user_message` (shared by `generate` and `chat`) retrieves
+chunks via `self.retriever.retrieve(question, **kwargs)`, formats each with
+`foundation_model.context_template_text`, and renders the final user message
+with `foundation_model.user_message_text`.
 
 **generate_stream() Method:**
 
@@ -1287,20 +1168,40 @@ def generate_stream(self, question: str, **kwargs):
     yield result["answer"]
 ```
 
+**chat() Method:**
+
+Chat-completions-style entry point: forwards prior conversation history to the
+foundation model unchanged, RAG-enriching only the last (current) user turn.
+The template's own system message is always prepended, so `messages` should
+not include one:
+
+```python
+def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+    if not messages:
+        raise ValueError("`messages` must contain at least one message.")
+
+    *history, last_message = messages
+    _, enriched_content = self._build_enriched_user_message(last_message["content"], **kwargs)
+
+    rag_messages = [
+        {"role": "system", "content": self.foundation_model.system_message_text},
+        *history,
+        {**last_message, "content": enriched_content},
+    ]
+
+    return self.foundation_model.chat(messages=rag_messages, **kwargs)
+```
+
 **Usage:**
 
 ```python
-# Create RAG template
+# Build the index upstream, then construct the template
+vector_store.add_documents(chunker.split_documents(documents))
+
 rag = SimpleRAG(
     foundation_model=foundation_model,
     retriever=retriever,
-    chunker=chunker,
-    embedding_model=embedding_model,
-    vector_store=vector_store
 )
-
-# Index documents (if building index manually)
-rag.build_index(documents)
 
 # Generate answer
 result = rag.generate("What is the capital of France?")
@@ -1309,19 +1210,25 @@ print(result["answer"])
 
 print(result["reference_documents"])
 # [AI4RAGChunk(...), AI4RAGChunk(...), ...]
+
+# Or drive it as a chat completion over conversation history
+response = rag.chat(messages=[
+    {"role": "user", "content": "What is the capital of France?"},
+])
 ```
 
 **Within AI4RAGExperiment:**
 
-The experiment creates SimpleRAG instances automatically during evaluation:
+The experiment creates SimpleRAG instances automatically during evaluation,
+after indexing has already populated the vector store:
 
 ```python
 rag_pattern = SimpleRAG(
     foundation_model=foundation_model,
     retriever=retriever
 )
-# Note: chunker, embedding_model, vector_store handled separately
-#       by experiment during indexing phase
+# Note: chunking, embedding, and vector store insertion happen separately,
+#       upstream, during the experiment's indexing phase
 ```
 
 ---
@@ -1363,7 +1270,8 @@ embedding_model = OpenAIEmbeddingModel(
 )
 
 # 4. Create vector store — a direct-client store selected by config.provider
-#    (swap MilvusConfig for ChromaConfig/PGVectorConfig to change backend)
+#    (swap MilvusConfig for MilvusLiteConfig(db_path=...) for embedded local
+#    storage, or PGVectorConfig for PostgreSQL/pgvector)
 vector_store = get_vector_store(
     embedding_model=embedding_model,
     config=MilvusConfig.from_env(),
@@ -1376,7 +1284,10 @@ chunker = LangChainChunker(
     chunk_overlap=128
 )
 
-# 6. Create retriever
+# 6. Index documents: chunk -> embed -> store (upstream of the template)
+vector_store.add_documents(chunker.split_documents(documents))
+
+# 7. Create retriever
 retriever = Retriever(
     vector_store=vector_store,
     number_of_chunks=5,
@@ -1386,17 +1297,11 @@ retriever = Retriever(
     ranker_k=60
 )
 
-# 7. Create RAG template
+# 8. Create RAG template
 rag = SimpleRAG(
     foundation_model=foundation_model,
     retriever=retriever,
-    chunker=chunker,
-    embedding_model=embedding_model,
-    vector_store=vector_store
 )
-
-# 8. Index documents
-rag.build_index(documents)
 
 # 9. Generate answer
 result = rag.generate("What is X?")
@@ -1452,16 +1357,16 @@ class CustomVectorStore(BaseVectorStore):
 
 ```python
 class CustomRAG(BaseRAGTemplate):
-    def build_index(self, documents: list[DoclingDocument], **kwargs) -> None:
-        # Your indexing logic
-        pass
-
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         # Your generation logic
         pass
 
     def generate_stream(self, question: str, **kwargs):
         # Your streaming logic
+        pass
+
+    def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
+        # Your chat-completion logic
         pass
 ```
 
@@ -1483,9 +1388,9 @@ class CustomRAG(BaseRAGTemplate):
 
 **Vector Stores:**
 
-1. **Use Milvus or PGVector for production** hybrid search (server-side fusion for Milvus, in-memory fusion for PGVector); Chroma is vector-only
-2. **Use ChromaVectorStore** for development/testing (in-memory, simpler setup)
-3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical) — not supported on Chroma
+1. **Use a remote Milvus server or PGVector for production** hybrid search (server-side fusion for Milvus, in-memory fusion for PGVector)
+2. **Use Milvus Lite** (`MilvusLiteConfig` with a local `db_path`) for development/testing (embedded, zero-server, simpler setup)
+3. **Enable hybrid search** for keyword-heavy domains (technical docs, legal, medical) — supported by both backends, including Milvus Lite
 4. **Tune ranker parameters** (ranker_k, ranker_alpha) via optimization
 
 **Chunking:**

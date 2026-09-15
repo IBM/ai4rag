@@ -194,16 +194,16 @@ def _run_reference_rag(
     list
         List of :class:`EvaluationData` instances ready for judge scoring.
     """
-    from ai4rag.rag.vector_store.chroma import ChromaVectorStore
+    from ai4rag.rag.vector_store.local_store import temporary_milvus_lite_store
 
     chunker = LangChainChunker(chunk_size=512, method="recursive", chunk_overlap=128)
     chunks = chunker.split_documents(documents)
-    vector_store = ChromaVectorStore(embedding_model=embedding_model, collection_name="ai4rag_judge_calibration")
-    vector_store.add_documents(chunks)
-    retriever = Retriever(vector_store=vector_store, number_of_chunks=3, method="simple", search_mode="vector")
-    rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
-    inference_response = query_rag(rag=rag, questions=list(benchmark_data.questions), max_threads=max_threads)
-    return build_evaluation_data(benchmark_data=benchmark_data, inference_response=inference_response)
+    with temporary_milvus_lite_store(embedding_model, collection_name="ai4rag_judge_calibration") as vector_store:
+        vector_store.add_documents(chunks)
+        retriever = Retriever(vector_store=vector_store, number_of_chunks=3, method="simple", search_mode="vector")
+        rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
+        inference_response = query_rag(rag=rag, questions=list(benchmark_data.questions), max_threads=max_threads)
+        return build_evaluation_data(benchmark_data=benchmark_data, inference_response=inference_response)
 
 
 def _ordered_question_scores(evaluation_result: EvaluationMetricsResult, metric_name: str) -> list[float | None]:

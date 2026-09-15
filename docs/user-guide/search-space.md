@@ -251,27 +251,28 @@ Parameter(
 
 ## Default Parameters
 
-If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. The `vector_store_type` parameter defaults to `"milvus"` and accepts `"milvus"`, `"pgvector"`, or `"chroma"`. These defaults differ slightly between Chroma (vector-only) and the hybrid-capable stores, Milvus and PGVector.
+If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. The `vector_store_type` parameter defaults to `"milvus"` and accepts `"milvus"` (remote server, `MilvusConfig`), `"milvus_lite"` (embedded local, `MilvusLiteConfig`), or `"pgvector"` — an unsupported value raises `ValueError`. All three support dense and hybrid search (Milvus and Milvus Lite via server-side/embedded BM25, PGVector via PostgreSQL full-text search), so they share the same default parameter set.
 
 ### Default Values
 
-| Parameter | Default (Milvus / PGVector) | Default (Chroma) | Type |
-|-----------|----------------------|-------------------|------|
-| `chunking_method` | `("recursive", "hybrid")` | `("recursive", "hybrid")` | Categorical |
-| `chunk_size` | `(512, 1024, 2048)` | `(512, 1024, 2048)` | Categorical |
-| `chunk_overlap` | `(0, 128, 256)` | `(0, 128, 256)` | Categorical |
-| `retrieval_method` | `("simple",)` | `("simple",)` | Categorical |
-| `window_size` | `(0,)` | `(0, 1, 3, 5)` | Categorical |
-| `number_of_chunks` | `(3, 5, 10)` | `(3, 5, 10)` | Categorical |
-| `search_mode` | `("vector", "hybrid")` | `("vector",)` | Categorical |
-| `ranker_strategy` | `("", "rrf", "weighted")` | N/A | Categorical |
-| `ranker_k` | `(0, 60)` | N/A | Categorical |
-| `ranker_alpha` | `(1, 0.5)` | N/A | Categorical |
+| Parameter | Default (Milvus / Milvus Lite / PGVector) | Type |
+|-----------|----------------------|------|
+| `chunking_method` | `("recursive", "hybrid")` | Categorical |
+| `chunk_size` | `(512, 1024, 2048)` | Categorical |
+| `chunk_overlap` | `(0, 128, 256)` | Categorical |
+| `retrieval_method` | `("simple",)` | Categorical |
+| `window_size` | `(0,)` | Categorical |
+| `number_of_chunks` | `(3, 5, 10)` | Categorical |
+| `search_mode` | `("vector", "hybrid")` | Categorical |
+| `ranker_strategy` | `("", "rrf", "weighted")` | Categorical |
+| `ranker_k` | `(0, 60)` | Categorical |
+| `ranker_alpha` | `(1, 0.5)` | Categorical |
 
-!!! note "Why Different Defaults?"
-    - **Chroma** doesn't support hybrid search, so `search_mode` is fixed to `"vector"` and ranker parameters are excluded
-    - **Chroma** defaults explore a wider range of `window_size` values (`(0, 1, 3, 5)` vs `(0,)`) since it's an in-memory store (faster experimentation)
-    - **Milvus** and **PGVector** defaults focus on simple retrieval but include hybrid search exploration
+!!! note "Uniform Defaults Across Backends"
+    All three supported vector store backends (`milvus`, `milvus_lite`, and `pgvector`) support hybrid search,
+    so the default search space is identical across them: `search_mode` explores `"vector"` and `"hybrid"`, and
+    the ranker parameters (`ranker_strategy`, `ranker_k`, `ranker_alpha`) are always included. `get_vector_store_config("milvus_lite")`
+    returns a `MilvusLiteConfig`; see the note on Milvus Lite's hybrid-ranking fidelity in [Hybrid Search](hybrid-search.md).
 
 ---
 

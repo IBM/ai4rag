@@ -39,7 +39,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import fields, is_dataclass
 from typing import Any
 
-from openai import OpenAI
+from openai import APIError, APIStatusError, OpenAI
 
 from ai4rag import logger
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
@@ -85,6 +85,22 @@ def _list_maas_model_ids(client: OpenAI) -> set[str]:
     return model_ids
 
 
+def _describe_error(exc: BaseException) -> str:
+    """Render a one-line, actionable description of a failed model call.
+
+    ``openai.APIError`` (raised by the OpenAI client for every failed request,
+    including ``APIStatusError`` subclasses such as ``RateLimitError`` or
+    ``BadRequestError``) carries the serving endpoint's machine-readable
+    ``code`` and human-readable ``message``, plus an HTTP ``status_code`` when
+    the endpoint actually returned a response. Any other exception (e.g. a raw
+    connection failure) falls back to its string form.
+    """
+    if isinstance(exc, APIError):
+        status = f"status_code={exc.status_code}, " if isinstance(exc, APIStatusError) else ""
+        return f"{status}code={exc.code!r}, message={exc.message!r}"
+    return str(exc)
+
+
 def _validate_foundation_model(model: OpenAIFoundationModel) -> bool:
     """Validate that a foundation model responds to a minimal chat request.
 
@@ -96,8 +112,13 @@ def _validate_foundation_model(model: OpenAIFoundationModel) -> bool:
     try:
         model.chat(messages=[{"role": "user", "content": "Hi"}])
         return True
-    except Exception:  # pylint: disable=broad-exception-caught
-        logger.warning("Foundation model '%s' is available but does not respond.", model.model_id)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "Foundation model '%s' is available but does not respond (%s).",
+            model.model_id,
+            _describe_error(exc),
+            exc_info=True,
+        )
         return False
 
 
@@ -112,8 +133,13 @@ def _validate_embedding_model(model: OpenAIEmbeddingModel) -> bool:
     try:
         model.embed_query("test")
         return True
-    except Exception:  # pylint: disable=broad-exception-caught
-        logger.warning("Embedding model '%s' is available but does not respond.", model.model_id)
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        logger.warning(
+            "Embedding model '%s' is available but does not respond (%s).",
+            model.model_id,
+            _describe_error(exc),
+            exc_info=True,
+        )
         return False
 
 
@@ -215,11 +241,18 @@ def _get_models(
             continue
         try:
             model = _instantiate(spec, client, model_type)
-        except RuntimeError:
+        except RuntimeError as exc:
             # Only reachable in discovery mode, where embedding params are
             # auto-detected against a live endpoint; a failure means the model
-            # is deployed but not usable.
-            logger.warning("Model '%s' (%s) is available but does not respond.", spec["model_id"], model_type)
+            # is deployed but not usable. The original OpenAI error (if any) is
+            # chained onto this RuntimeError via `raise ... from exc`.
+            logger.warning(
+                "Model '%s' (%s) is available but does not respond (%s).",
+                spec["model_id"],
+                model_type,
+                _describe_error(exc.__cause__ or exc),
+                exc_info=True,
+            )
             not_responding.append(spec["model_id"])
             continue
 

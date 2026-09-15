@@ -29,7 +29,7 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 > [!IMPORTANT]
 > `ai4rag` is **provider-agnostic**. It reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so any **OpenAI-compatible endpoint** works — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box. You can also plug in your **own** foundation model, embedding model, or vector store by implementing the matching `Base*` interface.
-> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (Chroma, Milvus, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
+> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
 
 ## Model providers
 
@@ -48,21 +48,76 @@ When using the MaaS backend, ai4rag relies on:
 - **Embeddings** — Text embeddings via the `embeddings` endpoint (e.g. for indexing and query encoding). Because `models.list()` carries no metadata, embedding dimension and context length are auto-detected at construction (or supplied via `params`).
 - **Chat / completions** — Foundation model integration for answer generation when evaluating RAG patterns.
 
-Vector storage is independent of MaaS: `ai4rag` connects directly to Chroma, Milvus, or PostgreSQL/pgvector via the config classes in `ai4rag.rag.vector_store` (see [Vector stores](#vector-stores) below).
+Vector storage is independent of MaaS: `ai4rag` connects directly to remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector via the config classes in `ai4rag.rag.vector_store` (see [Vector stores](#vector-stores) below).
 
 ## Vector stores
 
 ai4RAG talks to the vector store directly through provider-specific clients — no MaaS deployment is required for this part. Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
 
-- **`ChromaConfig`** — Chroma. Ephemeral in-memory by default; persistent (via `persist_directory`) or client/server (via `host`/`port`) modes are also supported. Vector-only search.
-- **`MilvusConfig`** — Milvus. Requires a `uri`; supports TLS (`https://` scheme) and self-signed CAs via `server_cert`. Hybrid search (dense + BM25).
+- **`MilvusConfig`** — remote Milvus server or Zilliz Cloud only. `uri` must be a `http(s)://` URL (TLS and self-signed CAs via `server_cert`); anything else (a bare host, a file path, an empty string) raises `ValueError`. This is a deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly instead of silently falling back to a throwaway local database. Supports hybrid search (dense + BM25).
+- **`MilvusLiteConfig`** — the embedded, zero-server **Milvus Lite** engine, backed by a local `db_path` file (default `"./ai4rag_milvus_lite.db"`) — no setup required, ideal for local development and small-scale workloads. Also supports hybrid search (dense + BM25); rejects `http(s)://` values (use `MilvusConfig` for those).
 - **`PGVectorConfig`** — PostgreSQL with the `pgvector` extension. Hybrid search (dense + `tsvector` full-text).
 
-Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI`, `PGVECTOR_HOST`).
+Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI` for `MilvusConfig`, `MILVUS_LITE_DB_PATH` for `MilvusLiteConfig`, `PGVECTOR_HOST` for `PGVectorConfig`).
+
+> [!note]
+> Milvus Lite is intended for local development, tests, and small-scale workloads (prototyping, up to roughly 1M vectors) — not production serving. For production or large corpora, use a remote Milvus server (`MilvusConfig`), Zilliz Cloud, or pgvector.
 
 ## Document processing
 
-ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`chromadb`, `pymilvus`, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
+ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
+
+## Running on Disconnected Clusters
+
+If you are running ai4rag on a **disconnected cluster** (no internet access), you must pre-download the required ML models before execution.
+
+### What to Pre-Download
+
+ai4rag depends on models from two sources:
+
+| Component | Size | Purpose | Environment Variable |
+|-----------|------|---------|----------------------|
+| **Docling artifacts** | ~300-400 MB | Document text extraction and optional OCR | `DOCLING_ARTIFACTS_PATH` |
+| **HuggingFace models** | Variable | Embeddings and foundation models | `HF_HOME` |
+
+### Setup Instructions
+
+1. **On an internet-connected machine**, download the artifacts:
+   ```bash
+   pip install 'ai4rag[text-extraction]'
+   
+   # Trigger Docling model download
+   python -c "from docling.document_converter import DocumentConverter; \
+             converter = DocumentConverter(); \
+             converter.convert_document_string('/tmp/test.txt')"
+   
+   # Pre-download HuggingFace models
+   export HF_HOME=/path/to/hf_cache
+   python -c "from transformers import AutoTokenizer; \
+             AutoTokenizer.from_pretrained('BAAI/bge-m3')"
+   ```
+
+2. **Transfer the artifacts to your disconnected cluster:**
+   ```bash
+   rsync -av ~/.cache/docling/ cluster:/offline/docling/
+   rsync -av /path/to/hf_cache/ cluster:/offline/hf_cache/
+   ```
+
+3. **On the disconnected cluster, set environment variables:**
+   ```bash
+   export DOCLING_ARTIFACTS_PATH=/offline/docling
+   export HF_HOME=/offline/hf_cache
+   export HF_HUB_OFFLINE=1  # Enforce offline mode
+   ```
+
+### Indexing Notebooks
+
+The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disconnected Clusters"** section with:
+- Validation cells to verify artifact availability
+- Configuration examples for custom model paths
+- Step-by-step download instructions in the appendix
+
+All indexing notebooks automatically detect and use pre-downloaded artifacts when `DOCLING_ARTIFACTS_PATH` is set.
 
 
 ## Quick start
@@ -97,19 +152,33 @@ client = create_dev_maas_client()  # reads MAAS_BASE_URL / MAAS_API_KEY
 
 ### Prepare knowledge base documents
 Prepare a set of documents to serve as the knowledge base for retrieval.
-Documents are represented as `DoclingDocument` instances (from the [`docling-core`](https://github.com/DS4SD/docling-core) library) and should be stored in a local directory.
+Documents are represented as `DoclingDocument` instances (from the [`docling-core`](https://github.com/DS4SD/docling-core) library).
+A local folder is all you need — `ai4rag` does not require object storage.
 
-> [!note]
-> If you are using the project locally, you can load documents using the `FileStore` class from the `dev_utils` module.
-> Supported document formats can be found in the `FileStore` implementation.
+Convert the folder with Docling, naming each document by its path relative to that folder:
 
 ```python
 from pathlib import Path
-from dev_utils.file_store import FileStore
+from docling.document_converter import DocumentConverter
 
-documents_path = Path("<path to the documents folder>")
-documents = FileStore(documents_path).load_as_documents()
+documents_root = Path("<path to the documents folder>")
+converter = DocumentConverter()
+
+documents = []
+for file_path in sorted(p for p in documents_root.rglob("*") if p.is_file()):
+    document = converter.convert(file_path).document
+    # The document's key: what benchmark data references.
+    document.name = str(file_path.relative_to(documents_root))
+    documents.append(document)
 ```
+
+> [!important]
+> Each document's `name` is its **key** — the identifier carried through chunking, indexing and evaluation,
+> and the value `correct_answer_document_keys` must reference. Set it explicitly: Docling otherwise derives a
+> name from the file stem, so two files named `setup.pdf` in different folders would collide.
+
+Already keeping your corpus in a bucket? `discover_documents()` and `extract_text()` name each document by
+its full S3 object key, so that is what `correct_answer_document_keys` must reference — prefix included.
 
 
 ### Prepare `benchmark_data.json`
@@ -122,7 +191,7 @@ Create a `benchmark_data.json` file following this schema:
 			"<answer 1 for question 1>",
 			"<answer 2 for question 1>"
 		],
-		"correct_answer_document_ids": ["<list of documents ids based on which correct answers were generated>"]
+		"correct_answer_document_keys": ["<list of document keys based on which correct answers were generated>"]
 	},
 	{
 		"question": "<question_2>",
@@ -130,18 +199,18 @@ Create a `benchmark_data.json` file following this schema:
 			"<answer 1 for question 2>",
 			"<answer 2 for question 2>"
 		],
-		"correct_answer_document_ids": ["<list of documents ids based on which correct answers were generated>"]
+		"correct_answer_document_keys": ["<list of document keys based on which correct answers were generated>"]
 	}
 ]
 ```
 
-All benchmark questions and answers must be derived from your knowledge base documents.
+All benchmark questions and answers must be derived from your knowledge base documents, and every
+`correct_answer_document_keys` entry must equal the `name` of one of the documents you loaded above.
 
 ```python
-from dev_utils.utils import read_benchmark_from_json
+import pandas as pd
 
-benchmark_data_path = Path("<path to benchmark_data.json>")
-benchmark_data = read_benchmark_from_json(benchmark_data_path)
+benchmark_data = pd.read_json("<path to benchmark_data.json>")
 ```
 
 
@@ -218,8 +287,8 @@ Using the information from the previous steps, create an experiment and run the 
 
 > [!note]
 > Select the vector store by passing a `vector_store_config` to `AI4RAGExperiment`:
-> `ChromaConfig()` for a zero-config in-memory store (vector-only search), or
-> `MilvusConfig.from_env()` / `PGVectorConfig.from_env()` for a server-backed store with hybrid (dense + keyword) search.
+> `MilvusLiteConfig()` (or `MilvusLiteConfig(db_path="./ai4rag.db")`) for a zero-config, local Milvus Lite store, or
+> `MilvusConfig.from_env()` / `PGVectorConfig.from_env()` for a server-backed store. All support hybrid (dense + keyword) search.
 
 ```python
 from ai4rag.core.experiment.experiment import AI4RAGExperiment

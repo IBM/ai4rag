@@ -45,12 +45,11 @@ class AggregateMetricPayload(TypedDict):
     optimization_metric: NotRequired[bool]
 
 
-class VectorStoreSettings(TypedDict, total=False):
+class VectorStoreSettings(TypedDict):
     """Vector store configuration used by a RAG pattern."""
 
-    provider_id: str
-    vector_store_id: str
     provider_type: str
+    collection_name: str
 
 
 class ChunkingSettings(TypedDict):
@@ -127,7 +126,7 @@ class AnswerContext(TypedDict):
     """Single retrieved chunk with its source document."""
 
     text: str
-    document_id: str
+    document_key: str
 
 
 class EvaluationMetricRecord(TypedDict):
@@ -214,7 +213,9 @@ class BaseEventHandler(ABC):
                 },
                 'duration_seconds': 42,
                 'settings': {
-                    'vector_store_binding': {'provider_id': 'local_chroma', 'vector_store_id': 'ai4rag_20260317092550'},
+                    'vector_store_binding': {
+                        'provider_type': 'local_milvus', 'collection_name': 'ai4rag_20260317092550'
+                    },
                     'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},
                     'embedding': {
                         'model_id': 'mock-em-1',
@@ -242,8 +243,8 @@ class BaseEventHandler(ABC):
                     "question": "<question_1>",
                     "answer": "<model's answer>",
                     "answer_contexts": [
-                        {"text": "<content1_text>", "document_id": "document_1.pdf"},
-                        {"text": "<content2_text>", "document_id": "document_2.pdf"},
+                        {"text": "<content1_text>", "document_key": "document_1.pdf"},
+                        {"text": "<content2_text>", "document_key": "document_2.pdf"},
                     ],
                     "correct_answers": ["correct_answer_for_question_1"],
                     "metrics": [
@@ -256,8 +257,8 @@ class BaseEventHandler(ABC):
                     "question": "<question_2>",
                     "answer": "<model's answer>",
                     "answer_contexts": [
-                        {"text": "<content3_text>", "document_id": "document_3.pdf"},
-                        {"text": "<content4_text>", "document_id": "document_4.pdf"},
+                        {"text": "<content3_text>", "document_key": "document_3.pdf"},
+                        {"text": "<content4_text>", "document_key": "document_4.pdf"},
                     ],
                     "correct_answers": ["correct_answer_1_for_question_2", "correct_answer_2_for_question_3"],
                     "metrics": [

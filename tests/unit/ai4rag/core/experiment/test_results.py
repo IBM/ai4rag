@@ -585,8 +585,8 @@ class TestExperimentResultsCreateEvaluationResultsJson:
 
         first_entry = result[0]
         assert len(first_entry["answer_contexts"]) == 2
-        assert first_entry["answer_contexts"][0] == {"text": "Context about AI", "document_id": "doc1"}
-        assert first_entry["answer_contexts"][1] == {"text": "More AI context", "document_id": "doc2"}
+        assert first_entry["answer_contexts"][0] == {"text": "Context about AI", "document_key": "doc1"}
+        assert first_entry["answer_contexts"][1] == {"text": "More AI context", "document_key": "doc2"}
 
     def test_create_evaluation_results_json_metrics(self, evaluation_data_list, evaluation_result):
         """Test metrics structure in results json."""
