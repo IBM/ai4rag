@@ -152,9 +152,7 @@ async def playground_chat(chat_request: ChatCompletionRequest, request: Request)
     ServiceAccount token before this route is reached.
     """
     if not (_SANDBOX_MODE and _PLAYGROUND_TOKEN):
-        raise HTTPException(
-            status_code=503, detail="Sandbox playground is not configured"
-        )
+        raise HTTPException(status_code=503, detail="Sandbox playground is not configured")
 
     payload = chat_request.model_dump(exclude_none=True)
     payload["stream"] = True
@@ -170,17 +168,11 @@ async def playground_chat(chat_request: ChatCompletionRequest, request: Request)
             ) as response:
                 if response.status_code != 200:
                     error = json.dumps(
-                        {
-                            "error": {
-                                "message": f"Agent returned {response.status_code}: {response.text[:500]}"
-                            }
-                        }
+                        {"error": {"message": f"Agent returned {response.status_code}: {response.text[:500]}"}}
                     )
                     yield f"data: {error}\n\n"
                     return
-                for chunk in response.iter_content(
-                    chunk_size=None, decode_unicode=True
-                ):
+                for chunk in response.iter_content(chunk_size=None, decode_unicode=True):
                     if chunk:
                         yield chunk
         except http_requests.RequestException as exc:

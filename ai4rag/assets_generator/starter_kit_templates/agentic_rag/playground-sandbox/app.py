@@ -123,16 +123,12 @@ def get_agent_token():
 
             token_b64 = result.stdout.strip()
             token = base64.b64decode(token_b64).decode("utf-8")
-            logger.info(
-                f"Auto-fetched agent token from Secret agent-client-token in namespace {namespace}"
-            )
+            logger.info(f"Auto-fetched agent token from Secret agent-client-token in namespace {namespace}")
             return token
     except Exception:
         logger.exception("Failed to auto-fetch agent token from Secret")
 
-    logger.warning(
-        f"AGENT_TOKEN not set and Secret fetch failed (namespace: {namespace})"
-    )
+    logger.warning(f"AGENT_TOKEN not set and Secret fetch failed (namespace: {namespace})")
     return None
 
 
@@ -145,13 +141,9 @@ if AGENT_CA_BUNDLE and Path(AGENT_CA_BUNDLE).is_file():
 else:
     VERIFY_TLS = False
     if AGENT_CA_BUNDLE:
-        logger.warning(
-            "AGENT_CA_BUNDLE=%s not found, TLS verification disabled", AGENT_CA_BUNDLE
-        )
+        logger.warning("AGENT_CA_BUNDLE=%s not found, TLS verification disabled", AGENT_CA_BUNDLE)
     else:
-        logger.warning(
-            "AGENT_CA_BUNDLE not set, TLS verification disabled (set to a CA path to enable)"
-        )
+        logger.warning("AGENT_CA_BUNDLE not set, TLS verification disabled (set to a CA path to enable)")
 
 logger.info(f"Current namespace: {CURRENT_NAMESPACE or 'UNKNOWN'}")
 logger.info(f"Agent URL: {AGENT_URL}")
@@ -230,13 +222,7 @@ def chat():
                 if resp.status_code != 200:
                     error_msg = resp.text[:500]
                     logger.error(f"Agent error: {error_msg}")
-                    error = json.dumps(
-                        {
-                            "error": {
-                                "message": f"Agent returned {resp.status_code}: {error_msg}"
-                            }
-                        }
-                    )
+                    error = json.dumps({"error": {"message": f"Agent returned {resp.status_code}: {error_msg}"}})
                     yield f"data: {error}\n\n"
                     return
 
@@ -246,13 +232,7 @@ def chat():
 
         except http_requests.exceptions.ConnectionError:
             logger.error(f"Cannot connect to agent at {AGENT_URL}")
-            error = json.dumps(
-                {
-                    "error": {
-                        "message": f"Cannot connect to agent at {AGENT_URL}. Is it running?"
-                    }
-                }
-            )
+            error = json.dumps({"error": {"message": f"Cannot connect to agent at {AGENT_URL}. Is it running?"}})
             yield f"data: {error}\n\n"
         except http_requests.exceptions.ReadTimeout:
             logger.error("Agent request timed out")

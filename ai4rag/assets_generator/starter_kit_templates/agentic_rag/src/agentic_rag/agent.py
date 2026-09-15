@@ -47,9 +47,7 @@ def get_graph_closure(
         model_id = getenv("MODEL_ID")
 
     if not base_url:
-        raise ValueError(
-            "CHAT_BASE_URL or BASE_URL is required for the chat model."
-        )
+        raise ValueError("CHAT_BASE_URL or BASE_URL is required for the chat model.")
     is_local = any(host in base_url for host in ["localhost", "127.0.0.1"])
 
     if not is_local and not api_key:
@@ -87,9 +85,7 @@ def get_graph_closure(
                         text_parts.append(item["text"])
                     elif isinstance(item, str):
                         text_parts.append(item)
-                system_message_text = (
-                    system_prompt_text + "\n\n" + " ".join(text_parts)
-                )
+                system_message_text = system_prompt_text + "\n\n" + " ".join(text_parts)
 
         graph = create_agent(
             model=chat,

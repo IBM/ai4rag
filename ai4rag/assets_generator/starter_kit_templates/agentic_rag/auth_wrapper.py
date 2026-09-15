@@ -23,9 +23,7 @@ log = logging.getLogger("auth_wrapper")
 _K8S_API_URL = getenv("K8S_API_URL", "").strip().rstrip("/")
 _K8S_REVIEWER_TOKEN = getenv("K8S_REVIEWER_TOKEN", "").strip()
 _ALLOWED_SA_USERNAME = getenv("ALLOWED_SA_USERNAME", "").strip()
-_K8S_CA_PATH = getenv(
-    "K8S_CA_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
-)
+_K8S_CA_PATH = getenv("K8S_CA_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
 _K8S_API_INSECURE = getenv("K8S_API_INSECURE", "").strip().lower() == "true"
 # The playground proxy must not be usable as an unauthenticated way to spend
 # the server-side PLAYGROUND_TOKEN. Kubernetes token authentication is the

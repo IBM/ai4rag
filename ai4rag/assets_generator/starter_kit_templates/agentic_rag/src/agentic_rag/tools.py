@@ -55,23 +55,15 @@ def _initialize_retriever(
         raise ValueError("MAAS_API_KEY and MAAS_BASE_URL must be set")
 
     if not collection_name:
-        raise RuntimeError(
-            "Collection name env var is not set (MILVUS_COLLECTION_NAME or PGVECTOR_COLLECTION_NAME)."
-        )
+        raise RuntimeError("Collection name env var is not set (MILVUS_COLLECTION_NAME or PGVECTOR_COLLECTION_NAME).")
 
     if not maas_base_url.startswith("https://"):
-        raise ValueError(
-            f"MaaS base URL must use HTTPS to protect API key transmission. Got: {maas_base_url}"
-        )
+        raise ValueError(f"MaaS base URL must use HTTPS to protect API key transmission. Got: {maas_base_url}")
 
     client = OpenAI(base_url=maas_base_url, api_key=maas_api_key)
 
-    params = OpenAIEmbeddingParams(
-        embedding_dimension=embedding_dimension, context_length=1015
-    )
-    embedding_model = OpenAIEmbeddingModel(
-        client=client, model_id=embedding_model_id, params=params
-    )
+    params = OpenAIEmbeddingParams(embedding_dimension=embedding_dimension, context_length=1015)
+    embedding_model = OpenAIEmbeddingModel(client=client, model_id=embedding_model_id, params=params)
 
     provider_type = getenv("PROVIDER_TYPE", "milvus")
     vector_store_config = get_vector_store_config(provider_type)
@@ -107,9 +99,7 @@ def create_retriever_tool():
     class RetrieverInput(BaseModel):
         """Schema for the retriever tool input."""
 
-        query: str = Field(
-            description="The search query describing what information you need to retrieve."
-        )
+        query: str = Field(description="The search query describing what information you need to retrieve.")
 
     @tool("retriever", args_schema=RetrieverInput)
     def retriever_tool(query: str) -> str:

@@ -26,9 +26,7 @@ from pydantic import BaseModel, Field, ValidationError  # noqa: E402
 logger = logging.getLogger(__name__)
 
 _MAX_INVOKE_ATTEMPTS = 3
-_GRACEFUL_ERROR_MESSAGE = (
-    "I was unable to process this request due to repeated internal errors."
-)
+_GRACEFUL_ERROR_MESSAGE = "I was unable to process this request due to repeated internal errors."
 _RETRYABLE_EXCEPTIONS = (
     ValidationError,
     OutputParserException,
@@ -70,16 +68,12 @@ class ChatCompletionRequest(BaseModel):
 
 
 class ChoiceMessage(BaseModel):
-    role: str = Field(
-        "assistant", description="The role of the author of this message."
-    )
+    role: str = Field("assistant", description="The role of the author of this message.")
     content: str = Field(..., description="The contents of the message.")
 
 
 class Choice(BaseModel):
-    index: int = Field(
-        ..., description="The index of the choice in the list of choices."
-    )
+    index: int = Field(..., description="The index of the choice in the list of choices.")
     message: ChoiceMessage
     finish_reason: str = Field(
         ...,
@@ -104,15 +98,11 @@ class ChatCompletionResponse(BaseModel):
     )
     model: str = Field(..., description="The model used for the chat completion.")
     choices: list[Choice] = Field(..., description="A list of chat completion choices.")
-    usage: dict | None = Field(
-        None, description="Usage statistics for the completion request."
-    )
+    usage: dict | None = Field(None, description="Usage statistics for the completion request.")
 
 
 class HealthResponse(BaseModel):
-    status: str = Field(
-        ..., description="Current service status.", examples=["healthy"]
-    )
+    status: str = Field(..., description="Current service status.", examples=["healthy"])
     agent_initialized: bool = Field(
         ...,
         description="Whether the agent has been initialized and is ready to serve requests.",
@@ -251,9 +241,7 @@ async def _handle_chat(messages: list[HumanMessage], model_id: str) -> dict[str,
 
     try:
         try:
-            result = await _invoke_with_retry(
-                {"messages": messages}, config={"recursion_limit": 15}
-            )
+            result = await _invoke_with_retry({"messages": messages}, config={"recursion_limit": 15})
         except _GRACEFUL_EXCEPTIONS:
             return {
                 "id": _make_completion_id(),
@@ -280,9 +268,7 @@ async def _handle_chat(messages: list[HumanMessage], model_id: str) -> dict[str,
         if "messages" in result and len(result["messages"]) > 0:
             for message in result["messages"]:
                 if isinstance(message, HumanMessage):
-                    context_messages.append(
-                        {"role": "user", "content": message.content}
-                    )
+                    context_messages.append({"role": "user", "content": message.content})
                 elif isinstance(message, AIMessage):
                     msg_data = {"role": "assistant", "content": message.content or ""}
                     if message.tool_calls:
@@ -333,14 +319,10 @@ async def _handle_chat(messages: list[HumanMessage], model_id: str) -> dict[str,
         }
 
     except Exception as e:
-        raise HTTPException(
-            status_code=500, detail=f"Error processing request: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Error processing request: {str(e)}")
 
 
-async def _handle_stream(
-    messages: list[HumanMessage], model_id: str
-) -> StreamingResponse:
+async def _handle_stream(messages: list[HumanMessage], model_id: str) -> StreamingResponse:
     global agent_graph
 
     completion_id = _make_completion_id()
@@ -462,9 +444,7 @@ async def _handle_stream(
     )
 
 
-@app.get(
-    "/health", response_model=HealthResponse, summary="Health check", tags=["Health"]
-)
+@app.get("/health", response_model=HealthResponse, summary="Health check", tags=["Health"])
 async def health():
     initialized = agent_graph is not None
     body = {

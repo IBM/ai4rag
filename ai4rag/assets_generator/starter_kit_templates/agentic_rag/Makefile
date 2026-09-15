@@ -149,6 +149,13 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	    --env "CHAT_BASE_URL=$${CHAT_BASE_URL:-$$BASE_URL}" \
 	    --env "MAAS_API_KEY=$$MAAS_API_KEY" \
 	    --env "MODEL_ID=$$MODEL_ID" \
+	    --env "TEMPERATURE=$$TEMPERATURE" \
+	    --env "MAX_COMPLETION_TOKENS=$$MAX_COMPLETION_TOKENS" \
+	    --env "SYSTEM_MESSAGE_B64=$$SYSTEM_MESSAGE_B64" \
+	    --env "USER_MESSAGE_B64=$$USER_MESSAGE_B64" \
+	    --env "CONTEXT_TEMPLATE_B64=$$CONTEXT_TEMPLATE_B64" \
+	    --env "LANGUAGE_CODE=$$LANGUAGE_CODE" \
+	    --env "LANGUAGE_NAME=$$LANGUAGE_NAME" \
 	    --env "EMBEDDING_MODEL_ID=$$EMBEDDING_MODEL_ID" \
 	    --env "EMBEDDING_DIMENSION=$${EMBEDDING_DIMENSION:-768}" \
 	    --env "PROVIDER_TYPE=$${PROVIDER_TYPE:-milvus}" \
@@ -215,6 +222,13 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export MAAS_BASE_URL="'"$$MAAS_BASE_URL"'" && \
 	    export CHAT_BASE_URL="'"$${CHAT_BASE_URL:-$$BASE_URL}"'" && \
 	    export MODEL_ID="'"$$MODEL_ID"'" && \
+	    export TEMPERATURE="'"$$TEMPERATURE"'" && \
+	    export MAX_COMPLETION_TOKENS="'"$$MAX_COMPLETION_TOKENS"'" && \
+	    export SYSTEM_MESSAGE_B64="'"$$SYSTEM_MESSAGE_B64"'" && \
+	    export USER_MESSAGE_B64="'"$$USER_MESSAGE_B64"'" && \
+	    export CONTEXT_TEMPLATE_B64="'"$$CONTEXT_TEMPLATE_B64"'" && \
+	    export LANGUAGE_CODE="'"$$LANGUAGE_CODE"'" && \
+	    export LANGUAGE_NAME="'"$$LANGUAGE_NAME"'" && \
 	    export EMBEDDING_MODEL_ID="'"$$EMBEDDING_MODEL_ID"'" && \
 	    export EMBEDDING_DIMENSION="'"$$EMBEDDING_DIMENSION"'" && \
 	    export PROVIDER_TYPE="'"$${PROVIDER_TYPE:-milvus}"'" && \
