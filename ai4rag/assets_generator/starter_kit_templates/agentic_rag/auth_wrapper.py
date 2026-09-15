@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 """Thin auth layer that wraps main:app without modifying agent code.
 
 Authenticates requests using K8s ServiceAccount tokens via TokenReview API.

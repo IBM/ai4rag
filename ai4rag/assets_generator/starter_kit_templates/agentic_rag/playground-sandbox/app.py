@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 r"""
 Playground UI for the LangGraph Agentic RAG Agent running in openShell sandbox.
 

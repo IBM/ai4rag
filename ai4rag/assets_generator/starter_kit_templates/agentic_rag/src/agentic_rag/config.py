@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
 import base64
 from dataclasses import dataclass
 from os import getenv
