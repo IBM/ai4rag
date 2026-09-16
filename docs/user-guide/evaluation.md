@@ -390,19 +390,18 @@ This makes evaluation more robust to phrasing variations.
 
 **3. Accurate Document Keys**
 
-Ensure `correct_answer_document_keys` match the document keys in your knowledge base (stored on each chunk as the `document_id` metadata field):
+A document key is the document's `DoclingDocument.name`. When the corpus comes from a bucket, that is
+the full S3 object key — prefix included — and discovery rejects a benchmark key that matches no
+ingested object. Set the name explicitly when you build the documents yourself:
 
 ```python
-# When loading documents
-from langchain_core.documents import Document
+from docling_core.types.doc import DoclingDocument
 
-documents = [
-    Document(
-        page_content="...",
-        metadata={"document_id": "readme.md"}  # Must match benchmark data
-    )
-]
+document = DoclingDocument(name="guides/readme.md")  # Must match benchmark data
 ```
+
+Chunks carry the same value internally under the `document_id` metadata field; it surfaces as
+`document_key` in `evaluation_results.json`.
 
 ---
 

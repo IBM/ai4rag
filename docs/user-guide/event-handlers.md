@@ -103,7 +103,7 @@ def on_pattern_creation(
         "answer": "According to the document ...",
         "correct_answers": ["The correct answer is ..."],
         "answer_contexts": [
-            {"text": "Retrieved chunk text ...", "document_id": "doc1.pdf"},
+            {"text": "Retrieved chunk text ...", "document_key": "manuals/doc1.pdf"},
         ],
         "metrics": [
             {"name": "faithfulness", "evaluator": "unitxt", "score": 0.71},

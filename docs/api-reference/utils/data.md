@@ -10,6 +10,7 @@ Data processing functions for the AutoRAG pipeline.
         - discover_documents
         - DiscoveryResult
         - DocumentDescriptor
+        - BenchmarkKeyError
 
 ## Text Extraction
 

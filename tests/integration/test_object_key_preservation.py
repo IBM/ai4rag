@@ -28,7 +28,7 @@ from ai4rag.core.experiment.benchmark_data import BenchmarkData, BenchmarkDataVa
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
 from ai4rag.evaluator.base_evaluator import EvaluationData
 from ai4rag.utils.data import text_extraction
-from ai4rag.utils.data.documents_discovery import discover_documents
+from ai4rag.utils.data.documents_discovery import BenchmarkKeyError, discover_documents
 
 # A corpus built around the collision this naming scheme exists to prevent:
 # two documents sharing a basename under different folders.
@@ -45,15 +45,30 @@ CORPUS = {
 # ---------------------------------------------------------------------------
 
 
+class _FakePaginator:
+    """Page a listing two objects at a time, the way boto3's paginator does."""
+
+    PAGE_SIZE = 2
+
+    def __init__(self, objects: dict[str, str]):
+        self._objects = objects
+
+    def paginate(self, Bucket: str, Prefix: str = "", **_kwargs):  # noqa: N803 - boto3 casing
+        del Bucket
+        matching = [{"Key": k, "Size": len(v)} for k, v in self._objects.items() if k.startswith(Prefix)]
+        for start in range(0, max(len(matching), 1), self.PAGE_SIZE):
+            yield {"Contents": matching[start : start + self.PAGE_SIZE]}
+
+
 class _FakeS3Client:
     """Minimal stand-in for the boto3 S3 client used by discovery and download."""
 
     def __init__(self, objects: dict[str, str]):
         self._objects = objects
 
-    def list_objects_v2(self, Bucket: str, Prefix: str = ""):  # noqa: N803 - boto3 casing
-        del Bucket
-        return {"Contents": [{"Key": k, "Size": len(v)} for k, v in self._objects.items() if k.startswith(Prefix)]}
+    def get_paginator(self, operation_name: str) -> _FakePaginator:
+        assert operation_name == "list_objects_v2"
+        return _FakePaginator(self._objects)
 
     def download_file(self, Bucket: str, Key: str, Filename: str):  # noqa: N803 - boto3 casing
         del Bucket
@@ -94,7 +109,7 @@ def extracted(fake_bucket, tmp_path) -> Path:
     produces the descriptor, whose ``documents`` list is handed to extraction
     exactly as ``pipelines-components`` hands it over.
     """
-    return _ingest(discover_documents(bucket_name="bucket", prefix=PREFIX, s3_client=fake_bucket), tmp_path)
+    return _ingest(discover_documents(bucket_name="bucket", prefixes=[PREFIX], s3_client=fake_bucket), tmp_path)
 
 
 def _ingest(discovery, tmp_path: Path) -> Path:
@@ -161,6 +176,20 @@ class TestObjectKeyPreservation:
 
         assert _extracted_names(out_dir) == set(CORPUS)
 
+    def test_several_locations_ingest_into_one_corpus(self, fake_bucket, tmp_path):
+        """Selecting two folders ingests both, and colliding basenames stay distinct."""
+        discovery = discover_documents(
+            bucket_name="bucket",
+            prefixes=[f"{PREFIX}/manuals/xr-200", f"{PREFIX}/manuals/xr-300"],
+            s3_client=fake_bucket,
+        )
+        out_dir = _ingest(discovery, tmp_path)
+
+        assert _extracted_names(out_dir) == {
+            f"{PREFIX}/manuals/xr-200/setup.txt",
+            f"{PREFIX}/manuals/xr-300/setup.txt",
+        }
+
     def test_key_needing_normalisation_still_names_the_document(self, monkeypatch, tmp_path):
         """A key needing normalisation must not fall back to the bare filename.
 
@@ -211,30 +240,47 @@ class TestBenchmarkKeysMatchExtractedDocuments:
             )
         )
 
-    def test_object_keys_select_the_intended_document(self, extracted):
+    @staticmethod
+    def _discover(fake_bucket, benchmark: BenchmarkData):
+        """Run discovery the way the pipeline does: benchmark keys drive sampling."""
+        return discover_documents(
+            bucket_name="bucket",
+            prefixes=[PREFIX],
+            test_data_doc_names=sorted({key for keys in benchmark.document_keys for key in keys}),
+            s3_client=fake_bucket,
+        )
+
+    def test_object_keys_select_the_intended_document(self, extracted, fake_bucket):
         """A benchmark written against object keys resolves to exactly one document."""
         benchmark = self._benchmark([f"{PREFIX}/manuals/xr-300/setup.txt"])
         referenced = {key for keys in benchmark.document_keys for key in keys}
 
         assert referenced & _extracted_names(extracted) == {f"{PREFIX}/manuals/xr-300/setup.txt"}
+        assert self._discover(fake_bucket, benchmark).count == len(CORPUS)
 
-    def test_prefix_relative_keys_match_nothing(self, extracted):
+    def test_prefix_relative_keys_are_rejected(self, fake_bucket):
         """The misconfiguration to recognise: keys written without the bucket prefix.
 
-        Nothing raises here -- the documents simply never match, so the run
-        completes with no grounding for that question and the scores reflect it.
+        Such a key matches no ingested object, which used to leave the question
+        silently ungrounded.  Discovery now fails and names the key.
         """
         benchmark = self._benchmark(["manuals/xr-300/setup.txt"])
-        referenced = {key for keys in benchmark.document_keys for key in keys}
 
-        assert not referenced & _extracted_names(extracted)
+        with pytest.raises(BenchmarkKeyError, match="'manuals/xr-300/setup.txt'"):
+            self._discover(fake_bucket, benchmark)
 
-    def test_bare_filenames_are_ambiguous_across_folders(self, extracted):
+    def test_bare_filenames_are_ambiguous_across_folders(self, fake_bucket):
         """A basename cannot address a document once folders are in play."""
         benchmark = self._benchmark(["setup.txt"])
-        referenced = {key for keys in benchmark.document_keys for key in keys}
 
-        assert not referenced & _extracted_names(extracted)
+        with pytest.raises(BenchmarkKeyError, match="shared by 2 objects"):
+            self._discover(fake_bucket, benchmark)
+
+    def test_unique_basename_is_still_accepted(self, fake_bucket):
+        """A file name that resolves to one document keeps working."""
+        benchmark = self._benchmark(["overview.txt"])
+
+        assert self._discover(fake_bucket, benchmark).count == len(CORPUS)
 
 
 # ---------------------------------------------------------------------------

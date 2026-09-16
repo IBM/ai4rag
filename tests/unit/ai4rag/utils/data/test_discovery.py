@@ -8,6 +8,7 @@ import pytest
 
 from ai4rag.utils.data.documents_discovery import (
     DOCUMENTS_DESCRIPTOR_FILENAME,
+    BenchmarkKeyError,
     DiscoveryResult,
     DocumentDescriptor,
     discover_documents,
@@ -24,9 +25,26 @@ def _s3_object(key: str, size: int) -> dict:
 
 
 def _make_mock_s3_client(mocker, contents: list[dict]):
-    """Return a mock S3 client whose ``list_objects_v2`` yields *contents*."""
+    """Return a mock S3 client whose paginator yields the objects under a prefix.
+
+    Mirrors the real API: ``paginate`` returns only the objects whose key starts
+    with the requested prefix, in a single page.
+    """
     mock = mocker.MagicMock()
-    mock.list_objects_v2.return_value = {"Contents": contents}
+
+    def _paginate(Bucket, Prefix, **_kwargs):  # noqa: N803 - boto3 kwarg names
+        return iter([{"Contents": [c for c in contents if c["Key"].startswith(Prefix)]}])
+
+    mock.get_paginator.return_value.paginate.side_effect = _paginate
+    return mock
+
+
+def _make_paginated_mock_s3_client(mocker, pages: list[list[dict]]):
+    """Return a mock S3 client whose paginator yields *pages* verbatim."""
+    mock = mocker.MagicMock()
+    mock.get_paginator.return_value.paginate.side_effect = lambda **_kwargs: iter(
+        [{"Contents": page} for page in pages]
+    )
     return mock
 
 
@@ -68,7 +86,7 @@ class TestDiscoveryResult:
         ]
         return DiscoveryResult(
             bucket="test-bucket",
-            prefix="docs/",
+            prefixes=["docs/"],
             documents=docs,
             total_size_bytes=300,
             count=2,
@@ -78,7 +96,7 @@ class TestDiscoveryResult:
         """``to_dict`` must produce JSON-serialisable output with correct keys."""
         d = result.to_dict()
         assert d["bucket"] == "test-bucket"
-        assert d["prefix"] == "docs/"
+        assert d["prefixes"] == ["docs/"]
         assert d["total_size_bytes"] == 300
         assert d["count"] == 2
         assert len(d["documents"]) == 2
@@ -136,7 +154,7 @@ class TestDiscoverDocuments:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="docs/",
+            prefixes=["docs/"],
             sampling_enabled=False,
             s3_client=mock_client,
         )
@@ -144,7 +162,7 @@ class TestDiscoverDocuments:
         assert result.count == 13
         assert result.total_size_bytes == 2000
         assert result.bucket == "bucket"
-        assert result.prefix == "docs/"
+        assert result.prefixes == ["docs/"]
         keys = [d.key for d in result.documents]
         assert "docs/report.pdf" in keys
         assert "docs/notes.md" in keys
@@ -253,7 +271,7 @@ class TestDiscoverDocuments:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="docs/",
+            prefixes=["docs/"],
             test_data_doc_names=["benchmark.pdf", "important.md"],
             sampling_enabled=False,
             s3_client=mock_client,
@@ -274,7 +292,7 @@ class TestDiscoverDocuments:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="docs/",
+            prefixes=["docs/"],
             test_data_doc_names=["benchmark.pdf"],
             sampling_enabled=True,
             sampling_max_size_gb=900 / 1024**3,
@@ -341,18 +359,37 @@ class TestDiscoverDocuments:
         assert result.documents[0].key == "a.csv"
 
     def test_list_objects_called_correctly(self, mocker):
-        """``list_objects_v2`` must receive the correct bucket and prefix."""
+        """The paginator must receive the correct bucket and prefix."""
         contents = [_s3_object("prefix/x.pdf", 10)]
         mock_client = _make_mock_s3_client(mocker, contents)
 
         discover_documents(
             bucket_name="my-bucket",
-            prefix="prefix/",
+            prefixes=["prefix/"],
             sampling_enabled=False,
             s3_client=mock_client,
         )
 
-        mock_client.list_objects_v2.assert_called_once_with(Bucket="my-bucket", Prefix="prefix/")
+        mock_client.get_paginator.assert_called_with("list_objects_v2")
+        mock_client.get_paginator.return_value.paginate.assert_called_once_with(Bucket="my-bucket", Prefix="prefix/")
+
+    def test_listing_follows_pagination(self, mocker):
+        """Listings longer than one page must not be truncated."""
+        pages = [
+            [_s3_object(f"docs/page1-{i}.pdf", 10) for i in range(1000)],
+            [_s3_object("docs/page2-0.pdf", 10)],
+        ]
+        mock_client = _make_paginated_mock_s3_client(mocker, pages)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["docs/"],
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.count == 1001
+        assert "docs/page2-0.pdf" in {d.key for d in result.documents}
 
     def test_audio_extensions_discovered(self, mocker):
         """Audio files with supported extensions must be discovered."""
@@ -368,7 +405,7 @@ class TestDiscoverDocuments:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="audio/",
+            prefixes=["audio/"],
             sampling_enabled=False,
             s3_client=mock_client,
         )
@@ -396,7 +433,7 @@ class TestDiscoverDocuments:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="data/",
+            prefixes=["data/"],
             sampling_enabled=False,
             s3_client=mock_client,
         )
@@ -429,7 +466,7 @@ class TestDocumentIdentity:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="docs",
+            prefixes=["docs"],
             test_data_doc_names=["docs/manuals/xr-200/setup.pdf"],
             sampling_enabled=True,
             sampling_max_size_gb=400 / 1024**3,
@@ -448,7 +485,7 @@ class TestDocumentIdentity:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="docs",
+            prefixes=["docs"],
             test_data_doc_names=["benchmark.pdf"],
             sampling_enabled=True,
             sampling_max_size_gb=400 / 1024**3,
@@ -467,7 +504,7 @@ class TestDocumentIdentity:
 
         result = discover_documents(
             bucket_name="bucket",
-            prefix="docs",
+            prefixes=["docs"],
             sampling_enabled=False,
             s3_client=mock_client,
         )
@@ -475,3 +512,299 @@ class TestDocumentIdentity:
         keys = [d.key for d in result.documents]
         assert keys == ["docs/a/setup.txt", "docs/b/setup.txt"]
         assert len(set(keys)) == 2
+
+
+# ---------------------------------------------------------------------------
+# Multi-location discovery
+# ---------------------------------------------------------------------------
+
+
+class TestMultiplePrefixes:
+    """Documents from every selected location form one corpus."""
+
+    CONTENTS = [
+        _s3_object("manuals/setup.pdf", 100),
+        _s3_object("manuals/nested/spec.pdf", 100),
+        _s3_object("reports/q1.pdf", 100),
+        _s3_object("archive/old.pdf", 100),
+    ]
+
+    def test_union_covers_every_prefix(self, mocker):
+        """Every listed prefix contributes its documents."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["manuals/", "reports/"],
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert [d.key for d in result.documents] == [
+            "manuals/nested/spec.pdf",
+            "manuals/setup.pdf",
+            "reports/q1.pdf",
+        ]
+        assert result.prefixes == ["manuals/", "reports/"]
+
+    def test_overlapping_prefixes_are_deduplicated(self, mocker):
+        """An object matched by two prefixes is kept once."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["manuals/", "manuals/nested/"],
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        keys = [d.key for d in result.documents]
+        assert keys == ["manuals/nested/spec.pdf", "manuals/setup.pdf"]
+        assert result.count == 2
+
+    def test_sampling_budget_is_shared_across_prefixes(self, mocker):
+        """The size cap applies to the union, not to each location separately."""
+        contents = [
+            _s3_object("a/one.pdf", 100),
+            _s3_object("b/two.pdf", 100),
+            _s3_object("c/three.pdf", 100),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["a/", "b/", "c/"],
+            sampling_enabled=True,
+            sampling_max_size_gb=200 / 1024**3,
+            s3_client=mock_client,
+        )
+
+        assert result.total_size_bytes == 200
+        assert result.count == 2
+
+    def test_benchmark_priority_spans_prefixes(self, mocker):
+        """A benchmark document in the last location still wins the budget."""
+        contents = [
+            _s3_object("a/filler.pdf", 100),
+            _s3_object("z/benchmark.pdf", 100),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["a/", "z/"],
+            test_data_doc_names=["z/benchmark.pdf"],
+            sampling_enabled=True,
+            sampling_max_size_gb=100 / 1024**3,
+            s3_client=mock_client,
+        )
+
+        assert [d.key for d in result.documents] == ["z/benchmark.pdf"]
+
+    def test_bare_string_prefix_is_coerced(self, mocker):
+        """A single string is accepted for backward compatibility."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes="reports/",
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.prefixes == ["reports/"]
+        assert [d.key for d in result.documents] == ["reports/q1.pdf"]
+
+    @pytest.mark.parametrize("prefixes", [None, [], [""], ["", "manuals/"]])
+    def test_empty_prefix_lists_whole_bucket(self, mocker, prefixes):
+        """No prefix -- or an empty one among others -- means the whole bucket."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=prefixes,
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.prefixes == [""]
+        assert result.count == len(self.CONTENTS)
+
+    def test_prefixes_are_normalised(self, mocker):
+        """Leading slashes are stripped and duplicates dropped, order preserved."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["/reports/", "manuals/", "reports/"],
+            sampling_enabled=False,
+            s3_client=mock_client,
+        )
+
+        assert result.prefixes == ["reports/", "manuals/"]
+        assert result.count == 3
+
+    def test_no_documents_in_any_prefix_names_the_locations(self, mocker):
+        """The error tells the user which locations were searched."""
+        mock_client = _make_mock_s3_client(mocker, [_s3_object("other/x.pdf", 10)])
+
+        with pytest.raises(RuntimeError, match=r"s3://bucket/a/, s3://bucket/b/"):
+            discover_documents(
+                bucket_name="bucket",
+                prefixes=["a/", "b/"],
+                sampling_enabled=False,
+                s3_client=mock_client,
+            )
+
+
+# ---------------------------------------------------------------------------
+# Benchmark key validation
+# ---------------------------------------------------------------------------
+
+
+class TestBenchmarkKeyValidation:
+    """A benchmark key that matches no ingested object must fail loudly."""
+
+    CONTENTS = [
+        _s3_object("manuals/setup.pdf", 100),
+        _s3_object("reports/setup.pdf", 100),
+        _s3_object("reports/q1.pdf", 100),
+    ]
+
+    def test_unknown_key_raises(self, mocker):
+        """A key absent from the corpus is reported by name."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        with pytest.raises(BenchmarkKeyError, match="'manuals/missing.pdf'"):
+            discover_documents(
+                bucket_name="bucket",
+                prefixes=["manuals/", "reports/"],
+                test_data_doc_names=["manuals/setup.pdf", "manuals/missing.pdf"],
+                sampling_enabled=False,
+                s3_client=mock_client,
+            )
+
+    def test_ambiguous_basename_raises(self, mocker):
+        """A file name shared by two locations cannot identify one document."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        with pytest.raises(BenchmarkKeyError, match="shared by 2 objects"):
+            discover_documents(
+                bucket_name="bucket",
+                prefixes=["manuals/", "reports/"],
+                test_data_doc_names=["setup.pdf"],
+                sampling_enabled=False,
+                s3_client=mock_client,
+            )
+
+    def test_exact_key_wins_over_basename(self, mocker):
+        """A full object key is unambiguous even when the file name collides."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["manuals/", "reports/"],
+            test_data_doc_names=["reports/setup.pdf"],
+            sampling_enabled=True,
+            sampling_max_size_gb=100 / 1024**3,
+            s3_client=mock_client,
+        )
+
+        assert [d.key for d in result.documents] == ["reports/setup.pdf"]
+
+    def test_error_message_explains_the_key_format(self, mocker):
+        """The message has to be actionable for someone editing the benchmark JSON."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        with pytest.raises(BenchmarkKeyError) as exc_info:
+            discover_documents(
+                bucket_name="bucket",
+                prefixes=["reports/"],
+                test_data_doc_names=["q1.pdf", "nope.pdf"],
+                sampling_enabled=False,
+                s3_client=mock_client,
+            )
+
+        message = str(exc_info.value)
+        assert "correct_answer_document_keys" in message
+        assert "full object key" in message
+        assert "s3://bucket/reports/" in message
+
+    def test_validation_can_be_disabled(self, mocker, caplog):
+        """With validation off an unmatched key only warns."""
+        mock_client = _make_mock_s3_client(mocker, self.CONTENTS)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["reports/"],
+            test_data_doc_names=["nope.pdf"],
+            sampling_enabled=False,
+            validate_test_data_keys=False,
+            s3_client=mock_client,
+        )
+
+        assert result.count == 2
+        assert "not part of the discovered corpus" in caplog.text
+
+    def test_benchmark_document_dropped_by_budget_warns(self, mocker, caplog):
+        """Benchmark docs that alone exceed the budget are flagged, not swallowed."""
+        contents = [
+            _s3_object("reports/small.pdf", 100),
+            _s3_object("reports/huge.pdf", 1000),
+        ]
+        mock_client = _make_mock_s3_client(mocker, contents)
+
+        result = discover_documents(
+            bucket_name="bucket",
+            prefixes=["reports/"],
+            test_data_doc_names=["reports/small.pdf", "reports/huge.pdf"],
+            sampling_enabled=True,
+            sampling_max_size_gb=500 / 1024**3,
+            s3_client=mock_client,
+        )
+
+        assert [d.key for d in result.documents] == ["reports/small.pdf"]
+        assert "reports/huge.pdf" in caplog.text
+        assert "sampling budget" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# S3 client creation
+# ---------------------------------------------------------------------------
+
+
+class TestS3ClientCreation:
+    """A client is built on demand, retrying without TLS verification when needed."""
+
+    CONTENTS = [_s3_object("docs/report.pdf", 100)]
+
+    def test_client_is_created_when_none_is_supplied(self, mocker):
+        """Without an explicit client, discovery builds a verified one."""
+        client = _make_mock_s3_client(mocker, self.CONTENTS)
+        create = mocker.patch(
+            "ai4rag.utils.data.documents_discovery.create_s3_client",
+            return_value=client,
+        )
+
+        result = discover_documents(bucket_name="bucket", prefixes=["docs/"], sampling_enabled=False)
+
+        create.assert_called_once_with()
+        client.list_objects_v2.assert_called_once_with(Bucket="bucket", Prefix="docs/", MaxKeys=1)
+        assert result.count == 1
+
+    def test_ssl_error_retries_without_verification(self, mocker):
+        """A self-signed endpoint falls back to an unverified client."""
+        from botocore.exceptions import SSLError
+
+        failing = mocker.MagicMock()
+        failing.list_objects_v2.side_effect = SSLError(endpoint_url="https://s3.example", error="self-signed")
+        working = _make_mock_s3_client(mocker, self.CONTENTS)
+        create = mocker.patch(
+            "ai4rag.utils.data.documents_discovery.create_s3_client",
+            side_effect=[failing, working],
+        )
+
+        result = discover_documents(bucket_name="bucket", prefixes=["docs/"], sampling_enabled=False)
+
+        assert create.call_args_list == [mocker.call(), mocker.call(verify=False)]
+        assert result.count == 1
