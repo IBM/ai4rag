@@ -1082,6 +1082,22 @@ class TestGetBalancedCombinations:
         assert len(result) == 2
         assert result[0]["search_mode"] != result[1]["search_mode"]
 
+    def test_fixed_balanced_prefix_covers_non_balanced_values(self):
+        """A fixed balanced quota covers all other field values when feasible."""
+        combos = [
+            {"search_mode": mode, "chunk_size": size, "number_of_chunks": count}
+            for mode in ("vector", "hybrid")
+            for size in (512, 1024, 2048)
+            for count in (3, 5, 10)
+        ]
+
+        result = GAMOptimizer._get_balanced_combinations(combos, ["search_mode"], coverage_target=3)
+
+        prefix = result[:3]
+        assert {combination["search_mode"] for combination in prefix} == {"vector", "hybrid"}
+        assert {combination["chunk_size"] for combination in prefix} == {512, 1024, 2048}
+        assert {combination["number_of_chunks"] for combination in prefix} == {3, 5, 10}
+
 
 class TestInitialSamplingStrategies:
     """Test that evaluate_initial_random_nodes applies the correct strategy."""

@@ -479,9 +479,6 @@ class GAMOptimizer(BaseOptimizer):
 
         self._log_uncovered_values(discrete_cols_in_space, self.evaluations, effective_target)
 
-        if self.settings.warm_start_strategy == "balanced":
-            self._cover_non_balanced_values(discrete_cols_in_space)
-
         self.warm_start_evaluation_count = len(self.evaluations)
 
     def _prepare_warm_start_combinations(self, effective_target: int, successful_evaluations: int) -> list[dict]:
@@ -507,7 +504,11 @@ class GAMOptimizer(BaseOptimizer):
             )
 
         if self.settings.warm_start_strategy == "balanced":
-            return self._get_balanced_combinations(combinations_local, self.settings.fields_to_balance or [])
+            return self._get_balanced_combinations(
+                combinations_local,
+                self.settings.fields_to_balance or [],
+                coverage_target=effective_target - successful_evaluations,
+            )
 
         # "random": use shuffled list as-is
         return combinations_local
@@ -550,47 +551,6 @@ class GAMOptimizer(BaseOptimizer):
                 n_random_nodes,
                 uncovered_by_col,
             )
-
-    def _cover_non_balanced_values(self, discrete_cols_in_space: dict[str, set[str]]) -> None:
-        """Evaluate additional nodes so every non-balanced column value appears at least once.
-
-        Called after the balanced warm start loop to guarantee GAM training data is not
-        missing any non-balanced column value (which would cause pygam domain errors at
-        prediction time when the GAM has only seen one class for a categorical feature).
-        """
-        fields_to_balance = set(self.settings.fields_to_balance or [])
-        non_balanced = {col: vals for col, vals in discrete_cols_in_space.items() if col not in fields_to_balance}
-        if not non_balanced:
-            return
-
-        seen: dict[str, set[str]] = {col: set() for col in non_balanced}
-        for e in self.evaluations:
-            if e.get("score") is None:
-                continue
-            for col in non_balanced:
-                seen[col].add(_str_val(e.get(col)))
-
-        remaining = [c for c in self._search_space.combinations if c not in self._evaluated_combinations]
-
-        for col, vals in non_balanced.items():
-            for val in vals:
-                if val in seen[col] or not remaining or len(self.evaluations) >= self.max_evals:
-                    continue
-                candidate = next((c for c in remaining if _str_val(c.get(col)) == val), None)
-                if candidate is None:
-                    continue
-                logger.info(
-                    "Balanced warm start: evaluating extra node to cover uncovered value '%s'='%s'.",
-                    col,
-                    val,
-                )
-                score = self._objective_function(params=candidate)
-                self._evaluated_combinations.append(candidate)
-                self.evaluations.append(candidate | {"score": score})
-                remaining.remove(candidate)
-                if score is not None:
-                    for other_col in non_balanced:
-                        seen[other_col].add(_str_val(candidate.get(other_col)))
 
     @staticmethod
     def _get_greedy_combinations(
@@ -643,14 +603,19 @@ class GAMOptimizer(BaseOptimizer):
         return [combinations[i] for i in selected_indices] + [combinations[i] for i in remaining_indices]
 
     @staticmethod
-    def _get_balanced_combinations(combinations: list[dict], fields_to_balance: list[str]) -> list[dict]:
-        """Order by outer round-robin across fields_to_balance tuples, with an inner
-        round-robin across remaining string columns within each balanced bucket.
+    # The coverage-aware selection keeps its related state together.
+    # pylint: disable=too-many-locals
+    def _get_balanced_combinations(
+        combinations: list[dict], fields_to_balance: list[str], coverage_target: int | None = None
+    ) -> list[dict]:
+        """Order combinations to cover balanced tuples and other field values early.
 
-        The outer round-robin guarantees every fields_to_balance value-tuple appears
-        at least once when n_random_nodes >= n_balanced_tuples. The inner round-robin
-        ensures non-balanced discrete columns (e.g. chunking_method, chunk_size) also
-        vary across the initial evaluations rather than repeating the same value for each bucket.
+        The prefix through ``coverage_target`` contains one configuration from each
+        balanced-field tuple, then evenly distributed additional configurations as
+        needed. Each choice maximizes unseen non-balanced values, so a Cartesian
+        search space covers every such value within its fixed warm-start target.
+        A constrained search space can make that impossible; callers report the
+        uncovered values rather than exceeding the target with extra evaluations.
         """
         if not combinations or not fields_to_balance:
             return combinations
@@ -658,32 +623,69 @@ class GAMOptimizer(BaseOptimizer):
         def _outer_key(c: dict) -> tuple:
             return tuple(_str_val(c.get(f)) for f in fields_to_balance)
 
-        str_cols = _get_discrete_column_values(combinations)
-        other_str_fields = [col for col in str_cols if col not in fields_to_balance]
+        discrete_cols = _get_discrete_column_values(combinations)
+        non_balanced_fields = [col for col in discrete_cols if col not in fields_to_balance]
 
         outer_buckets: dict[tuple, list[dict]] = defaultdict(list)
         for c in combinations:
             outer_buckets[_outer_key(c)].append(c)
 
-        if other_str_fields:
-            # Apply round-robin per non-balanced field in ascending cardinality order
-            # so the highest-cardinality field (e.g. chunk_size) dominates the cycling
-            # pattern.  Using a full-tuple key creates unique keys for every combination
-            # (single-item buckets), making _round_robin a no-op — so we must apply it
-            # one field at a time.
-            fields_by_cardinality = sorted(other_str_fields, key=lambda f: len(str_cols[f]))
+        target = max(len(outer_buckets), coverage_target or len(outer_buckets))
+        target = min(target, len(combinations))
+        covered_values: dict[str, set[str]] = {field: set() for field in non_balanced_fields}
+        selections_per_tuple: dict[tuple, int] = {key: 0 for key in outer_buckets}
+        selected: list[dict] = []
 
-            per_bucket_balanced: dict[tuple, list[dict]] = {}
-            for key, combs in outer_buckets.items():
-                result: list[dict] = list(combs)
-                for field in fields_by_cardinality:
-                    result = _round_robin(result, lambda c, f=field: _str_val(c.get(f)))
-                per_bucket_balanced[key] = result
-        else:
-            per_bucket_balanced = dict(outer_buckets)
+        def _select_best(bucket_key: tuple) -> dict:
+            bucket = outer_buckets[bucket_key]
+            best_index = max(
+                range(len(bucket)),
+                key=lambda index: sum(
+                    _str_val(bucket[index].get(field)) not in covered_values[field] for field in non_balanced_fields
+                ),
+            )
+            selected_combination = bucket.pop(best_index)
+            selected.append(selected_combination)
+            selections_per_tuple[bucket_key] += 1
+            for field in non_balanced_fields:
+                covered_values[field].add(_str_val(selected_combination.get(field)))
+            return selected_combination
 
-        ordered = [c for combs in per_bucket_balanced.values() for c in combs]
-        return _round_robin(ordered, _outer_key)
+        # Give every balanced tuple one slot. Choose the tuple that can add the
+        # most coverage next, rather than letting input order decide coverage.
+        unrepresented = list(outer_buckets)
+        while unrepresented:
+            best_bucket = max(
+                unrepresented,
+                key=lambda bucket_key: max(
+                    sum(_str_val(c.get(field)) not in covered_values[field] for field in non_balanced_fields)
+                    for c in outer_buckets[bucket_key]
+                ),
+            )
+            _select_best(best_bucket)
+            unrepresented.remove(best_bucket)
+
+        # Fill remaining fixed-budget slots from the least represented tuple,
+        # preserving balance while completing non-balanced-value coverage.
+        while len(selected) < target:
+            eligible = [bucket_key for bucket_key, bucket in outer_buckets.items() if bucket]
+            if not eligible:
+                break
+            least_selected = min(selections_per_tuple[bucket_key] for bucket_key in eligible)
+            eligible = [bucket_key for bucket_key in eligible if selections_per_tuple[bucket_key] == least_selected]
+            best_bucket = max(
+                eligible,
+                key=lambda bucket_key: max(
+                    sum(_str_val(c.get(field)) not in covered_values[field] for field in non_balanced_fields)
+                    for c in outer_buckets[bucket_key]
+                ),
+            )
+            _select_best(best_bucket)
+
+        remaining = [combination for bucket in outer_buckets.values() for combination in bucket]
+        return selected + _round_robin(remaining, _outer_key)
+
+    # pylint: enable=too-many-locals
 
     def _prepare_typed_encoder(self) -> None:
         """
