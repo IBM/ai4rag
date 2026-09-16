@@ -41,6 +41,7 @@ _SAMPLE_PATTERN_DATA: dict = {
             "ranker_strategy": "weighted",
             "ranker_alpha": 0.5,
         },
+        "rag_template": "AgenticRAG",
     },
     "indexing": {
         "pipeline_spec": {
@@ -201,7 +202,9 @@ class TestGenerateStarterKit:
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            assert "MODEL_ID=publishers/ibm/models/granite-3.1-8b-instruct" in env_content
+            values_content = zf.read("starter_kit/values.yaml").decode("utf-8")
+            assert 'MODEL_ID: "publishers/ibm/models/granite-3.1-8b-instruct"' in values_content
+            assert "MODEL_ID=" not in env_content
             assert "TEMPERATURE=0.2" in env_content
             assert "MAX_COMPLETION_TOKENS=1024" in env_content
             assert (
@@ -214,9 +217,9 @@ class TestGenerateStarterKit:
                 ).decode()
                 == "Question: {question}"
             )
-            assert "RETRIEVAL_METHOD=simple" in env_content
-            assert "SEARCH_MODE=hybrid" in env_content
-            assert "EMBEDDING_DIMENSION=768" in env_content
+            assert 'RETRIEVAL_METHOD: "simple"' in values_content
+            assert 'SEARCH_MODE: "hybrid"' in values_content
+            assert 'EMBEDDING_DIMENSION: "768"' in values_content
 
     def test_credentials_not_baked(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
@@ -248,11 +251,20 @@ class TestGenerateStarterKit:
                     assert "__FM_MODEL_ID__" not in content, f"Unreplaced placeholder in {name}"
                     assert "__PROVIDER_TYPE__" not in content, f"Unreplaced placeholder in {name}"
 
+    def test_zip_uses_agentic_rag_template(self, tmp_path):
+        zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            agent_content = zf.read("starter_kit/src/agentic_rag/agent.py").decode("utf-8")
+
+        assert "from ai4rag.rag.template.agentic_rag_template import AgenticRAG" in agent_content
+
     def test_milvus_provider_keeps_milvus_block(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            assert "MILVUS_URI=" in env_content
+            assert "MILVUS_COLLECTION_NAME=test_collection" in env_content
+            assert "MILVUS_URI=" not in env_content
             assert "PGVECTOR_HOST=" not in env_content
 
     def test_pgvector_provider_keeps_pgvector_block(self, tmp_path):
@@ -265,7 +277,8 @@ class TestGenerateStarterKit:
         zip_path = generate_starter_kit(data, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            assert "PGVECTOR_HOST=" in env_content
+            assert "PGVECTOR_COLLECTION_NAME=pg_collection" in env_content
+            assert "PGVECTOR_HOST=" not in env_content
             assert "MILVUS_URI=" not in env_content
 
     def test_values_yaml_has_filled_values(self, tmp_path):

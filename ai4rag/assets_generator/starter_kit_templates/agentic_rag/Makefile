@@ -20,6 +20,12 @@ env: ## Create venv and install dependencies
 
 run-app: ## Run agent locally with hot-reload
 	@source .venv/bin/activate && set -a && source .env && set +a && \
+	  yaml_env() { sed -n "s/^[[:space:]]*$$1:[[:space:]]*\"\(.*\)\"[[:space:]]*$$/\1/p" values.yaml; } && \
+	  export MODEL_ID="$$(yaml_env MODEL_ID)" EMBEDDING_MODEL_ID="$$(yaml_env EMBEDDING_MODEL_ID)" \
+	    EMBEDDING_DIMENSION="$$(yaml_env EMBEDDING_DIMENSION)" PROVIDER_TYPE="$$(yaml_env PROVIDER_TYPE)" \
+	    RETRIEVAL_METHOD="$$(yaml_env RETRIEVAL_METHOD)" NUMBER_OF_CHUNKS="$$(yaml_env NUMBER_OF_CHUNKS)" \
+	    SEARCH_MODE="$$(yaml_env SEARCH_MODE)" RANKER_STRATEGY="$$(yaml_env RANKER_STRATEGY)" \
+	    RANKER_ALPHA="$$(yaml_env RANKER_ALPHA)" && \
 	  if lsof -ti:$${PORT:-8000} >/dev/null 2>&1; then \
 	    echo "ERROR: Port $${PORT:-8000} is already in use." && \
 	    exit 1; \
@@ -108,6 +114,16 @@ _openshell-env = set -a && . ./.env && set +a && export OPENSHELL_GATEWAY_INSECU
 	NS=$$(oc project -q) && \
 	IMAGE="image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
 	APPS_DOMAIN=$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}') && \
+	yaml_env() { sed -n "s/^[[:space:]]*$$1:[[:space:]]*\"\(.*\)\"[[:space:]]*$$/\1/p" values.yaml; } && \
+	MODEL_ID=$$(yaml_env MODEL_ID) && \
+	EMBEDDING_MODEL_ID=$$(yaml_env EMBEDDING_MODEL_ID) && \
+	EMBEDDING_DIMENSION=$$(yaml_env EMBEDDING_DIMENSION) && \
+	PROVIDER_TYPE=$$(yaml_env PROVIDER_TYPE) && \
+	RETRIEVAL_METHOD=$$(yaml_env RETRIEVAL_METHOD) && \
+	NUMBER_OF_CHUNKS=$$(yaml_env NUMBER_OF_CHUNKS) && \
+	SEARCH_MODE=$$(yaml_env SEARCH_MODE) && \
+	RANKER_STRATEGY=$$(yaml_env RANKER_STRATEGY) && \
+	RANKER_ALPHA=$$(yaml_env RANKER_ALPHA) && \
 	MAAS_SECRET_NAME=$$(sed -n 's/^[[:space:]]*maas_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml) && \
 	VECTOR_DB_SECRET_NAME=$${VECTOR_DB_SECRET_NAME:-$$(sed -n 's/^[[:space:]]*vector_db_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml)} && \
 	secret_value() { oc get secret "$$1" -n "$$NS" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d; } && \
