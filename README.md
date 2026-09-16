@@ -179,6 +179,8 @@ for file_path in sorted(p for p in documents_root.rglob("*") if p.is_file()):
 
 Already keeping your corpus in a bucket? `discover_documents()` and `extract_text()` name each document by
 its full S3 object key, so that is what `correct_answer_document_keys` must reference — prefix included.
+Discovery can span several locations in one bucket (`prefixes=["manuals/", "reports/"]`) and fails with a
+`BenchmarkKeyError` if a benchmark key matches none of the documents it found.
 
 
 ### Prepare `benchmark_data.json`

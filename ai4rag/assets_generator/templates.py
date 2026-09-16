@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import json
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +39,7 @@ def _format_required_env_vars(provider: str) -> str:
 def create_placeholder_mapping(
     output_data: dict[str, Any],
     test_data_key: str = "",
-    input_data_key: str = "",
+    input_data_keys: list[str] | None = None,
 ) -> dict[str, Any]:
     """Create a mapping from placeholder names to their values from a pattern definition.
 
@@ -52,8 +53,9 @@ def create_placeholder_mapping(
         The parsed ``pattern.json`` data.
     test_data_key : str, default=""
         S3 key of the test data file used as input to AI4RAG.
-    input_data_key : str, default=""
-        S3 key of the documents directory used as input to AI4RAG.
+    input_data_keys : list[str] | None, default=None
+        S3 key prefixes of the document locations used as input to AI4RAG.
+        Rendered into the notebook as a Python list literal.
 
     Returns
     -------
@@ -97,7 +99,9 @@ def create_placeholder_mapping(
     mapping["CHUNK_OVERLAP"] = ch.get("chunk_overlap", 50)
 
     mapping["TEST_DATA_KEY"] = test_data_key
-    mapping["INPUT_DATA_KEY"] = input_data_key
+    # Rendered by ``str.format`` into a bare expression, so it has to carry its
+    # own quoting and brackets to become a valid Python list literal.
+    mapping["INPUT_DATA_KEYS"] = json.dumps(input_data_keys or [])
 
     return mapping
 
@@ -107,7 +111,7 @@ def generate_notebook_from_template(
     output_data: dict[str, Any],
     output_notebook_path: str | Path,
     test_data_key: str = "",
-    input_data_key: str = "",
+    input_data_keys: list[str] | None = None,
 ) -> None:
     """Generate a filled notebook from a template and pattern configuration.
 
@@ -125,13 +129,13 @@ def generate_notebook_from_template(
         Path where the generated notebook is saved.
     test_data_key : str, default=""
         S3 key of the test data file used as input to AI4RAG.
-    input_data_key : str, default=""
-        S3 key of the documents directory used as input to AI4RAG.
+    input_data_keys : list[str] | None, default=None
+        S3 key prefixes of the document locations used as input to AI4RAG.
     """
     placeholder_mapping = create_placeholder_mapping(
         output_data,
         test_data_key=test_data_key,
-        input_data_key=input_data_key,
+        input_data_keys=input_data_keys,
     )
     notebook = Notebook.load(
         notebook_name=f"{notebook_template}_template.ipynb",
