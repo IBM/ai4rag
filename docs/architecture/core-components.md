@@ -429,11 +429,10 @@ class AI4RAGSearchSpace(SearchSpace):
         self,
         params: list[Parameter] | None = None,
         rules: list[RuleFunction] | None = None,
-        vector_store_type: str = "milvus",
     ):
 ```
 
-`vector_store_type` selects the target backend for search-space defaults; supported values are `"milvus"` (remote server, `MilvusConfig`), `"milvus_lite"` (embedded, local file, `MilvusLiteConfig`), and `"pgvector"` — an unsupported value raises `ValueError`. All three backends support hybrid search, so the same validation rules and defaults apply across them.
+All supported vector store backends (`MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`) support hybrid search, so the same validation rules and defaults apply regardless of which backend is used at runtime.
 
 **Built-in Validation Rules:**
 

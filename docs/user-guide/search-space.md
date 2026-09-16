@@ -251,7 +251,7 @@ Parameter(
 
 ## Default Parameters
 
-If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. The `vector_store_type` parameter defaults to `"milvus"` and accepts `"milvus"` (remote server, `MilvusConfig`), `"milvus_lite"` (embedded local, `MilvusLiteConfig`), or `"pgvector"` — an unsupported value raises `ValueError`. All three support dense and hybrid search (Milvus and Milvus Lite via server-side/embedded BM25, PGVector via PostgreSQL full-text search), so they share the same default parameter set.
+If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. All supported vector store backends (`MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`) support dense and hybrid search (Milvus and Milvus Lite via server-side/embedded BM25, PGVector via PostgreSQL full-text search), so hybrid search parameters are always included in the default parameter set.
 
 ### Default Values
 
@@ -628,7 +628,6 @@ search_space = AI4RAGSearchSpace(
         Parameter(name="ranker_k", param_type="C", values=[0, 30, 60, 100]),
         Parameter(name="ranker_alpha", param_type="C", values=[1, 0.3, 0.5, 0.7]),
     ],
-    vector_store_type="milvus",  # Required for hybrid search
 )
 ```
 
