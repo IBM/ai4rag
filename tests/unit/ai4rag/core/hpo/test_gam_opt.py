@@ -1489,6 +1489,18 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         successful = sum(1 for e in optimizer.evaluations if e["score"] is not None)
         assert successful == 8
 
+    def test_search_logs_when_warm_start_consumes_evaluation_budget(self, caplog):
+        mock_space = self._make_space()
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.5),
+            search_space=mock_space,
+            settings=GAMOptSettings(max_evals=8, n_random_nodes=2, warm_start_strategy="greedy"),
+        )
+
+        optimizer.search()
+
+        assert "All 8 allowed evaluations were consumed by the warm-start phase" in caplog.text
+
     def test_balanced_warm_start_evaluates_min_required_when_n_random_nodes_is_smaller(self):
         """Balanced warm start evaluates min_required nodes even when n_random_nodes is smaller."""
         mock_space = self._make_space()
