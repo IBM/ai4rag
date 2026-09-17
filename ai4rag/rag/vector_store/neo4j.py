@@ -137,6 +137,9 @@ class Neo4jGraphStore(BaseVectorStore):
         self._driver = neo4j.GraphDatabase.driver(
             config.uri,
             auth=(config.username, config.password),
+            # MaaS embedding calls can exceed the load balancer's idle Bolt timeout.
+            # Recycle pooled connections before they become stale between indexing steps.
+            max_connection_lifetime=30.0,
         )
         self._driver.verify_connectivity()
         self._ensure_schema()
@@ -464,12 +467,12 @@ class Neo4jGraphStore(BaseVectorStore):
         """Search the collection-scoped Neo4j full-text index."""
         with self._driver.session(database=self._config.database) as session:
             result = session.run(
-                "CALL db.index.fulltext.queryNodes($index_name, $query) "
+                "CALL db.index.fulltext.queryNodes($index_name, $search_query) "
                 "YIELD node, score "
                 "RETURN node.text AS text, node.metadata AS metadata, "
                 "node.document_id AS document_id, score LIMIT $k",
                 index_name=f"{self._collection_name}__fulltext",
-                query=query,
+                search_query=query,
                 k=k,
             )
             rows = result.data()

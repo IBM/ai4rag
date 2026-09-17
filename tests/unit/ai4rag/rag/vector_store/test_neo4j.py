@@ -114,6 +114,10 @@ class TestNeo4jGraphStoreInit:
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
 
+    def test_recycles_connections_before_load_balancer_idle_timeout(self, mock_driver_cls, mock_embedding, neo4j_config):
+        Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        assert mock_driver_cls.call_args.kwargs["max_connection_lifetime"] == 30.0
+
     def test_collection_name_prefix_guard(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="ai4rag"):
             Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="bad_name")
@@ -361,6 +365,7 @@ class TestSearchHybrid:
         assert results[0][0].text == "keyword"
         _, kwargs = session.run.call_args
         assert kwargs["index_name"] == "ai4rag_col__fulltext"
+        assert kwargs["search_query"] == "query"
 
     def test_fuses_vector_and_fulltext_results(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
