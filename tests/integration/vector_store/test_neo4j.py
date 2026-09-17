@@ -50,34 +50,19 @@ class TestNeo4jIntegration:
     def test_collection_name_prefix(self, vector_store):
         assert vector_store.collection_name.startswith("ai4rag_")
 
-    def test_vector_search_returns_results(self, vector_store, sample_chunks):
-        results = vector_store.search(sample_chunks[0].text, k=3, search_mode="vector")
-        assert len(results) > 0
-        assert all(isinstance(r, AI4RAGChunk) for r in results)
-
-    def test_hybrid_search_returns_results(self, vector_store, sample_chunks):
-        results = vector_store.search(
-            sample_chunks[0].text, k=3, search_mode="hybrid", ranker_strategy="rrf"
-        )
-        assert len(results) > 0
-
     def test_graph_search_returns_results(self, vector_store, sample_chunks):
         results = vector_store.search(sample_chunks[0].text, k=3, search_mode="graph", graph_hops=1)
         assert len(results) > 0
 
     def test_graph_search_expands_neighbors(self, vector_store, sample_chunks):
-        """Graph search with hop expansion may return more unique chunks than pure vector."""
-        vector_results = vector_store.search(sample_chunks[0].text, k=1, search_mode="vector")
-        graph_results = vector_store.search(
-            sample_chunks[0].text, k=10, search_mode="graph", graph_hops=1
-        )
-        # Graph search can surface neighbors not in the pure vector top-1
-        assert len(graph_results) >= len(vector_results)
+        """Graph search with hop expansion returns collection-local results."""
+        graph_results = vector_store.search(sample_chunks[0].text, k=10, search_mode="graph", graph_hops=1)
+        assert all(isinstance(result, AI4RAGChunk) for result in graph_results)
 
     def test_clean_collection_removes_nodes(self, vector_store):
-        """After clean_collection, a vector search returns zero results."""
+        """After clean_collection, graph search returns zero results."""
         vector_store.clean_collection()
         # Re-create schema (indexes dropped by clean)
-        vector_store._ensure_schema()
-        results = vector_store.search("anything", k=3, search_mode="vector")
+        vector_store._ensure_kg_schema()
+        results = vector_store.search("anything", k=3, search_mode="graph")
         assert results == []

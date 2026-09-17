@@ -101,20 +101,24 @@ class TestNeo4jConfig:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestNeo4jGraphStoreInit:
-    def test_creates_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_creates_collection_specific_graph_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
 
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
         cypher_calls = [str(c) for c in session.run.call_args_list]
         joined = " ".join(cypher_calls)
         assert "VECTOR INDEX" in joined
-        assert "FULLTEXT INDEX" in joined
+        assert "ai4rag_col__embedding" in joined
+        assert "(n:`ai4rag_col`:Chunk)" in joined
+        assert "FULLTEXT INDEX" not in joined
 
     def test_verifies_connectivity(self, mock_driver_cls, mock_embedding, neo4j_config):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
 
-    def test_recycles_connections_before_load_balancer_idle_timeout(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_recycles_connections_before_load_balancer_idle_timeout(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         assert mock_driver_cls.call_args.kwargs["max_connection_lifetime"] == 30.0
 
@@ -192,7 +196,6 @@ class TestAddDocuments:
 # search — vector mode
 # ---------------------------------------------------------------------------
 
-_VECTOR_RETRIEVER_PATH = "neo4j_graphrag.retrievers.VectorRetriever"
 _CYPHER_RETRIEVER_PATH = "neo4j_graphrag.retrievers.VectorCypherRetriever"
 
 
@@ -210,67 +213,6 @@ def _make_retriever_item(text, score=0.9, meta=None):
     return item
 
 
-@patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
-class TestSearchVector:
-    def test_uses_vector_retriever_with_collection_index(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-
-        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
-            mock_vr_cls.return_value.search.return_value = _make_retriever_result([])
-            store.search("q", k=3)
-
-        _, init_kwargs = mock_vr_cls.call_args
-        assert init_kwargs["index_name"] == "ai4rag_col__vector"
-        mock_vr_cls.return_value.search.assert_called_once_with(query_text="q", top_k=3)
-
-    def test_returns_chunks_without_scores(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-
-        items = [_make_retriever_item("text A", 0.9)]
-        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
-            mock_vr_cls.return_value.search.return_value = _make_retriever_result(items)
-            results = store.search("query", k=1)
-
-        assert all(isinstance(r, AI4RAGChunk) for r in results)
-        assert results[0].text == "text A"
-
-    def test_returns_chunks_with_scores(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-
-        items = [_make_retriever_item("text", 0.85)]
-        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
-            mock_vr_cls.return_value.search.return_value = _make_retriever_result(items)
-            results = store.search("query", k=1, include_scores=True)
-
-        assert isinstance(results[0], tuple)
-        chunk, score = results[0]
-        assert isinstance(chunk, AI4RAGChunk)
-        assert abs(score - 0.85) < 1e-6
-
-    def test_graph_mode_rejected_by_milvus(self, mock_driver_cls, mock_embedding, neo4j_config):
-        """Milvus must raise ValueError for search_mode='graph'."""
-        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
-
-        with pytest.raises(ValueError, match="not supported by MilvusVectorStore"):
-            with patch("ai4rag.rag.vector_store.milvus.MilvusClient"):
-                from ai4rag.rag.vector_store.config import MilvusConfig
-
-                milvus_cfg = MilvusConfig(uri="http://localhost:19530")
-                store = MilvusVectorStore(mock_embedding, milvus_cfg, collection_name="ai4rag_col")
-                store.search("q", k=1, search_mode="graph")
-
-    def test_graph_mode_rejected_by_pgvector(self, mock_driver_cls, mock_embedding, neo4j_config):
-        """PGVector must raise ValueError for search_mode='graph'."""
-        from ai4rag.rag.vector_store.pgvector import PGVectorStore
-
-        with pytest.raises(ValueError, match="not supported by PGVectorStore"):
-            from ai4rag.rag.vector_store.config import PGVectorConfig
-
-            pg_cfg = PGVectorConfig(host="localhost")
-            store = PGVectorStore(mock_embedding, pg_cfg, collection_name="ai4rag_col")
-            store.search("q", k=1, search_mode="graph")
-
-
 # ---------------------------------------------------------------------------
 # search — graph mode
 # ---------------------------------------------------------------------------
@@ -286,7 +228,7 @@ class TestSearchGraph:
             store.search("q", k=2, search_mode="graph")
 
         _, init_kwargs = mock_cr_cls.call_args
-        assert init_kwargs["index_name"] == "ai4rag_col__vector"
+        assert init_kwargs["index_name"] == "ai4rag_col__embedding"
         mock_cr_cls.return_value.search.assert_called_once_with(
             query_text="q", top_k=2, query_params={"col": "ai4rag_col"}
         )
@@ -349,46 +291,6 @@ class TestSearchGraph:
     def test_invalid_entity_neighbor_limit_raises(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="entity_neighbor_limit"):
             _validate_neo4j_search_params("graph", entity_neighbor_limit=-1)
-
-
-@patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
-class TestSearchHybrid:
-    def test_queries_collection_fulltext_index(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.run.return_value.data.return_value = [
-            {"text": "keyword", "metadata": '{"document_id": "doc"}', "document_id": "doc", "score": 2.0}
-        ]
-
-        results = store._search_keyword("query", 1, include_scores=True)
-
-        assert results[0][0].text == "keyword"
-        _, kwargs = session.run.call_args
-        assert kwargs["index_name"] == "ai4rag_col__fulltext"
-        assert kwargs["search_query"] == "query"
-
-    def test_fuses_vector_and_fulltext_results(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        vector_chunk = AI4RAGChunk(text="vector", metadata={"document_id": "doc", "sequence_number": 0})
-        keyword_chunk = AI4RAGChunk(text="keyword", metadata={"document_id": "doc", "sequence_number": 1})
-
-        with (
-            patch.object(store, "_search_vector", return_value=[(vector_chunk, 0.9)]) as vector_search,
-            patch.object(store, "_search_keyword", return_value=[(keyword_chunk, 2.0)]) as keyword_search,
-        ):
-            results = store.search(
-                "query",
-                k=2,
-                include_scores=True,
-                search_mode="hybrid",
-                ranker_strategy="rrf",
-                ranker_k=60,
-                ranker_alpha=1,
-            )
-
-        vector_search.assert_called_once_with("query", 2, include_scores=True)
-        keyword_search.assert_called_once_with("query", 2, include_scores=True)
-        assert {chunk.text for chunk, _ in results} == {"vector", "keyword"}
 
 
 # ---------------------------------------------------------------------------
@@ -638,7 +540,7 @@ class TestBuildKnowledgeGraphFromDocuments:
             store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "Chunk__embedding" in cypher_calls
+        assert "ai4rag_col__embedding" in cypher_calls
 
     def test_tags_chunk_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
@@ -656,6 +558,21 @@ class TestBuildKnowledgeGraphFromDocuments:
         assert "ai4rag_kg_run: $run_id" in cypher_calls
         assert "collection IS NULL" not in cypher_calls
         assert "ai4rag_col" in cypher_calls
+
+    def test_tags_pipeline_document_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        model = MagicMock()
+
+        with patch(
+            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
+            return_value=self._make_pipeline_mock(),
+        ):
+            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+
+        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
+        assert "ai4rag_kg_collection" in cypher_calls
+        assert "SET kd:`ai4rag_col`" in cypher_calls
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
         """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""
@@ -680,7 +597,9 @@ class TestBuildKnowledgeGraphFromDocuments:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestCleanAndClose:
-    def test_clean_collection_drops_indexes_and_deletes_nodes(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_clean_collection_drops_legacy_indexes_without_dropping_shared_index(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
         session.run.reset_mock()
@@ -688,7 +607,10 @@ class TestCleanAndClose:
         store.clean_collection()
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "DROP INDEX" in cypher_calls
+        assert "ai4rag_col__vector" in cypher_calls
+        assert "ai4rag_col__fulltext" in cypher_calls
+        assert "ai4rag_col__embedding" in cypher_calls
+        assert "ai4rag_kg_collection" in cypher_calls
         assert "DETACH DELETE" in cypher_calls
 
     def test_close_closes_driver(self, mock_driver_cls, mock_embedding, neo4j_config):
@@ -708,11 +630,10 @@ class TestCleanAndClose:
 
 
 class TestValidateNeo4jSearchParams:
-    def test_vector_mode_valid(self):
-        _validate_neo4j_search_params("vector")
-
-    def test_hybrid_mode_valid(self):
-        _validate_neo4j_search_params("hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=1)
+    @pytest.mark.parametrize("search_mode", ["vector", "hybrid"])
+    def test_non_graph_modes_rejected(self, search_mode):
+        with pytest.raises(ValueError, match="only search_mode='graph'"):
+            _validate_neo4j_search_params(search_mode)
 
     def test_graph_mode_valid(self):
         _validate_neo4j_search_params("graph")

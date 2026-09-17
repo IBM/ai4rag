@@ -339,9 +339,7 @@ class TestGetDefaultSearchSpaceParameters:
         param_map = {p.name: p for p in params}
 
         assert "search_mode" in param_map
-        assert "vector" in param_map["search_mode"].values
-        assert "graph" in param_map["search_mode"].values
-        assert "hybrid" not in param_map["search_mode"].values
+        assert param_map["search_mode"].values == ("graph",)
 
         assert param_map["chunk_size"].values == (1024,), "chunk_size must be fixed at 1024 for neo4j"
         assert param_map["chunk_overlap"].values == (0, 64), "Neo4j must allow zero overlap and the 64-token default"
@@ -368,6 +366,13 @@ class TestGetDefaultSearchSpaceParameters:
 
 
 class TestAI4RAGSearchSpaceHybridDefaults:
+    def test_neo4j_defaults_to_graph_only_search(self):
+        ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="neo4j")
+
+        assert ss["search_mode"].values == ("graph",)
+        assert {combination["search_mode"] for combination in ss.combinations} == {"graph"}
+        assert "ranker_strategy" not in {param.name for param in ss.params}
+
     def test_includes_hybrid_params_by_default(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS))
         param_names = {p.name for p in ss.params}

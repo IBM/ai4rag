@@ -13,8 +13,8 @@ __all__ = [
 _default_chunking_methods = ("recursive", "hybrid")
 _default_chunk_sizes = (512, 1024, 2048)
 _default_chunk_overlaps = (0, 128, 256)
-# Neo4j: chunk size and overlap are fixed so the optimizer focuses on search mode
-# (vector vs. graph) and chunking method rather than also exploring chunking geometry.
+# Neo4j: chunk size and overlap are fixed so the optimizer focuses on chunking
+# method. Neo4j supports graph retrieval only.
 _default_neo4j_chunk_sizes = (1024,)
 _default_neo4j_chunk_overlaps = (0, 64)
 _default_retrieval_methods = ("simple",)
@@ -38,8 +38,8 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus"
         ``"chroma"``, and ``"neo4j"``. When ``"chroma"``, hybrid search
         parameters are excluded since ChromaDB does not support hybrid search.
         When ``"neo4j"``, ``"graph"`` is included as an additional search mode
-        and chunk_size/chunk_overlap are fixed at 1024/64 so the optimizer
-        focuses on chunking method and search mode.
+        and chunk_size/chunk_overlap are fixed at 1024/64. Neo4j supports only
+        graph search, so its search mode is fixed to ``"graph"``.
 
     Returns
     -------
@@ -72,7 +72,7 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus"
     if vector_store_type == "chroma":
         default_search_space_parameters.append(Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("vector",)))
     elif vector_store_type == "neo4j":
-        default_search_space_parameters.append(Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("vector", "graph")))
+        default_search_space_parameters.append(Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("graph",)))
     else:
         default_search_space_parameters.extend(
             [

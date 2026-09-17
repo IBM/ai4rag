@@ -343,6 +343,10 @@ class AI4RAGSearchSpace(SearchSpace):
     params : list[Parameter]
         List of Parameter, each of which is a parameter to optimize in the ai4rag process.
 
+    vector_store_type : str, default="milvus"
+        Vector-store provider whose supported retrieval parameters should be
+        used for unspecified dimensions.
+
     rules : list[RuleFunction]
         List of functions - called "rules" - that will be applied on each combination in the search space.
     """
@@ -364,8 +368,9 @@ class AI4RAGSearchSpace(SearchSpace):
         self,
         params: list[Parameter] | None = None,
         rules: list[RuleFunction] | None = None,
+        vector_store_type: str = "milvus",
     ):
-        default_search_space_parameters = get_default_ai4rag_search_space_parameters()
+        default_search_space_parameters = get_default_ai4rag_search_space_parameters(vector_store_type)
         params = params or []
         self._validate_user_params(params)
 

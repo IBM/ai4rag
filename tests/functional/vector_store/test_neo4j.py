@@ -39,21 +39,18 @@ def neo4j_store(embedding_model, sample_chunks):
         store.close()
 
 
-def test_vector_search_round_trip(neo4j_store, sample_chunks):
-    """add_documents then search(mode='vector') returns the expected chunk."""
+def test_graph_search_round_trip(neo4j_store, sample_chunks):
+    """add_documents then graph search returns the expected chunk."""
     query = sample_chunks[0].text
     results = neo4j_store.search(query, k=3)
     texts = [r.text for r in results]
     assert query in texts
 
 
-def test_hybrid_search_returns_results(neo4j_store, sample_chunks):
-    """Hybrid search returns results, potentially ranked differently from vector."""
-    results = neo4j_store.search(
-        sample_chunks[0].text, k=3, search_mode="hybrid", ranker_strategy="rrf"
-    )
-    assert len(results) > 0
-    assert all(isinstance(r, AI4RAGChunk) for r in results)
+def test_non_graph_search_is_rejected(neo4j_store, sample_chunks):
+    """Neo4j intentionally supports graph search only."""
+    with pytest.raises(ValueError, match="only search_mode='graph'"):
+        neo4j_store.search(sample_chunks[0].text, k=3, search_mode="hybrid", ranker_strategy="rrf")
 
 
 def test_graph_search_expands_sequential_neighbors(neo4j_store, sample_chunks):
