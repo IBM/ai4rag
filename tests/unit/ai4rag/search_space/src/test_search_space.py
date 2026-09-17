@@ -344,7 +344,7 @@ class TestGetDefaultSearchSpaceParameters:
         assert "hybrid" not in param_map["search_mode"].values
 
         assert param_map["chunk_size"].values == (1024,), "chunk_size must be fixed at 1024 for neo4j"
-        assert param_map["chunk_overlap"].values == (64,), "chunk_overlap must be fixed at 64 for neo4j"
+        assert param_map["chunk_overlap"].values == (0, 64), "Neo4j must allow zero overlap and the 64-token default"
         assert "chunking_method" in param_map, "chunking_method must remain variable"
 
     def test_default_is_milvus(self):

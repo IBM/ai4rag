@@ -263,11 +263,11 @@ class TestSearchVector:
         from ai4rag.rag.vector_store.pgvector import PGVectorStore
 
         with pytest.raises(ValueError, match="not supported by PGVectorStore"):
-            with patch("ai4rag.rag.vector_store.pgvector.ConnectionPool"):
-                from ai4rag.rag.vector_store.config import PGVectorConfig
-                pg_cfg = PGVectorConfig(host="localhost")
-                store = PGVectorStore(mock_embedding, pg_cfg, collection_name="ai4rag_col")
-                store.search("q", k=1, search_mode="graph")
+            from ai4rag.rag.vector_store.config import PGVectorConfig
+
+            pg_cfg = PGVectorConfig(host="localhost")
+            store = PGVectorStore(mock_embedding, pg_cfg, collection_name="ai4rag_col")
+            store.search("q", k=1, search_mode="graph")
 
 
 # ---------------------------------------------------------------------------
