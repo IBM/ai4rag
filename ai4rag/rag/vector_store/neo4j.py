@@ -3,15 +3,16 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import asyncio
+import heapq
 import json
 import re
+import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
-from json_repair import repair_json
-
 import neo4j
 from docling_core.types.doc import DoclingDocument
+from json_repair import repair_json
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -19,13 +20,14 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import Neo4jConfig
-from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension
+from ai4rag.rag.vector_store.reranker import WeightedInMemoryAggregator
+from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension, validate_search_params
 
 __all__ = ["Neo4jGraphStore"]
 
-# Shared vector index for KG-pipeline-created Chunk nodes (used by graph search).
-# Named without a collection prefix because SimpleKGPipeline creates plain :Chunk
-# nodes; collection scoping is done via the node's ``collection`` property instead.
+# Legacy shared vector index for KG-pipeline-created Chunk nodes. Graph searches
+# use the collection-specific vector index so unrelated collections cannot occupy
+# all of the ANN candidates.
 _KG_CHUNK_INDEX = "Chunk__embedding"
 
 
@@ -102,8 +104,8 @@ class Neo4jGraphStore(BaseVectorStore):
     **Graph RAG workflow** — ``build_knowledge_graph_from_documents`` + ``search(mode="graph")``
         Uses :class:`neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline`
         to chunk documents, embed them, extract entities/relations with an LLM, and
-        write the resulting knowledge graph to Neo4j.  Vector seeds are retrieved
-        from the shared ``Chunk__embedding`` index; context is expanded via
+        write the resulting knowledge graph to Neo4j. Vector seeds are retrieved
+        from the collection-specific vector index; context is expanded via
         ``__Entity__`` → ``FROM_CHUNK`` traversal and ``NEXT_CHUNK`` sequential links.
 
     Parameters
@@ -147,6 +149,10 @@ class Neo4jGraphStore(BaseVectorStore):
                 f"FOR (n:{self._collection_name}) ON (n.embedding) "
                 f"OPTIONS {{indexConfig: {{`vector.dimensions`: $dim, `vector.similarity_function`: 'cosine'}}}}",
                 dim=self._embedding_dimension,
+            )
+            session.run(
+                f"CREATE FULLTEXT INDEX `{self._collection_name}__fulltext` IF NOT EXISTS "
+                f"FOR (n:{self._collection_name}) ON EACH [n.text]"
             )
         logger.info("Neo4j schema ready: %s (dim=%d)", self._collection_name, self._embedding_dimension)
 
@@ -262,12 +268,18 @@ class Neo4jGraphStore(BaseVectorStore):
             neo4j_database=self._config.database,
         )
 
+        run_id = uuid.uuid4().hex
+
         async def _run_all() -> None:
             sem = asyncio.Semaphore(max_concurrent)
 
             async def _run_one(text: str) -> None:
                 async with sem:
-                    await pipeline.run_async(text=text)
+                    await pipeline.run_async(
+                        file_path=f"ai4rag://{self._collection_name}/{run_id}/{uuid.uuid4().hex}",
+                        text=text,
+                        document_metadata={"ai4rag_kg_run": run_id},
+                    )
 
             await asyncio.gather(*(_run_one(t) for t in texts))
 
@@ -279,23 +291,22 @@ class Neo4jGraphStore(BaseVectorStore):
                 "Install 'nest_asyncio' and call nest_asyncio.apply() beforehand."
             )
 
-        # Tag newly-created KG Chunk nodes with the collection and copy provenance
-        # metadata from the matching collection-scoped chunk (matched by text).
-        # This ensures graph-search seeds always have a non-null metadata field so
-        # source document paths are available during MRR evaluation.
+        self._tag_kg_chunks(run_id)
+
+    def _tag_kg_chunks(self, run_id: str) -> None:
+        """Tag only chunks emitted by a specific KG pipeline invocation."""
         with self._driver.session(database=self._config.database) as session:
             session.run(
-                f"MATCH (kc:Chunk) WHERE kc.collection IS NULL "
+                f"MATCH (kc:Chunk)-[:FROM_DOCUMENT]->(kd:Document {{ai4rag_kg_run: $run_id}}) "
                 f"OPTIONAL MATCH (oc:{self._collection_name}:Chunk) WHERE oc.text = kc.text "
-                f"SET kc.collection = $col, "
+                f"SET kc:{self._collection_name}, kc.collection = $col, "
                 f"    kc.metadata = COALESCE(oc.metadata, kc.metadata), "
                 f"    kc.document_id = COALESCE(oc.document_id, kc.document_id)",
                 col=self._collection_name,
+                run_id=run_id,
             )
 
-    def _upsert_doc_groups(
-        self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]
-    ) -> None:
+    def _upsert_doc_groups(self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]) -> None:
         with self._driver.session(database=self._config.database) as session:
             session.execute_write(self._upsert_batch_tx, doc_groups, self._collection_name)
 
@@ -359,6 +370,9 @@ class Neo4jGraphStore(BaseVectorStore):
         k: int,
         include_scores: bool = False,
         search_mode: str = "vector",
+        ranker_strategy: str | None = None,
+        ranker_k: int | None = None,
+        ranker_alpha: float | None = None,
         **kwargs,
     ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
         """Search for chunks relevant to *query*.
@@ -376,8 +390,12 @@ class Neo4jGraphStore(BaseVectorStore):
             against the collection-scoped vector index (requires :meth:`add_documents`).
 
             ``"graph"`` — ANN seed retrieval + entity/sequential context expansion via
-            :class:`neo4j_graphrag.retrievers.VectorCypherRetriever` against the shared
-            ``Chunk__embedding`` index (requires :meth:`build_knowledge_graph_from_documents`).
+            :class:`neo4j_graphrag.retrievers.VectorCypherRetriever` against the
+            collection-specific vector index (requires
+            :meth:`build_knowledge_graph_from_documents`).
+
+            ``"hybrid"`` — dense ANN plus Neo4j full-text retrieval, fused in memory
+            using the configured ranker.
         **kwargs : Any
             Graph-mode parameters:
 
@@ -385,10 +403,12 @@ class Neo4jGraphStore(BaseVectorStore):
             - ``include_entity_neighbors`` (bool, default True) — expand via ``__Entity__``.
             - ``entity_neighbor_limit`` (int, default 5) — max entity-linked neighbors per seed.
         """
-        _validate_neo4j_search_params(search_mode, **kwargs)
+        _validate_neo4j_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha, **kwargs)
 
         if search_mode == "graph":
             return self._search_graph(query, k, include_scores, **kwargs)
+        if search_mode == "hybrid":
+            return self._search_hybrid(query, k, include_scores, ranker_strategy, ranker_k, ranker_alpha)
         return self._search_vector(query, k, include_scores)
 
     def _search_vector(
@@ -438,6 +458,69 @@ class Neo4jGraphStore(BaseVectorStore):
             return pairs
         return [chunk for chunk, _ in pairs]
 
+    def _search_keyword(
+        self, query: str, k: int, include_scores: bool
+    ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
+        """Search the collection-scoped Neo4j full-text index."""
+        with self._driver.session(database=self._config.database) as session:
+            result = session.run(
+                "CALL db.index.fulltext.queryNodes($index_name, $query) "
+                "YIELD node, score "
+                "RETURN node.text AS text, node.metadata AS metadata, "
+                "node.document_id AS document_id, score LIMIT $k",
+                index_name=f"{self._collection_name}__fulltext",
+                query=query,
+                k=k,
+            )
+            rows = result.data()
+
+        pairs = []
+        for row in rows:
+            raw_metadata = row.get("metadata")
+            if isinstance(raw_metadata, str) and raw_metadata:
+                try:
+                    metadata = json.loads(raw_metadata)
+                except Exception:
+                    metadata = {}
+            else:
+                metadata = raw_metadata or {}
+            if metadata.get("source") is None:
+                metadata["source"] = ""
+            if metadata.get("document_id") is None:
+                metadata["document_id"] = row.get("document_id") or ""
+            if row.get("text"):
+                pairs.append((AI4RAGChunk(text=row["text"], metadata=metadata), float(row.get("score", 0.0))))
+
+        if include_scores:
+            return pairs
+        return [chunk for chunk, _ in pairs]
+
+    def _search_hybrid(
+        self,
+        query: str,
+        k: int,
+        include_scores: bool,
+        ranker_strategy: str | None,
+        ranker_k: int | None,
+        ranker_alpha: float | None,
+    ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
+        """Fuse dense and full-text results using ai4rag's shared rankers."""
+        vector_results = self._search_vector(query, k, include_scores=True)
+        keyword_results = self._search_keyword(query, k, include_scores=True)
+        chunks = {chunk.chunk_id: chunk for chunk, _ in vector_results + keyword_results}
+        scores = WeightedInMemoryAggregator.combine_search_results(
+            {chunk.chunk_id: score for chunk, score in vector_results},
+            {chunk.chunk_id: score for chunk, score in keyword_results},
+            reranker_type=ranker_strategy or "rrf",
+            reranker_params={"k": ranker_k or 60, "alpha": ranker_alpha if ranker_alpha is not None else 0.5},
+        )
+        pairs = [
+            (chunks[chunk_id], score) for chunk_id, score in heapq.nlargest(k, scores.items(), key=lambda item: item[1])
+        ]
+        if include_scores:
+            return pairs
+        return [chunk for chunk, _ in pairs]
+
     def _search_graph(
         self,
         query: str,
@@ -474,10 +557,8 @@ class Neo4jGraphStore(BaseVectorStore):
 
         retriever = VectorCypherRetriever(
             driver=self._driver,
-            index_name=_KG_CHUNK_INDEX,
-            retrieval_query=_build_graph_retrieval_query(
-                graph_hops, include_entity_neighbors, entity_neighbor_limit
-            ),
+            index_name=f"{self._collection_name}__vector",
+            retrieval_query=_build_graph_retrieval_query(graph_hops, include_entity_neighbors, entity_neighbor_limit),
             embedder=_EmbedderAdapter(self.embedding_model),
             result_formatter=_fmt,
             neo4j_database=self._config.database,
@@ -485,7 +566,10 @@ class Neo4jGraphStore(BaseVectorStore):
         result = retriever.search(query_text=query, top_k=k, query_params={"col": self._collection_name})
 
         pairs = [
-            (AI4RAGChunk(text=item.content, metadata=item.metadata.get("_meta", {})), float(item.metadata.get("score", 0.0)))
+            (
+                AI4RAGChunk(text=item.content, metadata=item.metadata.get("_meta", {})),
+                float(item.metadata.get("score", 0.0)),
+            )
             for item in result.items
             if item.content
         ]
@@ -562,8 +646,15 @@ class Neo4jGraphStore(BaseVectorStore):
             neo4j_database=self._config.database,
         )
 
+        run_id = uuid.uuid4().hex
         try:
-            asyncio.run(pipeline.run_async(text=text))
+            asyncio.run(
+                pipeline.run_async(
+                    file_path=f"ai4rag://{self._collection_name}/{run_id}",
+                    text=text,
+                    document_metadata={"ai4rag_kg_run": run_id},
+                )
+            )
         except RuntimeError:
             # Already inside a running event loop (e.g. Jupyter).
             # Users can install nest_asyncio and call nest_asyncio.apply() beforehand.
@@ -573,12 +664,7 @@ class Neo4jGraphStore(BaseVectorStore):
                 "invoking this method in a Jupyter notebook or other async context."
             )
 
-        # Tag newly-created Chunk nodes with the collection name for graph-search scoping.
-        with self._driver.session(database=self._config.database) as session:
-            session.run(
-                "MATCH (c:Chunk) WHERE c.collection IS NULL SET c.collection = $col",
-                col=self._collection_name,
-            )
+        self._tag_kg_chunks(run_id)
 
         logger.info(
             "Knowledge graph built from %d documents (collection=%s).",
@@ -775,19 +861,22 @@ class Neo4jGraphStore(BaseVectorStore):
                         "MATCH (c)-[:MENTIONS]->(dup) WHERE elementId(dup) = $dup "
                         "MATCH (canon) WHERE elementId(canon) = $canon "
                         "MERGE (c)-[:MENTIONS]->(canon)",
-                        dup=dup_eid, canon=canonical_eid,
+                        dup=dup_eid,
+                        canon=canonical_eid,
                     )
                     session.run(
                         "MATCH (dup)-[:RELATED_TO]->(target) WHERE elementId(dup) = $dup "
                         "MATCH (canon) WHERE elementId(canon) = $canon "
                         "MERGE (canon)-[:RELATED_TO]->(target)",
-                        dup=dup_eid, canon=canonical_eid,
+                        dup=dup_eid,
+                        canon=canonical_eid,
                     )
                     session.run(
                         "MATCH (src)-[:RELATED_TO]->(dup) WHERE elementId(dup) = $dup "
                         "MATCH (canon) WHERE elementId(canon) = $canon "
                         "MERGE (src)-[:RELATED_TO]->(canon)",
-                        dup=dup_eid, canon=canonical_eid,
+                        dup=dup_eid,
+                        canon=canonical_eid,
                     )
                     session.run(
                         "MATCH (dup) WHERE elementId(dup) = $dup DETACH DELETE dup",
@@ -903,12 +992,14 @@ def _parse_kg_extraction(raw: str) -> tuple[list[dict], list[dict]]:
             if not src or not tgt:
                 continue
             props = rel.get("properties", {})
-            relationships.append({
-                "source": src["name"],
-                "target": tgt["name"],
-                "keywords": rel.get("type", ""),
-                "description": props.get("description", ""),
-            })
+            relationships.append(
+                {
+                    "source": src["name"],
+                    "target": tgt["name"],
+                    "keywords": rel.get("type", ""),
+                    "description": props.get("description", ""),
+                }
+            )
 
         return entities, relationships
     except Exception:
@@ -944,7 +1035,7 @@ def _build_graph_retrieval_query(
             f"OPTIONAL MATCH (entity:__Entity__)-[:FROM_CHUNK]->(node) "
             f"WITH node, score, entity "
             f"OPTIONAL MATCH (entity)-[:FROM_CHUNK]->(ent_nb:Chunk) "
-            f"WHERE elementId(ent_nb) <> elementId(node) "
+            f"WHERE elementId(ent_nb) <> elementId(node) AND ent_nb.collection = $col "
             f"WITH node, score, collect(DISTINCT ent_nb.text)[..{entity_neighbor_limit}] AS ent_texts "
         )
     else:
@@ -953,8 +1044,8 @@ def _build_graph_retrieval_query(
     return (
         collection_filter
         + entity_block
-        + f"OPTIONAL MATCH (node)-[:NEXT_CHUNK*1..{graph_hops}]->(fwd:Chunk) "
-        + f"OPTIONAL MATCH (bwd:Chunk)-[:NEXT_CHUNK*1..{graph_hops}]->(node) "
+        + f"OPTIONAL MATCH (node)-[:NEXT_CHUNK*1..{graph_hops}]->(fwd:Chunk) WHERE fwd.collection = $col "
+        + f"OPTIONAL MATCH (bwd:Chunk)-[:NEXT_CHUNK*1..{graph_hops}]->(node) WHERE bwd.collection = $col "
         + "WITH node, score, ent_texts, "
         + "collect(DISTINCT fwd.text) + collect(DISTINCT bwd.text) AS seq_texts "
         + "WITH node, score, [x IN ent_texts + seq_texts WHERE x IS NOT NULL] AS ctx "
@@ -963,9 +1054,17 @@ def _build_graph_retrieval_query(
     )
 
 
-def _validate_neo4j_search_params(search_mode: str, **kwargs: Any) -> None:
-    if search_mode not in ("vector", "graph"):
-        raise ValueError(f"Invalid search_mode '{search_mode}'. Must be 'vector' or 'graph'.")
+def _validate_neo4j_search_params(
+    search_mode: str,
+    ranker_strategy: str | None = None,
+    ranker_k: int | None = None,
+    ranker_alpha: float | None = None,
+    **kwargs: Any,
+) -> None:
+    if search_mode not in ("vector", "hybrid", "graph"):
+        raise ValueError(f"Invalid search_mode '{search_mode}'. Must be 'vector', 'hybrid', or 'graph'.")
+
+    validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
 
     if search_mode == "graph":
         graph_hops = kwargs.get("graph_hops", 1)

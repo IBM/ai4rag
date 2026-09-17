@@ -4,14 +4,13 @@
 # -----------------------------------------------------------------------------
 import json
 import os
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphStore, _parse_kg_extraction, _validate_neo4j_search_params
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -103,13 +102,13 @@ class TestNeo4jConfig:
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestNeo4jGraphStoreInit:
     def test_creates_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
 
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
         cypher_calls = [str(c) for c in session.run.call_args_list]
         joined = " ".join(cypher_calls)
         assert "VECTOR INDEX" in joined
-        assert "FULLTEXT INDEX" not in joined
+        assert "FULLTEXT INDEX" in joined
 
     def test_verifies_connectivity(self, mock_driver_cls, mock_embedding, neo4j_config):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
@@ -137,8 +136,7 @@ class TestNeo4jGraphStoreInit:
 class TestAddDocuments:
     def _make_chunks(self, n=3, doc_id="doc1"):
         return [
-            AI4RAGChunk(text=f"chunk {i}", metadata={"document_id": doc_id, "sequence_number": i})
-            for i in range(n)
+            AI4RAGChunk(text=f"chunk {i}", metadata={"document_id": doc_id, "sequence_number": i}) for i in range(n)
         ]
 
     def test_empty_list_is_noop(self, mock_driver_cls, mock_embedding, neo4j_config):
@@ -182,9 +180,7 @@ class TestAddDocuments:
 
         store.add_documents(duplicates)
         # Only one MERGE for the Chunk node (after dedup)
-        merge_chunk_calls = [
-            c for c in tx.run.call_args_list if "Chunk" in str(c) and "MERGE (c:" in str(c)
-        ]
+        merge_chunk_calls = [c for c in tx.run.call_args_list if "Chunk" in str(c) and "MERGE (c:" in str(c)]
         assert len(merge_chunk_calls) == 1
 
 
@@ -254,6 +250,7 @@ class TestSearchVector:
         with pytest.raises(ValueError, match="not supported by MilvusVectorStore"):
             with patch("ai4rag.rag.vector_store.milvus.MilvusClient"):
                 from ai4rag.rag.vector_store.config import MilvusConfig
+
                 milvus_cfg = MilvusConfig(uri="http://localhost:19530")
                 store = MilvusVectorStore(mock_embedding, milvus_cfg, collection_name="ai4rag_col")
                 store.search("q", k=1, search_mode="graph")
@@ -277,7 +274,7 @@ class TestSearchVector:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestSearchGraph:
-    def test_uses_cypher_retriever_with_kg_index(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_uses_cypher_retriever_with_collection_index(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
 
         with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
@@ -285,7 +282,7 @@ class TestSearchGraph:
             store.search("q", k=2, search_mode="graph")
 
         _, init_kwargs = mock_cr_cls.call_args
-        assert init_kwargs["index_name"] == "Chunk__embedding"
+        assert init_kwargs["index_name"] == "ai4rag_col__vector"
         mock_cr_cls.return_value.search.assert_called_once_with(
             query_text="q", top_k=2, query_params={"col": "ai4rag_col"}
         )
@@ -323,6 +320,9 @@ class TestSearchGraph:
         _, init_kwargs = mock_cr_cls.call_args
         assert "__Entity__" in init_kwargs["retrieval_query"]
         assert "FROM_CHUNK" in init_kwargs["retrieval_query"]
+        assert "ent_nb.collection = $col" in init_kwargs["retrieval_query"]
+        assert "fwd.collection = $col" in init_kwargs["retrieval_query"]
+        assert "bwd.collection = $col" in init_kwargs["retrieval_query"]
 
     def test_returns_chunks_from_graph_search(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
@@ -347,6 +347,45 @@ class TestSearchGraph:
             _validate_neo4j_search_params("graph", entity_neighbor_limit=-1)
 
 
+@patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
+class TestSearchHybrid:
+    def test_queries_collection_fulltext_index(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        session.run.return_value.data.return_value = [
+            {"text": "keyword", "metadata": '{"document_id": "doc"}', "document_id": "doc", "score": 2.0}
+        ]
+
+        results = store._search_keyword("query", 1, include_scores=True)
+
+        assert results[0][0].text == "keyword"
+        _, kwargs = session.run.call_args
+        assert kwargs["index_name"] == "ai4rag_col__fulltext"
+
+    def test_fuses_vector_and_fulltext_results(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        vector_chunk = AI4RAGChunk(text="vector", metadata={"document_id": "doc", "sequence_number": 0})
+        keyword_chunk = AI4RAGChunk(text="keyword", metadata={"document_id": "doc", "sequence_number": 1})
+
+        with (
+            patch.object(store, "_search_vector", return_value=[(vector_chunk, 0.9)]) as vector_search,
+            patch.object(store, "_search_keyword", return_value=[(keyword_chunk, 2.0)]) as keyword_search,
+        ):
+            results = store.search(
+                "query",
+                k=2,
+                include_scores=True,
+                search_mode="hybrid",
+                ranker_strategy="rrf",
+                ranker_k=60,
+                ranker_alpha=1,
+            )
+
+        vector_search.assert_called_once_with("query", 2, include_scores=True)
+        keyword_search.assert_called_once_with("query", 2, include_scores=True)
+        assert {chunk.text for chunk, _ in results} == {"vector", "keyword"}
+
+
 # ---------------------------------------------------------------------------
 # build_knowledge_graph
 # ---------------------------------------------------------------------------
@@ -365,7 +404,11 @@ class TestBuildKnowledgeGraph:
         return _make_extraction_payload(
             nodes=[
                 {"id": "0", "label": "Person", "properties": {"name": "Alice", "chunk_id": "c1", "description": ""}},
-                {"id": "1", "label": "Organization", "properties": {"name": "Acme", "chunk_id": "c1", "description": ""}},
+                {
+                    "id": "1",
+                    "label": "Organization",
+                    "properties": {"name": "Acme", "chunk_id": "c1", "description": ""},
+                },
             ],
             relationships=[
                 {"type": "WORKS_AT", "start_node_id": "0", "end_node_id": "1", "properties": {"description": ""}},
@@ -458,15 +501,22 @@ def _make_extraction_payload(nodes, relationships=None):
 
 class TestParseKgExtraction:
     def test_valid_json(self):
-        raw = json.dumps(_make_extraction_payload(
-            nodes=[
-                {"id": "0", "label": "Person", "properties": {"name": "Alice", "description": "A researcher."}},
-                {"id": "1", "label": "Organization", "properties": {"name": "Acme", "description": "A company."}},
-            ],
-            relationships=[
-                {"type": "WORKS_AT", "start_node_id": "0", "end_node_id": "1", "properties": {"description": "Alice works at Acme."}},
-            ],
-        ))
+        raw = json.dumps(
+            _make_extraction_payload(
+                nodes=[
+                    {"id": "0", "label": "Person", "properties": {"name": "Alice", "description": "A researcher."}},
+                    {"id": "1", "label": "Organization", "properties": {"name": "Acme", "description": "A company."}},
+                ],
+                relationships=[
+                    {
+                        "type": "WORKS_AT",
+                        "start_node_id": "0",
+                        "end_node_id": "1",
+                        "properties": {"description": "Alice works at Acme."},
+                    },
+                ],
+            )
+        )
         ents, rels = _parse_kg_extraction(raw)
         assert len(ents) == 2
         assert ents[0]["name"] == "Alice"
@@ -493,24 +543,30 @@ class TestParseKgExtraction:
         assert rels == []
 
     def test_nodes_without_name_are_skipped(self):
-        raw = json.dumps(_make_extraction_payload(
-            nodes=[{"id": "0", "label": "Person", "properties": {}}],
-        ))
+        raw = json.dumps(
+            _make_extraction_payload(
+                nodes=[{"id": "0", "label": "Person", "properties": {}}],
+            )
+        )
         ents, _ = _parse_kg_extraction(raw)
         assert ents == []
 
     def test_relationships_with_unknown_node_id_are_skipped(self):
-        raw = json.dumps(_make_extraction_payload(
-            nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
-            relationships=[{"type": "KNOWS", "start_node_id": "0", "end_node_id": "99"}],
-        ))
+        raw = json.dumps(
+            _make_extraction_payload(
+                nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
+                relationships=[{"type": "KNOWS", "start_node_id": "0", "end_node_id": "99"}],
+            )
+        )
         _, rels = _parse_kg_extraction(raw)
         assert rels == []
 
     def test_missing_optional_fields_default(self):
-        raw = json.dumps(_make_extraction_payload(
-            nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
-        ))
+        raw = json.dumps(
+            _make_extraction_payload(
+                nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
+            )
+        )
         ents, _ = _parse_kg_extraction(raw)
         assert ents[0]["type"] == "Person"
         assert ents[0]["description"] == ""
@@ -532,6 +588,7 @@ class TestBuildKnowledgeGraphFromDocuments:
 
     def _make_pipeline_mock(self):
         """Return a MagicMock for SimpleKGPipeline whose run_async returns a coroutine."""
+
         async def _noop(*args, **kwargs):
             return MagicMock()
 
@@ -590,7 +647,9 @@ class TestBuildKnowledgeGraphFromDocuments:
             store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "c.collection IS NULL" in cypher_calls
+        assert "FROM_DOCUMENT" in cypher_calls
+        assert "ai4rag_kg_run: $run_id" in cypher_calls
+        assert "collection IS NULL" not in cypher_calls
         assert "ai4rag_col" in cypher_calls
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
@@ -647,9 +706,8 @@ class TestValidateNeo4jSearchParams:
     def test_vector_mode_valid(self):
         _validate_neo4j_search_params("vector")
 
-    def test_hybrid_mode_rejected(self):
-        with pytest.raises(ValueError, match="search_mode"):
-            _validate_neo4j_search_params("hybrid")
+    def test_hybrid_mode_valid(self):
+        _validate_neo4j_search_params("hybrid", ranker_strategy="rrf", ranker_k=60, ranker_alpha=1)
 
     def test_graph_mode_valid(self):
         _validate_neo4j_search_params("graph")
