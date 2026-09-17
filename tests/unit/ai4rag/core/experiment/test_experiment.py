@@ -213,6 +213,28 @@ class TestOptimizationPatternSelection:
         assert [p["optimization_phase"] for p in selected] == ["warm_start", "warm_start", "gam", "gam"]
         assert [p["payload"]["name"] for p in selected] == ["Pattern1", "Pattern2", "Pattern3", "Pattern4"]
 
+    def test_search_clears_buffered_patterns_from_a_previous_run(self):
+        class NoOpOptimizer:
+            def __init__(self, **_kwargs):
+                pass
+
+            def search(self):
+                return None
+
+        experiment = _build_experiment()
+        experiment._optimization_patterns = [
+            {
+                "payload": {"name": "stale"},
+                "evaluation_results": [],
+                "optimization_phase": "warm_start",
+            }
+        ]
+
+        experiment.search(optimizer=NoOpOptimizer, skip_mps=True)
+
+        assert experiment._optimization_patterns == []
+        experiment.event_handler.on_pattern_creation.assert_not_called()
+
     def test_publish_patterns_does_not_require_handler_patterns_attribute(self):
         """Final GAM selection is published through the handler interface alone."""
         from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings

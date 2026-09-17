@@ -264,6 +264,11 @@ class GAMOptimizer(BaseOptimizer):
 
         strategy = self.settings.warm_start_strategy
         self.current_phase = "gam"
+        if len(self.evaluations) >= self.max_evals:
+            logger.info(
+                "All %d allowed evaluations were consumed by the warm-start phase; GAM iterations will be skipped.",
+                self.max_evals,
+            )
         if strategy in ("greedy", "balanced"):
             effective_warm_start = self._compute_warm_start_effective_target()
             output_limit = self.max_iterations

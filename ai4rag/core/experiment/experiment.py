@@ -687,6 +687,9 @@ class AI4RAGExperiment:
         """
 
         logger.info("Starting RAG optimization process...")
+        # GAM patterns are buffered until the optimizer has completed, so clear
+        # results from a previous invocation on this experiment instance.
+        self._optimization_patterns = []
 
         def objective_function(space: RAGParamsType) -> float | None:
             """Function passed to the optimizer."""
