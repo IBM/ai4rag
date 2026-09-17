@@ -10,7 +10,11 @@ import pytest
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
-from ai4rag.rag.vector_store.neo4j import Neo4jGraphStore, _parse_kg_extraction, _validate_neo4j_search_params
+from ai4rag.rag.vector_store.neo4j import (
+    Neo4jGraphStore,
+    _parse_kg_extraction,
+    _validate_neo4j_search_params,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,9 +42,13 @@ def neo4j_config():
     return Neo4jConfig(uri="neo4j://localhost:7687", username="neo4j", password="test")
 
 
-def _make_store(mock_driver_cls, mock_embedding, neo4j_config, collection_name="ai4rag_test"):
+def _make_store(
+    mock_driver_cls, mock_embedding, neo4j_config, collection_name="ai4rag_test"
+):
     """Construct a Neo4jGraphStore with a fully mocked neo4j driver."""
-    store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name=collection_name)
+    store = Neo4jGraphStore(
+        mock_embedding, neo4j_config, collection_name=collection_name
+    )
     return store
 
 
@@ -101,15 +109,20 @@ class TestNeo4jConfig:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestNeo4jGraphStoreInit:
-    def test_creates_collection_specific_graph_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_creates_collection_specific_graph_vector_index(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
 
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
         cypher_calls = [str(c) for c in session.run.call_args_list]
         joined = " ".join(cypher_calls)
         assert "VECTOR INDEX" in joined
         assert "ai4rag_col__embedding" in joined
-        assert "(n:`ai4rag_col`:Chunk)" in joined
+        assert "(n:`ai4rag_col`)" in joined
+        assert "(n:`ai4rag_col`:Chunk)" not in joined
         assert "FULLTEXT INDEX" not in joined
 
     def test_verifies_connectivity(self, mock_driver_cls, mock_embedding, neo4j_config):
@@ -122,15 +135,23 @@ class TestNeo4jGraphStoreInit:
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         assert mock_driver_cls.call_args.kwargs["max_connection_lifetime"] == 30.0
 
-    def test_collection_name_prefix_guard(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_collection_name_prefix_guard(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         with pytest.raises(ValueError, match="ai4rag"):
             Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="bad_name")
 
-    def test_reuses_supplied_collection_name(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_my_col")
+    def test_reuses_supplied_collection_name(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_my_col"
+        )
         assert store.collection_name == "ai4rag_my_col"
 
-    def test_generates_collection_name_when_none(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_generates_collection_name_when_none(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         store = Neo4jGraphStore(mock_embedding, neo4j_config)
         assert store.collection_name.startswith("ai4rag_")
 
@@ -144,33 +165,55 @@ class TestNeo4jGraphStoreInit:
 class TestAddDocuments:
     def _make_chunks(self, n=3, doc_id="doc1"):
         return [
-            AI4RAGChunk(text=f"chunk {i}", metadata={"document_id": doc_id, "sequence_number": i}) for i in range(n)
+            AI4RAGChunk(
+                text=f"chunk {i}",
+                metadata={"document_id": doc_id, "sequence_number": i},
+            )
+            for i in range(n)
         ]
 
     def test_empty_list_is_noop(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
         mock_driver_cls.reset_mock()
         store.add_documents([])
         mock_driver_cls.return_value.session.assert_not_called()
 
-    def test_merges_document_and_chunk_nodes(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_merges_document_and_chunk_nodes(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
         chunks = self._make_chunks(2)
 
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(MagicMock(), *args, **kwargs)
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
+        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(
+            MagicMock(), *args, **kwargs
+        )
 
         store.add_documents(chunks)
         session.execute_write.assert_called()
 
-    def test_next_chunk_links_are_created(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_next_chunk_links_are_created(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         """Consecutive chunks within one document must be linked with NEXT_CHUNK."""
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
         chunks = self._make_chunks(3)
 
         tx = MagicMock()
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(tx, *args, **kwargs)
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
+        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(
+            tx, *args, **kwargs
+        )
 
         store.add_documents(chunks)
 
@@ -178,17 +221,29 @@ class TestAddDocuments:
         assert "NEXT_CHUNK" in all_cypher
 
     def test_deduplicates_chunks(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        chunk = AI4RAGChunk(text="same text", metadata={"document_id": "d", "sequence_number": 0})
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        chunk = AI4RAGChunk(
+            text="same text", metadata={"document_id": "d", "sequence_number": 0}
+        )
         duplicates = [chunk, chunk]
 
         tx = MagicMock()
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(tx, *args, **kwargs)
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
+        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(
+            tx, *args, **kwargs
+        )
 
         store.add_documents(duplicates)
         # Only one MERGE for the Chunk node (after dedup)
-        merge_chunk_calls = [c for c in tx.run.call_args_list if "Chunk" in str(c) and "MERGE (c:" in str(c)]
+        merge_chunk_calls = [
+            c
+            for c in tx.run.call_args_list
+            if "Chunk" in str(c) and "MERGE (c:" in str(c)
+        ]
         assert len(merge_chunk_calls) == 1
 
 
@@ -220,8 +275,12 @@ def _make_retriever_item(text, score=0.9, meta=None):
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestSearchGraph:
-    def test_uses_cypher_retriever_with_collection_index(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_uses_cypher_retriever_with_collection_index(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
 
         with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
             mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
@@ -233,8 +292,12 @@ class TestSearchGraph:
             query_text="q", top_k=2, query_params={"col": "ai4rag_col"}
         )
 
-    def test_retrieval_query_contains_next_chunk(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_retrieval_query_contains_next_chunk(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
 
         with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
             mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
@@ -245,8 +308,12 @@ class TestSearchGraph:
         assert "*1..2" in init_kwargs["retrieval_query"]
         assert "node.collection = $col" in init_kwargs["retrieval_query"]
 
-    def test_graph_search_passes_collection_param(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_kg2")
+    def test_graph_search_passes_collection_param(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_kg2"
+        )
 
         with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
             mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
@@ -256,8 +323,12 @@ class TestSearchGraph:
             query_text="q", top_k=1, query_params={"col": "ai4rag_kg2"}
         )
 
-    def test_retrieval_query_contains_entity_expansion(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_retrieval_query_contains_entity_expansion(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
 
         with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
             mock_cr_cls.return_value.search.return_value = _make_retriever_result([])
@@ -270,25 +341,35 @@ class TestSearchGraph:
         assert "fwd.collection = $col" in init_kwargs["retrieval_query"]
         assert "bwd.collection = $col" in init_kwargs["retrieval_query"]
 
-    def test_returns_chunks_from_graph_search(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_returns_chunks_from_graph_search(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
 
         item = MagicMock()
         item.content = "seed text with context"
         item.metadata = {"score": 0.88}
         with patch(_CYPHER_RETRIEVER_PATH) as mock_cr_cls:
-            mock_cr_cls.return_value.search.return_value = _make_retriever_result([item])
+            mock_cr_cls.return_value.search.return_value = _make_retriever_result(
+                [item]
+            )
             results = store.search("q", k=1, search_mode="graph")
 
         assert len(results) == 1
         assert isinstance(results[0], AI4RAGChunk)
         assert results[0].text == "seed text with context"
 
-    def test_invalid_graph_hops_raises(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_invalid_graph_hops_raises(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         with pytest.raises(ValueError, match="graph_hops"):
             _validate_neo4j_search_params("graph", graph_hops=0)
 
-    def test_invalid_entity_neighbor_limit_raises(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_invalid_entity_neighbor_limit_raises(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         with pytest.raises(ValueError, match="entity_neighbor_limit"):
             _validate_neo4j_search_params("graph", entity_neighbor_limit=-1)
 
@@ -310,7 +391,15 @@ class TestBuildKnowledgeGraph:
     def _node_id_payload(self):
         return _make_extraction_payload(
             nodes=[
-                {"id": "0", "label": "Person", "properties": {"name": "Alice", "chunk_id": "c1", "description": ""}},
+                {
+                    "id": "0",
+                    "label": "Person",
+                    "properties": {
+                        "name": "Alice",
+                        "chunk_id": "c1",
+                        "description": "",
+                    },
+                },
                 {
                     "id": "1",
                     "label": "Organization",
@@ -318,15 +407,29 @@ class TestBuildKnowledgeGraph:
                 },
             ],
             relationships=[
-                {"type": "WORKS_AT", "start_node_id": "0", "end_node_id": "1", "properties": {"description": ""}},
+                {
+                    "type": "WORKS_AT",
+                    "start_node_id": "0",
+                    "end_node_id": "1",
+                    "properties": {"description": ""},
+                },
             ],
         )
 
-    def test_calls_llm_for_each_batch(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+    def test_calls_llm_for_each_batch(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
 
-        chunk_data = [{"id": "c1", "text": "Alice works at Acme."}, {"id": "c2", "text": "Bob is CEO."}]
+        chunk_data = [
+            {"id": "c1", "text": "Alice works at Acme."},
+            {"id": "c2", "text": "Bob is CEO."},
+        ]
         page_result = MagicMock()
         page_result.data.return_value = chunk_data
         empty_page = MagicMock()
@@ -335,7 +438,9 @@ class TestBuildKnowledgeGraph:
 
         model = self._make_model(self._node_id_payload())
         tx = MagicMock()
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(tx, *args, **kwargs)
+        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(
+            tx, *args, **kwargs
+        )
 
         store.build_knowledge_graph(model, chunk_batch_size=16)
 
@@ -343,9 +448,15 @@ class TestBuildKnowledgeGraph:
         call_kwargs = model.chat.call_args.kwargs
         assert "max_completion_tokens" in call_kwargs
 
-    def test_writes_entity_and_mentions_nodes(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+    def test_writes_entity_and_mentions_nodes(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
 
         chunk_data = [{"id": "c1", "text": "Alice works at Acme."}]
         page_result = MagicMock()
@@ -356,7 +467,9 @@ class TestBuildKnowledgeGraph:
 
         model = self._make_model(self._node_id_payload())
         tx = MagicMock()
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(tx, *args, **kwargs)
+        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(
+            tx, *args, **kwargs
+        )
 
         store.build_knowledge_graph(model, chunk_batch_size=16)
 
@@ -365,8 +478,12 @@ class TestBuildKnowledgeGraph:
         assert "MENTIONS" in all_cypher
 
     def test_no_chunks_skips_llm(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
 
         empty_page = MagicMock()
         empty_page.data.return_value = []
@@ -376,9 +493,15 @@ class TestBuildKnowledgeGraph:
         store.build_knowledge_graph(model)
         model.chat.assert_not_called()
 
-    def test_invalid_json_response_is_skipped(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+    def test_invalid_json_response_is_skipped(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
 
         chunk_data = [{"id": "c1", "text": "some text"}]
         page_result = MagicMock()
@@ -411,8 +534,16 @@ class TestParseKgExtraction:
         raw = json.dumps(
             _make_extraction_payload(
                 nodes=[
-                    {"id": "0", "label": "Person", "properties": {"name": "Alice", "description": "A researcher."}},
-                    {"id": "1", "label": "Organization", "properties": {"name": "Acme", "description": "A company."}},
+                    {
+                        "id": "0",
+                        "label": "Person",
+                        "properties": {"name": "Alice", "description": "A researcher."},
+                    },
+                    {
+                        "id": "1",
+                        "label": "Organization",
+                        "properties": {"name": "Acme", "description": "A company."},
+                    },
                 ],
                 relationships=[
                     {
@@ -462,7 +593,9 @@ class TestParseKgExtraction:
         raw = json.dumps(
             _make_extraction_payload(
                 nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
-                relationships=[{"type": "KNOWS", "start_node_id": "0", "end_node_id": "99"}],
+                relationships=[
+                    {"type": "KNOWS", "start_node_id": "0", "end_node_id": "99"}
+                ],
             )
         )
         _, rels = _parse_kg_extraction(raw)
@@ -503,8 +636,12 @@ class TestBuildKnowledgeGraphFromDocuments:
         pipeline.run_async.side_effect = _noop
         return pipeline
 
-    def test_exports_each_document_to_markdown(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_exports_each_document_to_markdown(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
         model = MagicMock()
         doc1 = self._make_docling_doc("Text one.")
         doc2 = self._make_docling_doc("Text two.")
@@ -513,13 +650,19 @@ class TestBuildKnowledgeGraphFromDocuments:
             "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
             return_value=self._make_pipeline_mock(),
         ):
-            store.build_knowledge_graph_from_documents(documents=[doc1, doc2], model=model)
+            store.build_knowledge_graph_from_documents(
+                documents=[doc1, doc2], model=model
+            )
 
         doc1.export_to_markdown.assert_called_once()
         doc2.export_to_markdown.assert_called_once()
 
-    def test_empty_text_skips_pipeline(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+    def test_empty_text_skips_pipeline(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
         model = MagicMock()
         doc = self._make_docling_doc("")  # export produces empty string
 
@@ -528,30 +671,46 @@ class TestBuildKnowledgeGraphFromDocuments:
 
         mock_run.assert_not_called()
 
-    def test_creates_kg_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+    def test_creates_kg_vector_index(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
         model = MagicMock()
 
         with patch(
             "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
             return_value=self._make_pipeline_mock(),
         ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+            store.build_knowledge_graph_from_documents(
+                documents=[self._make_docling_doc()], model=model
+            )
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
         assert "ai4rag_col__embedding" in cypher_calls
 
-    def test_tags_chunk_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+    def test_tags_chunk_nodes_with_collection(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
         model = MagicMock()
 
         with patch(
             "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
             return_value=self._make_pipeline_mock(),
         ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+            store.build_knowledge_graph_from_documents(
+                documents=[self._make_docling_doc()], model=model
+            )
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
         assert "FROM_DOCUMENT" in cypher_calls
@@ -559,16 +718,24 @@ class TestBuildKnowledgeGraphFromDocuments:
         assert "collection IS NULL" not in cypher_calls
         assert "ai4rag_col" in cypher_calls
 
-    def test_tags_pipeline_document_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+    def test_tags_pipeline_document_nodes_with_collection(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
         model = MagicMock()
 
         with patch(
             "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
             return_value=self._make_pipeline_mock(),
         ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+            store.build_knowledge_graph_from_documents(
+                documents=[self._make_docling_doc()], model=model
+            )
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
         assert "ai4rag_kg_collection" in cypher_calls
@@ -576,15 +743,21 @@ class TestBuildKnowledgeGraphFromDocuments:
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
         """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
         model = MagicMock()
 
         with patch(
             "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
             return_value=self._make_pipeline_mock(),
         ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+            store.build_knowledge_graph_from_documents(
+                documents=[self._make_docling_doc()], model=model
+            )
 
         skip_calls = [c for c in session.run.call_args_list if "SKIP" in str(c)]
         assert skip_calls == []
@@ -600,8 +773,12 @@ class TestCleanAndClose:
     def test_clean_collection_drops_legacy_indexes_without_dropping_shared_index(
         self, mock_driver_cls, mock_embedding, neo4j_config
     ):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
+        session = (
+            mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        )
         session.run.reset_mock()
 
         store.clean_collection()
@@ -614,12 +791,18 @@ class TestCleanAndClose:
         assert "DETACH DELETE" in cypher_calls
 
     def test_close_closes_driver(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        store = Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        )
         store.close()
         mock_driver_cls.return_value.close.assert_called_once()
 
-    def test_context_manager_calls_close(self, mock_driver_cls, mock_embedding, neo4j_config):
-        with Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col"):
+    def test_context_manager_calls_close(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        with Neo4jGraphStore(
+            mock_embedding, neo4j_config, collection_name="ai4rag_col"
+        ):
             pass
         mock_driver_cls.return_value.close.assert_called_once()
 

@@ -19,7 +19,11 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import Neo4jConfig
-from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension, validate_search_params
+from ai4rag.rag.vector_store.utils import (
+    iter_unique_chunks,
+    resolve_embedding_dimension,
+    validate_search_params,
+)
 
 __all__ = ["Neo4jGraphStore"]
 
@@ -87,7 +91,9 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
         system_instruction: str | None = None,
     ):
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.invoke, input, message_history, system_instruction)
+        return await loop.run_in_executor(
+            None, self.invoke, input, message_history, system_instruction
+        )
 
 
 class Neo4jGraphStore(BaseVectorStore):
@@ -144,7 +150,10 @@ class Neo4jGraphStore(BaseVectorStore):
         with self._driver.session(database=self._config.database) as session:
             session.run(
                 f"CREATE VECTOR INDEX `{index_name}` IF NOT EXISTS "
-                f"FOR (n:`{self._collection_name}`:Chunk) ON (n.embedding) "
+                # Neo4j vector indexes support one node label. The collection
+                # label scopes this index; nodes retain their :Chunk label for
+                # graph traversal queries.
+                f"FOR (n:`{self._collection_name}`) ON (n.embedding) "
                 f"OPTIONS {{indexConfig: {{`vector.dimensions`: $dim, `vector.similarity_function`: 'cosine'}}}}",
                 dim=self._embedding_dimension,
             )
@@ -187,7 +196,9 @@ class Neo4jGraphStore(BaseVectorStore):
 
         self._ensure_kg_schema()
 
-        embeddings = self.embedding_model.embed_documents([doc.text for doc in documents])
+        embeddings = self.embedding_model.embed_documents(
+            [doc.text for doc in documents]
+        )
         unique_pairs = list(iter_unique_chunks(documents, embeddings))
 
         doc_groups: dict[str, list[tuple[AI4RAGChunk, list[float]]]] = {}
@@ -196,7 +207,9 @@ class Neo4jGraphStore(BaseVectorStore):
             doc_groups.setdefault(doc_id, []).append((doc, emb))
 
         for doc_id in doc_groups:
-            doc_groups[doc_id].sort(key=lambda p: p[0].metadata.get("sequence_number", 0))
+            doc_groups[doc_id].sort(
+                key=lambda p: p[0].metadata.get("sequence_number", 0)
+            )
 
         batch_size = kwargs.get("batch_size", self._BATCH_SIZE)
         pending: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]] = []
@@ -219,7 +232,9 @@ class Neo4jGraphStore(BaseVectorStore):
                 model=self._foundation_model,
             )
 
-    def _run_kg_pipeline(self, texts: list[str], model: Any, max_concurrent: int = 8) -> None:
+    def _run_kg_pipeline(
+        self, texts: list[str], model: Any, max_concurrent: int = 8
+    ) -> None:
         """Run ``SimpleKGPipeline`` on chunk texts concurrently.
 
         Explicit entity/relation types are provided so the pipeline uses
@@ -231,7 +246,9 @@ class Neo4jGraphStore(BaseVectorStore):
         a single asyncio event loop, giving near-linear speedup over the
         sequential approach since LLM calls are I/O-bound.
         """
-        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
+        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import (
+            FixedSizeSplitter,
+        )
         from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
         texts = [t for t in texts if t.strip()]
@@ -242,8 +259,23 @@ class Neo4jGraphStore(BaseVectorStore):
             llm=_LLMAdapter(model),
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
-            entities=["Person", "Organization", "Place", "Concept", "Event", "Product", "Technology"],
-            relations=["RELATED_TO", "PART_OF", "LOCATED_IN", "BELONGS_TO", "CREATED_BY", "MENTIONS"],
+            entities=[
+                "Person",
+                "Organization",
+                "Place",
+                "Concept",
+                "Event",
+                "Product",
+                "Technology",
+            ],
+            relations=[
+                "RELATED_TO",
+                "PART_OF",
+                "LOCATED_IN",
+                "BELONGS_TO",
+                "CREATED_BY",
+                "MENTIONS",
+            ],
             from_pdf=False,
             text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=200),
             on_error="IGNORE",
@@ -295,9 +327,13 @@ class Neo4jGraphStore(BaseVectorStore):
                 run_id=run_id,
             )
 
-    def _upsert_doc_groups(self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]) -> None:
+    def _upsert_doc_groups(
+        self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]
+    ) -> None:
         with self._driver.session(database=self._config.database) as session:
-            session.execute_write(self._upsert_batch_tx, doc_groups, self._collection_name)
+            session.execute_write(
+                self._upsert_batch_tx, doc_groups, self._collection_name
+            )
 
     @staticmethod
     def _upsert_batch_tx(
@@ -316,7 +352,10 @@ class Neo4jGraphStore(BaseVectorStore):
             )
 
             for chunk, embedding in sorted_pairs:
-                clean_metadata = {**chunk.metadata, "source": chunk.metadata.get("source") or doc_id}
+                clean_metadata = {
+                    **chunk.metadata,
+                    "source": chunk.metadata.get("source") or doc_id,
+                }
                 tx.run(
                     f"MERGE (c:{collection_name}:Chunk {{id: $id}}) "
                     f"SET c.text = $text, c.embedding = $embedding, "
@@ -386,7 +425,9 @@ class Neo4jGraphStore(BaseVectorStore):
             - ``include_entity_neighbors`` (bool, default True) — expand via ``__Entity__``.
             - ``entity_neighbor_limit`` (int, default 5) — max entity-linked neighbors per seed.
         """
-        _validate_neo4j_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha, **kwargs)
+        _validate_neo4j_search_params(
+            search_mode, ranker_strategy, ranker_k, ranker_alpha, **kwargs
+        )
 
         return self._search_graph(query, k, include_scores, **kwargs)
 
@@ -421,18 +462,25 @@ class Neo4jGraphStore(BaseVectorStore):
                 chunk_meta["document_id"] = record.get("document_id") or ""
             return RetrieverResultItem(
                 content=record.get("text") or "",
-                metadata={"score": float(record.get("score", 0.0)), "_meta": chunk_meta},
+                metadata={
+                    "score": float(record.get("score", 0.0)),
+                    "_meta": chunk_meta,
+                },
             )
 
         retriever = VectorCypherRetriever(
             driver=self._driver,
             index_name=_collection_vector_index_name(self._collection_name),
-            retrieval_query=_build_graph_retrieval_query(graph_hops, include_entity_neighbors, entity_neighbor_limit),
+            retrieval_query=_build_graph_retrieval_query(
+                graph_hops, include_entity_neighbors, entity_neighbor_limit
+            ),
             embedder=_EmbedderAdapter(self.embedding_model),
             result_formatter=_fmt,
             neo4j_database=self._config.database,
         )
-        result = retriever.search(query_text=query, top_k=k, query_params={"col": self._collection_name})
+        result = retriever.search(
+            query_text=query, top_k=k, query_params={"col": self._collection_name}
+        )
 
         pairs = [
             (
@@ -491,7 +539,9 @@ class Neo4jGraphStore(BaseVectorStore):
         perform_entity_resolution : bool, default=True
             Whether to merge duplicate entity nodes after extraction.
         """
-        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
+        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import (
+            FixedSizeSplitter,
+        )
         from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
         self._ensure_kg_schema()
@@ -509,7 +559,9 @@ class Neo4jGraphStore(BaseVectorStore):
             driver=self._driver,
             embedder=embedder,
             from_pdf=False,
-            text_splitter=FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+            text_splitter=FixedSizeSplitter(
+                chunk_size=chunk_size, chunk_overlap=chunk_overlap
+            ),
             on_error=on_error,
             perform_entity_resolution=perform_entity_resolution,
             neo4j_database=self._config.database,
@@ -577,12 +629,22 @@ class Neo4jGraphStore(BaseVectorStore):
         """
         all_chunks = self._read_all_chunks()
         if not all_chunks:
-            logger.info("No chunks found in collection %s; skipping KG build.", self._collection_name)
+            logger.info(
+                "No chunks found in collection %s; skipping KG build.",
+                self._collection_name,
+            )
             return
 
-        batches = [all_chunks[i : i + chunk_batch_size] for i in range(0, len(all_chunks), chunk_batch_size)]
-        entity_hint = f"\nFocus on entity types: {', '.join(entities)}." if entities else ""
-        relation_hint = f"\nFocus on relation types: {', '.join(relations)}." if relations else ""
+        batches = [
+            all_chunks[i : i + chunk_batch_size]
+            for i in range(0, len(all_chunks), chunk_batch_size)
+        ]
+        entity_hint = (
+            f"\nFocus on entity types: {', '.join(entities)}." if entities else ""
+        )
+        relation_hint = (
+            f"\nFocus on relation types: {', '.join(relations)}." if relations else ""
+        )
         system_prompt = _KG_BATCH_SYSTEM_PROMPT + entity_hint + relation_hint
 
         def extract_batch(batch: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -597,7 +659,9 @@ class Neo4jGraphStore(BaseVectorStore):
             raw = choices[0].message.content or ""
             return _parse_kg_extraction(raw)
 
-        def write_batch_result(chunk_entities: list[dict], relationships: list[dict]) -> None:
+        def write_batch_result(
+            chunk_entities: list[dict], relationships: list[dict]
+        ) -> None:
             with self._driver.session(database=self._config.database) as session:
                 for ent in chunk_entities:
                     chunk_id = ent.get("chunk_id", "")
@@ -618,7 +682,9 @@ class Neo4jGraphStore(BaseVectorStore):
                     )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(extract_batch, batch): batch for batch in batches}
+            futures = {
+                executor.submit(extract_batch, batch): batch for batch in batches
+            }
             for future in as_completed(futures):
                 try:
                     batch_entities, batch_rels = future.result()
@@ -678,7 +744,9 @@ class Neo4jGraphStore(BaseVectorStore):
                     etype=ent.get("type", "Other"),
                 )
 
-        entity_type_map = {e["name"]: e.get("type", "Other") for e in entities if e.get("name")}
+        entity_type_map = {
+            e["name"]: e.get("type", "Other") for e in entities if e.get("name")
+        }
 
         for rel in relationships:
             src = rel.get("source", "")
@@ -753,13 +821,19 @@ class Neo4jGraphStore(BaseVectorStore):
                     )
                     removed += 1
 
-        logger.info("Entity resolver removed %d duplicate nodes from collection %s.", removed, self._collection_name)
+        logger.info(
+            "Entity resolver removed %d duplicate nodes from collection %s.",
+            removed,
+            self._collection_name,
+        )
         return removed
 
     def clean_collection(self) -> None:
         """Delete all nodes and the vector index belonging to this collection."""
         with self._driver.session(database=self._config.database) as session:
-            session.run(f"DROP INDEX `{_collection_vector_index_name(self._collection_name)}` IF EXISTS")
+            session.run(
+                f"DROP INDEX `{_collection_vector_index_name(self._collection_name)}` IF EXISTS"
+            )
             # Clean up indexes left by older Neo4j implementations.
             session.run(f"DROP INDEX `{self._collection_name}__vector` IF EXISTS")
             session.run(f"DROP INDEX `{self._collection_name}__fulltext` IF EXISTS")
@@ -947,6 +1021,10 @@ def _validate_neo4j_search_params(
         graph_hops = kwargs.get("graph_hops", 1)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
         if not isinstance(graph_hops, int) or graph_hops < 1:
-            raise ValueError(f"graph_hops must be a positive integer, got {graph_hops!r}.")
+            raise ValueError(
+                f"graph_hops must be a positive integer, got {graph_hops!r}."
+            )
         if not isinstance(entity_neighbor_limit, int) or entity_neighbor_limit < 0:
-            raise ValueError(f"entity_neighbor_limit must be a non-negative integer, got {entity_neighbor_limit!r}.")
+            raise ValueError(
+                f"entity_neighbor_limit must be a non-negative integer, got {entity_neighbor_limit!r}."
+            )
