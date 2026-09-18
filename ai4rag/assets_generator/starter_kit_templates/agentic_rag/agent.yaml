@@ -1,0 +1,16 @@
+name: __PATTERN_NAME__
+displayName: "Agentic RAG Agent"
+framework: langgraph
+description: "RAG agent that retrieves relevant chunks from a vector store to augment the LLM's answers."
+labels: ["rag", "tool-calling", "vector-store"]
+env:
+  required:
+    - MAAS_API_KEY
+    - MAAS_BASE_URL
+    - MODEL_ID
+  optional:
+    - PORT
+    - CONTAINER_IMAGE
+    - EMBEDDING_MODEL_ID
+    - EMBEDDING_DIMENSION
+    - PROVIDER_TYPE
