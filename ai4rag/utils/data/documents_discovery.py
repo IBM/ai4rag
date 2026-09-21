@@ -246,11 +246,7 @@ def _normalize_prefixes(prefixes: str | list[str] | None) -> list[str]:
     elif isinstance(prefixes, str):
         prefixes = [prefixes]
 
-    normalized: list[str] = []
-    for prefix in prefixes:
-        cleaned = (prefix or "").strip().lstrip("/")
-        if cleaned not in normalized:
-            normalized.append(cleaned)
+    normalized = list(dict.fromkeys((prefix or "").strip().lstrip("/") for prefix in prefixes))
 
     if not normalized or "" in normalized:
         if len(normalized) > 1:
