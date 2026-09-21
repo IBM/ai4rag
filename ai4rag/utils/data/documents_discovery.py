@@ -51,7 +51,7 @@ class DiscoveryResult:
     ----------
     bucket : str
         S3 bucket name.
-    prefixes : list[str]
+    prefixes : tuple[str, ...]
         S3 key prefixes used during listing.  A single empty string means the
         whole bucket was listed.
     documents : list[DocumentDescriptor]
@@ -64,16 +64,20 @@ class DiscoveryResult:
     """
 
     bucket: str
-    prefixes: list[str]
+    prefixes: tuple[str, ...]
     documents: list[DocumentDescriptor]
     total_size_bytes: int
     count: int
+
+    def __post_init__(self) -> None:
+        """Freeze the prefix collection even when callers provide a list."""
+        object.__setattr__(self, "prefixes", tuple(self.prefixes))
 
     def to_dict(self) -> dict:
         """Serialise the result to a JSON-compatible dictionary."""
         return {
             "bucket": self.bucket,
-            "prefixes": self.prefixes,
+            "prefixes": list(self.prefixes),
             "documents": [{"key": d.key, "size_bytes": d.size_bytes} for d in self.documents],
             "total_size_bytes": self.total_size_bytes,
             "count": self.count,
@@ -214,7 +218,7 @@ def discover_documents(
 
     result = DiscoveryResult(
         bucket=bucket_name,
-        prefixes=resolved_prefixes,
+        prefixes=tuple(resolved_prefixes),
         documents=selected,
         total_size_bytes=total_size,
         count=len(selected),

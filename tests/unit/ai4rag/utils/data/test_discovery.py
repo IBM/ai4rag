@@ -86,7 +86,7 @@ class TestDiscoveryResult:
         ]
         return DiscoveryResult(
             bucket="test-bucket",
-            prefixes=["docs/"],
+            prefixes=("docs/",),
             documents=docs,
             total_size_bytes=300,
             count=2,
@@ -107,6 +107,20 @@ class TestDiscoveryResult:
         """``to_dict`` output must survive a JSON round-trip."""
         serialised = json.dumps(result.to_dict())
         assert json.loads(serialised) == result.to_dict()
+
+    def test_prefixes_are_immutable_when_constructed_with_a_list(self):
+        """A frozen result must not expose a mutable prefix collection."""
+        result = DiscoveryResult(
+            bucket="test-bucket",
+            prefixes=["docs/"],
+            documents=[],
+            total_size_bytes=0,
+            count=0,
+        )
+
+        assert result.prefixes == ("docs/",)
+        with pytest.raises(AttributeError):
+            result.prefixes.append("evil/")
 
     def test_save_creates_file(self, result: DiscoveryResult, tmp_path):
         """``save`` must write the descriptor JSON to the target directory."""
@@ -162,7 +176,7 @@ class TestDiscoverDocuments:
         assert result.count == 13
         assert result.total_size_bytes == 2000
         assert result.bucket == "bucket"
-        assert result.prefixes == ["docs/"]
+        assert result.prefixes == ("docs/",)
         keys = [d.key for d in result.documents]
         assert "docs/report.pdf" in keys
         assert "docs/notes.md" in keys
@@ -545,7 +559,7 @@ class TestMultiplePrefixes:
             "manuals/setup.pdf",
             "reports/q1.pdf",
         ]
-        assert result.prefixes == ["manuals/", "reports/"]
+        assert result.prefixes == ("manuals/", "reports/")
 
     def test_overlapping_prefixes_are_deduplicated(self, mocker):
         """An object matched by two prefixes is kept once."""
@@ -612,7 +626,7 @@ class TestMultiplePrefixes:
             s3_client=mock_client,
         )
 
-        assert result.prefixes == ["reports/"]
+        assert result.prefixes == ("reports/",)
         assert [d.key for d in result.documents] == ["reports/q1.pdf"]
 
     @pytest.mark.parametrize("prefixes", [None, [], [""], ["", "manuals/"]])
@@ -627,7 +641,7 @@ class TestMultiplePrefixes:
             s3_client=mock_client,
         )
 
-        assert result.prefixes == [""]
+        assert result.prefixes == ("",)
         assert result.count == len(self.CONTENTS)
 
     def test_prefixes_are_normalised(self, mocker):
@@ -641,7 +655,7 @@ class TestMultiplePrefixes:
             s3_client=mock_client,
         )
 
-        assert result.prefixes == ["reports/", "manuals/"]
+        assert result.prefixes == ("reports/", "manuals/")
         assert result.count == 3
 
     def test_no_documents_in_any_prefix_names_the_locations(self, mocker):
