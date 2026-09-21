@@ -307,12 +307,15 @@ def test_indexing_notebook_renders_every_input_location(tmp_path: Path):
         notebook_template="maas_indexing",
         output_data=_SAMPLE_PATTERN_DATA,
         output_notebook_path=output_path,
+        test_data_key="benchmarks/test.json",
         input_data_keys=["manuals/", "reports/"],
     )
     text = _read_notebook_text(output_path)
 
     assert 'input_data_keys = ["manuals/", "reports/"]' in text
     assert "prefixes=input_data_keys" in text
+    assert 'test_data_key = "benchmarks/test.json"' in text
+    assert "test_data_doc_names=test_data_doc_names" in text
 
 
 def test_inference_notebook_passes_detected_language(tmp_path: Path):
