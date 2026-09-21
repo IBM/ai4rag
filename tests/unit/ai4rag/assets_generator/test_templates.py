@@ -27,7 +27,7 @@ _SAMPLE_PATTERN_DATA: dict = {
             "model_id": "publishers/ibm/models/slate-125m-english-rtrvr",
             "embedding_params": {"embedding_dimension": 768},
         },
-        "vector_store_binding": {
+        "store_binding": {
             "provider_type": "milvus",
             "collection_name": "test_collection",
         },

@@ -815,7 +815,7 @@ class AI4RAGExperiment:
             "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
             "settings": {
-                "vector_store_binding": vector_store_payload,
+                "store_binding": vector_store_payload,
                 **indexing_payload,
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
