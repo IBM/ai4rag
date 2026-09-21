@@ -210,7 +210,7 @@ def discover_documents(
     dropped = sorted(test_keys - {d.key for d in selected})
     if dropped:
         _logger.warning(
-            "%d benchmark-referenced document(s) exceed the %.2f GB sampling budget and were skipped: %s",
+            "%d benchmark-referenced document(s) could not fit within the %.2f GB sampling budget and were skipped: %s",
             len(dropped),
             sampling_max_size_gb,
             ", ".join(dropped),
