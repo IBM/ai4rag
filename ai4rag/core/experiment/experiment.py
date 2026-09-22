@@ -153,6 +153,7 @@ class AI4RAGExperiment:
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
+        self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -492,6 +493,7 @@ class AI4RAGExperiment:
                 collection_name=collection_name,
                 config=vector_store_config,
                 foundation_model=foundation_model if search_mode == "graph" else None,
+                kg_extraction_config=self.kg_extraction_config if search_mode == "graph" else None,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(

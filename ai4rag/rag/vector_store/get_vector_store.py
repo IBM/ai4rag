@@ -14,6 +14,7 @@ def get_vector_store(
     config: BaseVectorStoreConfig,
     collection_name: str | None = None,
     foundation_model: Any = None,
+    kg_extraction_config: dict[str, Any] | None = None,
 ) -> BaseVectorStore:
     """Get vector store of desired type with chosen settings.
 
@@ -39,6 +40,9 @@ def get_vector_store(
         Optional foundation model passed to :class:`Neo4jGraphStore` for
         entity extraction during :meth:`add_documents`.  Ignored for all
         other backends.
+    kg_extraction_config : dict[str, Any] | None, default=None
+        Neo4j knowledge-graph extraction settings. Ignored for all other
+        backends.
 
     Returns
     -------
@@ -102,6 +106,7 @@ def get_vector_store(
                 config=config,
                 collection_name=collection_name,
                 foundation_model=foundation_model,
+                kg_extraction_config=kg_extraction_config,
             )
 
         case _:

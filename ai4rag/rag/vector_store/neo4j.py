@@ -27,10 +27,58 @@ from ai4rag.rag.vector_store.utils import (
 
 __all__ = ["Neo4jGraphStore"]
 
+_CONSTRAINED_KG_ENTITIES = ("Person", "Organization", "Place", "Concept", "Event", "Product", "Technology")
+_CONSTRAINED_KG_RELATIONS = ("RELATED_TO", "PART_OF", "LOCATED_IN", "BELONGS_TO", "CREATED_BY", "MENTIONS")
+
 
 def _collection_vector_index_name(collection_name: str) -> str:
     """Return the vector-index name dedicated to *collection_name*."""
     return f"{collection_name}__embedding"
+
+
+def _validate_kg_extraction_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Validate KG extraction settings and apply the constrained default."""
+    if config is None:
+        return {"mode": "constrained"}
+    if not isinstance(config, dict):
+        raise TypeError("kg_extraction_config must be a dictionary or None.")
+
+    mode = config.get("mode", "constrained")
+    if mode not in {"constrained", "free"}:
+        raise ValueError("kg_extraction_config.mode must be 'constrained' or 'free'.")
+    if mode == "constrained":
+        return {"mode": mode}
+
+    limits = {
+        "max_entities_per_chunk": config.get("max_entities_per_chunk"),
+        "max_relationships_per_chunk": config.get("max_relationships_per_chunk"),
+    }
+    for name, value in limits.items():
+        if not isinstance(value, int) or value < 1:
+            raise ValueError(f"kg_extraction_config.{name} must be a positive integer for free extraction.")
+    return {"mode": mode, **limits}
+
+
+def _kg_pipeline_extraction_options(config: dict[str, Any]) -> dict[str, Any]:
+    """Return ``SimpleKGPipeline`` options for the requested extraction mode."""
+    if config["mode"] == "constrained":
+        return {"entities": _CONSTRAINED_KG_ENTITIES, "relations": _CONSTRAINED_KG_RELATIONS}
+
+    from neo4j_graphrag.generation.prompts import ERExtractionTemplate
+
+    entity_limit = config["max_entities_per_chunk"]
+    relation_limit = config["max_relationships_per_chunk"]
+    template = ERExtractionTemplate.DEFAULT_TEMPLATE.replace(
+        "Extract the entities (nodes) and specify their type from the following text.",
+        "Extract the entities (nodes) and specify their type from the following text. "
+        f"Extract at most {entity_limit} entities.",
+    ).replace(
+        "Also extract the relationships between these nodes.",
+        f"Also extract at most {relation_limit} relationships between these nodes.",
+    )
+    # Do not supply entities or relations: in free mode the model determines
+    # their labels and types, while the prompt bounds extraction per chunk.
+    return {"prompt_template": ERExtractionTemplate(template=template)}
 
 
 try:
@@ -130,10 +178,12 @@ class Neo4jGraphStore(BaseVectorStore):
         distance_metric: str = "cosine",
         collection_name: str | None = None,
         foundation_model: Any = None,
+        kg_extraction_config: dict[str, Any] | None = None,
     ):
         super().__init__(embedding_model, config, distance_metric, collection_name)
         self._embedding_dimension = resolve_embedding_dimension(embedding_model)
         self._foundation_model = foundation_model
+        self._kg_extraction_config = _validate_kg_extraction_config(kg_extraction_config)
         self._driver = neo4j.GraphDatabase.driver(
             config.uri,
             auth=(config.username, config.password),
@@ -259,28 +309,12 @@ class Neo4jGraphStore(BaseVectorStore):
             llm=_LLMAdapter(model),
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
-            entities=[
-                "Person",
-                "Organization",
-                "Place",
-                "Concept",
-                "Event",
-                "Product",
-                "Technology",
-            ],
-            relations=[
-                "RELATED_TO",
-                "PART_OF",
-                "LOCATED_IN",
-                "BELONGS_TO",
-                "CREATED_BY",
-                "MENTIONS",
-            ],
             from_pdf=False,
             text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=200),
             on_error="IGNORE",
             perform_entity_resolution=True,
             neo4j_database=self._config.database,
+            **_kg_pipeline_extraction_options(self._kg_extraction_config),
         )
 
         run_id = uuid.uuid4().hex

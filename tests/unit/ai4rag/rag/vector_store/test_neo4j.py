@@ -12,7 +12,9 @@ from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import (
     Neo4jGraphStore,
+    _kg_pipeline_extraction_options,
     _parse_kg_extraction,
+    _validate_kg_extraction_config,
     _validate_neo4j_search_params,
 )
 
@@ -100,6 +102,26 @@ class TestNeo4jConfig:
     def test_provider_is_neo4j(self):
         cfg = Neo4jConfig(uri="neo4j://h:7687", password="pw")
         assert cfg.provider == "neo4j"
+
+
+class TestKGExtractionConfig:
+    def test_constrained_mode_uses_the_fixed_schema(self):
+        options = _kg_pipeline_extraction_options(_validate_kg_extraction_config({"mode": "constrained"}))
+
+        assert "entities" in options
+        assert "relations" in options
+
+    def test_free_mode_uses_no_schema_and_caps_each_chunk(self):
+        options = _kg_pipeline_extraction_options(
+            _validate_kg_extraction_config(
+                {"mode": "free", "max_entities_per_chunk": 5, "max_relationships_per_chunk": 5}
+            )
+        )
+
+        assert "entities" not in options
+        assert "relations" not in options
+        assert "at most 5 entities" in options["prompt_template"].template
+        assert "at most 5 relationships" in options["prompt_template"].template
 
 
 # ---------------------------------------------------------------------------
