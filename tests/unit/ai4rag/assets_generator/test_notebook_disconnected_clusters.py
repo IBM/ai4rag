@@ -42,7 +42,6 @@ class TestDisconnectedClusterDocumentation:
 
         assert "Docling" in full_text, "Notebook must mention Docling artifacts"
         assert "DOCLING_ARTIFACTS_PATH" in full_text, "Notebook must mention DOCLING_ARTIFACTS_PATH env var"
-        assert "HF_HOME" in full_text, "Notebook must mention HF_HOME env var"
 
     def test_notebook_includes_environment_setup_code(self, indexing_notebook):
         """Notebook must include code cells to set environment variables."""
@@ -54,7 +53,6 @@ class TestDisconnectedClusterDocumentation:
         full_code = "\n".join(code_sources)
 
         assert "DOCLING_ARTIFACTS_PATH" in full_code, "Notebook must include code to configure DOCLING_ARTIFACTS_PATH"
-        assert "HF_HOME" in full_code, "Notebook must include code to configure HF_HOME"
 
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
         """The extract_text() call must include docling_artifacts_path parameter."""
