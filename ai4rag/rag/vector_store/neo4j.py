@@ -309,7 +309,7 @@ class Neo4jGraphStore(BaseVectorStore):
         self._tag_kg_chunks(run_id)
 
     def _tag_kg_chunks(self, run_id: str) -> None:
-        """Tag the chunks and source documents emitted by one KG pipeline run."""
+        """Tag nodes emitted by one KG pipeline run with collection ownership."""
         with self._driver.session(database=self._config.database) as session:
             session.run(
                 f"MATCH (kc:Chunk)-[:FROM_DOCUMENT]->(kd:Document {{ai4rag_kg_run: $run_id}}) "
@@ -323,6 +323,21 @@ class Neo4jGraphStore(BaseVectorStore):
             session.run(
                 f"MATCH (kd:Document {{ai4rag_kg_run: $run_id}}) "
                 f"SET kd:`{self._collection_name}`, kd.ai4rag_kg_collection = $col",
+                col=self._collection_name,
+                run_id=run_id,
+            )
+            # SimpleKGPipeline's __Entity__ nodes are deliberately shared when
+            # the same entity is extracted from multiple inputs.  Record every
+            # AI4RAG collection that owns such a node instead of applying the
+            # collection label: a label would make clean_collection() delete a
+            # node still used by a different collection.
+            session.run(
+                "MATCH (e:__Entity__)-[:FROM_CHUNK]->(:Chunk)-[:FROM_DOCUMENT]->"
+                "(:Document {ai4rag_kg_run: $run_id}) "
+                "SET e.ai4rag_kg_collections = CASE "
+                "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
+                "THEN e.ai4rag_kg_collections "
+                "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
                 col=self._collection_name,
                 run_id=run_id,
             )
@@ -829,7 +844,7 @@ class Neo4jGraphStore(BaseVectorStore):
         return removed
 
     def clean_collection(self) -> None:
-        """Delete all nodes and the vector index belonging to this collection."""
+        """Delete all nodes, KG entities, and the vector index for this collection."""
         with self._driver.session(database=self._config.database) as session:
             session.run(
                 f"DROP INDEX `{_collection_vector_index_name(self._collection_name)}` IF EXISTS"
@@ -837,6 +852,17 @@ class Neo4jGraphStore(BaseVectorStore):
             # Clean up indexes left by older Neo4j implementations.
             session.run(f"DROP INDEX `{self._collection_name}__vector` IF EXISTS")
             session.run(f"DROP INDEX `{self._collection_name}__fulltext` IF EXISTS")
+            # Entity nodes can be shared by several collections. Remove this
+            # collection's ownership first and delete only entities no longer
+            # owned by any AI4RAG collection.
+            session.run(
+                "MATCH (e:__Entity__) WHERE $col IN COALESCE(e.ai4rag_kg_collections, []) "
+                "SET e.ai4rag_kg_collections = "
+                "[owner IN e.ai4rag_kg_collections WHERE owner <> $col] "
+                "WITH e WHERE size(e.ai4rag_kg_collections) = 0 "
+                "DETACH DELETE e",
+                col=self._collection_name,
+            )
             session.run(f"MATCH (n:{self._collection_name}) DETACH DELETE n")
             # Pipeline documents are not connected to ordinary collection
             # documents, so delete them by their explicit run-to-collection tag.
@@ -847,6 +873,12 @@ class Neo4jGraphStore(BaseVectorStore):
             session.run(
                 "MATCH (c:Chunk {collection: $col}) DETACH DELETE c",
                 col=self._collection_name,
+            )
+            # Remove unowned entities created by releases before entity
+            # ownership was tracked.  An entity still connected to a Chunk is
+            # retained because it may belong to an older, active collection.
+            session.run(
+                "MATCH (e:__Entity__) WHERE NOT (e)-[:FROM_CHUNK]-(:Chunk) DETACH DELETE e"
             )
         logger.info("Collection %s cleaned.", self._collection_name)
 

@@ -740,6 +740,8 @@ class TestBuildKnowledgeGraphFromDocuments:
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
         assert "ai4rag_kg_collection" in cypher_calls
         assert "SET kd:`ai4rag_col`" in cypher_calls
+        assert "__Entity__" in cypher_calls
+        assert "ai4rag_kg_collections" in cypher_calls
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
         """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""
@@ -788,6 +790,10 @@ class TestCleanAndClose:
         assert "ai4rag_col__fulltext" in cypher_calls
         assert "ai4rag_col__embedding" in cypher_calls
         assert "ai4rag_kg_collection" in cypher_calls
+        assert "__Entity__" in cypher_calls
+        assert "ai4rag_kg_collections" in cypher_calls
+        assert "WHERE owner <> $col" in cypher_calls
+        assert "NOT (e)-[:FROM_CHUNK]-(:Chunk)" in cypher_calls
         assert "DETACH DELETE" in cypher_calls
 
     def test_close_closes_driver(self, mock_driver_cls, mock_embedding, neo4j_config):
