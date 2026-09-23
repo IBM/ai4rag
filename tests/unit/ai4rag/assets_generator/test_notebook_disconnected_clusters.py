@@ -83,11 +83,11 @@ class TestDisconnectedClusterDocumentation:
         full_text = "\n".join(sources)
 
         assert "Appendix" in full_text, "Notebook must include an appendix section"
-        assert "Download" in full_text, "Appendix must include download instructions"
-        assert "representative **model-backed** document" in full_text
-        assert "Do not use a `.txt` file as a download trigger" in full_text
+        assert "Model-backed formats or features" in full_text
+        assert "Do not use a `.txt` file as an artifact-validation trigger" in full_text
         assert 'suffix=".txt"' not in full_text
         assert "download all Docling artifacts" not in full_text
+        assert "rsync -av" not in full_text
 
     def test_notebook_cells_are_valid_json(self, indexing_notebook):
         """All cells must be valid JSON with required fields."""
