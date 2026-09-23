@@ -305,10 +305,17 @@ class GAMOptimizer(BaseOptimizer):
 
     def _get_coverage_aware_gam_iterations_limit(self) -> int:
         """Return the GAM iteration count after reserving warm-start output capacity."""
-        warm_start_output_count = self._compute_warm_start_effective_target() // 4
+        warm_start_output_count = self.warm_start_output_count
         gam_output_count = max(0, self.max_iterations - warm_start_output_count)
         gam_iterations = ceil(gam_output_count / self.settings.evals_per_trial)
         return min(gam_iterations, self._get_iterations_limit())
+
+    @property
+    def warm_start_output_count(self) -> int:
+        """Return the number of result slots reserved for warm-start evaluations."""
+        if self.settings.warm_start_strategy in ("greedy", "balanced"):
+            return min(self.max_iterations, self._compute_warm_start_effective_target() // 4)
+        return min(self.max_iterations, 1)
 
     def _validate_n_random_nodes(self) -> None:
         """Log a warning when n_random_nodes is below the required minimum for the strategy.

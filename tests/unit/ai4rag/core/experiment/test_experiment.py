@@ -246,6 +246,53 @@ class TestGAMPatternPublication:
         )
         print(f"\nPublished patterns:\n{published_patterns.to_string(index=False)}")
 
+    def test_reserves_one_warm_start_output_per_four_coverage_evaluations(self, mocker):
+        """Coverage-aware warm starts publish the same number of slots reserved by GAM scheduling."""
+        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
+
+        experiment = _build_experiment()
+        search_space = MagicMock()
+        search_space.combinations = [
+            {"category": category, "group": group} for category in range(4) for group in range(3)
+        ]
+        search_space.max_combinations = 12
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=search_space,
+            settings=GAMOptSettings(
+                max_evals=12,
+                max_iterations=4,
+                n_random_nodes=2,
+                warm_start_strategy="greedy",
+            ),
+        )
+        assert optimizer.warm_start_output_count == 2
+
+        for name, score in (
+            ("Pattern1-warm-start", 0.7),
+            ("Pattern2-warm-start", 0.9),
+            ("Pattern3-warm-start", 0.6),
+            ("Pattern2", 0.2),
+            ("Pattern3", 0.8),
+        ):
+            experiment.results.add_evaluation(
+                [],
+                EvaluationResult(
+                    pattern_name=name,
+                    collection="collection",
+                    indexing_params={},
+                    rag_params={},
+                    scores={"metrics": [], "question_scores": []},
+                    execution_time=0.0,
+                    final_score=score,
+                ),
+            )
+
+        publish = mocker.patch.object(experiment, "_stream_finished_pattern")
+        experiment._publish_best_gam_patterns(optimizer)
+
+        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9, 0.7, 0.2, 0.8]
+
     def test_marks_warm_start_pattern_names(self):
         """Warm-start candidate names retain their phase in final artifacts."""
         experiment = _build_experiment()
@@ -260,7 +307,8 @@ class TestMultiModelGAMExperiment:
     """GAM experiment coverage for multiple foundation and embedding models."""
 
     def test_runs_with_three_embedding_models_and_two_foundation_models(self, mocker):
-        """A balanced warm start evaluates every foundation/embedding pair without live services."""
+        """A failed model does not prevent balanced warm-start coverage of responding models."""
+        from ai4rag.core.experiment.exception_handler import GenerationError
         from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
         foundation_models = [MagicMock(model_id=f"llm-{index}") for index in range(2)]
@@ -293,11 +341,22 @@ class TestMultiModelGAMExperiment:
         mock_gam = MagicMock()
         mock_gam.predict.side_effect = lambda values: [0.5] * len(values)
         mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
-        evaluate = mocker.patch.object(experiment, "run_single_evaluation", return_value=0.5)
+        failed_models = []
+        evaluated_phases = []
+
+        def evaluate_pattern(params, **_):
+            evaluated_phases.append(experiment._optimization_phase)
+            foundation_model = params[AI4RAGParamNames.FOUNDATION_MODEL]
+            if foundation_model.model_id == "llm-0":
+                failed_models.append(foundation_model.model_id)
+                raise GenerationError(ConnectionError("model is unavailable"), foundation_model.model_id)
+            return 0.5
+
+        evaluate = mocker.patch.object(experiment, "run_single_evaluation", side_effect=evaluate_pattern)
 
         experiment.search()
 
-        assert evaluate.call_count == 12
+        assert evaluate.call_count == 15
         evaluated_pairs = {
             (
                 call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id,
@@ -310,11 +369,16 @@ class TestMultiModelGAMExperiment:
             for foundation_model in foundation_models
             for embedding_model in embedding_models
         }
+        assert failed_models
+        assert set(failed_models) == {"llm-0"}
+        assert any(
+            call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id == "llm-1" for call in evaluate.call_args_list
+        )
         pattern_rows = []
         warm_start_count = 0
         gam_count = 0
-        for call in evaluate.call_args_list:
-            if len(pattern_rows) < 6:
+        for call, phase in zip(evaluate.call_args_list, evaluated_phases):
+            if phase == "warm_start":
                 warm_start_count += 1
                 pattern_name = f"Pattern{warm_start_count}-warm-start"
             else:
@@ -325,7 +389,7 @@ class TestMultiModelGAMExperiment:
                     "pattern_name": pattern_name,
                     "foundation_model": call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id,
                     "embedding_model": call.args[0][AI4RAGParamNames.EMBEDDING_MODEL].model_id,
-                    "score": 0.5,
+                    "score": (None if call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id == "llm-0" else 0.5),
                 }
             )
         patterns = pd.DataFrame(pattern_rows)

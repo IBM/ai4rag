@@ -28,7 +28,7 @@ from ai4rag.core.experiment.utils import (
     merge_evaluation_results,
     query_rag,
 )
-from ai4rag.core.hpo.base_optimizer import OptimizationError, OptimizerSettings
+from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, EvaluationMetricsResult
@@ -690,11 +690,14 @@ class AI4RAGExperiment:
 
         logger.info("Starting RAG optimization process...")
 
+        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
+        is_gam_optimizer = issubclass(optimizer_class, GAMOptimizer)
+
         def objective_function(space: RAGParamsType) -> float | None:
             """Function passed to the optimizer."""
-            self._optimization_phase = optimizer.current_phase
+            self._optimization_phase = getattr(optimizer, "current_phase", None)
             try:
-                return self.run_single_evaluation(space, publish_pattern=False)
+                return self.run_single_evaluation(space, publish_pattern=not is_gam_optimizer)
             except AI4RAGError as err:
                 msg = self._exception_handler.handle_exception(err)
                 raise FailedIterationError(msg) from err
@@ -720,10 +723,10 @@ class AI4RAGExperiment:
             )
 
         optimizer_kwargs = {}
-        if self.known_observations is not None:
+        if self.known_observations is not None and is_gam_optimizer:
             optimizer_kwargs["known_observations"] = self.known_observations
 
-        optimizer = GAMOptimizer(
+        optimizer = optimizer_class(
             objective_function=objective_function,
             search_space=self.search_space,
             settings=self.optimizer_settings,
@@ -731,7 +734,7 @@ class AI4RAGExperiment:
         )
         logger.info(
             "Using optimizer: %s with optimizer settings: %s",
-            GAMOptimizer.__name__,
+            optimizer_class.__name__,
             self.optimizer_settings.to_dict(),
         )
 
@@ -741,7 +744,8 @@ class AI4RAGExperiment:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
 
-        self._publish_best_gam_patterns(optimizer)
+        if is_gam_optimizer:
+            self._publish_best_gam_patterns(optimizer)
 
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
@@ -758,9 +762,10 @@ class AI4RAGExperiment:
             evaluation for evaluation in evaluations if not evaluation[0].pattern_name.endswith("-warm-start")
         ]
 
-        selected: list[tuple[EvaluationResult, list]] = []
-        if warm_start_evaluations:
-            selected.append(max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score))
+        warm_start_slots = optimizer.warm_start_output_count
+        selected = sorted(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score, reverse=True)[
+            :warm_start_slots
+        ]
         selected.extend(gam_evaluations[: max(0, optimizer.max_iterations - len(selected))])
 
         for index, (result, evaluation_data) in enumerate(selected, start=1):
