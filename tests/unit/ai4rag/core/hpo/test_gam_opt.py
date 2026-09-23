@@ -51,6 +51,18 @@ class TestGAMOptSettings:
 
         assert settings.n_random_nodes == 5
 
+    @pytest.mark.parametrize("n_random_nodes", [0, -1])
+    def test_gam_opt_settings_rejects_non_positive_n_random_nodes(self, n_random_nodes):
+        """A warm start requires at least one observation before fitting the GAM."""
+        with pytest.raises(ValueError, match="n_random_nodes must be at least 1"):
+            GAMOptSettings(max_evals=20, n_random_nodes=n_random_nodes)
+
+    @pytest.mark.parametrize("evals_per_trial", [0, -1])
+    def test_gam_opt_settings_rejects_non_positive_evals_per_trial(self, evals_per_trial):
+        """Each GAM iteration must evaluate at least one configuration."""
+        with pytest.raises(ValueError, match="evals_per_trial must be at least 1"):
+            GAMOptSettings(max_evals=20, evals_per_trial=evals_per_trial)
+
     def test_gam_opt_settings_inherits_from_optimizer_settings(self):
         """Test that GAMOptSettings inherits from OptimizerSettings."""
         from ai4rag.core.hpo.base_optimizer import OptimizerSettings
