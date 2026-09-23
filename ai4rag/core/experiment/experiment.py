@@ -154,6 +154,7 @@ class AI4RAGExperiment:
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
+        self.graph_retrieval_config: dict[str, Any] | None = kwargs.pop("graph_retrieval_config", None)
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -449,6 +450,8 @@ class AI4RAGExperiment:
                 "language": foundation_model.language.to_dict(),
             },
         }
+        if search_mode == "graph" and self.graph_retrieval_config:
+            rag_params["retrieval"].update(self.graph_retrieval_config)
 
         logger.info("Using retrieval and generation params: %s", rag_params)
 
@@ -559,6 +562,7 @@ class AI4RAGExperiment:
                 ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
                 ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
                 ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
+                search_kwargs=self.graph_retrieval_config if search_mode == "graph" else None,
             )
 
             rag_pattern = SimpleRAG(

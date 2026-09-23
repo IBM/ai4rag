@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+# pylint: disable=too-many-lines
 import asyncio
 import json
 import re
@@ -473,6 +474,9 @@ class Neo4jGraphStore(BaseVectorStore):
             - ``graph_hops`` (int, default 1) — ``NEXT_CHUNK`` traversal depth.
             - ``include_entity_neighbors`` (bool, default True) — expand via ``__Entity__``.
             - ``entity_neighbor_limit`` (int, default 5) — max entity-linked neighbors per seed.
+            - ``entity_pivot_limit`` (int, default 0) — max entity pivots for relationship traversal.
+            - ``entity_relationship_hops`` (int, default 0) — relationship hops from each pivot.
+            - ``relationship_neighbor_limit`` (int, default 0) — max relationship-expanded chunks per seed.
         """
         _validate_neo4j_search_params(
             search_mode, ranker_strategy, ranker_k, ranker_alpha, **kwargs
@@ -493,6 +497,9 @@ class Neo4jGraphStore(BaseVectorStore):
         graph_hops = kwargs.get("graph_hops", 1)
         include_entity_neighbors = kwargs.get("include_entity_neighbors", True)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
+        entity_pivot_limit = kwargs.get("entity_pivot_limit", 0)
+        entity_relationship_hops = kwargs.get("entity_relationship_hops", 0)
+        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 0)
 
         def _fmt(record) -> RetrieverResultItem:
             raw_meta = record.get("metadata")
@@ -521,7 +528,12 @@ class Neo4jGraphStore(BaseVectorStore):
             driver=self._driver,
             index_name=_collection_vector_index_name(self._collection_name),
             retrieval_query=_build_graph_retrieval_query(
-                graph_hops, include_entity_neighbors, entity_neighbor_limit
+                graph_hops,
+                include_entity_neighbors,
+                entity_neighbor_limit,
+                entity_pivot_limit,
+                entity_relationship_hops,
+                relationship_neighbor_limit,
             ),
             embedder=_EmbedderAdapter(self.embedding_model),
             result_formatter=_fmt,
@@ -1031,6 +1043,9 @@ def _build_graph_retrieval_query(
     graph_hops: int,
     include_entity_neighbors: bool,
     entity_neighbor_limit: int,
+    entity_pivot_limit: int = 0,
+    entity_relationship_hops: int = 0,
+    relationship_neighbor_limit: int = 0,
 ) -> str:
     """Build the Cypher retrieval query for :class:`VectorCypherRetriever`.
 
@@ -1058,14 +1073,30 @@ def _build_graph_retrieval_query(
     else:
         entity_block = "WITH node, score, [] AS ent_texts "
 
+    if entity_pivot_limit and entity_relationship_hops and relationship_neighbor_limit:
+        relationship_block = (
+            "CALL { WITH node "
+            "MATCH (pivot:__Entity__)-[:FROM_CHUNK]->(node) "
+            f"WITH collect(DISTINCT pivot)[..{entity_pivot_limit}] AS pivots "
+            "UNWIND pivots AS pivot "
+            f"MATCH path = (pivot)-[*1..{entity_relationship_hops}]-(related:__Entity__) "
+            "WHERE ALL(rel IN relationships(path) WHERE type(rel) <> 'FROM_CHUNK') "
+            "MATCH (related)-[:FROM_CHUNK]->(rel_nb:Chunk) "
+            "WHERE elementId(rel_nb) <> elementId(node) AND rel_nb.collection = $col "
+            f"RETURN collect(DISTINCT rel_nb.text)[..{relationship_neighbor_limit}] AS rel_texts }} "
+        )
+    else:
+        relationship_block = "WITH node, score, ent_texts, [] AS rel_texts "
+
     return (
         collection_filter
         + entity_block
+        + relationship_block
         + f"OPTIONAL MATCH (node)-[:NEXT_CHUNK*1..{graph_hops}]->(fwd:Chunk) WHERE fwd.collection = $col "
         + f"OPTIONAL MATCH (bwd:Chunk)-[:NEXT_CHUNK*1..{graph_hops}]->(node) WHERE bwd.collection = $col "
-        + "WITH node, score, ent_texts, "
+        + "WITH node, score, ent_texts + rel_texts AS graph_texts, "
         + "collect(DISTINCT fwd.text) + collect(DISTINCT bwd.text) AS seq_texts "
-        + "WITH node, score, [x IN ent_texts + seq_texts WHERE x IS NOT NULL] AS ctx "
+        + "WITH node, score, [x IN graph_texts + seq_texts WHERE x IS NOT NULL] AS ctx "
         + "RETURN node.text + reduce(s='', t IN ctx | s + '\\n---\\n' + t) AS text, score, "
         + "node.document_id AS document_id, node.metadata AS metadata"
     )
@@ -1086,6 +1117,9 @@ def _validate_neo4j_search_params(
     if search_mode == "graph":
         graph_hops = kwargs.get("graph_hops", 1)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
+        entity_pivot_limit = kwargs.get("entity_pivot_limit", 0)
+        entity_relationship_hops = kwargs.get("entity_relationship_hops", 0)
+        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 0)
         if not isinstance(graph_hops, int) or graph_hops < 1:
             raise ValueError(
                 f"graph_hops must be a positive integer, got {graph_hops!r}."
@@ -1094,3 +1128,10 @@ def _validate_neo4j_search_params(
             raise ValueError(
                 f"entity_neighbor_limit must be a non-negative integer, got {entity_neighbor_limit!r}."
             )
+        for name, value in {
+            "entity_pivot_limit": entity_pivot_limit,
+            "entity_relationship_hops": entity_relationship_hops,
+            "relationship_neighbor_limit": relationship_neighbor_limit,
+        }.items():
+            if not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer, got {value!r}.")

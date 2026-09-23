@@ -12,6 +12,7 @@ from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import (
     Neo4jGraphStore,
+    _build_graph_retrieval_query,
     _kg_pipeline_extraction_options,
     _parse_kg_extraction,
     _validate_kg_extraction_config,
@@ -122,6 +123,23 @@ class TestKGExtractionConfig:
         assert "relations" not in options
         assert "at most 5 entities" in options["prompt_template"].template
         assert "at most 5 relationships" in options["prompt_template"].template
+
+
+def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
+    """Balanced graph retrieval must bound relationship traversal per seed."""
+    query = _build_graph_retrieval_query(
+        graph_hops=1,
+        include_entity_neighbors=True,
+        entity_neighbor_limit=5,
+        entity_pivot_limit=3,
+        entity_relationship_hops=2,
+        relationship_neighbor_limit=5,
+    )
+
+    assert "collect(DISTINCT pivot)[..3]" in query
+    assert "[*1..2]-(related:__Entity__)" in query
+    assert "collect(DISTINCT rel_nb.text)[..5]" in query
+    assert "type(rel) <> 'FROM_CHUNK'" in query
 
 
 # ---------------------------------------------------------------------------
