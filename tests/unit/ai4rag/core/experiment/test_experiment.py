@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from ai4rag.core.experiment.results import EvaluationResult
 from ai4rag.core.experiment.utils import merge_evaluation_results
 from ai4rag.evaluator.base_evaluator import (
     AggregateMetric,
@@ -20,7 +21,6 @@ from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
-from ai4rag.utils.event_handler.event_handler import LocalEventHandler
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -186,148 +186,40 @@ class TestMetricEvaluatorValidation:
         _build_experiment(evaluators=evals, optimization_metric=Metrics.JUDGE_ANSWER_RELEVANCE)
 
 
-class TestOptimizationPatternSelection:
-    """Selection and publishing of buffered GAM patterns."""
+class TestGAMPatternPublication:
+    """Final GAM reporting is sourced from ExperimentResults."""
 
-    def test_selects_highest_scoring_patterns_and_renumbers_them(self):
-        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
-
-        experiment = _build_experiment()
-        experiment.event_handler = MagicMock()
-        experiment._optimization_patterns = [
-            {"payload": {"name": "old-warm-1"}, "optimization_phase": "warm_start", "optimization_score": 0.2},
-            {"payload": {"name": "old-warm-2"}, "optimization_phase": "warm_start", "optimization_score": 0.4},
-            {"payload": {"name": "old-warm-3"}, "optimization_phase": "warm_start", "optimization_score": 0.1},
-            {"payload": {"name": "old-gam-1"}, "optimization_phase": "gam", "optimization_score": 0.3},
-            {"payload": {"name": "old-gam-2"}, "optimization_phase": "gam", "optimization_score": 0.95},
-            {"payload": {"name": "old-gam-3"}, "optimization_phase": "gam", "optimization_score": 0.9},
-            {"payload": {"name": "old-gam-4"}, "optimization_phase": "gam", "optimization_score": 0.8},
-        ]
-
-        search_space = MagicMock()
-        search_space.combinations = [{"category": value} for value in ("a", "b", "c", "d")]
-        search_space.max_combinations = 4
-        experiment.optimizer = GAMOptimizer(
-            objective_function=MagicMock(),
-            search_space=search_space,
-            settings=GAMOptSettings(max_evals=4, max_iterations=4, n_random_nodes=4, warm_start_strategy="greedy"),
-        )
-
-        selected = experiment._select_optimization_patterns()
-
-        assert [p["optimization_score"] for p in selected] == [0.95, 0.9, 0.8, 0.4]
-        assert [p["optimization_phase"] for p in selected] == ["gam", "gam", "gam", "warm_start"]
-        assert [p["payload"]["name"] for p in selected] == ["Pattern1", "Pattern2", "Pattern3", "Pattern4"]
-
-    def test_selection_backfills_from_warm_start_when_gam_has_no_patterns(self):
-        """A warm-start-only run still publishes every retained output slot."""
+    def test_publishes_best_experiment_results_in_score_order(self, mocker):
         from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
 
         experiment = _build_experiment()
         search_space = MagicMock()
-        search_space.combinations = [{"category": value} for value in range(4)]
-        search_space.max_combinations = 4
-        experiment.optimizer = GAMOptimizer(
-            objective_function=MagicMock(),
-            search_space=search_space,
-            settings=GAMOptSettings(max_evals=4, max_iterations=4, n_random_nodes=4, warm_start_strategy="greedy"),
-        )
-        experiment._optimization_patterns = [
-            {
-                "payload": {"name": f"old-warm-{score}"},
-                "optimization_phase": "warm_start",
-                "optimization_score": score,
-            }
-            for score in (0.1, 0.8, 0.4, 0.6)
-        ]
-
-        selected = experiment._select_optimization_patterns()
-
-        assert len(selected) == 4
-        assert [p["optimization_score"] for p in selected] == [0.8, 0.6, 0.4, 0.1]
-
-    def test_search_clears_buffered_patterns_from_a_previous_run(self):
-        class NoOpOptimizer:
-            def __init__(self, **_kwargs):
-                pass
-
-            def search(self):
-                return None
-
-        experiment = _build_experiment()
-        experiment._optimization_patterns = [
-            {
-                "payload": {"name": "stale"},
-                "evaluation_results": [],
-                "optimization_phase": "warm_start",
-            }
-        ]
-
-        experiment.search(optimizer=NoOpOptimizer, skip_mps=True)
-
-        assert experiment._optimization_patterns == []
-        experiment.event_handler.on_pattern_creation.assert_not_called()
-
-    def test_publish_patterns_does_not_require_handler_patterns_attribute(self):
-        """Final GAM selection is published through the handler interface alone."""
-        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
-
-        experiment = _build_experiment()
-        experiment.event_handler = MagicMock(spec=["on_pattern_creation"])
-        search_space = MagicMock()
-        search_space.combinations = [{"category": value} for value in ("a", "b", "c")]
+        search_space.combinations = [{"category": value} for value in range(3)]
         search_space.max_combinations = 3
-        experiment.optimizer = GAMOptimizer(
+        optimizer = GAMOptimizer(
             objective_function=MagicMock(),
             search_space=search_space,
-            settings=GAMOptSettings(max_evals=1, n_random_nodes=4, warm_start_strategy="greedy"),
+            settings=GAMOptSettings(max_evals=3, max_iterations=2, n_random_nodes=3),
         )
-        experiment._optimization_patterns = [
-            {
-                "payload": {"name": "Pattern1"},
-                "evaluation_results": [{"score": 0.9}],
-                "optimization_phase": "warm_start",
-            }
-        ]
+        for index, score in enumerate((0.2, 0.9, 0.7)):
+            experiment.results.add_evaluation(
+                [],
+                EvaluationResult(
+                    pattern_name=f"original-{index}",
+                    collection="collection",
+                    indexing_params={},
+                    rag_params={},
+                    scores={"metrics": [], "question_scores": []},
+                    execution_time=0.0,
+                    final_score=score,
+                ),
+            )
+        publish = mocker.patch.object(experiment, "_stream_finished_pattern")
 
-        experiment._publish_optimization_patterns()
+        experiment._publish_best_gam_patterns(optimizer)
 
-        experiment.event_handler.on_pattern_creation.assert_called_once_with(
-            payload={"name": "Pattern1", "iteration": 0},
-            evaluation_results=[{"score": 0.9}],
-            optimization_phase="warm_start",
-        )
-
-    def test_publish_patterns_works_with_local_event_handler(self, tmp_path):
-        """Selected patterns, rather than every warm-start result, are written locally."""
-        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
-
-        experiment = _build_experiment()
-        experiment.event_handler = LocalEventHandler(tmp_path)
-        search_space = MagicMock()
-        search_space.combinations = [{"category": value} for value in ("a", "b", "c")]
-        search_space.max_combinations = 3
-        experiment.optimizer = GAMOptimizer(
-            objective_function=MagicMock(),
-            search_space=search_space,
-            settings=GAMOptSettings(max_evals=1, n_random_nodes=4, warm_start_strategy="greedy"),
-        )
-        experiment._optimization_patterns = [
-            {
-                "payload": {"name": "unselected"},
-                "evaluation_results": [{"score": 0.1}],
-                "optimization_phase": "warm_start",
-            },
-            {
-                "payload": {"name": "selected"},
-                "evaluation_results": [{"score": 0.9}],
-                "optimization_phase": "warm_start",
-            },
-        ]
-
-        experiment._publish_optimization_patterns()
-
-        assert sorted(path.name for path in tmp_path.iterdir()) == ["Pattern1"]
+        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9, 0.7]
+        assert [call.kwargs["pattern_name"] for call in publish.call_args_list] == ["Pattern1", "Pattern2"]
 
 
 class TestResolveOptimizationScore:
