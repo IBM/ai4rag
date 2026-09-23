@@ -79,7 +79,7 @@ def create_placeholder_mapping(
     em = settings.get("embedding", {})
     mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
     mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
-    vs = settings.get("vector_store_binding", {})
+    vs = settings.get("store_binding", {})
     provider_type = vs.get("provider_type", "")
     mapping["PROVIDER_TYPE"] = provider_type
     mapping["COLLECTION_NAME"] = vs.get("collection_name", "")
