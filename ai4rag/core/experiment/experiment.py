@@ -156,6 +156,7 @@ class AI4RAGExperiment:
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
+        self._optimization_phase: str | None = None
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
@@ -691,11 +692,14 @@ class AI4RAGExperiment:
 
         def objective_function(space: RAGParamsType) -> float | None:
             """Function passed to the optimizer."""
+            self._optimization_phase = optimizer.current_phase
             try:
                 return self.run_single_evaluation(space, publish_pattern=False)
             except AI4RAGError as err:
                 msg = self._exception_handler.handle_exception(err)
                 raise FailedIterationError(msg) from err
+            finally:
+                self._optimization_phase = None
 
         # MPS - models pre-selection based on sample evaluation.
         # Run if there are more than 3 foundation models or more than 2 embedding models.
@@ -745,23 +749,33 @@ class AI4RAGExperiment:
         )
 
     def _publish_best_gam_patterns(self, optimizer: GAMOptimizer) -> None:
-        """Publish the best completed GAM evaluations from ExperimentResults."""
-        selected = self.results.get_best_evaluations(k=optimizer.max_iterations)
-        evaluation_data_by_pattern = {
-            result.pattern_name: data for result, data in zip(self.results.evaluations, self.results.evaluation_data)
-        }
+        """Publish the best warm-start candidate followed by GAM candidates in evaluation order."""
+        evaluations = list(zip(self.results.evaluations, self.results.evaluation_data))
+        warm_start_evaluations = [
+            evaluation for evaluation in evaluations if evaluation[0].pattern_name.endswith("-warm-start")
+        ]
+        gam_evaluations = [
+            evaluation for evaluation in evaluations if not evaluation[0].pattern_name.endswith("-warm-start")
+        ]
 
-        for index, result in enumerate(selected):
+        selected: list[tuple[EvaluationResult, list]] = []
+        if warm_start_evaluations:
+            selected.append(max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score))
+        selected.extend(gam_evaluations[: max(0, optimizer.max_iterations - len(selected))])
+
+        for index, (result, evaluation_data) in enumerate(selected, start=1):
             evaluation_results_json = self.results.create_evaluation_results_json(
-                evaluation_data=evaluation_data_by_pattern[result.pattern_name],
+                evaluation_data=evaluation_data,
                 evaluation_result=result,
             )
-            self._stream_finished_pattern(
-                evaluation_result=result,
-                evaluation_results_json=evaluation_results_json,
-                pattern_name=f"Pattern{index + 1}",
-                iteration=index,
-            )
+            stream_kwargs = {
+                "evaluation_result": result,
+                "evaluation_results_json": evaluation_results_json,
+                "iteration": index - 1,
+            }
+            if index == 1 and warm_start_evaluations:
+                stream_kwargs["pattern_name"] = "Pattern1"
+            self._stream_finished_pattern(**stream_kwargs)
 
     def _stream_finished_pattern(
         self,
@@ -964,7 +978,13 @@ class AI4RAGExperiment:
         -------
         str
             Pattern name.
-            Example: "Pattern7"
+            Example: "Pattern7" or "Pattern7-warm-start".
         """
+        if self._optimization_phase == "warm_start":
+            warm_start_count = sum(result.pattern_name.endswith("-warm-start") for result in self.results)
+            return f"Pattern{warm_start_count + 1}-warm-start"
+        if self._optimization_phase == "gam":
+            gam_count = sum(not result.pattern_name.endswith("-warm-start") for result in self.results)
+            return f"Pattern{gam_count + 2}"
         n_known = len(self.known_observations) if self.known_observations else 0
         return f"Pattern{n_known + len(self.results) + 1}"
