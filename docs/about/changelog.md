@@ -7,14 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
-
-### Removed
-- **BREAKING CHANGE: Vector store** — removed the ChromaDB vector store backend (`ChromaConfig`, `ChromaVectorStore`) and the `chromadb` dependency, due to known security vulnerabilities in the `chromadb` package. `ai4rag.rag.vector_store` no longer exports `ChromaConfig`; the `"chroma"` value for `vector_store_type` is no longer accepted (only `"milvus"`, `"milvus_lite"`, and `"pgvector"` are supported)
+## [0.17.0](https://github.com/IBM/ai4rag/releases/tag/v0.17.0)
 
 ### Added
-- **Vector store** — Milvus Lite, the embedded, zero-server mode of the Milvus backend, is now the recommended local/zero-config replacement for the removed Chroma store: use the new `MilvusLiteConfig(db_path="./ai4rag.db")` (or `MilvusLiteConfig()` for the default path). Unlike Chroma, Milvus Lite supports hybrid (dense + BM25) search. `pymilvus[milvus-lite]` is now a core dependency, so no extra installation step is needed
-- **Vector store** — the Milvus config was split into `MilvusConfig` (remote server / Zilliz Cloud only, which now validates that `uri` is an `http(s)://` URL and raises `ValueError` otherwise) and a new `MilvusLiteConfig` (embedded, local only, configured via `db_path`, which conversely rejects `http(s)://` values). Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite based on whether `uri` looked like a URL or a local file path; a mistyped or unreachable `MILVUS_URI` could therefore be silently interpreted as a local path and create an unintended throwaway local database. That silent fallback is no longer possible — a misconfigured server URI now fails loudly instead. `ai4rag.rag.vector_store` now also exports `MilvusLiteConfig`, and the `vector_store_type` search-space parameter accepts `"milvus_lite"` in addition to `"milvus"` and `"pgvector"`
+- **Vector store** — Milvus Lite, the embedded, zero-server mode of the Milvus backend, is now the recommended local/zero-config replacement for the removed Chroma store: use the new `MilvusLiteConfig(db_path="./ai4rag.db")` (or `MilvusLiteConfig()` for the default path). Unlike Chroma, Milvus Lite supports hybrid (dense + BM25) search, though it computes BM25 statistics segment-locally rather than corpus-wide, so hybrid-search ranking fidelity may not transfer exactly to a production Milvus server. `pymilvus[milvus-lite]` is now a core dependency, so no extra installation step is needed
+- **Vector store** — new `temporary_milvus_lite_store()` helper (`ai4rag.rag.vector_store.local_store`) providing a disposable, file-backed Milvus Lite store for internal throwaway indexes (model pre-selection, judge calibration), replacing the previous ephemeral in-memory Chroma store used for the same purpose
+- **Notebooks** — the MaaS indexing notebook template gains a "Prerequisites for Disconnected Clusters" section (validation cells, configuration examples, download instructions) for pre-downloading Docling and HuggingFace artifacts before running on an air-gapped cluster; the README documents the pre-download/transfer workflow (`DOCLING_ARTIFACTS_PATH`, `HF_HOME`, `HF_HUB_OFFLINE`)
+
+### Changed
+- **Vector store** — the Milvus config was split into `MilvusConfig` (remote server / Zilliz Cloud only, which now validates that `uri` is an `http(s)://` URL and raises `ValueError` otherwise) and a new `MilvusLiteConfig` (embedded, local only, configured via `db_path`, which conversely rejects `http(s)://` values). Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite based on whether `uri` looked like a URL or a local file path; a mistyped or unreachable `MILVUS_URI` could therefore be silently interpreted as a local path and create an unintended throwaway local database. That silent fallback is no longer possible — a misconfigured server URI now fails loudly instead. `ai4rag.rag.vector_store` now also exports `MilvusLiteConfig`, and the `vector_store_type` search-space parameter accepts `"milvus_lite"` in addition to `"milvus"` and `"pgvector"`. **Breaking:** `get_vector_store()` now requires `MilvusLiteConfig` (not `MilvusConfig`) when `config.provider == "milvus_lite"`
+- **Search space** — hybrid search parameters (`search_mode`, `ranker_strategy`, `ranker_k`, `ranker_alpha`) are now unconditionally part of the default search space, since every remaining vector store backend supports hybrid search. **Breaking:** `AI4RAGSearchSpace`, `prepare_search_space_with_maas()`, and `get_default_ai4rag_search_space_parameters()` no longer accept a `vector_store_type` parameter
+- **Event handler** — `VectorStoreSettings` payload fields `provider_id` / `vector_store_id` replaced by `provider_type` / `collection_name`. **Breaking:** code reading `on_pattern_creation()` payloads must switch to the new field names
+- **Dependencies** — refreshed `uv.lock` (transitive dependency updates)
+
+### Fixed
+- **CI** — the `publish-pypi` maintainer check now reads the actor's `role_name` from the GitHub API instead of the removed `permission` field
+
+### Removed
+- **BREAKING CHANGE: Vector store** — removed the ChromaDB vector store backend (`ChromaConfig`, `ChromaVectorStore`), the `chromadb` dependency, and the now-unused `ai4rag.utils.compat.ensure_sqlite3()` compatibility shim, due to known security vulnerabilities in the `chromadb` package. `ai4rag.rag.vector_store` no longer exports `ChromaConfig`; the `"chroma"` value for `vector_store_type` is no longer accepted (only `"milvus"`, `"milvus_lite"`, and `"pgvector"` are supported)
 
 ---
 
