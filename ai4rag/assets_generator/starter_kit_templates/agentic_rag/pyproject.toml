@@ -21,7 +21,6 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest"]
-tracing = ["mlflow>=2.21"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

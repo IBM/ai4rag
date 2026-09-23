@@ -106,7 +106,9 @@ class TestOpenAIFoundationModel:
         mock_response = mocker.MagicMock()
         mock_response.choices = [mocker.MagicMock()]
         mock_response.choices[0].message.content = "Test response from model"
+        mock_response.output_text = "Test response from model"
         mock_client.chat.completions.create.return_value = mock_response
+        mock_client.responses.create.return_value = mock_response
         return mock_client
 
     @pytest.fixture
@@ -288,13 +290,8 @@ class TestOpenAIFoundationModel:
         # Verify model_id was passed
         assert call_args.kwargs["model"] == "test-model-id"
 
-        # Verify messages were passed correctly
         passed_messages = call_args.kwargs["messages"]
-        assert len(passed_messages) == 2
-        assert passed_messages[0]["role"] == "system"
-        assert passed_messages[0]["content"] == "You are helpful"
-        assert passed_messages[1]["role"] == "user"
-        assert passed_messages[1]["content"] == "What is AI?"
+        assert passed_messages == messages
 
         # Verify response - should return choices list
         assert len(response) == 1
@@ -323,8 +320,23 @@ class TestOpenAIFoundationModel:
             model_with_dict_params.chat(test_messages)
             call_args = mock_openai_client.chat.completions.create.call_args
             passed_messages = call_args.kwargs["messages"]
-            assert passed_messages[0]["content"] == test_messages[0]["content"]
-            assert passed_messages[1]["content"] == test_messages[1]["content"]
+            assert passed_messages == test_messages
+
+    def test_responses_method_uses_responses_api(self, model_with_dict_params, mock_openai_client):
+        """Test that the opt-in Responses API method leaves chat() untouched."""
+        messages = [
+            {"role": "system", "content": "You are helpful"},
+            {"role": "user", "content": "What is AI?"},
+        ]
+
+        response = model_with_dict_params.responses(messages)
+
+        mock_openai_client.responses.create.assert_called_once()
+        call_args = mock_openai_client.responses.create.call_args
+        assert call_args.kwargs["model"] == "test-model-id"
+        assert call_args.kwargs["instructions"] == "You are helpful"
+        assert call_args.kwargs["input"] == [messages[1]]
+        assert response.output_text == "Test response from model"
 
     def test_invalid_user_message_template_missing_placeholder(
         self, mock_openai_client, valid_context_template, valid_system_message

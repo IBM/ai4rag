@@ -34,8 +34,8 @@ _K8S_API_INSECURE = getenv("K8S_API_INSECURE", "").strip().lower() == "true"
 # actual caller authentication for both direct chat and proxied chat requests.
 _PROTECTED_PATHS = frozenset(
     {
-        "/chat/completions",
-        "/chat/completions/",
+        "/v1/responses",
+        "/v1/responses/",
         "/api/chat",
         "/api/chat/",
     }

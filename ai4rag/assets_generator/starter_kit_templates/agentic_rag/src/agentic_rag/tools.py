@@ -32,6 +32,12 @@ def _initialize_retriever(
     embedding_model_id: str | None = None,
     embedding_dimension: int | None = None,
     collection_name: str | None = None,
+    provider_type: str | None = None,
+    retrieval_method: str | None = None,
+    number_of_chunks: int | None = None,
+    search_mode: str | None = None,
+    ranker_strategy: str | None = None,
+    ranker_alpha: float | None = None,
 ) -> Retriever:
     """Initialize the ai4rag retriever with MaaS embeddings and vector store."""
 
@@ -57,16 +63,16 @@ def _initialize_retriever(
 
     vector_store = get_vector_store(
         embedding_model=embedding_model,
-        config=get_vector_store_config(getenv("PROVIDER_TYPE", "milvus")),
+        config=get_vector_store_config(provider_type or getenv("PROVIDER_TYPE", "milvus")),
         collection_name=collection_name,
     )
 
-    ranker_alpha_raw = getenv("RANKER_ALPHA")
+    ranker_alpha_raw = ranker_alpha if ranker_alpha is not None else getenv("RANKER_ALPHA")
     return Retriever(
         vector_store=vector_store,
-        method=getenv("RETRIEVAL_METHOD", "simple"),
-        number_of_chunks=int(getenv("NUMBER_OF_CHUNKS", "5")),
-        search_mode=getenv("SEARCH_MODE") or "vector",
-        ranker_strategy=getenv("RANKER_STRATEGY") or None,
+        method=retrieval_method or getenv("RETRIEVAL_METHOD", "simple"),
+        number_of_chunks=number_of_chunks or int(getenv("NUMBER_OF_CHUNKS", "5")),
+        search_mode=search_mode or getenv("SEARCH_MODE") or "vector",
+        ranker_strategy=ranker_strategy or getenv("RANKER_STRATEGY") or None,
         ranker_alpha=float(ranker_alpha_raw) if ranker_alpha_raw else None,
     )

@@ -38,7 +38,7 @@ _SANDBOX_MODE = bool(getenv("K8S_REVIEWER_TOKEN", "").strip())
 _PLAYGROUND_TOKEN = getenv("PLAYGROUND_TOKEN", "").strip()
 
 
-class ChatMessage(BaseModel):
+class ResponseInputMessage(BaseModel):
     """A message in the conversation."""
 
     role: str = Field(
@@ -53,10 +53,10 @@ class ChatMessage(BaseModel):
     )
 
 
-class ChatCompletionRequest(BaseModel):
-    """Creates a model response for the given chat conversation."""
+class ResponsesRequest(BaseModel):
+    """Creates a model response for the given conversation."""
 
-    messages: list[ChatMessage] = Field(
+    messages: list[ResponseInputMessage] = Field(
         ...,
         min_length=1,
         description="A list of messages comprising the conversation so far.",
@@ -149,7 +149,7 @@ async def playground_health(request: Request):
 
 
 @router.post("/api/chat")
-async def playground_chat(chat_request: ChatCompletionRequest, request: Request):
+async def playground_chat(chat_request: ResponsesRequest, request: Request):
     """Proxy sandbox UI requests with the server-side ServiceAccount token.
 
     Security: ``auth_wrapper.py`` authenticates the caller with a Kubernetes
@@ -159,12 +159,12 @@ async def playground_chat(chat_request: ChatCompletionRequest, request: Request)
         raise HTTPException(status_code=503, detail="Sandbox playground is not configured")
 
     payload = chat_request.model_dump(exclude_none=True)
-    payload["stream"] = True
+    payload = {"input": payload["messages"], "stream": True}
 
     def event_generator():
         try:
             with http_requests.post(
-                "http://127.0.0.1:8080/chat/completions",
+                "http://127.0.0.1:8080/v1/responses",
                 json=payload,
                 headers={"X-Api-Key": _PLAYGROUND_TOKEN},
                 stream=True,

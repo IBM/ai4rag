@@ -7,10 +7,6 @@ env:
   required:
     - MAAS_API_KEY
     - MAAS_BASE_URL
-    - MODEL_ID
   optional:
     - PORT
     - CONTAINER_IMAGE
-    - EMBEDDING_MODEL_ID
-    - EMBEDDING_DIMENSION
-    - PROVIDER_TYPE

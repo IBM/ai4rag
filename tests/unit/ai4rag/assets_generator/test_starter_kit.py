@@ -2,11 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import base64
+import json
 import zipfile
-from pathlib import Path
-
-import pytest
 
 from ai4rag.assets_generator.starter_kit import (
     _apply_provider_conditionals,
@@ -185,15 +182,15 @@ class TestGenerateStarterKit:
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = set(zf.namelist())
-            assert "starter_kit/.env.example" in names
             assert "starter_kit/main.py" in names
             assert "starter_kit/Makefile" in names
             assert "starter_kit/Containerfile.openshell" in names
             assert "starter_kit/values.yaml" in names
             assert "starter_kit/agent.yaml" in names
+            assert "starter_kit/agent_config.json" in names
             assert "starter_kit/src/agentic_rag/agent.py" in names
             assert "starter_kit/src/agentic_rag/tools.py" in names
-            assert "starter_kit/src/agentic_rag/tracing.py" in names
+            assert "starter_kit/src/agentic_rag/tracing.py" not in names
             assert "starter_kit/playground-sandbox/app.py" in names
             assert "starter_kit/playground_sandbox.py" in names
             assert "starter_kit/auth_wrapper.py" in names
@@ -201,52 +198,24 @@ class TestGenerateStarterKit:
     def test_env_example_has_filled_values(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
-            env_content = zf.read("starter_kit/.env.example").decode("utf-8")
             values_content = zf.read("starter_kit/values.yaml").decode("utf-8")
             assert 'MODEL_ID: "publishers/ibm/models/granite-3.1-8b-instruct"' in values_content
-            assert "MODEL_ID=" not in env_content
-            assert "TEMPERATURE=0.2" in env_content
-            assert "MAX_COMPLETION_TOKENS=1024" in env_content
-            assert (
-                base64.b64decode(
-                    next(
-                        line.split("=", 1)[1]
-                        for line in env_content.splitlines()
-                        if line.startswith("USER_MESSAGE_B64=")
-                    )
-                ).decode()
-                == "Question: {question}"
-            )
+            agent_config = json.loads(zf.read("starter_kit/agent_config.json"))
+            assert agent_config["runtime"]["port"] == 8000
+            assert agent_config["generation"]["model_id"] == "publishers/ibm/models/granite-3.1-8b-instruct"
+            assert agent_config["prompts"]["system_message"] == "Answer the question."
+            assert agent_config["prompts"]["user_message_template"] == "Question: {question}"
+            assert agent_config["prompts"]["context_template"] == "Context: {context}"
+            assert agent_config["retrieval"]["number_of_chunks"] == 5
             assert 'RETRIEVAL_METHOD: "simple"' in values_content
             assert 'SEARCH_MODE: "hybrid"' in values_content
             assert 'EMBEDDING_DIMENSION: "768"' in values_content
-
-    def test_credentials_not_baked(self, tmp_path):
-        zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            for line in env_content.splitlines():
-                stripped = line.strip()
-                if stripped.startswith("#") or not stripped:
-                    continue
-                if "=" not in stripped:
-                    continue
-                key, value = stripped.split("=", 1)
-                if key in (
-                    "MAAS_BASE_URL",
-                    "MAAS_API_KEY",
-                    "MILVUS_URI",
-                    "MILVUS_TOKEN",
-                    "MILVUS_SERVER_CERT",
-                    "MILVUS_SERVER_NAME",
-                ):
-                    assert value == "", f"Credential {key} should be empty, got: {value}"
 
     def test_no_placeholders_remain(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             for name in zf.namelist():
-                if name.endswith((".py", ".yaml", ".yml", ".env.example", ".md", ".toml")):
+                if name.endswith((".py", ".json", ".yaml", ".yml", ".md", ".toml")):
                     content = zf.read(name).decode("utf-8")
                     assert "__FM_MODEL_ID__" not in content, f"Unreplaced placeholder in {name}"
                     assert "__PROVIDER_TYPE__" not in content, f"Unreplaced placeholder in {name}"
@@ -262,10 +231,9 @@ class TestGenerateStarterKit:
     def test_milvus_provider_keeps_milvus_block(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
-            env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            assert "MILVUS_COLLECTION_NAME=test_collection" in env_content
-            assert "MILVUS_URI=" not in env_content
-            assert "PGVECTOR_HOST=" not in env_content
+            config = json.loads(zf.read("starter_kit/agent_config.json"))
+            assert config["vector_store"]["provider_type"] == "milvus"
+            assert config["vector_store"]["collection_name"] == "test_collection"
 
     def test_pgvector_provider_keeps_pgvector_block(self, tmp_path):
         data = {**_SAMPLE_PATTERN_DATA}
@@ -276,10 +244,9 @@ class TestGenerateStarterKit:
         }
         zip_path = generate_starter_kit(data, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
-            env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            assert "PGVECTOR_COLLECTION_NAME=pg_collection" in env_content
-            assert "PGVECTOR_HOST=" not in env_content
-            assert "MILVUS_URI=" not in env_content
+            config = json.loads(zf.read("starter_kit/agent_config.json"))
+            assert config["vector_store"]["provider_type"] == "pgvector"
+            assert config["vector_store"]["collection_name"] == "pg_collection"
 
     def test_values_yaml_has_filled_values(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
@@ -295,11 +262,11 @@ class TestGenerateStarterKit:
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, out)
         assert zip_path.exists()
 
-    def test_collection_name_in_milvus_env(self, tmp_path):
+    def test_collection_name_in_agent_config(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
-            env_content = zf.read("starter_kit/.env.example").decode("utf-8")
-            assert "MILVUS_COLLECTION_NAME=test_collection" in env_content
+            config = json.loads(zf.read("starter_kit/agent_config.json"))
+            assert config["vector_store"]["collection_name"] == "test_collection"
 
     def test_no_data_directory(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)

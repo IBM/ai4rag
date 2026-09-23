@@ -1,14 +1,11 @@
 SHELL          := bash
-OPENSHELL_SANDBOX ?= $(shell . ./.env 2>/dev/null && echo $${OPENSHELL_SANDBOX_NAME:-rag-sandbox})
+OPENSHELL_SANDBOX ?= $(shell if [ -f .env ]; then . ./.env; fi; echo $${OPENSHELL_SANDBOX_NAME:-rag-sandbox})
 OPENSHELL_IMAGE   := openshell-agentic-rag
 
-.PHONY: init env run-app run-cli refresh-certs setup-gateway teardown-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell playground-sandbox test help
+.PHONY: env run-app run-cli refresh-certs setup-gateway teardown-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell playground-sandbox test help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
-
-init: ## Copy .env.example to .env for configuration
-	@if [ ! -f .env ]; then cp .env.example .env && echo "Created .env from .env.example — edit it with your configuration"; else echo ".env already exists — skipping"; fi
 
 env: ## Create venv and install dependencies
 	@echo "==> Creating virtual environment and installing dependencies..." && \
@@ -16,10 +13,10 @@ env: ## Create venv and install dependencies
 	  uv sync --python 3.12 && \
 	  echo "" && \
 	  echo "Done. Activate with: source .venv/bin/activate" && \
-	  echo "Then edit .env with your MaaS credentials and run: make run-app"
+	  echo "Export MAAS_BASE_URL and MAAS_API_KEY, then run: make run-app"
 
 run-app: ## Run agent locally with hot-reload
-	@source .venv/bin/activate && set -a && source .env && set +a && \
+	@source .venv/bin/activate && set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
 	  yaml_env() { sed -n "s/^[[:space:]]*$$1:[[:space:]]*\"\(.*\)\"[[:space:]]*$$/\1/p" values.yaml; } && \
 	  export MODEL_ID="$$(yaml_env MODEL_ID)" EMBEDDING_MODEL_ID="$$(yaml_env EMBEDDING_MODEL_ID)" \
 	    EMBEDDING_DIMENSION="$$(yaml_env EMBEDDING_DIMENSION)" PROVIDER_TYPE="$$(yaml_env PROVIDER_TYPE)" \
@@ -30,7 +27,7 @@ run-app: ## Run agent locally with hot-reload
 	    echo "ERROR: Port $${PORT:-8000} is already in use." && \
 	    exit 1; \
 	  fi && \
-	  uv run $${MLFLOW_TRACKING_URI:+--extra tracing} uvicorn main:app --host 127.0.0.1 --port $${PORT:-8000} --reload --reload-exclude .venv
+	  uv run uvicorn main:app --host 127.0.0.1 --port $${PORT:-8000} --reload --reload-exclude .venv
 
 run-cli: ## Run interactive CLI chat (no web server)
 	@source .venv/bin/activate && set -a && source .env && set +a && \
@@ -109,7 +106,7 @@ teardown-gateway: ## Uninstall openShell gateway and clean up
 	  oc adm policy remove-scc-from-user privileged -z openshell -n openshell 2>/dev/null || true && \
 	  echo "Gateway removed."
 
-_openshell-env = set -a && . ./.env && set +a && export OPENSHELL_GATEWAY_INSECURE=true && \
+_openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export OPENSHELL_GATEWAY_INSECURE=true && \
 	SANDBOX=$${OPENSHELL_SANDBOX_NAME:-rag-sandbox} && \
 	NS=$$(oc project -q) && \
 	IMAGE="image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
@@ -164,22 +161,6 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	    --env "MAAS_BASE_URL=$$MAAS_BASE_URL" \
 	    --env "CHAT_BASE_URL=$${CHAT_BASE_URL:-$$BASE_URL}" \
 	    --env "MAAS_API_KEY=$$MAAS_API_KEY" \
-	    --env "MODEL_ID=$$MODEL_ID" \
-	    --env "TEMPERATURE=$$TEMPERATURE" \
-	    --env "MAX_COMPLETION_TOKENS=$$MAX_COMPLETION_TOKENS" \
-	    --env "SYSTEM_MESSAGE_B64=$$SYSTEM_MESSAGE_B64" \
-	    --env "USER_MESSAGE_B64=$$USER_MESSAGE_B64" \
-	    --env "CONTEXT_TEMPLATE_B64=$$CONTEXT_TEMPLATE_B64" \
-	    --env "LANGUAGE_CODE=$$LANGUAGE_CODE" \
-	    --env "LANGUAGE_NAME=$$LANGUAGE_NAME" \
-	    --env "EMBEDDING_MODEL_ID=$$EMBEDDING_MODEL_ID" \
-	    --env "EMBEDDING_DIMENSION=$${EMBEDDING_DIMENSION:-768}" \
-	    --env "PROVIDER_TYPE=$${PROVIDER_TYPE:-milvus}" \
-	    --env "RETRIEVAL_METHOD=$${RETRIEVAL_METHOD:-simple}" \
-	    --env "NUMBER_OF_CHUNKS=$${NUMBER_OF_CHUNKS:-5}" \
-	    --env "SEARCH_MODE=$${SEARCH_MODE:-vector}" \
-	    --env "RANKER_STRATEGY=$$RANKER_STRATEGY" \
-	    --env "RANKER_ALPHA=$$RANKER_ALPHA" \
 	    --env "MILVUS_URI=$$MILVUS_URI" \
 	    --env "MILVUS_TOKEN=$$MILVUS_TOKEN" \
 	    --env "PORT=8080" </dev/null & \
@@ -237,25 +218,8 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export MAAS_API_KEY="'"$$MAAS_API_KEY"'" && \
 	    export MAAS_BASE_URL="'"$$MAAS_BASE_URL"'" && \
 	    export CHAT_BASE_URL="'"$${CHAT_BASE_URL:-$$BASE_URL}"'" && \
-	    export MODEL_ID="'"$$MODEL_ID"'" && \
-	    export TEMPERATURE="'"$$TEMPERATURE"'" && \
-	    export MAX_COMPLETION_TOKENS="'"$$MAX_COMPLETION_TOKENS"'" && \
-	    export SYSTEM_MESSAGE_B64="'"$$SYSTEM_MESSAGE_B64"'" && \
-	    export USER_MESSAGE_B64="'"$$USER_MESSAGE_B64"'" && \
-	    export CONTEXT_TEMPLATE_B64="'"$$CONTEXT_TEMPLATE_B64"'" && \
-	    export LANGUAGE_CODE="'"$$LANGUAGE_CODE"'" && \
-	    export LANGUAGE_NAME="'"$$LANGUAGE_NAME"'" && \
-	    export EMBEDDING_MODEL_ID="'"$$EMBEDDING_MODEL_ID"'" && \
-	    export EMBEDDING_DIMENSION="'"$$EMBEDDING_DIMENSION"'" && \
-	    export PROVIDER_TYPE="'"$${PROVIDER_TYPE:-milvus}"'" && \
-	    export RETRIEVAL_METHOD="'"$${RETRIEVAL_METHOD:-simple}"'" && \
-	    export NUMBER_OF_CHUNKS="'"$${NUMBER_OF_CHUNKS:-5}"'" && \
-	    export SEARCH_MODE="'"$${SEARCH_MODE:-vector}"'" && \
-	    export RANKER_STRATEGY="'"$$RANKER_STRATEGY"'" && \
-	    export RANKER_ALPHA="'"$$RANKER_ALPHA"'" && \
 	    export MILVUS_URI="'"$$MILVUS_URI"'" && \
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
-	    export MILVUS_COLLECTION_NAME="'"$$MILVUS_COLLECTION_NAME"'" && \
 	    export MILVUS_SERVER_CERT="'"$$MILVUS_SERVER_CERT"'" && \
 	    export MILVUS_SERVER_NAME="'"$$MILVUS_SERVER_NAME"'" && \
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
@@ -289,10 +253,10 @@ expose-agent: ## Expose agent service and create Route
 	  echo "  TOKEN=\$$(oc get secret agent-client-token -o jsonpath='{.data.token}' | base64 -d)" && \
 	  echo "" && \
 	  echo "Query:" && \
-	  echo "  curl -sk https://$$SVC_HOST/chat/completions \\" && \
+	  echo "  curl -sk https://$$SVC_HOST/v1/responses \\" && \
 	  echo "    -H \"X-Api-Key: \$$TOKEN\" \\" && \
 	  echo "    -H 'Content-Type: application/json' \\" && \
-	  echo "    -d '{\"messages\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
+	  echo "    -d '{\"input\":[{\"role\":\"user\",\"content\":\"Hello\"}]}'"
 
 deploy-openshell: create-sandbox wait-sandbox setup-egress start-agent expose-agent ## Full sandbox deploy: create, start, expose
 

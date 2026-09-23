@@ -6,7 +6,7 @@ r"""
 Playground UI for the LangGraph Agentic RAG Agent running in openShell sandbox.
 
 A Flask chat interface that proxies requests to the sandbox agent's
-/chat/completions endpoint with K8s SA token authentication and streaming support.
+/v1/responses endpoint with K8s SA token authentication and streaming support.
 
 Usage:
     # Start the playground (auto-fetches agent URL and SA token from OpenShift):
@@ -21,7 +21,7 @@ Usage:
 The app will:
 1. Auto-detect AGENT_URL from the openshell Route (if not set)
 2. Auto-fetch AGENT_TOKEN from the agent-client-token Secret (if not set)
-3. Inject X-Api-Key header on all /chat/completions requests
+3. Inject X-Api-Key header on all /v1/responses requests
 """
 
 import json
@@ -198,7 +198,7 @@ def chat():
     messages = data.get("messages", [])
 
     payload = {
-        "messages": messages,
+        "input": messages,
         "stream": True,
     }
 
@@ -208,13 +208,13 @@ def chat():
     }
 
     logger.info(
-        f"Sending request to {AGENT_URL}/chat/completions (messages={len(payload.get('messages', []))}, stream={payload.get('stream')})"
+        f"Sending request to {AGENT_URL}/v1/responses (messages={len(payload.get('input', []))}, stream={payload.get('stream')})"
     )
 
     def generate():
         try:
             with http_requests.post(
-                f"{AGENT_URL}/chat/completions",
+                f"{AGENT_URL}/v1/responses",
                 json=payload,
                 headers=headers,
                 stream=True,

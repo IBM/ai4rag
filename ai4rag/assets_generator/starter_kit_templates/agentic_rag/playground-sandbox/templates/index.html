@@ -580,13 +580,13 @@
                                 return;
                             }
 
-                            const delta = parsed.choices?.[0]?.delta;
-                            if (delta?.content) {
+                            const delta = parsed.delta;
+                            if (parsed.type === 'response.output_text.delta' && delta) {
                                 if (!textEl) {
                                     removeTypingIndicator();
                                     textEl = addMessage('assistant', '', 'streaming');
                                 }
-                                assistantContent += delta.content;
+                                assistantContent += delta;
                                 textEl.textContent = assistantContent;
                                 chat.scrollTop = chat.scrollHeight;
                             }

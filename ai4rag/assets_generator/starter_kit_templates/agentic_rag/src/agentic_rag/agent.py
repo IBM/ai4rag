@@ -56,7 +56,14 @@ def create_rag(
         retriever=_initialize_retriever(
             maas_api_key=api_key,
             maas_base_url=base_url,
-            embedding_model_id=getenv("EMBEDDING_MODEL_ID"),
-            embedding_dimension=int(getenv("EMBEDDING_DIMENSION", "768")),
+            embedding_model_id=config.embedding_model_id,
+            embedding_dimension=config.embedding_dimension,
+            collection_name=config.collection_name,
+            provider_type=config.provider_type,
+            retrieval_method=config.retrieval_method,
+            number_of_chunks=config.number_of_chunks,
+            search_mode=config.search_mode,
+            ranker_strategy=config.ranker_strategy,
+            ranker_alpha=config.ranker_alpha,
         ),
     )

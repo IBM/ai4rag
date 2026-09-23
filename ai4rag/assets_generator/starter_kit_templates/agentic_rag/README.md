@@ -1,14 +1,14 @@
 # Agentic RAG starter kit
 
-This project is generated from an optimized RAG pattern. Configure the empty
-credentials in `.env` before running the application.
+This project is generated from an optimized RAG pattern. Export the MaaS
+credentials in your shell before running the application.
 
 The indexed production collection is an input to this starter kit. Do not run
 `make load-docs` against the production collection. Re-indexing belongs to the
 separate documents-indexing pipeline and can overwrite or corrupt the shared
 collection.
 
-The application exposes `POST /chat/completions`, `GET /health`, and a local
+The application exposes `POST /v1/responses`, `GET /health`, and a local
 playground at `GET /`.
 
 ## OpenShell deployment
@@ -26,8 +26,6 @@ playground at `GET /`.
 Run the following commands from the starter-kit root directory:
 
 ```bash
-make init
-
 # Run once per cluster.
 make setup-gateway
 
@@ -36,3 +34,23 @@ make deploy-openshell
 ```
 
 `make deploy-openshell` creates and configures the sandbox, starts the agent, and exposes it through an OpenShift route.
+
+## API and Swagger
+
+After deployment, the Swagger/OpenAPI documentation is available at
+`https://<agent-route>/docs`.
+
+The Responses API can be called at `https://<agent-route>/v1/responses`:
+
+```bash
+curl -sk https://<agent-route>/v1/responses \
+  -H "X-Api-Key: $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"What is vLLM?"}'
+```
+
+Additional optimized patterns are available in the RAG patterns artifact:
+
+```text
+s3://<bucket>/<run-id>/rag-templates-optimization/<artifact-id>/rag_patterns/
+```

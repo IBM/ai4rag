@@ -19,7 +19,7 @@ COPY --chown=1001:0 pyproject.toml uv.lock ./
 COPY --chown=1001:0 src/ ./src/
 
 # Use system Python 3.12 for compatibility (base image has both 3.12 and 3.14)
-RUN uv export --frozen --no-dev --extra tracing --no-emit-project --no-hashes > requirements.txt && \
+RUN uv export --frozen --no-dev --no-emit-project --no-hashes > requirements.txt && \
     uv pip install --python /usr/bin/python3.12 --prefix /sandbox/.local --no-cache -r requirements.txt && \
     uv pip install --python /usr/bin/python3.12 --prefix /sandbox/.local --no-cache --no-deps .
 
@@ -28,6 +28,7 @@ ENV PYTHONPATH="/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib
 
 # Application code and assets
 COPY --chown=1001:0 main.py auth_wrapper.py sqlite_shim.py playground_sandbox.py .
+COPY --chown=1001:0 agent_config.json /sandbox/agent_config.json
 COPY --chown=1001:0 playground-sandbox/ ./playground-sandbox/
 
 # Set granular permissions

@@ -2,8 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import base64
 import importlib.resources
+import json
 import re
 import shutil
 import tempfile
@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-_CONFIGURABLE_FILES = {".env.example", "values.yaml", "agent.yaml"}
+_CONFIGURABLE_FILES = {"values.yaml", "agent.yaml", "agent_config.json"}
 _IGNORED_TEMPLATE_NAMES = {".DS_Store", ".env", ".venv", "__pycache__"}
 
 _PROVIDER_BLOCK_PATTERN = re.compile(
@@ -41,10 +41,6 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     mapping["__SYSTEM_MESSAGE__"] = _value(fm.get("system_message_text"))
     mapping["__USER_MESSAGE__"] = _value(fm.get("user_message_text"))
     mapping["__CONTEXT_TEMPLATE__"] = _value(fm.get("context_template_text"))
-    mapping["__USER_MESSAGE_B64__"] = base64.b64encode(mapping["__USER_MESSAGE__"].encode()).decode()
-    mapping["__CONTEXT_TEMPLATE_B64__"] = base64.b64encode(mapping["__CONTEXT_TEMPLATE__"].encode()).decode()
-    mapping["__SYSTEM_MESSAGE_B64__"] = base64.b64encode(mapping["__SYSTEM_MESSAGE__"].encode()).decode()
-
     language = fm.get("language", {})
     if isinstance(language, dict):
         mapping["__LANGUAGE_CODE__"] = _value(language.get("code"))
@@ -100,6 +96,43 @@ def _replace_placeholders(file_path: Path, mapping: dict[str, str]) -> None:
     file_path.write_text(content, encoding="utf-8")
 
 
+def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
+    """Render generated prompts and RAG settings as readable JSON."""
+    config = {
+        "runtime": {
+            "port": 8000,
+        },
+        "generation": {
+            "model_id": mapping["__FM_MODEL_ID__"],
+            "temperature": float(mapping["__TEMPERATURE__"] or 0.0),
+            "max_completion_tokens": int(mapping["__MAX_COMPLETION_TOKENS__"] or 1024),
+            "language_code": mapping["__LANGUAGE_CODE__"],
+            "language_name": mapping["__LANGUAGE_NAME__"] or "auto",
+        },
+        "prompts": {
+            "system_message": mapping["__SYSTEM_MESSAGE__"],
+            "user_message_template": mapping["__USER_MESSAGE__"],
+            "context_template": mapping["__CONTEXT_TEMPLATE__"],
+        },
+        "embedding": {
+            "model_id": mapping["__EMBEDDING_MODEL_ID__"],
+            "dimension": int(mapping["__EMBEDDING_DIMENSION__"] or 768),
+        },
+        "retrieval": {
+            "method": mapping["__RETRIEVAL_METHOD__"] or "simple",
+            "number_of_chunks": int(mapping["__NUMBER_OF_CHUNKS__"] or 5),
+            "search_mode": mapping["__SEARCH_MODE__"] or "vector",
+            "ranker_strategy": mapping["__RANKER_STRATEGY__"],
+            "ranker_alpha": float(mapping["__RANKER_ALPHA__"]) if mapping["__RANKER_ALPHA__"] else None,
+        },
+        "vector_store": {
+            "provider_type": mapping["__PROVIDER_TYPE__"] or "milvus",
+            "collection_name": mapping["__COLLECTION_NAME__"],
+        },
+    }
+    file_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
 def _apply_provider_conditionals(file_path: Path, active_provider: str) -> None:
     """Keep blocks for *active_provider* and strip blocks for others."""
     content = file_path.read_text(encoding="utf-8")
@@ -126,8 +159,9 @@ def generate_starter_kit(
     output_data : dict[str, Any]
         The parsed ``pattern.json`` data produced by the optimisation pipeline.
     output_dir : str | Path
-        Directory where ``starter_kit.zip`` will be written (typically the
-        pattern directory alongside ``pattern.json``).
+        Directory where ``starter_kit.zip`` will be written. For optimization
+        artifacts, this is typically the root directory containing all pattern
+        directories.
 
     Returns
     -------
@@ -153,7 +187,10 @@ def generate_starter_kit(
         for fname in _CONFIGURABLE_FILES:
             target = kit_dir / fname
             if target.exists():
-                _replace_placeholders(target, mapping)
+                if fname == "agent_config.json":
+                    _write_agent_config_file(target, mapping)
+                else:
+                    _replace_placeholders(target, mapping)
                 _apply_provider_conditionals(target, active_provider)
 
         zip_path = output_dir / "starter_kit.zip"

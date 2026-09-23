@@ -19,7 +19,7 @@ patch_sqlite3()
 
 import openai  # noqa: E402
 from agentic_rag.agent import create_rag  # noqa: E402
-from agentic_rag.tracing import enable_tracing  # noqa: E402
+from agentic_rag.config import AgentConfig  # noqa: E402
 from fastapi import FastAPI, HTTPException  # noqa: E402
 from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
 from pydantic import BaseModel, Field  # noqa: E402
@@ -36,34 +36,39 @@ _RETRYABLE_EXCEPTIONS = (
 )
 
 
-class ChatMessage(BaseModel):
+class ResponseInputMessage(BaseModel):
     role: str = Field(..., examples=["user", "assistant", "system"])
     content: str
 
 
-class ChatCompletionRequest(BaseModel):
-    messages: list[ChatMessage] = Field(..., min_length=1)
+class ResponsesRequest(BaseModel):
+    input: str | list[ResponseInputMessage]
     model: str | None = None
+    instructions: str | None = None
     stream: bool = False
 
 
-class ChoiceMessage(BaseModel):
-    role: str = "assistant"
-    content: str
+class ResponseOutputText(BaseModel):
+    type: str = "output_text"
+    text: str
 
 
-class Choice(BaseModel):
-    index: int
-    message: ChoiceMessage
-    finish_reason: str
-
-
-class ChatCompletionResponse(BaseModel):
+class ResponseMessage(BaseModel):
     id: str
-    object: str = "chat.completion"
-    created: int
+    type: str = "message"
+    status: str = "completed"
+    role: str = "assistant"
+    content: list[ResponseOutputText]
+
+
+class ResponsesResponse(BaseModel):
+    id: str
+    object: str = "response"
+    created_at: int
     model: str
-    choices: list[Choice]
+    status: str = "completed"
+    output: list[ResponseMessage]
+    output_text: str
     usage: dict | None = None
 
 
@@ -78,7 +83,6 @@ rag = None
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     global rag
-    enable_tracing()
     rag = create_rag()
     app.state.rag = rag
     yield
@@ -90,20 +94,20 @@ app = FastAPI(
     title="Agentic RAG API",
     description=(
         "FastAPI service for Agentic RAG Agent with "
-        "OpenAI-compatible chat completions API. "
+        "OpenAI-compatible Responses API. "
         "To access the sandbox playground, click "
         "[Sandbox Playground](/playground)."
     ),
     lifespan=lifespan,
     openapi_tags=[
         {"name": "Health", "description": "Service health monitoring"},
-        {"name": "Chat", "description": "Chat completion operations"},
+        {"name": "Responses", "description": "Responses API operations"},
     ],
 )
 
 
-def _make_completion_id() -> str:
-    return f"chatcmpl-{uuid.uuid4().hex[:12]}"
+def _make_response_id() -> str:
+    return f"resp-{uuid.uuid4().hex[:12]}"
 
 
 async def _invoke_with_retry(messages: list[dict[str, str]]) -> dict[str, Any]:
@@ -113,14 +117,8 @@ async def _invoke_with_retry(messages: list[dict[str, str]]) -> dict[str, Any]:
     last_exception: Exception = RuntimeError("no invocation attempts were made")
     for attempt in range(1, _MAX_INVOKE_ATTEMPTS + 1):
         try:
-            result = await asyncio.to_thread(rag.chat, messages)
-            choice = result[0]
-            return {
-                "content": choice.message.content or "",
-                "context": [
-                    {"role": "assistant", "content": choice.message.content or ""},
-                ],
-            }
+            result = await asyncio.to_thread(rag.respond, messages)
+            return {"content": result.output_text or "", "context": []}
         except _RETRYABLE_EXCEPTIONS as exc:
             last_exception = exc
             if attempt < _MAX_INVOKE_ATTEMPTS:
@@ -133,13 +131,18 @@ async def _invoke_with_retry(messages: list[dict[str, str]]) -> dict[str, Any]:
 
 
 @app.post(
-    "/chat/completions",
-    response_model=ChatCompletionResponse,
-    summary="Create chat completion",
-    tags=["Chat"],
+    "/v1/responses",
+    response_model=ResponsesResponse,
+    summary="Create a model response",
+    tags=["Responses"],
 )
-async def chat_completions(request: ChatCompletionRequest):
-    messages = [message.model_dump() for message in request.messages]
+async def responses(request: ResponsesRequest):
+    if isinstance(request.input, str):
+        messages = [{"role": "user", "content": request.input}]
+    else:
+        messages = [message.model_dump() for message in request.input]
+    if request.instructions:
+        messages.insert(0, {"role": "system", "content": request.instructions})
     model_id = request.model or getenv("MODEL_ID") or "model"
 
     try:
@@ -150,40 +153,41 @@ async def chat_completions(request: ChatCompletionRequest):
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Error processing request: {exc}") from exc
 
-    completion_id = _make_completion_id()
+    response_id = _make_response_id()
     if request.stream:
-        return _stream_response(completion_id, model_id, result["content"])
+        return _stream_response(response_id, model_id, result["content"])
 
     return {
-        "id": completion_id,
-        "object": "chat.completion",
-        "created": int(time.time()),
+        "id": response_id,
+        "object": "response",
+        "created_at": int(time.time()),
         "model": model_id,
-        "choices": [
+        "status": "completed",
+        "output": [
             {
-                "index": 0,
-                "message": {"role": "assistant", "content": result["content"]},
-                "finish_reason": "stop",
+                "id": f"msg-{uuid.uuid4().hex[:12]}",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": result["content"]}],
             }
         ],
+        "output_text": result["content"],
         "context": result["context"],
         "usage": None,
     }
 
 
-def _stream_response(completion_id: str, model_id: str, content: str) -> StreamingResponse:
-    created = int(time.time())
+def _stream_response(response_id: str, model_id: str, content: str) -> StreamingResponse:
 
     async def event_generator() -> AsyncIterator[str]:
         data = {
-            "id": completion_id,
-            "object": "chat.completion.chunk",
-            "created": created,
-            "model": model_id,
-            "choices": [{"index": 0, "delta": {"content": content}, "finish_reason": None}],
+            "type": "response.output_text.delta",
+            "response_id": response_id,
+            "delta": content,
         }
         yield f"data: {json.dumps(data)}\n\n"
-        yield f"data: {json.dumps({'id': completion_id, 'object': 'chat.completion.chunk', 'created': created, 'model': model_id, 'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'stop'}]})}\n\n"
+        yield f"data: {json.dumps({'type': 'response.completed', 'response': {'id': response_id, 'object': 'response', 'model': model_id, 'status': 'completed'}})}\n\n"
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(
@@ -212,4 +216,4 @@ if _SANDBOX_MODE:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=int(getenv("PORT", 8000)))
+    uvicorn.run("main:app", host="0.0.0.0", port=AgentConfig.from_env().port)
