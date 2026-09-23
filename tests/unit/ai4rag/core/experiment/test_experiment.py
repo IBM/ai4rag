@@ -9,6 +9,7 @@ import pytest
 
 from ai4rag.core.experiment.results import EvaluationResult
 from ai4rag.core.experiment.utils import merge_evaluation_results
+from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.base_evaluator import (
     AggregateMetric,
     BaseEvaluator,
@@ -21,6 +22,9 @@ from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
+from ai4rag.search_space.src.parameter import Parameter
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.constants import AI4RAGParamNames
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -187,7 +191,7 @@ class TestMetricEvaluatorValidation:
 
 
 class TestGAMPatternPublication:
-    """Final GAM reporting is sourced from ExperimentResults."""
+    """Final GAM reporting retains the warm-start/GAM output order."""
 
     def test_publishes_best_experiment_results_in_score_order(self, mocker):
         from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
@@ -201,11 +205,18 @@ class TestGAMPatternPublication:
             search_space=search_space,
             settings=GAMOptSettings(max_evals=3, max_iterations=2, n_random_nodes=3),
         )
-        for index, score in enumerate((0.2, 0.9, 0.7)):
+        for index, (name, score) in enumerate(
+            (
+                ("Pattern1-warm-start", 0.7),
+                ("Pattern2-warm-start", 0.9),
+                ("Pattern2", 0.2),
+                ("Pattern3", 0.8),
+            )
+        ):
             experiment.results.add_evaluation(
                 [],
                 EvaluationResult(
-                    pattern_name=f"original-{index}",
+                    pattern_name=name,
                     collection="collection",
                     indexing_params={},
                     rag_params={},
@@ -218,8 +229,107 @@ class TestGAMPatternPublication:
 
         experiment._publish_best_gam_patterns(optimizer)
 
-        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9, 0.7]
-        assert [call.kwargs["pattern_name"] for call in publish.call_args_list] == ["Pattern1", "Pattern2"]
+        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9, 0.2]
+        assert publish.call_args_list[0].kwargs["pattern_name"] == "Pattern1"
+        assert "pattern_name" not in publish.call_args_list[1].kwargs
+        assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0, 1]
+        published_patterns = pd.DataFrame(
+            [
+                {
+                    "source_pattern": call.kwargs["evaluation_result"].pattern_name,
+                    "published_pattern": call.kwargs.get("pattern_name")
+                    or call.kwargs["evaluation_result"].pattern_name,
+                    "score": call.kwargs["evaluation_result"].final_score,
+                }
+                for call in publish.call_args_list
+            ]
+        )
+        print(f"\nPublished patterns:\n{published_patterns.to_string(index=False)}")
+
+    def test_marks_warm_start_pattern_names(self):
+        """Warm-start candidate names retain their phase in final artifacts."""
+        experiment = _build_experiment()
+
+        experiment._optimization_phase = "warm_start"
+        assert experiment._create_pattern_name() == "Pattern1-warm-start"
+        experiment._optimization_phase = "gam"
+        assert experiment._create_pattern_name() == "Pattern2"
+
+
+class TestMultiModelGAMExperiment:
+    """GAM experiment coverage for multiple foundation and embedding models."""
+
+    def test_runs_with_three_embedding_models_and_two_foundation_models(self, mocker):
+        """A balanced warm start evaluates every foundation/embedding pair without live services."""
+        from ai4rag.core.experiment.experiment import AI4RAGExperiment
+
+        foundation_models = [MagicMock(model_id=f"llm-{index}") for index in range(2)]
+        embedding_models = [MagicMock(model_id=f"embedding-{index}", params={}) for index in range(3)]
+        search_space = AI4RAGSearchSpace(
+            params=[
+                Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models),
+                Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models),
+            ]
+        )
+        experiment = AI4RAGExperiment(
+            documents=[],
+            benchmark_data=_BENCHMARK_DF,
+            search_space=search_space,
+            vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),
+            optimizer_settings=GAMOptSettings(
+                max_evals=15,
+                max_iterations=7,
+                n_random_nodes=6,
+                warm_start_strategy="balanced",
+                fields_to_balance=[
+                    AI4RAGParamNames.FOUNDATION_MODEL,
+                    AI4RAGParamNames.EMBEDDING_MODEL,
+                ],
+            ),
+            event_handler=MagicMock(),
+            n_mps_foundation_models=2,
+            n_mps_embedding_models=3,
+        )
+        mock_gam = MagicMock()
+        mock_gam.predict.side_effect = lambda values: [0.5] * len(values)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+        evaluate = mocker.patch.object(experiment, "run_single_evaluation", return_value=0.5)
+
+        experiment.search()
+
+        assert evaluate.call_count == 12
+        evaluated_pairs = {
+            (
+                call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id,
+                call.args[0][AI4RAGParamNames.EMBEDDING_MODEL].model_id,
+            )
+            for call in evaluate.call_args_list[:6]
+        }
+        assert evaluated_pairs == {
+            (foundation_model.model_id, embedding_model.model_id)
+            for foundation_model in foundation_models
+            for embedding_model in embedding_models
+        }
+        pattern_rows = []
+        warm_start_count = 0
+        gam_count = 0
+        for call in evaluate.call_args_list:
+            if len(pattern_rows) < 6:
+                warm_start_count += 1
+                pattern_name = f"Pattern{warm_start_count}-warm-start"
+            else:
+                gam_count += 1
+                pattern_name = f"Pattern{gam_count + 1}"
+            pattern_rows.append(
+                {
+                    "pattern_name": pattern_name,
+                    "foundation_model": call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id,
+                    "embedding_model": call.args[0][AI4RAGParamNames.EMBEDDING_MODEL].model_id,
+                    "score": 0.5,
+                }
+            )
+        patterns = pd.DataFrame(pattern_rows)
+        print(f"\nEvaluated patterns:\n{patterns.to_string(index=False)}")
 
 
 class TestResolveOptimizationScore:
