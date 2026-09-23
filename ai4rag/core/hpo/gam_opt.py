@@ -147,6 +147,10 @@ class GAMOptSettings(OptimizerSettings):
     fields_to_balance: list[str] | None = None
 
     def __post_init__(self) -> None:
+        if self.n_random_nodes < 1:
+            raise ValueError("n_random_nodes must be at least 1.")
+        if self.evals_per_trial < 1:
+            raise ValueError("evals_per_trial must be at least 1.")
         valid = {"random", "greedy", "balanced"}
         if self.warm_start_strategy not in valid:
             raise ValueError(
@@ -270,13 +274,7 @@ class GAMOptimizer(BaseOptimizer):
                 self.max_evals,
             )
         if strategy in ("greedy", "balanced"):
-            effective_warm_start = self._compute_warm_start_effective_target()
-            output_limit = self.max_iterations
-            gam_output_count = max(0, output_limit - (effective_warm_start // 4))
-            gam_iterations = ceil(gam_output_count / self.settings.evals_per_trial)
-            remaining_evaluation_capacity = max(0, self.max_evals - len(self.evaluations))
-            capacity_iterations = ceil(remaining_evaluation_capacity / self.settings.evals_per_trial)
-            for _ in range(min(gam_iterations, capacity_iterations)):
+            for _ in range(self._get_coverage_aware_gam_iterations_limit()):
                 self._run_iteration()
         else:
             iterations_limit = self._get_iterations_limit()
@@ -304,6 +302,13 @@ class GAMOptimizer(BaseOptimizer):
         """
         iterations_limit = ceil((self.max_evals - len(self.evaluations)) / self.settings.evals_per_trial)
         return max(0, iterations_limit)
+
+    def _get_coverage_aware_gam_iterations_limit(self) -> int:
+        """Return the GAM iteration count after reserving warm-start output capacity."""
+        warm_start_output_count = self._compute_warm_start_effective_target() // 4
+        gam_output_count = max(0, self.max_iterations - warm_start_output_count)
+        gam_iterations = ceil(gam_output_count / self.settings.evals_per_trial)
+        return min(gam_iterations, self._get_iterations_limit())
 
     def _validate_n_random_nodes(self) -> None:
         """Log a warning when n_random_nodes is below the required minimum for the strategy.

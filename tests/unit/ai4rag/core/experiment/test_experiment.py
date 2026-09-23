@@ -187,16 +187,22 @@ class TestMetricEvaluatorValidation:
 
 
 class TestOptimizationPatternSelection:
-    """Output pattern allocation between warm start and GAM phases."""
+    """Selection and publishing of buffered GAM patterns."""
 
-    def test_selects_warm_start_quota_and_renumbers_patterns(self):
+    def test_selects_highest_scoring_patterns_and_renumbers_them(self):
         from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
 
         experiment = _build_experiment()
         experiment.event_handler = MagicMock()
         experiment._optimization_patterns = [
-            {"payload": {"name": f"old-warm-{i}"}, "optimization_phase": "warm_start"} for i in range(3)
-        ] + [{"payload": {"name": f"old-gam-{i}"}, "optimization_phase": "gam"} for i in range(4)]
+            {"payload": {"name": "old-warm-1"}, "optimization_phase": "warm_start", "optimization_score": 0.2},
+            {"payload": {"name": "old-warm-2"}, "optimization_phase": "warm_start", "optimization_score": 0.4},
+            {"payload": {"name": "old-warm-3"}, "optimization_phase": "warm_start", "optimization_score": 0.1},
+            {"payload": {"name": "old-gam-1"}, "optimization_phase": "gam", "optimization_score": 0.3},
+            {"payload": {"name": "old-gam-2"}, "optimization_phase": "gam", "optimization_score": 0.95},
+            {"payload": {"name": "old-gam-3"}, "optimization_phase": "gam", "optimization_score": 0.9},
+            {"payload": {"name": "old-gam-4"}, "optimization_phase": "gam", "optimization_score": 0.8},
+        ]
 
         search_space = MagicMock()
         search_space.combinations = [{"category": value} for value in ("a", "b", "c", "d")]
@@ -209,9 +215,36 @@ class TestOptimizationPatternSelection:
 
         selected = experiment._select_optimization_patterns()
 
-        assert len(selected) == 4  # effective warm start=8: 8//4 warm + 2 GAM
-        assert [p["optimization_phase"] for p in selected] == ["warm_start", "warm_start", "gam", "gam"]
+        assert [p["optimization_score"] for p in selected] == [0.95, 0.9, 0.8, 0.4]
+        assert [p["optimization_phase"] for p in selected] == ["gam", "gam", "gam", "warm_start"]
         assert [p["payload"]["name"] for p in selected] == ["Pattern1", "Pattern2", "Pattern3", "Pattern4"]
+
+    def test_selection_backfills_from_warm_start_when_gam_has_no_patterns(self):
+        """A warm-start-only run still publishes every retained output slot."""
+        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
+
+        experiment = _build_experiment()
+        search_space = MagicMock()
+        search_space.combinations = [{"category": value} for value in range(4)]
+        search_space.max_combinations = 4
+        experiment.optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=search_space,
+            settings=GAMOptSettings(max_evals=4, max_iterations=4, n_random_nodes=4, warm_start_strategy="greedy"),
+        )
+        experiment._optimization_patterns = [
+            {
+                "payload": {"name": f"old-warm-{score}"},
+                "optimization_phase": "warm_start",
+                "optimization_score": score,
+            }
+            for score in (0.1, 0.8, 0.4, 0.6)
+        ]
+
+        selected = experiment._select_optimization_patterns()
+
+        assert len(selected) == 4
+        assert [p["optimization_score"] for p in selected] == [0.8, 0.6, 0.4, 0.1]
 
     def test_search_clears_buffered_patterns_from_a_previous_run(self):
         class NoOpOptimizer:

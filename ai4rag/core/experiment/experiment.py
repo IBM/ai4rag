@@ -751,20 +751,22 @@ class AI4RAGExperiment:
         )
 
     def _select_optimization_patterns(self) -> list[dict[str, Any]]:
-        """Select and renumber the configured number of GAM output patterns."""
+        """Select the highest-scoring buffered GAM patterns and renumber them."""
         patterns = self._optimization_patterns
         if not isinstance(self.optimizer, GAMOptimizer) or not patterns:
             return patterns
 
         output_limit = self.optimizer.max_iterations
-        warm_start_output_count = min(
-            output_limit,
-            self.optimizer.compute_warm_start_effective_target() // 4,
-        )
-        warm_start_patterns = [p for p in patterns if p.get("optimization_phase") == "warm_start"]
-        gam_patterns = [p for p in patterns if p.get("optimization_phase") == "gam"]
-        selected = warm_start_patterns[:warm_start_output_count]
-        selected.extend(gam_patterns[: output_limit - len(selected)])
+        successful_patterns = [
+            pattern
+            for pattern in patterns
+            if pattern.get("optimization_score", 0.0) is not None
+        ]
+        selected = sorted(
+            successful_patterns,
+            key=lambda pattern: pattern.get("optimization_score", float("-inf")),
+            reverse=True,
+        )[:output_limit]
 
         for index, pattern in enumerate(selected, start=1):
             payload = pattern.get("payload")
@@ -773,10 +775,10 @@ class AI4RAGExperiment:
                 payload["iteration"] = index - 1
 
         logger.info(
-            "Selected %d output patterns: %d from warm start and %d from GAM.",
+            "Selected %d highest-scoring output patterns: %d from warm start and %d from GAM.",
             len(selected),
-            min(len(warm_start_patterns), warm_start_output_count),
-            min(len(gam_patterns), output_limit - len(warm_start_patterns[:warm_start_output_count])),
+            sum(pattern.get("optimization_phase") == "warm_start" for pattern in selected),
+            sum(pattern.get("optimization_phase") == "gam" for pattern in selected),
         )
         return selected
 
@@ -785,7 +787,11 @@ class AI4RAGExperiment:
         for pattern in self._select_optimization_patterns():
             payload = pattern["payload"]
             evaluation_results = pattern["evaluation_results"]
-            metadata = {key: value for key, value in pattern.items() if key not in {"payload", "evaluation_results"}}
+            metadata = {
+                key: value
+                for key, value in pattern.items()
+                if key not in {"payload", "evaluation_results", "optimization_score"}
+            }
             self.event_handler.on_pattern_creation(
                 payload=payload,
                 evaluation_results=evaluation_results,
@@ -873,15 +879,16 @@ class AI4RAGExperiment:
             "iteration": len(self.results) + n_known,
         }
 
-        pattern = {
-            "payload": payload,
-            "evaluation_results": evaluation_results_json,
-            "optimization_phase": getattr(self.optimizer, "current_phase", None),
-        }
         if isinstance(self.optimizer, GAMOptimizer):
+            pattern = {
+                "payload": payload,
+                "evaluation_results": evaluation_results_json,
+                "optimization_phase": self.optimizer.current_phase,
+                "optimization_score": evaluation_result.final_score,
+            }
             self._optimization_patterns.append(pattern)
         else:
-            self.event_handler.on_pattern_creation(**pattern)
+            self.event_handler.on_pattern_creation(payload=payload, evaluation_results=evaluation_results_json)
 
     def _evaluate_response(
         self,
