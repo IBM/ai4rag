@@ -394,6 +394,11 @@ class AI4RAGExperiment:
         rag_params : RAGParamsType
             A dictionary containing rag parameters as keys and their values.
 
+        publish_pattern : bool, default=True
+            Whether to send the evaluated pattern to the event handler immediately.
+            GAM optimization suppresses this only for warm-start candidates;
+            GAM candidates are published as they complete.
+
         Returns
         -------
         float
@@ -697,7 +702,10 @@ class AI4RAGExperiment:
             """Function passed to the optimizer."""
             self._optimization_phase = getattr(optimizer, "current_phase", None)
             try:
-                return self.run_single_evaluation(space, publish_pattern=not is_gam_optimizer)
+                return self.run_single_evaluation(
+                    space,
+                    publish_pattern=not is_gam_optimizer or self._optimization_phase != "warm_start",
+                )
             except AI4RAGError as err:
                 msg = self._exception_handler.handle_exception(err)
                 raise FailedIterationError(msg) from err
@@ -745,42 +753,35 @@ class AI4RAGExperiment:
             raise RAGExperimentError(final_error_msg) from err
 
         if is_gam_optimizer:
-            self._publish_best_gam_patterns(optimizer)
+            self._publish_best_warm_start_pattern()
 
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message="Experiment optimization process finished.",
         )
 
-    def _publish_best_gam_patterns(self, optimizer: GAMOptimizer) -> None:
-        """Publish the best warm-start candidate followed by GAM candidates in evaluation order."""
+    def _publish_best_warm_start_pattern(self) -> None:
+        """Publish only the best successful warm-start candidate as final ``Pattern1``."""
         evaluations = list(zip(self.results.evaluations, self.results.evaluation_data))
         warm_start_evaluations = [
-            evaluation for evaluation in evaluations if evaluation[0].pattern_name.endswith("-warm-start")
+            evaluation
+            for evaluation in evaluations
+            if evaluation[0].pattern_name.endswith("-warm-start") and evaluation[0].final_score is not None
         ]
-        gam_evaluations = [
-            evaluation for evaluation in evaluations if not evaluation[0].pattern_name.endswith("-warm-start")
-        ]
+        if not warm_start_evaluations:
+            return
 
-        warm_start_slots = optimizer.warm_start_output_count
-        selected = sorted(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score, reverse=True)[
-            :warm_start_slots
-        ]
-        selected.extend(gam_evaluations[: max(0, optimizer.max_iterations - len(selected))])
-
-        for index, (result, evaluation_data) in enumerate(selected, start=1):
-            evaluation_results_json = self.results.create_evaluation_results_json(
-                evaluation_data=evaluation_data,
-                evaluation_result=result,
-            )
-            stream_kwargs = {
-                "evaluation_result": result,
-                "evaluation_results_json": evaluation_results_json,
-                "iteration": index - 1,
-            }
-            if index == 1 and warm_start_evaluations:
-                stream_kwargs["pattern_name"] = "Pattern1"
-            self._stream_finished_pattern(**stream_kwargs)
+        result, evaluation_data = max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score)
+        evaluation_results_json = self.results.create_evaluation_results_json(
+            evaluation_data=evaluation_data,
+            evaluation_result=result,
+        )
+        self._stream_finished_pattern(
+            evaluation_result=result,
+            evaluation_results_json=evaluation_results_json,
+            pattern_name="Pattern1",
+            iteration=0,
+        )
 
     def _stream_finished_pattern(
         self,

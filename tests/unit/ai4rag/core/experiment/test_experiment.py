@@ -191,20 +191,10 @@ class TestMetricEvaluatorValidation:
 
 
 class TestGAMPatternPublication:
-    """Final GAM reporting retains the warm-start/GAM output order."""
+    """Final GAM reporting publishes only the selected warm-start result."""
 
     def test_publishes_best_experiment_results_in_score_order(self, mocker):
-        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
-
         experiment = _build_experiment()
-        search_space = MagicMock()
-        search_space.combinations = [{"category": value} for value in range(3)]
-        search_space.max_combinations = 3
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(),
-            search_space=search_space,
-            settings=GAMOptSettings(max_evals=3, max_iterations=2, n_random_nodes=3),
-        )
         for index, (name, score) in enumerate(
             (
                 ("Pattern1-warm-start", 0.7),
@@ -227,12 +217,11 @@ class TestGAMPatternPublication:
             )
         publish = mocker.patch.object(experiment, "_stream_finished_pattern")
 
-        experiment._publish_best_gam_patterns(optimizer)
+        experiment._publish_best_warm_start_pattern()
 
-        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9, 0.2]
+        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9]
         assert publish.call_args_list[0].kwargs["pattern_name"] == "Pattern1"
-        assert "pattern_name" not in publish.call_args_list[1].kwargs
-        assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0, 1]
+        assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0]
         published_patterns = pd.DataFrame(
             [
                 {
@@ -246,34 +235,12 @@ class TestGAMPatternPublication:
         )
         print(f"\nPublished patterns:\n{published_patterns.to_string(index=False)}")
 
-    def test_reserves_one_warm_start_output_per_four_coverage_evaluations(self, mocker):
-        """Coverage-aware warm starts publish the same number of slots reserved by GAM scheduling."""
-        from ai4rag.core.hpo.gam_opt import GAMOptimizer, GAMOptSettings
-
+    def test_does_not_publish_an_unscored_warm_start_candidate(self, mocker):
+        """A failed warm-start candidate cannot become final Pattern1."""
         experiment = _build_experiment()
-        search_space = MagicMock()
-        search_space.combinations = [
-            {"category": category, "group": group} for category in range(4) for group in range(3)
-        ]
-        search_space.max_combinations = 12
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(),
-            search_space=search_space,
-            settings=GAMOptSettings(
-                max_evals=12,
-                max_iterations=4,
-                n_random_nodes=2,
-                warm_start_strategy="greedy",
-            ),
-        )
-        assert optimizer.warm_start_output_count == 2
-
         for name, score in (
-            ("Pattern1-warm-start", 0.7),
-            ("Pattern2-warm-start", 0.9),
-            ("Pattern3-warm-start", 0.6),
-            ("Pattern2", 0.2),
-            ("Pattern3", 0.8),
+            ("Pattern1-warm-start", None),
+            ("Pattern2", 0.8),
         ):
             experiment.results.add_evaluation(
                 [],
@@ -289,9 +256,9 @@ class TestGAMPatternPublication:
             )
 
         publish = mocker.patch.object(experiment, "_stream_finished_pattern")
-        experiment._publish_best_gam_patterns(optimizer)
+        experiment._publish_best_warm_start_pattern()
 
-        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9, 0.7, 0.2, 0.8]
+        publish.assert_not_called()
 
     def test_marks_warm_start_pattern_names(self):
         """Warm-start candidate names retain their phase in final artifacts."""
