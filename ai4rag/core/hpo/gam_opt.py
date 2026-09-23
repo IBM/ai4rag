@@ -743,13 +743,19 @@ class GAMOptimizer(BaseOptimizer):
         x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
 
         terms = None
-        for i, (_, enc) in enumerate(encoders):
+        for i, (column, enc) in enumerate(encoders):
             observed_values = set(x_train_enc[:, i])
             all_values = set(range(len(enc.classes_)))
+            has_unseen_categorical_levels = isinstance(enc.classes_[0], str) and observed_values != all_values
+            if has_unseen_categorical_levels:
+                logger.warning(
+                    "Column '%s' falls back to spline: not all levels are present in training data.",
+                    column,
+                )
             use_spline = (
                 self.settings.warm_start_strategy == "random"
                 or not isinstance(enc.classes_[0], str)
-                or observed_values != all_values
+                or has_unseen_categorical_levels
             )
             term = gam_s(i) if use_spline else gam_f(i)
             terms = term if terms is None else terms + term

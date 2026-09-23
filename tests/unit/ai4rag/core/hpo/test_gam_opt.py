@@ -444,7 +444,7 @@ class TestGAMOptimizer:
         assert result["score"] == 0.5
         assert objective_func.call_count == 3
 
-    def test_sparse_non_random_warm_start_handles_unseen_categorical_values(self):
+    def test_sparse_non_random_warm_start_handles_unseen_categorical_values(self, caplog):
         """Sparse greedy data falls back to splines for unseen categorical values."""
         mock_space = MagicMock(spec=SearchSpace)
         mock_space.combinations = [{"category": value} for value in ("a", "b", "c")]
@@ -465,6 +465,7 @@ class TestGAMOptimizer:
 
         assert len(optimizer.evaluations) == 2
         assert objective_func.call_count == 1
+        assert "Column 'category' falls back to spline: not all levels are present in training data." in caplog.text
 
     def test_search_successful(self, mock_search_space, mocker):
         """Test the search method with successful optimization."""
