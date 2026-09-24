@@ -203,7 +203,6 @@ class GAMOptimizer(BaseOptimizer):
         known_observations: list[dict] | None = None,
     ):
         super().__init__(objective_function, search_space, settings)
-        self.settings = settings
         self.evaluations = []
         self._evaluated_combinations = []
         self._typed_encoders_with_columns: list[tuple[str, LabelEncoder]] = []
