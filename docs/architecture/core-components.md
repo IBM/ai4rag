@@ -221,41 +221,44 @@ class OptimizerSettings:
 
 The **Generalized Additive Models (GAM)** optimizer is the recommended algorithm for ai4rag. It uses a two-phase approach:
 
-**Phase 1: Random Exploration**
+**Phase 1: Warm-Start Exploration**
 
-- Randomly evaluates `n_random_nodes` configurations from the search space
+- Evaluates `n_random_nodes` configurations from the search space, ordered by `warm_start_strategy` (`"random"` — shuffle only; `"greedy"` — maximize coverage of every discrete value; `"balanced"` — round-robin over `fields_to_balance` combinations)
 - Builds initial understanding of the objective function landscape
-- Excludes already-evaluated combinations (important for warm-start)
+- Excludes already-evaluated combinations (important for warm-start via `known_observations`)
+- Only the best successful evaluation from this phase is published as a result pattern (`Pattern1`); the rest remain internal
 
 **Phase 2: GAM-Guided Search**
 
-- Trains a `LinearGAM` model on evaluated configurations
+- Trains a `LinearGAM` model on evaluated configurations, using factor (`f()`) terms for categorical columns and spline (`s()`) terms for numeric ones — a categorical column falls back to a spline term when the warm-start sample didn't observe every one of its values
 - Predicts scores for all remaining (unevaluated) configurations
 - Selects top `evals_per_trial` configurations with highest predicted scores
 - Evaluates selected configurations and updates training data
-- Repeats until `max_evals` reached
+- Repeats until `max_evals` evaluations or `max_iterations` published patterns are reached
 
 **Settings:**
 
 ```python
 @dataclass
 class GAMOptSettings(OptimizerSettings):
-    max_evals: int = 20            # Total evaluation budget
-    n_random_nodes: int = 4         # Initial random evaluations
-    evals_per_trial: int = 1        # Evaluations per GAM iteration
-    random_state: int = 64          # Random seed for reproducibility
+    max_evals: int = 20                                              # Total evaluation budget
+    max_iterations: int | None = None                                # Cap on published result patterns
+    n_random_nodes: int = 4                                          # Warm-start phase evaluations
+    evals_per_trial: int = 1                                         # Evaluations per GAM iteration
+    warm_start_strategy: Literal["random", "greedy", "balanced"] = "random"
+    fields_to_balance: list[str] | None = None                       # Required when strategy="balanced"
+    random_state: int = 64                                           # Random seed for reproducibility
 ```
 
 **Algorithm Details:**
 
 ```python
 def search(self) -> dict[str, Any]:
-    # Phase 1: Random exploration
-    self.evaluate_initial_random_nodes()  # Evaluate n_random_nodes
+    # Phase 1: warm-start exploration
+    self.evaluate_initial_random_nodes()  # Evaluate n_random_nodes per warm_start_strategy
 
-    # Phase 2: GAM-guided search
-    iterations_limit = ceil((max_evals - len(evaluations)) / evals_per_trial)
-    for _ in range(iterations_limit):
+    # Phase 2: GAM-guided search, bounded by both max_evals and max_iterations
+    for _ in range(self._get_gam_iterations_limit()):
         self._run_iteration()  # Train GAM, predict, evaluate best
 
     # Return best configuration
@@ -264,10 +267,10 @@ def search(self) -> dict[str, Any]:
 
 **GAM Iteration Details:**
 
-1. **Encode categorical parameters** using `LabelEncoder` (one encoder per parameter)
-2. **Train LinearGAM** on `(encoded_params, scores)` from successful evaluations
+1. **Encode parameters** using a `LabelEncoder` per varying column (constant columns dropped)
+2. **Train `LinearGAM`** on `(encoded_params, scores)` from successful evaluations, with factor terms for fully-observed categorical columns and spline terms for numeric or sparsely-observed categorical columns
 3. **Predict scores** for all remaining unevaluated configurations
-4. **Select top N** configurations with highest predictions (N = `evals_per_trial`)
+4. **Select top N** configurations with highest predictions (N = `min(evals_per_trial, remaining max_evals, remaining max_iterations)`)
 5. **Evaluate** selected configurations via `objective_function`
 6. **Update** `evaluations` and `_evaluated_combinations`
 
