@@ -23,21 +23,26 @@ def create_rag(
     """Create the configured RAG template from environment settings."""
     config = AgentConfig.from_env()
     model_id = model_id or config.model_id or getenv("MODEL_ID")
-    base_url = (base_url or get_chat_base_url() or "").rstrip("/")
+    chat_base_url = (base_url or get_chat_base_url() or "").rstrip("/")
+    embedding_base_url = getenv("MAAS_BASE_URL", "").strip().rstrip("/") or chat_base_url
     api_key = api_key or getenv("MAAS_API_KEY")
 
     if not model_id:
         raise ValueError("MODEL_ID is required for the chat model.")
-    if not base_url:
+    if not chat_base_url:
         raise ValueError("CHAT_BASE_URL or BASE_URL is required for the chat model.")
-    if not base_url.endswith("/v1"):
-        base_url += "/v1"
+    if not embedding_base_url:
+        raise ValueError("MAAS_BASE_URL is required for the embedding model.")
+    if not chat_base_url.endswith("/v1"):
+        chat_base_url += "/v1"
+    if not embedding_base_url.endswith("/v1"):
+        embedding_base_url += "/v1"
 
-    is_local = any(host in base_url for host in ["localhost", "127.0.0.1"])
+    is_local = any(host in chat_base_url for host in ["localhost", "127.0.0.1"])
     if not is_local and not api_key:
         raise ValueError("MAAS_API_KEY is required for non-local environments.")
 
-    client = OpenAI(api_key=api_key or "not-needed-for-local-development", base_url=base_url)
+    client = OpenAI(api_key=api_key or "not-needed-for-local-development", base_url=chat_base_url)
     foundation_model = OpenAIFoundationModel(
         client=client,
         model_id=model_id,
@@ -55,7 +60,7 @@ def create_rag(
         foundation_model=foundation_model,
         retriever=_initialize_retriever(
             maas_api_key=api_key,
-            maas_base_url=base_url,
+            maas_base_url=embedding_base_url,
             embedding_model_id=config.embedding_model_id,
             embedding_dimension=config.embedding_dimension,
             collection_name=config.collection_name,

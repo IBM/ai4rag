@@ -121,18 +121,21 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	SEARCH_MODE=$$(yaml_env SEARCH_MODE) && \
 	RANKER_STRATEGY=$$(yaml_env RANKER_STRATEGY) && \
 	RANKER_ALPHA=$$(yaml_env RANKER_ALPHA) && \
+	[ -f agent_config.json ] || { echo "ERROR: agent_config.json not found."; exit 1; } && \
+	AGENT_CONFIG_B64=$$(base64 < agent_config.json | tr -d '\n') && \
 	MAAS_SECRET_NAME=$$(sed -n 's/^[[:space:]]*maas_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml) && \
 	VECTOR_DB_SECRET_NAME=$${VECTOR_DB_SECRET_NAME:-$$(sed -n 's/^[[:space:]]*vector_db_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml)} && \
 	secret_value() { oc get secret "$$1" -n "$$NS" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d; } && \
 	if [ -n "$$MAAS_SECRET_NAME" ] && [ "$$MAAS_SECRET_NAME" != "__MAAS_SECRET_NAME__" ]; then \
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_BASE_URL); [ -z "$$value" ] || MAAS_BASE_URL="$$value"; \
+	  value=$$(secret_value "$$MAAS_SECRET_NAME" CHAT_BASE_URL); [ -z "$$value" ] || CHAT_BASE_URL="$$value"; \
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_API_KEY); [ -z "$$value" ] || MAAS_API_KEY="$$value"; \
 	fi && \
 	if [ -n "$$VECTOR_DB_SECRET_NAME" ] && [ "$$VECTOR_DB_SECRET_NAME" != "__VECTOR_DB_SECRET_NAME__" ]; then \
 	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD; do \
 	    value=$$(secret_value "$$VECTOR_DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
 	  done; \
-	fi && export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD
+	fi && export MAAS_BASE_URL CHAT_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD
 
 build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	@oc new-build --strategy=docker --binary \
@@ -161,6 +164,7 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	    --env "MAAS_BASE_URL=$$MAAS_BASE_URL" \
 	    --env "CHAT_BASE_URL=$${CHAT_BASE_URL:-$$BASE_URL}" \
 	    --env "MAAS_API_KEY=$$MAAS_API_KEY" \
+	    --env "AGENT_CONFIG_B64=$$AGENT_CONFIG_B64" \
 	    --env "MILVUS_URI=$$MILVUS_URI" \
 	    --env "MILVUS_TOKEN=$$MILVUS_TOKEN" \
 	    --env "PORT=8080" </dev/null & \
@@ -218,6 +222,7 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export MAAS_API_KEY="'"$$MAAS_API_KEY"'" && \
 	    export MAAS_BASE_URL="'"$$MAAS_BASE_URL"'" && \
 	    export CHAT_BASE_URL="'"$${CHAT_BASE_URL:-$$BASE_URL}"'" && \
+	    export AGENT_CONFIG_B64="'"$$AGENT_CONFIG_B64"'" && \
 	    export MILVUS_URI="'"$$MILVUS_URI"'" && \
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
 	    export MILVUS_SERVER_CERT="'"$$MILVUS_SERVER_CERT"'" && \
@@ -273,4 +278,4 @@ playground-sandbox: ## Start sandbox playground web UI (auto-fetches agent URL a
 	  echo "Auto-fetching agent URL from OpenShift Route..." && \
 	  echo "Auto-fetching SA token from Secret agent-client-token..." && \
 	  echo "" && \
-	  python playground-sandbox/app.py
+	  python playground_sandbox/app.py

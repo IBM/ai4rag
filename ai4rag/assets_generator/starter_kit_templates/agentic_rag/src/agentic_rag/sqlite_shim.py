@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 """
-Patch sqlite3 to use pysqlite3-binary if available.
+Runtime compatibility helper that patches sqlite3 to use pysqlite3-binary.
 
 Required for chromadb (used by ai4rag) when the system sqlite3 is too old.
 Must be called BEFORE importing any code that uses sqlite3.

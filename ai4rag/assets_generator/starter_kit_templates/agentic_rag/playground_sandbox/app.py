@@ -10,13 +10,13 @@ A Flask chat interface that proxies requests to the sandbox agent's
 
 Usage:
     # Start the playground (auto-fetches agent URL and SA token from OpenShift):
-    python playground-sandbox/app.py
+    python playground_sandbox/app.py
 
     # Or manually specify:
     AGENT_URL=https://rag-sandbox--agent.openshell.apps.example.com \
     AGENT_TOKEN=$(oc get secret agent-client-token -o jsonpath='{.data.token}' | base64 -d) \
     AGENT_CA_BUNDLE=/path/to/ca.crt \
-    flask --app playground-sandbox/app run --port 5002
+    flask --app playground_sandbox/app run --port 5002
 
 The app will:
 1. Auto-detect AGENT_URL from the openshell Route (if not set)

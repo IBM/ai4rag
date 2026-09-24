@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from os import getenv
 from typing import Any
 
-from sqlite_shim import patch_sqlite3
+from agentic_rag.sqlite_shim import patch_sqlite3
 
 patch_sqlite3()
 
@@ -208,7 +208,7 @@ async def health():
 
 _SANDBOX_MODE = bool(getenv("K8S_REVIEWER_TOKEN", "").strip())
 if _SANDBOX_MODE:
-    from playground_sandbox import router as sandbox_router
+    from playground_sandbox.router import router as sandbox_router
 
     app.include_router(sandbox_router)
 

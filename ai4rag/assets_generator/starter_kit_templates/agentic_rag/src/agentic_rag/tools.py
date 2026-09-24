@@ -3,13 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
-import sys
 from os import getenv
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
-
-from sqlite_shim import patch_sqlite3  # noqa: E402
+from .sqlite_shim import patch_sqlite3
 
 patch_sqlite3()
 

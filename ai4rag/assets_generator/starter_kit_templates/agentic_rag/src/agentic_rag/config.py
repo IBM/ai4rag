@@ -20,12 +20,24 @@ def _decode_template(name: str) -> str:
         raise ValueError(f"{name} must contain valid base64-encoded UTF-8 text") from exc
 
 
-def _load_agent_config_file() -> dict:
-    """Load generated, non-secret agent settings from the starter-kit file."""
+def _load_agent_config() -> dict:
+    """Load generated settings from deployment environment or a local file."""
+    encoded_config = getenv("AGENT_CONFIG_B64", "").strip()
+    if encoded_config:
+        try:
+            data = json.loads(base64.b64decode(encoded_config).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError("AGENT_CONFIG_B64 must contain valid base64-encoded JSON") from exc
+        if not isinstance(data, dict):
+            raise ValueError("AGENT_CONFIG_B64 must decode to a JSON object")
+        return data
+
+    # Local fallback keeps ``make run-app`` convenient. OpenShell deployments
+    # inject the configuration through AGENT_CONFIG_B64 instead of copying the
+    # JSON file into the sandbox.
     candidates = (
         Path.cwd() / "agent_config.json",
         Path(__file__).resolve().parents[2] / "agent_config.json",
-        Path("/sandbox/agent_config.json"),
     )
     for path in candidates:
         if path.is_file():
@@ -82,7 +94,7 @@ class AgentConfig:
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Load and validate agent configuration from environment variables."""
-        file_config = _load_agent_config_file()
+        file_config = _load_agent_config()
         generation = file_config.get("generation", {})
         prompts = file_config.get("prompts", {})
         embedding = file_config.get("embedding", {})

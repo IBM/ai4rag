@@ -49,6 +49,14 @@ class BaseRAGTemplate(ABC):
     def _build_enriched_user_message(self, question: str, **kwargs) -> tuple[list[AI4RAGChunk], str]:
         """Retrieve context for a question and render the user message."""
         reference_documents = self.retriever.retrieve(question, **kwargs)
+        return self._render_enriched_user_message(question, reference_documents)
+
+    def _render_enriched_user_message(
+        self,
+        question: str,
+        reference_documents: list[AI4RAGChunk],
+    ) -> tuple[list[AI4RAGChunk], str]:
+        """Render a user message from already retrieved context."""
         context = "\n\n".join(
             self.foundation_model.context_template_text.format(document=chunk.text, doc_number=doc_number)
             for doc_number, chunk in enumerate(reference_documents, start=1)

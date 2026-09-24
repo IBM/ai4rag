@@ -186,14 +186,27 @@ class TestGenerateStarterKit:
             assert "starter_kit/Makefile" in names
             assert "starter_kit/Containerfile.openshell" in names
             assert "starter_kit/values.yaml" in names
-            assert "starter_kit/agent.yaml" in names
+            assert "starter_kit/agent.yaml" not in names
             assert "starter_kit/agent_config.json" in names
             assert "starter_kit/src/agentic_rag/agent.py" in names
             assert "starter_kit/src/agentic_rag/tools.py" in names
+            assert "starter_kit/src/agentic_rag/sqlite_shim.py" in names
+            assert "starter_kit/sqlite_shim.py" not in names
             assert "starter_kit/src/agentic_rag/tracing.py" not in names
-            assert "starter_kit/playground-sandbox/app.py" in names
-            assert "starter_kit/playground_sandbox.py" in names
+            assert "starter_kit/playground_sandbox/app.py" in names
+            assert "starter_kit/playground_sandbox/router.py" in names
+            assert "starter_kit/src/agentic_rag/sqlite_shim.py" in names
+            assert "starter_kit/sqlite_shim.py" not in names
             assert "starter_kit/auth_wrapper.py" in names
+
+    def test_agent_config_is_injected_at_deploy_time(self, tmp_path):
+        zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            containerfile = zf.read("starter_kit/Containerfile.openshell").decode("utf-8")
+            makefile = zf.read("starter_kit/Makefile").decode("utf-8")
+
+        assert "COPY --chown=1001:0 agent_config.json /sandbox/agent_config.json" not in containerfile
+        assert "AGENT_CONFIG_B64" in makefile
 
     def test_env_example_has_filled_values(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
@@ -284,9 +297,9 @@ class TestGenerateStarterKit:
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = set(zf.namelist())
-            assert "starter_kit/playground-sandbox/app.py" in names
-            assert "starter_kit/playground-sandbox/templates/index.html" in names
-            assert "starter_kit/playground_sandbox.py" in names
+            assert "starter_kit/playground_sandbox/app.py" in names
+            assert "starter_kit/playground_sandbox/templates/index.html" in names
+            assert "starter_kit/playground_sandbox/router.py" in names
             assert "starter_kit/auth_wrapper.py" in names
             assert "starter_kit/Containerfile.openshell" in names
 

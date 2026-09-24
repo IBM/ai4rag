@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(include_in_schema=False)
 
 _BASE_DIR = Path(__file__).resolve().parent
-_SANDBOX_PLAYGROUND_HTML = _BASE_DIR / "playground-sandbox" / "templates" / "index.html"
+_SANDBOX_PLAYGROUND_HTML = _BASE_DIR / "templates" / "index.html"
 
 _PLAYGROUND_URL = getenv("PLAYGROUND_URL", "http://localhost:5002").rstrip("/")
 _SANDBOX_MODE = bool(getenv("K8S_REVIEWER_TOKEN", "").strip())

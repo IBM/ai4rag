@@ -35,6 +35,8 @@ make deploy-openshell
 
 `make deploy-openshell` creates and configures the sandbox, starts the agent, and exposes it through an OpenShift route.
 
+The generated `agent_config.json` stays in the starter-kit and is injected into the sandbox automatically during deployment. You can edit values such as `temperature` or `system_message` and rerun `make deploy-openshell` without rebuilding the image. Rebuild the image only after changing application code or dependencies.
+
 ## API and Swagger
 
 After deployment, the Swagger/OpenAPI documentation is available at

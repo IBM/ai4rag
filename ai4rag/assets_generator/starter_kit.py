@@ -11,7 +11,7 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-_CONFIGURABLE_FILES = {"values.yaml", "agent.yaml", "agent_config.json"}
+_CONFIGURABLE_FILES = {"values.yaml", "agent_config.json"}
 _IGNORED_TEMPLATE_NAMES = {".DS_Store", ".env", ".venv", "__pycache__"}
 
 _PROVIDER_BLOCK_PATTERN = re.compile(
