@@ -11,6 +11,7 @@ from ai4rag.utils.data.text_extraction import (
     ExtractionResult,
     _build_docling_format_options,
     _effective_worker_count,
+    _make_s3_client,
     _raise_if_threshold_exceeded,
     _resolve_artifacts_path,
     _resolve_s3_credentials,
@@ -136,6 +137,50 @@ class TestResolveS3Credentials:
             region=None,
         )
         assert creds["AWS_DEFAULT_REGION"] is None
+
+
+# ---------------------------------------------------------------------------
+# _make_s3_client
+# ---------------------------------------------------------------------------
+
+
+class TestMakeS3Client:
+    """Tests for shared-factory S3 client construction."""
+
+    def test_delegates_to_shared_factory_with_explicit_credentials(self, mocker):
+        """Extraction must use the same client factory as document discovery."""
+        client = mocker.MagicMock()
+        create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client", return_value=client)
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": "us-east-1",
+        }
+
+        assert _make_s3_client(credentials) is client
+
+        create.assert_called_once_with(
+            endpoint_url="https://s3.example.com",
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+            region_name="us-east-1",
+            verify=True,
+        )
+
+    def test_forwards_tls_verification_setting_to_shared_factory(self, mocker):
+        """The existing SSL fallback must request an unverified retry client."""
+        create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client")
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": None,
+        }
+
+        _make_s3_client(credentials, verify=False)
+
+        assert create.call_args.kwargs["verify"] is False
 
 
 # ---------------------------------------------------------------------------
