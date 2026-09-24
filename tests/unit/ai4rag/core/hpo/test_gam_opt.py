@@ -18,9 +18,11 @@ class TestGAMOptSettings:
 
     def test_gam_opt_settings_creation_with_defaults(self):
         """Test that GAMOptSettings can be instantiated with default values."""
-        settings = GAMOptSettings()
+        with pytest.raises(TypeError, match="max_evals"):
+            GAMOptSettings()
 
-        assert settings.max_evals is None
+        settings = GAMOptSettings(max_evals=10)
+        assert settings.max_evals == 10
         assert settings.n_random_nodes == 4
         assert settings.evals_per_trial == 1
         assert settings.random_state == 64
@@ -132,24 +134,6 @@ class TestGAMOptimizer:
         assert optimizer.evaluations == []
         assert optimizer._evaluated_combinations == []
         assert optimizer._typed_encoders_with_columns == []
-
-    def test_omitted_max_evals_evaluates_entire_search_space(self, mock_search_space, mocker):
-        """An omitted evaluation limit uses every available search-space combination."""
-        mock_gam = MagicMock()
-        mock_gam.predict.return_value = np.array([0.5] * mock_search_space.max_combinations)
-        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
-        objective = MagicMock(return_value=0.5)
-        optimizer = GAMOptimizer(
-            objective_function=objective,
-            search_space=mock_search_space,
-            settings=GAMOptSettings(n_random_nodes=2),
-        )
-
-        optimizer.search()
-
-        assert optimizer.max_evals == mock_search_space.max_combinations
-        assert objective.call_count == mock_search_space.max_combinations
-        assert len(optimizer.evaluations) == mock_search_space.max_combinations
 
     def test_balanced_strategy_rejects_unknown_balance_fields(self, mock_search_space):
         """Balanced warm starts fail fast when a requested field is not searchable."""
@@ -322,6 +306,25 @@ class TestGAMOptimizer:
         iterations_limit = optimizer._get_iterations_limit()
         # ceil((6 - 4) / 2) = ceil(1) = 1
         assert iterations_limit == 1
+
+    def test_random_strategy_respects_max_iterations_output_budget(self, mock_search_space, mocker):
+        """The default strategy schedules only the GAM slots left after warm start."""
+        mock_gam = MagicMock()
+        mock_gam.predict.side_effect = lambda data: np.full(len(data), 0.5)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+        objective = MagicMock(return_value=0.5)
+        optimizer = GAMOptimizer(
+            objective_function=objective,
+            search_space=mock_search_space,
+            settings=GAMOptSettings(max_evals=6, max_iterations=3, n_random_nodes=1),
+        )
+
+        optimizer.search()
+
+        # One successful warm-start result consumes one publication slot, so only
+        # two GAM candidates are evaluated despite four remaining max_evals slots.
+        assert objective.call_count == 3
+        assert len(optimizer.evaluations) == 3
 
     def test_evaluate_initial_random_nodes(self, mock_search_space, optimizer_settings):
         """Test the evaluate_initial_random_nodes method."""
@@ -1577,7 +1580,7 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode has 2 unique values, method has 4, size has 4 → max_unique=4
         # min_required = max(4, 2*4) = 8
-        # max_iterations=20 allocates two warm-start outputs and 18 GAM outputs.
+        # The best warm start uses one output slot; GAM fills the remaining 19 slots.
         mock_space.combinations = [
             {"search_mode": m, "method": x, "size": s}
             for m in ["vector", "hybrid"]
@@ -1616,16 +1619,16 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        expected_gam_iters = 9  # ceil((20 output - 2 warm-start slots) / 2 per trial)
+        expected_gam_iters = 10  # ceil((20 output - 1 warm-start slot) / 2 per trial)
         assert len(run_iteration_calls) == expected_gam_iters
-        assert optimizer.objective_function.call_count == effective_warm_start + 18
+        assert optimizer.objective_function.call_count == effective_warm_start + 19
 
     def test_balanced_search_runs_gam_iterations_after_warm_start(self, mocker):
         """Balanced search fills output slots after its coverage warm start."""
         mock_space = MagicMock(spec=SearchSpace)
         # search_mode has 2 unique values, method has 20 unique values
         # min_required = max(4, 2_balanced_tuples, 20_non_balanced) = 20
-        # max_iterations=12 allocates five warm-start outputs and seven GAM outputs.
+        # The best warm start uses one output slot; GAM fills the remaining 11 slots.
         mock_space.combinations = [
             {"search_mode": m, "method": f"x{i}"} for m in ["vector", "hybrid"] for i in range(20)
         ]
@@ -1661,7 +1664,7 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        assert len(run_iteration_calls) == 7
+        assert len(run_iteration_calls) == 11
 
     def test_greedy_search_caps_partial_gam_trial_at_max_evals(self, mocker):
         """A final GAM trial evaluates only the capacity remaining in max_evals."""
@@ -1695,51 +1698,6 @@ class TestGreedyBalancedWarmStartAutoAdjust:
 
         assert objective.call_count == 10
         assert len(optimizer.evaluations) == 10
-
-    # ------------------------------------------------------------------
-    # Trim to top max_evals by score
-    # ------------------------------------------------------------------
-
-    def test_trim_evaluations_to_top_keeps_best(self):
-        """_trim_evaluations_to_top retains the top n by score and discards the rest."""
-        mock_space = self._make_space()
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=4, warm_start_strategy="greedy")
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(return_value=0.5),
-            search_space=mock_space,
-            settings=settings,
-        )
-        optimizer.evaluations = [
-            {"search_mode": "vector", "method": "a", "score": 0.9},
-            {"search_mode": "vector", "method": "b", "score": 0.3},
-            {"search_mode": "hybrid", "method": "a", "score": 0.7},
-            {"search_mode": "hybrid", "method": "b", "score": 0.5},
-            {"search_mode": "vector", "method": "c", "score": 0.1},
-            {"search_mode": "vector", "method": "d", "score": 0.8},
-            {"search_mode": "hybrid", "method": "c", "score": 0.6},
-        ]
-        optimizer._trim_evaluations_to_top(3)
-        assert len(optimizer.evaluations) == 3
-        scores = [e["score"] for e in optimizer.evaluations]
-        assert scores == [0.9, 0.8, 0.7]
-
-    def test_trim_evaluations_discards_failed_evaluations(self):
-        """_trim_evaluations_to_top drops entries with score=None."""
-        mock_space = self._make_space()
-        settings = GAMOptSettings(max_evals=5, n_random_nodes=4, warm_start_strategy="greedy")
-        optimizer = GAMOptimizer(
-            objective_function=MagicMock(return_value=0.5),
-            search_space=mock_space,
-            settings=settings,
-        )
-        optimizer.evaluations = [
-            {"search_mode": "vector", "method": "a", "score": 0.9},
-            {"search_mode": "vector", "method": "b", "score": None},
-            {"search_mode": "hybrid", "method": "a", "score": 0.7},
-        ]
-        optimizer._trim_evaluations_to_top(5)
-        assert all(e["score"] is not None for e in optimizer.evaluations)
-        assert len(optimizer.evaluations) == 2
 
     def test_greedy_search_when_max_evals_smaller_than_min_required(self, mocker):
         """A small output limit does not cap the required warm-start evaluations."""
@@ -1777,9 +1735,9 @@ class TestGreedyBalancedWarmStartAutoAdjust:
         optimizer._run_iteration = counting_run
         optimizer.search()
 
-        assert len(run_iteration_calls) == 2
-        assert optimizer.objective_function.call_count == 10
-        assert len(optimizer.evaluations) == settings.max_iterations
+        assert len(run_iteration_calls) == 3
+        assert optimizer.objective_function.call_count == 11
+        assert len(optimizer.evaluations) == 11
 
     def test_greedy_search_does_not_exceed_max_evals(self, mocker):
         """The greedy coverage target never causes more than max_evals objective calls."""
@@ -1809,5 +1767,4 @@ class TestGreedyBalancedWarmStartAutoAdjust:
 
         assert call_count[0] == settings.max_evals
         assert len(optimizer.evaluations) <= 10
-        scores = [e["score"] for e in optimizer.evaluations]
-        assert scores == sorted(scores, reverse=True), "Evaluations should be sorted best-first"
+        assert len(optimizer.evaluations) == settings.max_evals

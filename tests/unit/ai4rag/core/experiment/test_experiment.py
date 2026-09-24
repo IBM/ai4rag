@@ -267,6 +267,20 @@ class TestGAMPatternPublication:
         experiment._optimization_phase = "warm_start"
         assert experiment._create_pattern_name() == "Pattern1-warm-start"
         experiment._optimization_phase = "gam"
+        assert experiment._create_pattern_name() == "Pattern1"
+
+        experiment.results.add_evaluation(
+            [],
+            EvaluationResult(
+                pattern_name="Pattern1-warm-start",
+                collection="collection",
+                indexing_params={},
+                rag_params={},
+                scores={"metrics": [], "question_scores": []},
+                execution_time=0.0,
+                final_score=0.5,
+            ),
+        )
         assert experiment._create_pattern_name() == "Pattern2"
 
 

@@ -102,10 +102,9 @@ class GAMOptSettings(OptimizerSettings):
 
     Parameters
     ----------
-    max_evals : int | None, default=None
+    max_evals : int
         Maximum number of objective-function evaluations performed during
-        optimization, including warm-start and GAM evaluations. When omitted,
-        every available search-space combination is evaluated.
+        optimization, including warm-start and GAM evaluations.
     max_iterations : int | None, default=None
         Maximum number of evaluated RAG patterns retained and published when the
         search completes. It controls the warm-start/GAM output allocation, not
@@ -139,7 +138,6 @@ class GAMOptSettings(OptimizerSettings):
         (GAM training is deterministic).
     """
 
-    max_evals: int | None = None
     max_iterations: int | None = None
     n_random_nodes: int = 4
     evals_per_trial: int = 1
@@ -210,19 +208,17 @@ class GAMOptimizer(BaseOptimizer):
         self._evaluated_combinations = []
         self._typed_encoders_with_columns: list[tuple[str, LabelEncoder]] = []
         self.warm_start_evaluation_count: int = 0
+        self._remaining_gam_output_capacity: int | None = None
         self.current_phase = "idle"
 
         if known_observations:
             self._load_known_observations(known_observations)
+        self._known_observation_count = len(self.evaluations)
 
         self._validate_fields_to_balance()
         self._validate_n_random_nodes()
 
-        self.max_evals = (
-            self._search_space.max_combinations
-            if self.settings.max_evals is None
-            else min(self.settings.max_evals, self._search_space.max_combinations)
-        )
+        self.max_evals = min(self.settings.max_evals, self._search_space.max_combinations)
         self.max_iterations = self.settings.max_iterations
 
     @property
@@ -266,22 +262,18 @@ class GAMOptimizer(BaseOptimizer):
         self.current_phase = "warm_start"
         self.evaluate_initial_random_nodes()
 
-        strategy = self.settings.warm_start_strategy
         self.current_phase = "gam"
         if len(self.evaluations) >= self.max_evals:
             logger.info(
                 "All %d allowed evaluations were consumed by the warm-start phase; GAM iterations will be skipped.",
                 self.max_evals,
             )
-        if strategy in ("greedy", "balanced"):
-            for _ in range(self._get_coverage_aware_gam_iterations_limit()):
+        self._remaining_gam_output_capacity = max(0, self.max_iterations - self.warm_start_output_count)
+        try:
+            for _ in range(self._get_gam_iterations_limit()):
                 self._run_iteration()
-        else:
-            iterations_limit = self._get_iterations_limit()
-            for _ in range(iterations_limit):
-                self._run_iteration()
-
-        self._trim_evaluations_to_top(self.max_iterations)
+        finally:
+            self._remaining_gam_output_capacity = None
 
         self.current_phase = "complete"
 
@@ -303,19 +295,17 @@ class GAMOptimizer(BaseOptimizer):
         iterations_limit = ceil((self.max_evals - len(self.evaluations)) / self.settings.evals_per_trial)
         return max(0, iterations_limit)
 
-    def _get_coverage_aware_gam_iterations_limit(self) -> int:
-        """Return the GAM iteration count after reserving warm-start output capacity."""
-        warm_start_output_count = self.warm_start_output_count
-        gam_output_count = max(0, self.max_iterations - warm_start_output_count)
+    def _get_gam_iterations_limit(self) -> int:
+        """Return GAM iteration count after reserving the actual warm-start output slot."""
+        gam_output_count = max(0, self.max_iterations - self.warm_start_output_count)
         gam_iterations = ceil(gam_output_count / self.settings.evals_per_trial)
         return min(gam_iterations, self._get_iterations_limit())
 
     @property
     def warm_start_output_count(self) -> int:
-        """Return the number of result slots reserved for warm-start evaluations."""
-        if self.settings.warm_start_strategy in ("greedy", "balanced"):
-            return min(self.max_iterations, self._compute_warm_start_effective_target() // 4)
-        return min(self.max_iterations, 1)
+        """Return one slot only when this run produced a publishable warm-start result."""
+        warm_start_evaluations = self.evaluations[self._known_observation_count : self.warm_start_evaluation_count]
+        return int(any(evaluation.get("score") is not None for evaluation in warm_start_evaluations))
 
     def _validate_n_random_nodes(self) -> None:
         """Log a warning when n_random_nodes is below the required minimum for the strategy.
@@ -795,24 +785,19 @@ class GAMOptimizer(BaseOptimizer):
         best_predictions = sorted(remaining_evaluations, key=lambda d: d["score"], reverse=True)
 
         remaining_evaluation_capacity = max(0, self.max_evals - len(self.evaluations))
-        for params in best_predictions[: min(self.settings.evals_per_trial, remaining_evaluation_capacity)]:
+        output_capacity = (
+            self.settings.evals_per_trial
+            if self._remaining_gam_output_capacity is None
+            else self._remaining_gam_output_capacity
+        )
+        n_to_evaluate = min(self.settings.evals_per_trial, remaining_evaluation_capacity, output_capacity)
+        for params in best_predictions[:n_to_evaluate]:
             params.pop("score", None)
             score = self._objective_function(params)
             self._evaluated_combinations.append(params)
             self.evaluations.append(params | {"score": score})
-
-    def _trim_evaluations_to_top(self, n: int) -> None:
-        """Trim self.evaluations to the top n successful entries by score.
-
-        Failed evaluations (score is None) are discarded. Successful evaluations
-        are sorted descending by score and only the top n are retained.
-        """
-        successful = sorted(
-            [e for e in self.evaluations if e.get("score") is not None],
-            key=lambda d: d["score"],
-            reverse=True,
-        )
-        self.evaluations = successful[:n]
+        if self._remaining_gam_output_capacity is not None:
+            self._remaining_gam_output_capacity -= n_to_evaluate
 
     @staticmethod
     def _get_remaining_evaluations(all_combinations: list[dict], evaluations: list[dict]) -> list[dict]:

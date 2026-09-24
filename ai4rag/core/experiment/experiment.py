@@ -610,11 +610,6 @@ class AI4RAGExperiment:
         )
 
         iteration = len(self.results) + (len(self.known_observations) if self.known_observations else 0)
-        self.results.add_evaluation(
-            evaluation_data=evaluation_data,
-            evaluation_result=evaluation_result,
-        )
-
         if publish_pattern:
             try:
                 self._stream_finished_pattern(
@@ -624,6 +619,11 @@ class AI4RAGExperiment:
                 )
             except Exception as exc:
                 raise AssetSaveError(exc) from exc
+
+        self.results.add_evaluation(
+            evaluation_data=evaluation_data,
+            evaluation_result=evaluation_result,
+        )
 
         return final_score
 
@@ -991,6 +991,10 @@ class AI4RAGExperiment:
             return f"Pattern{warm_start_count + 1}-warm-start"
         if self._optimization_phase == "gam":
             gam_count = sum(not result.pattern_name.endswith("-warm-start") for result in self.results)
-            return f"Pattern{gam_count + 2}"
+            has_successful_warm_start = any(
+                result.pattern_name.endswith("-warm-start") and result.final_score is not None
+                for result in self.results
+            )
+            return f"Pattern{gam_count + 1 + int(has_successful_warm_start)}"
         n_known = len(self.known_observations) if self.known_observations else 0
         return f"Pattern{n_known + len(self.results) + 1}"
