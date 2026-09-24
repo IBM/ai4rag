@@ -85,6 +85,9 @@ class TestDisconnectedClusterDocumentation:
         assert "Appendix" in full_text, "Notebook must include an appendix section"
         assert "Model-backed formats or features" in full_text
         assert "Do not use a `.txt` file as an artifact-validation trigger" in full_text
+        assert "docling-tools models download" in full_text
+        assert "oc rsync ~/.cache/docling/models/" in full_text
+        assert "DOCLING_ARTIFACTS_PATH=/opt/app-root/docling-artifacts" in full_text
         assert 'suffix=".txt"' not in full_text
         assert "download all Docling artifacts" not in full_text
         assert "rsync -av" not in full_text
