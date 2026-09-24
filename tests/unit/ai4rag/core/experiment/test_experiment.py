@@ -7,7 +7,9 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from ai4rag.core.experiment.results import EvaluationResult
 from ai4rag.core.experiment.utils import merge_evaluation_results
+from ai4rag.core.hpo.gam_opt import GAMOptSettings
 from ai4rag.evaluator.base_evaluator import (
     AggregateMetric,
     BaseEvaluator,
@@ -20,6 +22,9 @@ from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
+from ai4rag.search_space.src.parameter import Parameter
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+from ai4rag.utils.constants import AI4RAGParamNames
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -183,6 +188,179 @@ class TestMetricEvaluatorValidation:
     def test_judge_metric_with_judge_evaluator_passes(self):
         evals = [UnitxtEvaluator(), _make_llmaj_evaluator()]
         _build_experiment(evaluators=evals, optimization_metric=Metrics.JUDGE_ANSWER_RELEVANCE)
+
+
+class TestGAMPatternPublication:
+    """Final GAM reporting publishes only the selected warm-start result."""
+
+    def test_publishes_best_experiment_results_in_score_order(self, mocker):
+        experiment = _build_experiment()
+        for index, (name, score) in enumerate(
+            (
+                ("Pattern1-warm-start", 0.7),
+                ("Pattern2-warm-start", 0.9),
+                ("Pattern2", 0.2),
+                ("Pattern3", 0.8),
+            )
+        ):
+            experiment.results.add_evaluation(
+                [],
+                EvaluationResult(
+                    pattern_name=name,
+                    collection="collection",
+                    indexing_params={},
+                    rag_params={},
+                    scores={"metrics": [], "question_scores": []},
+                    execution_time=0.0,
+                    final_score=score,
+                ),
+            )
+        publish = mocker.patch.object(experiment, "_stream_finished_pattern")
+
+        experiment._publish_best_warm_start_pattern()
+
+        assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9]
+        assert publish.call_args_list[0].kwargs["pattern_name"] == "Pattern1"
+        assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0]
+        published_patterns = pd.DataFrame(
+            [
+                {
+                    "source_pattern": call.kwargs["evaluation_result"].pattern_name,
+                    "published_pattern": call.kwargs.get("pattern_name")
+                    or call.kwargs["evaluation_result"].pattern_name,
+                    "score": call.kwargs["evaluation_result"].final_score,
+                }
+                for call in publish.call_args_list
+            ]
+        )
+        print(f"\nPublished patterns:\n{published_patterns.to_string(index=False)}")
+
+    def test_does_not_publish_an_unscored_warm_start_candidate(self, mocker):
+        """A failed warm-start candidate cannot become final Pattern1."""
+        experiment = _build_experiment()
+        for name, score in (
+            ("Pattern1-warm-start", None),
+            ("Pattern2", 0.8),
+        ):
+            experiment.results.add_evaluation(
+                [],
+                EvaluationResult(
+                    pattern_name=name,
+                    collection="collection",
+                    indexing_params={},
+                    rag_params={},
+                    scores={"metrics": [], "question_scores": []},
+                    execution_time=0.0,
+                    final_score=score,
+                ),
+            )
+
+        publish = mocker.patch.object(experiment, "_stream_finished_pattern")
+        experiment._publish_best_warm_start_pattern()
+
+        publish.assert_not_called()
+
+    def test_marks_warm_start_pattern_names(self):
+        """Warm-start candidate names retain their phase in final artifacts."""
+        experiment = _build_experiment()
+
+        experiment._optimization_phase = "warm_start"
+        assert experiment._create_pattern_name() == "Pattern1-warm-start"
+        experiment._optimization_phase = "gam"
+        assert experiment._create_pattern_name() == "Pattern2"
+
+
+class TestMultiModelGAMExperiment:
+    """GAM experiment coverage for multiple foundation and embedding models."""
+
+    def test_runs_with_three_embedding_models_and_two_foundation_models(self, mocker):
+        """A failed model does not prevent balanced warm-start coverage of responding models."""
+        from ai4rag.core.experiment.exception_handler import GenerationError
+        from ai4rag.core.experiment.experiment import AI4RAGExperiment
+
+        foundation_models = [MagicMock(model_id=f"llm-{index}") for index in range(2)]
+        embedding_models = [MagicMock(model_id=f"embedding-{index}", params={}) for index in range(3)]
+        search_space = AI4RAGSearchSpace(
+            params=[
+                Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models),
+                Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models),
+            ]
+        )
+        experiment = AI4RAGExperiment(
+            documents=[],
+            benchmark_data=_BENCHMARK_DF,
+            search_space=search_space,
+            vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),
+            optimizer_settings=GAMOptSettings(
+                max_evals=15,
+                max_iterations=7,
+                n_random_nodes=6,
+                warm_start_strategy="balanced",
+                fields_to_balance=[
+                    AI4RAGParamNames.FOUNDATION_MODEL,
+                    AI4RAGParamNames.EMBEDDING_MODEL,
+                ],
+            ),
+            event_handler=MagicMock(),
+            n_mps_foundation_models=2,
+            n_mps_embedding_models=3,
+        )
+        mock_gam = MagicMock()
+        mock_gam.predict.side_effect = lambda values: [0.5] * len(values)
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+        failed_models = []
+        evaluated_phases = []
+
+        def evaluate_pattern(params, **_):
+            evaluated_phases.append(experiment._optimization_phase)
+            foundation_model = params[AI4RAGParamNames.FOUNDATION_MODEL]
+            if foundation_model.model_id == "llm-0":
+                failed_models.append(foundation_model.model_id)
+                raise GenerationError(ConnectionError("model is unavailable"), foundation_model.model_id)
+            return 0.5
+
+        evaluate = mocker.patch.object(experiment, "run_single_evaluation", side_effect=evaluate_pattern)
+
+        experiment.search()
+
+        assert evaluate.call_count == 15
+        evaluated_pairs = {
+            (
+                call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id,
+                call.args[0][AI4RAGParamNames.EMBEDDING_MODEL].model_id,
+            )
+            for call in evaluate.call_args_list[:6]
+        }
+        assert evaluated_pairs == {
+            (foundation_model.model_id, embedding_model.model_id)
+            for foundation_model in foundation_models
+            for embedding_model in embedding_models
+        }
+        assert failed_models
+        assert set(failed_models) == {"llm-0"}
+        assert any(
+            call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id == "llm-1" for call in evaluate.call_args_list
+        )
+        pattern_rows = []
+        warm_start_count = 0
+        gam_count = 0
+        for call, phase in zip(evaluate.call_args_list, evaluated_phases):
+            if phase == "warm_start":
+                warm_start_count += 1
+                pattern_name = f"Pattern{warm_start_count}-warm-start"
+            else:
+                gam_count += 1
+                pattern_name = f"Pattern{gam_count + 1}"
+            pattern_rows.append(
+                {
+                    "pattern_name": pattern_name,
+                    "foundation_model": call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id,
+                    "embedding_model": call.args[0][AI4RAGParamNames.EMBEDDING_MODEL].model_id,
+                    "score": (None if call.args[0][AI4RAGParamNames.FOUNDATION_MODEL].model_id == "llm-0" else 0.5),
+                }
+            )
+        patterns = pd.DataFrame(pattern_rows)
+        print(f"\nEvaluated patterns:\n{patterns.to_string(index=False)}")
 
 
 class TestResolveOptimizationScore:

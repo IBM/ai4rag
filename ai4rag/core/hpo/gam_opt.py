@@ -3,14 +3,17 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import random
+from collections import defaultdict, deque
 from copy import copy
 from dataclasses import dataclass
 from math import ceil
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import numpy as np
 import pandas as pd
 from pygam import LinearGAM
+from pygam import f as gam_f
+from pygam import s as gam_s
 from sklearn.preprocessing import LabelEncoder
 
 from ai4rag import logger
@@ -18,6 +21,76 @@ from ai4rag.core.hpo.base_optimizer import BaseOptimizer, FailedIterationError, 
 from ai4rag.search_space.src.search_space import SearchSpace
 
 __all__ = ["GAMOptSettings", "GAMOptimizer"]
+
+
+def _serialize_dict_col(series: pd.Series) -> pd.Series:
+    """Serialize model-valued cells to their model_id string.
+
+    Handles both dict-valued models ({"model_id": "..."}, production) and
+    model object instances with a model_id attribute (tests / direct API use).
+    """
+
+    def _needs_serialization(x: object) -> bool:
+        return isinstance(x, dict) or hasattr(x, "model_id")
+
+    def _to_model_id(x: object) -> object:
+        if isinstance(x, dict):
+            return x.get("model_id", str(x))
+        if hasattr(x, "model_id"):
+            return x.model_id
+        return x
+
+    if series.apply(_needs_serialization).any():
+        return series.apply(_to_model_id)
+    return series
+
+
+def _round_robin(combinations: list[dict], key_fn: Callable[[dict], Any]) -> list[dict]:
+    """Re-order combinations by round-robin across buckets determined by key_fn."""
+    buckets: dict[Any, deque] = defaultdict(deque)
+    for c in combinations:
+        buckets[key_fn(c)].append(c)
+    bucket_list = list(buckets.values())
+    balanced: list[dict] = []
+    i = 0
+    while bucket_list:
+        idx = i % len(bucket_list)
+        bucket = bucket_list[idx]
+        if bucket:
+            balanced.append(bucket.popleft())
+            i += 1
+        else:
+            bucket_list.pop(idx)
+    return balanced
+
+
+def _str_val(v: object) -> str:
+    """Normalize any cell value to a string key (handles model objects and plain strings)."""
+    if v is None:
+        return "__none__"
+    if isinstance(v, dict):
+        return v.get("model_id", str(v))
+    if hasattr(v, "model_id"):
+        return v.model_id
+    return str(v)
+
+
+def _get_discrete_column_values(combinations: list[dict]) -> dict[str, set[str]]:
+    """Return {col: set_of_str_values} for all discrete columns in the combinations.
+
+    All parameter types are included — strings, model objects, numeric values — so
+    that coverage tracking works for columns like chunk_size and chunk_overlap as
+    well as string columns like chunking_method or search_mode.
+    """
+    if not combinations:
+        return {}
+    result: dict[str, set[str]] = {}
+    for col in combinations[0]:
+        sample = next((c.get(col) for c in combinations if c.get(col) is not None), None)
+        if sample is None:
+            continue
+        result[col] = {_str_val(c.get(col)) for c in combinations}
+    return result
 
 
 @dataclass
@@ -29,27 +102,67 @@ class GAMOptSettings(OptimizerSettings):
 
     Parameters
     ----------
-    max_evals : int
-        Maximum number of evaluations performed during optimization process.
+    max_evals : int | None, default=None
+        Maximum number of objective-function evaluations performed during
+        optimization, including warm-start and GAM evaluations. When omitted,
+        every available search-space combination is evaluated.
+    max_iterations : int | None, default=None
+        Maximum number of evaluated RAG patterns retained and published when the
+        search completes. It controls the warm-start/GAM output allocation, not
+        the hard evaluation budget; use ``max_evals`` to bound objective-function
+        calls. When omitted, it is set to the effective ``max_evals`` value. It
+        cannot exceed an explicitly configured ``max_evals``.
     n_random_nodes : int, default=4
         Number of random configurations to evaluate before starting GAM iterations.
-        The initial sample is stratified: for every string-valued categorical
-        parameter (e.g. ``search_mode``, ``chunking_method``, ``ranker_strategy``),
-        at least one configuration for each unique value is guaranteed to appear
-        before the random fill, regardless of raw search space imbalance.
-        Integer/float parameters are not stratified.  Set this to at least the
-        number of unique values of the most varied string parameter to guarantee
-        full categorical coverage; a warning is emitted when the value is too small.
     evals_per_trial : int, default=1
         Number of configurations to evaluate per GAM iteration.
+    warm_start_strategy : {"random", "greedy", "balanced"}, default="random"
+        Controls how the initial n_random_nodes observations are selected/ordered.
+        "random"   — shuffle the candidate list and take the first n as-is.
+        "greedy"   — greedily pick combinations so every discrete column value
+                     appears at least twice. If n_random_nodes is below the
+                     computed minimum (min_required), the warm start is
+                     auto-adjusted upward to meet coverage. One output slot is
+                     allocated per four effective warm-start evaluations; GAM
+                     fills the remaining ``max_iterations`` slots.
+        "balanced" — round-robin across the tuple of fields_to_balance values;
+                     non-balanced discrete column values each appear at least once.
+                     Requires fields_to_balance to be set. Same auto-adjustment,
+                     and output allocation rules as "greedy".
+    fields_to_balance : list[str] | None, default=None
+        Field names to balance by round-robin when warm_start_strategy="balanced".
+        Each unique value combination of these fields is guaranteed to appear at
+        least once in the first n_random_nodes evaluations.
     random_state : int, default=64
         Inherited from OptimizerSettings. Controls shuffle order of initial
         random exploration phase. Does NOT control GAM model randomness
         (GAM training is deterministic).
     """
 
+    max_evals: int | None = None
+    max_iterations: int | None = None
     n_random_nodes: int = 4
     evals_per_trial: int = 1
+    warm_start_strategy: Literal["random", "greedy", "balanced"] = "random"
+    fields_to_balance: list[str] | None = None
+
+    def __post_init__(self) -> None:
+        if self.n_random_nodes < 1:
+            raise ValueError("n_random_nodes must be at least 1.")
+        if self.evals_per_trial < 1:
+            raise ValueError("evals_per_trial must be at least 1.")
+        valid = {"random", "greedy", "balanced"}
+        if self.warm_start_strategy not in valid:
+            raise ValueError(
+                f"warm_start_strategy must be one of {sorted(valid)}; " f"got {self.warm_start_strategy!r}."
+            )
+        if self.warm_start_strategy == "balanced" and not self.fields_to_balance:
+            raise ValueError("fields_to_balance must be a non-empty list when warm_start_strategy='balanced'.")
+        if self.max_iterations is not None:
+            if self.max_iterations < 1:
+                raise ValueError("max_iterations must be at least 1 when provided.")
+            if self.max_evals is not None and self.max_iterations > self.max_evals:
+                raise ValueError("max_iterations cannot exceed max_evals.")
 
 
 class GAMOptimizer(BaseOptimizer):
@@ -79,7 +192,9 @@ class GAMOptimizer(BaseOptimizer):
         Already evaluated hyperparameters combinations with corresponding score.
 
     max_iterations : int
-        Validated maximum number of iterations during HPO.
+        Effective maximum number of evaluated patterns retained as search results
+        and published to the event handler. This is bounded by ``max_evals`` and
+        the number of available search-space combinations.
     """
 
     def __init__(
@@ -93,32 +208,43 @@ class GAMOptimizer(BaseOptimizer):
         self.settings = settings
         self.evaluations = []
         self._evaluated_combinations = []
-        self._encoders_with_columns: list[tuple[str, LabelEncoder]] = []
+        self._typed_encoders_with_columns: list[tuple[str, LabelEncoder]] = []
+        self.warm_start_evaluation_count: int = 0
+        self.current_phase = "idle"
 
         if known_observations:
             self._load_known_observations(known_observations)
 
-        self.max_iterations = self.settings.max_evals
+        self._validate_fields_to_balance()
+        self._validate_n_random_nodes()
+
+        self.max_evals = (
+            self._search_space.max_combinations
+            if self.settings.max_evals is None
+            else min(self.settings.max_evals, self._search_space.max_combinations)
+        )
+        self.max_iterations = self.settings.max_iterations
 
     @property
     def max_iterations(self) -> int:
-        """Get max possible number of iterations for the HPO."""
+        """Get the effective maximum number of retained result patterns."""
         return self._max_iterations
 
     @max_iterations.setter
-    def max_iterations(self, val: int) -> None:
-        """Set maximum number of iterations that should be performed during HPO."""
+    def max_iterations(self, val: int | None) -> None:
+        """Set maximum number of result patterns retained after HPO."""
         max_comb = self._search_space.max_combinations
-        if val > max_comb:
+        if val is None:
+            self._max_iterations = self.max_evals
+            return
+        max_results = min(self.max_evals, max_comb)
+        if val > max_results:
             logger.info(
-                (
-                    "'max_number_of_rag_patterns' exceeded number of possible combinations: %s. "
-                    "Setting 'max_number_of_rag_patterns' to: %s"
-                ),
-                max_comb,
-                max_comb,
+                "'max_iterations' exceeded the available evaluation budget: %s. Setting 'max_iterations' to: %s",
+                max_results,
+                max_results,
             )
-            self._max_iterations = max_comb
+            self._max_iterations = max_results
         else:
             self._max_iterations = val
 
@@ -137,12 +263,27 @@ class GAMOptimizer(BaseOptimizer):
         OptimizationError
             When there were no successful evaluations for given constraints.
         """
+        self.current_phase = "warm_start"
         self.evaluate_initial_random_nodes()
 
-        iterations_limit = self._get_iterations_limit()
+        strategy = self.settings.warm_start_strategy
+        self.current_phase = "gam"
+        if len(self.evaluations) >= self.max_evals:
+            logger.info(
+                "All %d allowed evaluations were consumed by the warm-start phase; GAM iterations will be skipped.",
+                self.max_evals,
+            )
+        if strategy in ("greedy", "balanced"):
+            for _ in range(self._get_coverage_aware_gam_iterations_limit()):
+                self._run_iteration()
+        else:
+            iterations_limit = self._get_iterations_limit()
+            for _ in range(iterations_limit):
+                self._run_iteration()
 
-        for _ in range(iterations_limit):
-            self._run_iteration()
+        self._trim_evaluations_to_top(self.max_iterations)
+
+        self.current_phase = "complete"
 
         successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
         if not successful_evaluations:
@@ -159,8 +300,139 @@ class GAMOptimizer(BaseOptimizer):
         Calculate maximum number of iterations that can be proceeded based on the
         already evaluated random nodes and settings for the optimizer.
         """
-        iterations_limit = ceil((self.max_iterations - len(self.evaluations)) / self.settings.evals_per_trial)
-        return iterations_limit
+        iterations_limit = ceil((self.max_evals - len(self.evaluations)) / self.settings.evals_per_trial)
+        return max(0, iterations_limit)
+
+    def _get_coverage_aware_gam_iterations_limit(self) -> int:
+        """Return the GAM iteration count after reserving warm-start output capacity."""
+        warm_start_output_count = self.warm_start_output_count
+        gam_output_count = max(0, self.max_iterations - warm_start_output_count)
+        gam_iterations = ceil(gam_output_count / self.settings.evals_per_trial)
+        return min(gam_iterations, self._get_iterations_limit())
+
+    @property
+    def warm_start_output_count(self) -> int:
+        """Return the number of result slots reserved for warm-start evaluations."""
+        if self.settings.warm_start_strategy in ("greedy", "balanced"):
+            return min(self.max_iterations, self._compute_warm_start_effective_target() // 4)
+        return min(self.max_iterations, 1)
+
+    def _validate_n_random_nodes(self) -> None:
+        """Log a warning when n_random_nodes is below the required minimum for the strategy.
+
+        - random:   No minimum enforced — combinations are taken in shuffle order.
+        - greedy:   If n_random_nodes < 2 * max_unique_values_per_column, warm start
+                    is auto-adjusted to the minimum required (no error raised).
+        - balanced: If n_random_nodes < max(n_balanced_tuples, max_non_balanced_unique),
+                    warm start is auto-adjusted to the minimum required (no error raised).
+        """
+        combinations = self._search_space.combinations
+        if not combinations:
+            return
+
+        strategy = self.settings.warm_start_strategy
+
+        if strategy == "random":
+            return
+
+        str_cols = _get_discrete_column_values(combinations)
+
+        # Already-successful known_observations count toward the coverage budget.
+        successful_known = sum(1 for e in self.evaluations if e.get("score") is not None)
+        # effective_budget: the larger of n_random_nodes and what known_observations
+        # already provide — if known obs alone meet the minimum, no raise is needed.
+        effective_budget = max(self.settings.n_random_nodes, successful_known)
+
+        if strategy == "greedy":
+            if not str_cols:
+                return
+            max_unique = max(len(vals) for vals in str_cols.values())
+            min_required = max(4, 2 * max_unique)
+            if effective_budget < min_required:
+                logger.info(
+                    "n_random_nodes=%d is below the minimum required %d for "
+                    "warm_start_strategy='greedy' (max unique values per column: %d). "
+                    "Warm start will be auto-adjusted to %d nodes.",
+                    self.settings.n_random_nodes,
+                    min_required,
+                    max_unique,
+                    min_required,
+                )
+
+        elif strategy == "balanced":
+            fields_to_balance = self.settings.fields_to_balance or []
+            balanced_tuples = {tuple(_str_val(c.get(f)) for f in fields_to_balance) for c in combinations}
+            n_balanced = len(balanced_tuples)
+            non_balanced = {col: vals for col, vals in str_cols.items() if col not in fields_to_balance}
+            max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
+            min_required = max(4, n_balanced, max_non_balanced)
+            if effective_budget < min_required:
+                logger.info(
+                    "n_random_nodes=%d is below the minimum required %d for "
+                    "warm_start_strategy='balanced' with fields_to_balance=%r "
+                    "(n_balanced_tuples=%d, max_non_balanced_unique=%d). "
+                    "Warm start will be auto-adjusted to %d nodes.",
+                    self.settings.n_random_nodes,
+                    min_required,
+                    fields_to_balance,
+                    n_balanced,
+                    max_non_balanced,
+                    min_required,
+                )
+
+    def _validate_fields_to_balance(self) -> None:
+        """Reject balanced warm-start fields that are absent from the search space."""
+        if self.settings.warm_start_strategy != "balanced":
+            return
+
+        combinations = self._search_space.combinations
+        if not combinations:
+            return
+
+        available_fields = set(combinations[0])
+        unknown_fields = set(self.settings.fields_to_balance or []) - available_fields
+        if unknown_fields:
+            raise ValueError(
+                "fields_to_balance contains field(s) absent from the search space: "
+                f"{sorted(unknown_fields)}. Available fields: {sorted(available_fields)}."
+            )
+
+    def _compute_warm_start_effective_target(self) -> int:
+        """Return the effective number of successful warm-start nodes to evaluate.
+
+        For "greedy" and "balanced" strategies, this is
+        max(n_random_nodes, min_required) where min_required guarantees adequate
+        discrete-value coverage. For "random", returns n_random_nodes unchanged.
+        """
+        n = self.settings.n_random_nodes
+        strategy = self.settings.warm_start_strategy
+        if strategy == "random":
+            return n
+        combinations = self._search_space.combinations
+        if not combinations:
+            return n
+        str_cols = _get_discrete_column_values(combinations)
+        if strategy == "greedy":
+            if not str_cols:
+                return max(4, n)
+            max_unique = max(len(vals) for vals in str_cols.values())
+            return max(n, 4, 2 * max_unique)
+        # balanced
+        fields = self.settings.fields_to_balance or []
+        balanced_tuples = {tuple(_str_val(c.get(f)) for f in fields) for c in combinations}
+        non_balanced = {col: vals for col, vals in str_cols.items() if col not in fields}
+        max_non_balanced = max((len(vals) for vals in non_balanced.values()), default=0)
+        return max(n, 4, len(balanced_tuples), max_non_balanced)
+
+    def compute_warm_start_effective_target(self) -> int:
+        """Return the effective number of successful warm-start nodes to evaluate.
+
+        Returns
+        -------
+        int
+            The effective warm-start target for the configured strategy.
+        """
+        return self._compute_warm_start_effective_target()
 
     def _load_known_observations(self, known_observations: list[dict]) -> None:
         """
@@ -190,238 +462,357 @@ class GAMOptimizer(BaseOptimizer):
 
     def evaluate_initial_random_nodes(self) -> None:
         """
-        Perform evaluation of randomly chosen n nodes from the solutions space.
-        Evaluations are performed until desired number of successful evaluations
-        is reached or maximum number of evaluations is reached.
+        Perform evaluation of randomly chosen nodes from the solutions space.
+        All strategies stop at the configured maximum evaluation count. Greedy
+        and balanced starts may therefore finish before their coverage target
+        when the evaluation budget is smaller than the coverage requirement.
 
         When the optimizer has been warm-started with known observations,
         already-successful evaluations count toward the n_random_nodes target
         and already-evaluated combinations are excluded from candidates.
 
-        The selection is stratified: combinations that introduce at least one new
-        unique value for any categorical (string-valued) parameter are moved to the
-        front of the queue before the random fill. This guarantees that every
-        distinct categorical value (e.g. ``search_mode="vector"`` vs
-        ``search_mode="hybrid"``) is evaluated at least once before GAM training
-        begins, regardless of how skewed the raw search space is.
-
-        A warning is logged when ``n_random_nodes`` is smaller than the estimated
-        minimum required to guarantee full categorical coverage.
+        The selection order depends on warm_start_strategy:
+        "random"   — shuffled order (no reordering).
+        "greedy"   — greedy selection maximizing string-column coverage (each value >= 2 times).
+        "balanced" — round-robin across fields_to_balance value tuples.
         """
         successful_evaluations = sum(1 for e in self.evaluations if e["score"] is not None)
+        effective_target = self._compute_warm_start_effective_target()
 
-        if successful_evaluations >= self.settings.n_random_nodes:
+        if successful_evaluations >= effective_target:
             logger.info(
-                "Skipping random evaluation phase: %d known successful evaluations >= n_random_nodes (%d).",
+                "Skipping random evaluation phase: %d known successful evaluations >= warm_start_target (%d).",
                 successful_evaluations,
-                self.settings.n_random_nodes,
+                effective_target,
             )
             return
 
-        if len(self.evaluations) >= self.max_iterations:
+        if len(self.evaluations) >= self.max_evals:
             return
 
+        combinations_local = self._prepare_warm_start_combinations(effective_target, successful_evaluations)
+        discrete_cols_in_space = _get_discrete_column_values(combinations_local)
+        self._evaluate_warm_start_combinations(combinations_local, effective_target, successful_evaluations)
+
+        self._log_uncovered_values(discrete_cols_in_space, self.evaluations, effective_target)
+
+        self.warm_start_evaluation_count = len(self.evaluations)
+
+    def _prepare_warm_start_combinations(self, effective_target: int, successful_evaluations: int) -> list[dict]:
+        """Prepare candidate combinations according to the warm-start strategy."""
         combinations_local = [c for c in copy(self._search_space.combinations) if c not in self._evaluated_combinations]
         random.Random(self.settings.random_state).shuffle(combinations_local)
 
-        # Values already covered by successful warm-start observations so
-        # stratification does not waste early slots on redundant coverage.
-        already_covered: dict[str, set[str]] = {}
-        for eval_entry in self.evaluations:
-            if eval_entry.get("score") is not None:
-                for col, val in eval_entry.items():
-                    if col != "score" and isinstance(val, str):
-                        already_covered.setdefault(col, set()).add(val)
-
-        min_needed = self._min_n_random_nodes_for_coverage(combinations_local, already_covered)
-        if min_needed > self.settings.n_random_nodes:
-            logger.warning(
-                "n_random_nodes=%d may be too small to guarantee full categorical coverage "
-                "(estimated minimum: %d). Consider increasing n_random_nodes.",
-                self.settings.n_random_nodes,
-                min_needed,
+        if self.settings.warm_start_strategy == "greedy":
+            str_cols = _get_discrete_column_values(combinations_local)
+            initial_coverage: dict[str, dict[str, int]] = {
+                col: {val: 0 for val in vals} for col, vals in str_cols.items()
+            }
+            for obs in self.evaluations:
+                if obs.get("score") is None:
+                    continue
+                for col in initial_coverage:
+                    val = _str_val(obs.get(col))
+                    if val in initial_coverage[col]:
+                        initial_coverage[col][val] = min(initial_coverage[col][val] + 1, 2)
+            remaining_budget = effective_target - successful_evaluations
+            return self._get_greedy_combinations(
+                combinations_local, remaining_budget, initial_coverage=initial_coverage
             )
 
-        combinations_local = self._get_stratified_combinations(combinations_local, already_covered)
+        if self.settings.warm_start_strategy == "balanced":
+            return self._get_balanced_combinations(
+                combinations_local,
+                self.settings.fields_to_balance or [],
+                coverage_target=effective_target - successful_evaluations,
+            )
 
-        gen = (x for x in combinations_local)
+        # "random": use shuffled list as-is
+        return combinations_local
 
-        while successful_evaluations < self.settings.n_random_nodes:
-            params = next(gen)
+    def _evaluate_warm_start_combinations(
+        self, combinations: list[dict], effective_target: int, successful_evaluations: int
+    ) -> None:
+        """Evaluate warm-start candidates until the target or candidate list is exhausted."""
+        gen = (x for x in combinations)
+
+        while successful_evaluations < effective_target:
+            params = next(gen, None)
+            if params is None:
+                break
             score = self._objective_function(params=params)
             if score is not None:
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
-            params_with_score = params | {"score": score}
-            self.evaluations.append(params_with_score)
+            self.evaluations.append(params | {"score": score})
 
-            if len(self.evaluations) == self.max_iterations:
+            if len(self.evaluations) >= self.max_evals:
                 break
 
     @staticmethod
-    def _min_n_random_nodes_for_coverage(
-        combinations: list[dict],
-        already_covered: dict[str, set[str]] | None = None,
-    ) -> int:
-        """
-        Estimate the minimum ``n_random_nodes`` required for stratified coverage.
-
-        Returns the maximum number of uncovered unique values across all
-        string-typed categorical parameters, after accounting for values already
-        seen in warm-start observations.
-
-        Parameters
-        ----------
-        combinations : list[dict]
-            Candidate combinations to stratify over.
-        already_covered : dict[str, set[str]], optional
-            String-param values already seen in successful warm-start evaluations.
-
-        Returns
-        -------
-        int
-            Estimated lower bound on ``n_random_nodes`` needed for full coverage.
-        """
-        if not combinations:
-            return 0
-        categorical_cols = [col for col, val in combinations[0].items() if isinstance(val, str)]
-        if not categorical_cols:
-            return 1
-        seen = already_covered or {}
-        return max(len({c[col] for c in combinations} - seen.get(col, set())) for col in categorical_cols)
+    def _log_uncovered_values(
+        discrete_cols_in_space: dict[str, set],
+        evaluations: list[dict],
+        n_random_nodes: int,
+    ) -> None:
+        uncovered_by_col: dict[str, list[str]] = {}
+        for col, vals_in_space in discrete_cols_in_space.items():
+            covered = {_str_val(e.get(col)) for e in evaluations if e.get("score") is not None}
+            uncovered = vals_in_space - covered
+            if uncovered:
+                uncovered_by_col[col] = sorted(uncovered)
+        if uncovered_by_col:
+            logger.warning(
+                "n_random_nodes=%d was too small to cover all discrete column values. "
+                "Uncovered values by column: %s. Consider increasing n_random_nodes.",
+                n_random_nodes,
+                uncovered_by_col,
+            )
 
     @staticmethod
-    def _get_stratified_combinations(
+    def _get_greedy_combinations(
         combinations: list[dict],
-        already_seen: dict[str, set[str]] | None = None,
+        n: int,
+        initial_coverage: dict[str, dict[str, int]] | None = None,
     ) -> list[dict]:
+        """Greedily select n combinations ensuring every discrete column value appears >= 2 times.
+
+        At each step the candidate with the highest coverage gain (number of discrete column
+        values — string or numeric — whose current count is still below 2) is selected.
+        Ties are broken by the shuffle order coming in. The n selected combinations are
+        returned first, followed by the remaining combinations in their original (shuffled) order.
+
+        initial_coverage seeds the per-value counts so that values already covered by
+        known_observations are not redundantly targeted.
         """
-        Re-order *already-shuffled* combinations so the first entries collectively
-        cover every unique value of each string-valued (semantic categorical)
-        parameter before falling back to the original shuffle order.
-
-        Only string-typed columns are stratified over. Integer/float parameters
-        (``chunk_size``, ``ranker_k``, etc.) are excluded because they tend to have
-        high cardinality; including them would consume all ``n_random_nodes`` slots
-        covering their many unique values and crowd out the minority string-param
-        values the stratification is meant to protect.
-
-        This prevents the initial random phase from being biased toward
-        over-represented parameter values (e.g. ``search_mode="hybrid"`` in a
-        search space where hybrid configurations outnumber vector ones 2:1).
-
-        Parameters
-        ----------
-        combinations : list[dict]
-            Shuffled list of parameter combinations.
-        already_seen : dict[str, set[str]], optional
-            String-param values already covered by successful warm-start
-            observations.  These are treated as pre-seen so stratification does
-            not waste early slots on redundant coverage.
-
-        Returns
-        -------
-        list[dict]
-            The same combinations with diversity-maximising entries moved to the
-            front; the relative order within each group (stratified / remainder)
-            is preserved from the input shuffle.
-        """
-        if not combinations:
+        if not combinations or n <= 0:
             return combinations
 
-        # Stratify only string-typed parameters (search_mode, chunking_method,
-        # ranker_strategy, …). Integer/float params (chunk_size, ranker_k, …) are
-        # quantitative: stratifying them would consume initial slots covering their
-        # many unique values, leaving no room for minority string-param values.
-        categorical_cols = [col for col, val in combinations[0].items() if isinstance(val, str)]
-        if not categorical_cols:
+        str_cols = _get_discrete_column_values(combinations)
+        if not str_cols:
             return combinations
 
-        all_values = {col: {c[col] for c in combinations} for col in categorical_cols}
-        # Intersect with all_values so warm-start values absent from the remaining
-        # combinations do not prevent the all_covered check from ever firing.
-        seen: dict[str, set[str]] = {
-            col: (set(already_seen.get(col, ())) & all_values[col]) if already_seen else set()
-            for col in categorical_cols
-        }
+        coverage: dict[str, dict[str, int]] = {col: {val: 0 for val in vals} for col, vals in str_cols.items()}
+        if initial_coverage:
+            for col, val_counts in initial_coverage.items():
+                if col in coverage:
+                    for val, count in val_counts.items():
+                        if val in coverage[col]:
+                            coverage[col][val] = min(count, 2)
 
-        stratified: list[dict] = []
-        remainder: list[dict] = []
+        def _gain(c: dict) -> int:
+            return sum(1 for col, val_counts in coverage.items() if val_counts.get(_str_val(c.get(col)), 0) < 2)
 
-        for combo in combinations:
-            all_covered = all(seen[col] == all_values[col] for col in categorical_cols)
-            if all_covered:
-                remainder.append(combo)
-                continue
+        remaining_indices = list(range(len(combinations)))
+        selected_indices: list[int] = []
 
-            introduces_new = any(combo[col] not in seen[col] for col in categorical_cols)
-            if introduces_new:
-                stratified.append(combo)
-                for col in categorical_cols:
-                    seen[col].add(combo[col])
-            else:
-                remainder.append(combo)
+        for _ in range(min(n, len(combinations))):
+            if not remaining_indices:
+                break
+            best_pos = max(range(len(remaining_indices)), key=lambda p: _gain(combinations[remaining_indices[p]]))
+            best_idx = remaining_indices.pop(best_pos)
+            selected_indices.append(best_idx)
+            for col in str_cols:
+                val = _str_val(combinations[best_idx].get(col))
+                if val in coverage[col]:
+                    coverage[col][val] = min(coverage[col][val] + 1, 2)
 
-        return stratified + remainder
+        return [combinations[i] for i in selected_indices] + [combinations[i] for i in remaining_indices]
+
+    @staticmethod
+    # The coverage-aware selection keeps its related state together.
+    # pylint: disable=too-many-locals
+    def _get_balanced_combinations(
+        combinations: list[dict], fields_to_balance: list[str], coverage_target: int | None = None
+    ) -> list[dict]:
+        """Order combinations to cover balanced tuples and other field values early.
+
+        The prefix through ``coverage_target`` contains one configuration from each
+        balanced-field tuple, then evenly distributed additional configurations as
+        needed. Each choice maximizes unseen non-balanced values, so a Cartesian
+        search space covers every such value within its fixed warm-start target.
+        A constrained search space can make that impossible; callers report the
+        uncovered values rather than exceeding the target with extra evaluations.
+        """
+        if not combinations or not fields_to_balance:
+            return combinations
+
+        def _outer_key(c: dict) -> tuple:
+            return tuple(_str_val(c.get(f)) for f in fields_to_balance)
+
+        discrete_cols = _get_discrete_column_values(combinations)
+        non_balanced_fields = [col for col in discrete_cols if col not in fields_to_balance]
+
+        outer_buckets: dict[tuple, list[dict]] = defaultdict(list)
+        for c in combinations:
+            outer_buckets[_outer_key(c)].append(c)
+
+        target = max(len(outer_buckets), coverage_target or len(outer_buckets))
+        target = min(target, len(combinations))
+        covered_values: dict[str, set[str]] = {field: set() for field in non_balanced_fields}
+        selections_per_tuple: dict[tuple, int] = {key: 0 for key in outer_buckets}
+        selected: list[dict] = []
+
+        def _select_best(bucket_key: tuple) -> dict:
+            bucket = outer_buckets[bucket_key]
+            best_index = max(
+                range(len(bucket)),
+                key=lambda index: sum(
+                    _str_val(bucket[index].get(field)) not in covered_values[field] for field in non_balanced_fields
+                ),
+            )
+            selected_combination = bucket.pop(best_index)
+            selected.append(selected_combination)
+            selections_per_tuple[bucket_key] += 1
+            for field in non_balanced_fields:
+                covered_values[field].add(_str_val(selected_combination.get(field)))
+            return selected_combination
+
+        # Give every balanced tuple one slot. Choose the tuple that can add the
+        # most coverage next, rather than letting input order decide coverage.
+        unrepresented = list(outer_buckets)
+        while unrepresented:
+            best_bucket = max(
+                unrepresented,
+                key=lambda bucket_key: max(
+                    sum(_str_val(c.get(field)) not in covered_values[field] for field in non_balanced_fields)
+                    for c in outer_buckets[bucket_key]
+                ),
+            )
+            _select_best(best_bucket)
+            unrepresented.remove(best_bucket)
+
+        # Fill remaining fixed-budget slots from the least represented tuple,
+        # preserving balance while completing non-balanced-value coverage.
+        while len(selected) < target:
+            eligible = [bucket_key for bucket_key, bucket in outer_buckets.items() if bucket]
+            if not eligible:
+                break
+            least_selected = min(selections_per_tuple[bucket_key] for bucket_key in eligible)
+            eligible = [bucket_key for bucket_key in eligible if selections_per_tuple[bucket_key] == least_selected]
+            best_bucket = max(
+                eligible,
+                key=lambda bucket_key: max(
+                    sum(_str_val(c.get(field)) not in covered_values[field] for field in non_balanced_fields)
+                    for c in outer_buckets[bucket_key]
+                ),
+            )
+            _select_best(best_bucket)
+
+        remaining = [combination for bucket in outer_buckets.values() for combination in bucket]
+        return selected + _round_robin(remaining, _outer_key)
+
+    # pylint: enable=too-many-locals
+
+    def _prepare_typed_encoder(self) -> None:
+        """
+        Fit label encoders on the full search space for all varying columns.
+
+        Dict-valued columns (model objects) are serialized to their model_id
+        strings. Constant columns (single unique value) are dropped — they
+        carry no signal for the GAM.
+        """
+        if self._typed_encoders_with_columns:
+            return
+        logger.debug("Preparing typed encoder for %s...", self.__class__.__name__)
+        df = pd.DataFrame(data=self._search_space.combinations)
+        for col in df.columns:
+            df[col] = _serialize_dict_col(df[col])
+        varying_cols = [c for c in df.columns if df[c].nunique() > 1]
+        for col in varying_cols:
+            self._typed_encoders_with_columns.append((col, LabelEncoder().fit(df[col])))
+        logger.debug("Typed encoder for %s has been prepared.", self.__class__.__name__)
 
     # pylint: disable=too-many-locals
     def _run_iteration(self) -> None:
         """
-        Run single optimization iteration that consists of training GAM model
-        to predict score for remaining nodes in the solutions space and choose
-        the best n ones for further evaluation.
+        Run single optimization iteration using typed LinearGAM terms.
+
+        String-typed columns receive f() (factor) terms; numeric columns receive
+        s() (spline) terms. Random warm starts and sparse categorical training
+        data use s() so a category absent from the sample remains in-domain
+        during prediction. Constant columns are excluded. Dict-valued model
+        columns are serialized to model_id strings before encoding.
         """
-        self._prepare_encoder()
-        df = pd.DataFrame(data=self.evaluations)  # --> These are already known observations with scores.
+        self._prepare_typed_encoder()
+        encoders = self._typed_encoders_with_columns
+
+        if not encoders:
+            return
+
+        df = pd.DataFrame(data=self.evaluations)
         df = df[df["score"].notna()].copy()
         data = df.drop(columns=["score"])
+        for col in data.columns:
+            data[col] = _serialize_dict_col(data[col])
+        # known_observations may omit columns that vary in the search space; fill
+        # with the encoder's first class so transform() does not KeyError.
+        for col, enc in encoders:
+            if col not in data.columns:
+                data[col] = enc.classes_[0]
         target = df["score"]
 
-        x_train_enc = []
-        for column, encoder in self._encoders_with_columns:
-            x_train_enc.append(encoder.transform(data[column]))
-        x_train_enc = np.column_stack(x_train_enc)
+        x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
 
-        gam = LinearGAM()
+        terms = None
+        for i, (column, enc) in enumerate(encoders):
+            observed_values = set(x_train_enc[:, i])
+            all_values = set(range(len(enc.classes_)))
+            has_unseen_categorical_levels = isinstance(enc.classes_[0], str) and observed_values != all_values
+            if has_unseen_categorical_levels:
+                logger.warning(
+                    "Column '%s' falls back to spline: not all levels are present in training data.",
+                    column,
+                )
+            use_spline = (
+                self.settings.warm_start_strategy == "random"
+                or not isinstance(enc.classes_[0], str)
+                or has_unseen_categorical_levels
+            )
+            term = gam_s(i) if use_spline else gam_f(i)
+            terms = term if terms is None else terms + term
+
+        gam = LinearGAM(terms)
         gam.fit(x_train_enc, target)
 
         remaining_evaluations = self._get_remaining_evaluations(
             self._search_space.combinations, self._evaluated_combinations
         )
 
-        remaining_evaluations_df = pd.DataFrame(remaining_evaluations)
+        if not remaining_evaluations:
+            return
 
-        # Optimize encoding: build array directly
-        encoded_data_to_predict = np.column_stack(
-            [encoder.transform(remaining_evaluations_df[column]) for column, encoder in self._encoders_with_columns]
-        )
+        remaining_df = pd.DataFrame(remaining_evaluations)
+        for col in remaining_df.columns:
+            remaining_df[col] = _serialize_dict_col(remaining_df[col])
 
-        predictions = gam.predict(encoded_data_to_predict)
+        encoded = np.column_stack([enc.transform(remaining_df[col]) for col, enc in encoders])
+        predictions = gam.predict(encoded)
 
         for idx, val in enumerate(remaining_evaluations):
             val["score"] = predictions[idx]
 
-        # Sort in descending order to get highest predictions first
         best_predictions = sorted(remaining_evaluations, key=lambda d: d["score"], reverse=True)
 
-        n_best_predictions = best_predictions[: self.settings.evals_per_trial]
-
-        for params in n_best_predictions:
+        remaining_evaluation_capacity = max(0, self.max_evals - len(self.evaluations))
+        for params in best_predictions[: min(self.settings.evals_per_trial, remaining_evaluation_capacity)]:
             params.pop("score", None)
             score = self._objective_function(params)
             self._evaluated_combinations.append(params)
             self.evaluations.append(params | {"score": score})
 
-    def _prepare_encoder(self) -> None:
+    def _trim_evaluations_to_top(self, n: int) -> None:
+        """Trim self.evaluations to the top n successful entries by score.
+
+        Failed evaluations (score is None) are discarded. Successful evaluations
+        are sorted descending by score and only the top n are retained.
         """
-        Prepare encoder for the further processing based on all available combinations.
-        """
-        if not self._encoders_with_columns:
-            logger.debug("Preparing encoder for %s...", self.__class__.__name__)
-            df = pd.DataFrame(data=self._search_space.combinations)
-            for column in df.columns:
-                self._encoders_with_columns.append((column, LabelEncoder().fit(df[column])))
-            logger.debug("Encoder for %s has been prepared.", self.__class__.__name__)
+        successful = sorted(
+            [e for e in self.evaluations if e.get("score") is not None],
+            key=lambda d: d["score"],
+            reverse=True,
+        )
+        self.evaluations = successful[:n]
 
     @staticmethod
     def _get_remaining_evaluations(all_combinations: list[dict], evaluations: list[dict]) -> list[dict]:
