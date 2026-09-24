@@ -156,6 +156,7 @@ class AI4RAGExperiment:
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
+        self._optimization_phase: str | None = None
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
@@ -384,7 +385,7 @@ class AI4RAGExperiment:
         return selected_models
 
     # pylint: disable=too-many-locals, too-many-statements, too-many-branches
-    def run_single_evaluation(self, rag_params: RAGParamsType) -> float:
+    def run_single_evaluation(self, rag_params: RAGParamsType, publish_pattern: bool = True) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
 
@@ -392,6 +393,11 @@ class AI4RAGExperiment:
         ----------
         rag_params : RAGParamsType
             A dictionary containing rag parameters as keys and their values.
+
+        publish_pattern : bool, default=True
+            Whether to send the evaluated pattern to the event handler immediately.
+            GAM optimization suppresses this only for warm-start candidates;
+            GAM candidates are published as they complete.
 
         Returns
         -------
@@ -603,13 +609,16 @@ class AI4RAGExperiment:
             {el.get("question"): el.get("metrics") for el in evaluation_results_json if isinstance(el, dict)},
         )
 
-        try:
-            self._stream_finished_pattern(
-                evaluation_result=evaluation_result,
-                evaluation_results_json=evaluation_results_json,
-            )
-        except Exception as exc:
-            raise AssetSaveError(exc) from exc
+        iteration = len(self.results) + (len(self.known_observations) if self.known_observations else 0)
+        if publish_pattern:
+            try:
+                self._stream_finished_pattern(
+                    evaluation_result=evaluation_result,
+                    evaluation_results_json=evaluation_results_json,
+                    iteration=iteration,
+                )
+            except Exception as exc:
+                raise AssetSaveError(exc) from exc
 
         self.results.add_evaluation(
             evaluation_data=evaluation_data,
@@ -686,13 +695,22 @@ class AI4RAGExperiment:
 
         logger.info("Starting RAG optimization process...")
 
+        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
+        is_gam_optimizer = issubclass(optimizer_class, GAMOptimizer)
+
         def objective_function(space: RAGParamsType) -> float | None:
             """Function passed to the optimizer."""
+            self._optimization_phase = getattr(optimizer, "current_phase", None)
             try:
-                return self.run_single_evaluation(space)
+                return self.run_single_evaluation(
+                    space,
+                    publish_pattern=not is_gam_optimizer or self._optimization_phase != "warm_start",
+                )
             except AI4RAGError as err:
                 msg = self._exception_handler.handle_exception(err)
                 raise FailedIterationError(msg) from err
+            finally:
+                self._optimization_phase = None
 
         # MPS - models pre-selection based on sample evaluation.
         # Run if there are more than 3 foundation models or more than 2 embedding models.
@@ -712,13 +730,10 @@ class AI4RAGExperiment:
                 name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
             )
 
-        optimizer_class: type[BaseOptimizer] = kwargs.get("optimizer", GAMOptimizer)
-
         optimizer_kwargs = {}
-        if self.known_observations is not None:
+        if self.known_observations is not None and is_gam_optimizer:
             optimizer_kwargs["known_observations"] = self.known_observations
 
-        # In the search kwargs user may pass different optimizer class for testing purposes
         optimizer = optimizer_class(
             objective_function=objective_function,
             search_space=self.search_space,
@@ -737,15 +752,43 @@ class AI4RAGExperiment:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
 
+        if is_gam_optimizer:
+            self._publish_best_warm_start_pattern()
+
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message="Experiment optimization process finished.",
+        )
+
+    def _publish_best_warm_start_pattern(self) -> None:
+        """Publish only the best successful warm-start candidate as final ``Pattern1``."""
+        evaluations = list(zip(self.results.evaluations, self.results.evaluation_data))
+        warm_start_evaluations = [
+            evaluation
+            for evaluation in evaluations
+            if evaluation[0].pattern_name.endswith("-warm-start") and evaluation[0].final_score is not None
+        ]
+        if not warm_start_evaluations:
+            return
+
+        result, evaluation_data = max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score)
+        evaluation_results_json = self.results.create_evaluation_results_json(
+            evaluation_data=evaluation_data,
+            evaluation_result=result,
+        )
+        self._stream_finished_pattern(
+            evaluation_result=result,
+            evaluation_results_json=evaluation_results_json,
+            pattern_name="Pattern1",
+            iteration=0,
         )
 
     def _stream_finished_pattern(
         self,
         evaluation_result: EvaluationResult,
         evaluation_results_json: list,
+        pattern_name: str | None = None,
+        iteration: int | None = None,
     ) -> None:
         """
         Stream finished pattern.
@@ -810,7 +853,7 @@ class AI4RAGExperiment:
         ]
 
         payload = {
-            "name": evaluation_result.pattern_name,
+            "name": pattern_name or evaluation_result.pattern_name,
             "max_combinations": self.search_space.max_combinations,
             "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
@@ -820,13 +863,9 @@ class AI4RAGExperiment:
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
             },
-            "iteration": len(self.results) + n_known,
+            "iteration": iteration if iteration is not None else len(self.results) + n_known,
         }
-
-        self.event_handler.on_pattern_creation(
-            payload=payload,
-            evaluation_results=evaluation_results_json,
-        )
+        self.event_handler.on_pattern_creation(payload=payload, evaluation_results=evaluation_results_json)
 
     def _evaluate_response(
         self,
@@ -945,7 +984,17 @@ class AI4RAGExperiment:
         -------
         str
             Pattern name.
-            Example: "Pattern7"
+            Example: "Pattern7" or "Pattern7-warm-start".
         """
+        if self._optimization_phase == "warm_start":
+            warm_start_count = sum(result.pattern_name.endswith("-warm-start") for result in self.results)
+            return f"Pattern{warm_start_count + 1}-warm-start"
+        if self._optimization_phase == "gam":
+            gam_count = sum(not result.pattern_name.endswith("-warm-start") for result in self.results)
+            has_successful_warm_start = any(
+                result.pattern_name.endswith("-warm-start") and result.final_score is not None
+                for result in self.results
+            )
+            return f"Pattern{gam_count + 1 + int(has_successful_warm_start)}"
         n_known = len(self.known_observations) if self.known_observations else 0
         return f"Pattern{n_known + len(self.results) + 1}"
