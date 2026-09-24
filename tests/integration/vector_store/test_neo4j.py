@@ -51,12 +51,12 @@ class TestNeo4jIntegration:
         assert vector_store.collection_name.startswith("ai4rag_")
 
     def test_graph_search_returns_results(self, vector_store, sample_chunks):
-        results = vector_store.search(sample_chunks[0].text, k=3, search_mode="graph", graph_hops=1)
+        results = vector_store.search(sample_chunks[0].text, k=3, search_mode="graph")
         assert len(results) > 0
 
     def test_graph_search_expands_neighbors(self, vector_store, sample_chunks):
-        """Graph search with hop expansion returns collection-local results."""
-        graph_results = vector_store.search(sample_chunks[0].text, k=10, search_mode="graph", graph_hops=1)
+        """Graph search returns collection-local results without sequential expansion."""
+        graph_results = vector_store.search(sample_chunks[0].text, k=10, search_mode="graph")
         assert all(isinstance(result, AI4RAGChunk) for result in graph_results)
 
     def test_clean_collection_removes_nodes(self, vector_store):

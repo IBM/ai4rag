@@ -53,17 +53,10 @@ def test_non_graph_search_is_rejected(neo4j_store, sample_chunks):
         neo4j_store.search(sample_chunks[0].text, k=3, search_mode="hybrid", ranker_strategy="rrf")
 
 
-def test_graph_search_expands_sequential_neighbors(neo4j_store, sample_chunks):
-    """Graph search with graph_hops=1 can return sequential neighbor chunks."""
-    results = neo4j_store.search(
-        sample_chunks[0].text,
-        k=10,
-        search_mode="graph",
-        graph_hops=1,
-        include_entity_neighbors=False,
-    )
-    assert len(results) > 0
-    assert all(isinstance(r, AI4RAGChunk) for r in results)
+def test_graph_search_rejects_sequential_neighbor_expansion(neo4j_store, sample_chunks):
+    """Graph search must keep graph_hops at zero."""
+    with pytest.raises(ValueError, match="graph_hops"):
+        neo4j_store.search(sample_chunks[0].text, k=10, search_mode="graph", graph_hops=1)
 
 
 def test_collection_name_prefix_guard():
