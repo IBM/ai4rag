@@ -92,12 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Agentic RAG API",
-    description=(
-        "FastAPI service for Agentic RAG Agent with "
-        "OpenAI-compatible Responses API. "
-        "To access the sandbox playground, click "
-        "[Sandbox Playground](/playground)."
-    ),
+    description=("FastAPI service for Agentic RAG Agent with OpenAI-compatible Responses API."),
     lifespan=lifespan,
     openapi_tags=[
         {"name": "Health", "description": "Service health monitoring"},
@@ -123,7 +118,10 @@ async def _invoke_with_retry(messages: list[dict[str, str]]) -> dict[str, Any]:
             last_exception = exc
             if attempt < _MAX_INVOKE_ATTEMPTS:
                 logger.warning(
-                    "RAG invocation failed (attempt %d/%d): %s", attempt, _MAX_INVOKE_ATTEMPTS, type(exc).__name__
+                    "RAG invocation failed (attempt %d/%d): %s",
+                    attempt,
+                    _MAX_INVOKE_ATTEMPTS,
+                    type(exc).__name__,
                 )
                 await asyncio.sleep(0.5 * attempt)
 
@@ -200,17 +198,13 @@ def _stream_response(response_id: str, model_id: str, content: str) -> Streaming
 @app.get("/health", response_model=HealthResponse, summary="Health check", tags=["Health"])
 async def health():
     initialized = rag is not None
-    body = {"status": "healthy" if initialized else "not_ready", "agent_initialized": initialized}
+    body = {
+        "status": "healthy" if initialized else "not_ready",
+        "agent_initialized": initialized,
+    }
     if not initialized:
         return JSONResponse(status_code=503, content=body)
     return body
-
-
-_SANDBOX_MODE = bool(getenv("K8S_REVIEWER_TOKEN", "").strip())
-if _SANDBOX_MODE:
-    from playground_sandbox.router import router as sandbox_router
-
-    app.include_router(sandbox_router)
 
 
 if __name__ == "__main__":

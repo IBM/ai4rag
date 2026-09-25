@@ -2,7 +2,7 @@ SHELL          := bash
 OPENSHELL_SANDBOX ?= $(shell if [ -f .env ]; then . ./.env; fi; echo $${OPENSHELL_SANDBOX_NAME:-rag-sandbox})
 OPENSHELL_IMAGE   := openshell-agentic-rag
 
-.PHONY: env run-app run-cli refresh-certs setup-gateway teardown-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell playground-sandbox test help
+.PHONY: env run-app run-cli refresh-certs setup-gateway teardown-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -230,7 +230,6 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
 	    export K8S_REVIEWER_TOKEN="'"$$K8S_REVIEWER_TOKEN"'" && \
 	    export K8S_API_INSECURE="true" && \
-	    export PLAYGROUND_TOKEN="'"$$CLIENT_TOKEN"'" && \
 	    export ALLOWED_SA_USERNAME="'"$$ALLOWED_SA_USERNAME"'" && \
 	    export PYTHONPATH=/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib64/python3.12/site-packages:/sandbox && \
 	    cd /sandbox && \
@@ -271,11 +270,3 @@ undeploy-openshell: ## Remove openShell sandbox and route
 	  oc -n openshell delete route openshell-rag-agent 2>/dev/null || true && \
 	  echo "Sandbox $(OPENSHELL_SANDBOX) and route removed." && \
 	  sleep 10 2>/dev/null || true
-
-playground-sandbox: ## Start sandbox playground web UI (auto-fetches agent URL and SA token)
-	@. .venv/bin/activate && \
-	  echo "Starting sandbox playground on http://localhost:5002" && \
-	  echo "Auto-fetching agent URL from OpenShift Route..." && \
-	  echo "Auto-fetching SA token from Secret agent-client-token..." && \
-	  echo "" && \
-	  python playground_sandbox/app.py

@@ -27,7 +27,7 @@ _SAMPLE_PATTERN_DATA: dict = {
             "model_id": "publishers/ibm/models/slate-125m-english-rtrvr",
             "embedding_params": {"embedding_dimension": 768},
         },
-        "vector_store_binding": {
+        "store_binding": {
             "provider_type": "milvus",
             "collection_name": "test_collection",
         },
@@ -193,8 +193,6 @@ class TestGenerateStarterKit:
             assert "starter_kit/src/agentic_rag/sqlite_shim.py" in names
             assert "starter_kit/sqlite_shim.py" not in names
             assert "starter_kit/src/agentic_rag/tracing.py" not in names
-            assert "starter_kit/playground_sandbox/app.py" in names
-            assert "starter_kit/playground_sandbox/router.py" in names
             assert "starter_kit/src/agentic_rag/sqlite_shim.py" in names
             assert "starter_kit/sqlite_shim.py" not in names
             assert "starter_kit/auth_wrapper.py" in names
@@ -251,7 +249,7 @@ class TestGenerateStarterKit:
     def test_pgvector_provider_keeps_pgvector_block(self, tmp_path):
         data = {**_SAMPLE_PATTERN_DATA}
         data["settings"] = {**data["settings"]}
-        data["settings"]["vector_store_binding"] = {
+        data["settings"]["store_binding"] = {
             "provider_type": "pgvector",
             "collection_name": "pg_collection",
         }
@@ -286,22 +284,6 @@ class TestGenerateStarterKit:
         with zipfile.ZipFile(zip_path, "r") as zf:
             data_files = [n for n in zf.namelist() if n.startswith("starter_kit/data/")]
             assert data_files == [], f"data/ directory should not exist: {data_files}"
-
-    def test_no_regular_playground(self, tmp_path):
-        zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            playground_files = [n for n in zf.namelist() if n.startswith("starter_kit/playground/")]
-            assert playground_files == [], f"playground/ directory should not exist: {playground_files}"
-
-    def test_has_sandbox_playground(self, tmp_path):
-        zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            names = set(zf.namelist())
-            assert "starter_kit/playground_sandbox/app.py" in names
-            assert "starter_kit/playground_sandbox/templates/index.html" in names
-            assert "starter_kit/playground_sandbox/router.py" in names
-            assert "starter_kit/auth_wrapper.py" in names
-            assert "starter_kit/Containerfile.openshell" in names
 
     def test_excludes_local_development_artifacts(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)

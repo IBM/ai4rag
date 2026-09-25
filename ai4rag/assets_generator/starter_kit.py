@@ -61,7 +61,7 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     mapping["__RANKER_STRATEGY__"] = _value(ret.get("ranker_strategy"))
     mapping["__RANKER_ALPHA__"] = _value(ret.get("ranker_alpha"))
 
-    vs = settings.get("vector_store_binding", {})
+    vs = settings.get("store_binding", {})
     mapping["__PROVIDER_TYPE__"] = _value(vs.get("provider_type"), "milvus")
     mapping["__COLLECTION_NAME__"] = _value(vs.get("collection_name"))
 

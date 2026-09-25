@@ -28,7 +28,6 @@ ENV PYTHONPATH="/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib
 
 # Application code and assets
 COPY --chown=1001:0 main.py auth_wrapper.py .
-COPY --chown=1001:0 playground_sandbox/ ./playground_sandbox/
 
 # Set granular permissions
 RUN chmod -R 755 /sandbox && \
