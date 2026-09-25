@@ -274,11 +274,11 @@ class Neo4jGraphStore(BaseVectorStore):
         model = kwargs.get("model", self._foundation_model)
         if model is not None:
             self._run_kg_pipeline(
-                texts=[chunk.text for chunk, _ in unique_pairs],
+                chunks=[chunk for chunk, _ in unique_pairs],
                 model=model,
             )
 
-    def _run_kg_pipeline(self, texts: list[str], model: Any, max_concurrent: int = 8) -> None:
+    def _run_kg_pipeline(self, chunks: list[AI4RAGChunk], model: Any, max_concurrent: int = 8) -> None:
         """Run ``SimpleKGPipeline`` on chunk texts concurrently.
 
         Explicit entity/relation types are provided so the pipeline uses
@@ -295,8 +295,8 @@ class Neo4jGraphStore(BaseVectorStore):
         )
         from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
-        texts = [t for t in texts if t.strip()]
-        if not texts:
+        chunks = [chunk for chunk in chunks if chunk.text.strip()]
+        if not chunks:
             return
 
         pipeline = SimpleKGPipeline(
@@ -316,15 +316,19 @@ class Neo4jGraphStore(BaseVectorStore):
         async def _run_all() -> None:
             sem = asyncio.Semaphore(max_concurrent)
 
-            async def _run_one(text: str) -> None:
+            async def _run_one(chunk: AI4RAGChunk) -> None:
                 async with sem:
                     await pipeline.run_async(
                         file_path=f"ai4rag://{self._collection_name}/{run_id}/{uuid.uuid4().hex}",
-                        text=text,
-                        document_metadata={"ai4rag_kg_run": run_id},
+                        text=chunk.text,
+                        document_metadata={
+                            "ai4rag_kg_run": run_id,
+                            "document_id": chunk.metadata.get("document_id", chunk.chunk_id),
+                            "source": chunk.metadata.get("source", ""),
+                        },
                     )
 
-            await asyncio.gather(*(_run_one(t) for t in texts))
+            await asyncio.gather(*(_run_one(chunk) for chunk in chunks))
 
         try:
             asyncio.run(_run_all())
@@ -344,7 +348,7 @@ class Neo4jGraphStore(BaseVectorStore):
                 f"OPTIONAL MATCH (oc:{self._collection_name}:Chunk) WHERE oc.text = kc.text "
                 f"SET kc:{self._collection_name}, kc.collection = $col, "
                 f"    kc.metadata = COALESCE(oc.metadata, kc.metadata), "
-                f"    kc.document_id = COALESCE(oc.document_id, kc.document_id)",
+                f"    kc.document_id = COALESCE(oc.document_id, kd.document_id, kc.document_id)",
                 col=self._collection_name,
                 run_id=run_id,
             )
@@ -608,9 +612,27 @@ class Neo4jGraphStore(BaseVectorStore):
         from neo4j_graphrag.types import RetrieverResultItem
 
         def _format(record) -> RetrieverResultItem:
+            # VectorRetriever returns the indexed node under ``node``.  Retain
+            # a fallback to top-level properties for compatibility with older
+            # GraphRAG versions and mocked retriever records.
+            node = record.get("node") or record
+            raw_metadata = node.get("metadata")
+            if isinstance(raw_metadata, str) and raw_metadata:
+                try:
+                    metadata = json.loads(raw_metadata)
+                except json.JSONDecodeError:
+                    metadata = {}
+            else:
+                metadata = dict(raw_metadata or {})
+            document_id = node.get("document_id")
+            if document_id is not None:
+                metadata.setdefault("document_id", document_id)
             return RetrieverResultItem(
-                content=record.get(text_property) or "",
-                metadata={"score": float(record.get("score", 0.0)), "_meta": {"route": route}},
+                content=node.get(text_property) or "",
+                metadata={
+                    "score": float(record.get("score", 0.0)),
+                    "_meta": {**metadata, "route": route},
+                },
             )
 
         retriever = VectorRetriever(

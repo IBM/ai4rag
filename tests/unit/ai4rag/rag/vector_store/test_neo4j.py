@@ -354,6 +354,33 @@ class TestSearchGraph:
         assert isinstance(results[0], AI4RAGChunk)
         assert results[0].text == "seed text with context"
 
+    def test_vector_route_preserves_chunk_document_metadata(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+
+        with patch(_VECTOR_RETRIEVER_PATH) as mock_vr_cls:
+            mock_vr_cls.return_value.search.return_value = _make_retriever_result([])
+            store._search_vector_route("q", k=1)
+
+        formatter = mock_vr_cls.call_args.kwargs["result_formatter"]
+        item = formatter(
+            {
+                "node": {
+                    "text": "chunk text",
+                    "document_id": "datasets/rag/william/william.md",
+                    "metadata": json.dumps({"source": "datasets/rag/william/william.md", "sequence_number": 2}),
+                },
+                "score": 0.9,
+            }
+        )
+
+        assert item.content == "chunk text"
+        assert item.metadata["_meta"] == {
+            "document_id": "datasets/rag/william/william.md",
+            "source": "datasets/rag/william/william.md",
+            "sequence_number": 2,
+            "route": "vector",
+        }
+
     def test_nonzero_graph_hops_raises(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="graph_hops"):
             _validate_neo4j_search_params("graph", graph_hops=1)
@@ -652,6 +679,7 @@ class TestBuildKnowledgeGraphFromDocuments:
         assert "ai4rag_kg_run: $run_id" in cypher_calls
         assert "collection IS NULL" not in cypher_calls
         assert "ai4rag_col" in cypher_calls
+        assert "COALESCE(oc.document_id, kd.document_id, kc.document_id)" in cypher_calls
 
     def test_tags_pipeline_document_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
