@@ -1,0 +1,32 @@
+{
+  "runtime": {
+    "port": 8000
+  },
+  "generation": {
+    "model_id": "__FM_MODEL_ID__",
+    "temperature": "__TEMPERATURE__",
+    "max_completion_tokens": "__MAX_COMPLETION_TOKENS__",
+    "language_code": "__LANGUAGE_CODE__",
+    "language_name": "__LANGUAGE_NAME__"
+  },
+  "prompts": {
+    "system_message": "__SYSTEM_MESSAGE__",
+    "user_message_template": "__USER_MESSAGE__",
+    "context_template": "__CONTEXT_TEMPLATE__"
+  },
+  "embedding": {
+    "model_id": "__EMBEDDING_MODEL_ID__",
+    "dimension": "__EMBEDDING_DIMENSION__"
+  },
+  "retrieval": {
+    "method": "__RETRIEVAL_METHOD__",
+    "number_of_chunks": "__NUMBER_OF_CHUNKS__",
+    "search_mode": "__SEARCH_MODE__",
+    "ranker_strategy": "__RANKER_STRATEGY__",
+    "ranker_alpha": "__RANKER_ALPHA__"
+  },
+  "vector_store": {
+    "provider_type": "__PROVIDER_TYPE__",
+    "collection_name": "__COLLECTION_NAME__"
+  }
+}

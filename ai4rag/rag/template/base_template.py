@@ -4,7 +4,9 @@
 # -----------------------------------------------------------------------------
 from abc import ABC, abstractmethod
 
-from ..foundation_models.base_model import BaseFoundationModel
+from ai4rag.rag.chunking.chunk import AI4RAGChunk
+
+from ..foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ..retrieval.retriever import Retriever
 
 
@@ -43,6 +45,40 @@ class BaseRAGTemplate(ABC):
     ):
         self.foundation_model: BaseFoundationModel = foundation_model
         self.retriever: Retriever = retriever
+
+    def _build_enriched_user_message(self, question: str, **kwargs) -> tuple[list[AI4RAGChunk], str]:
+        """Retrieve context for a question and render the user message."""
+        reference_documents = self.retriever.retrieve(question, **kwargs)
+        return self._render_enriched_user_message(question, reference_documents)
+
+    def _render_enriched_user_message(
+        self,
+        question: str,
+        reference_documents: list[AI4RAGChunk],
+    ) -> tuple[list[AI4RAGChunk], str]:
+        """Render a user message from already retrieved context."""
+        context = "\n\n".join(
+            self.foundation_model.context_template_text.format(document=chunk.text, doc_number=doc_number)
+            for doc_number, chunk in enumerate(reference_documents, start=1)
+        )
+        user_message = self.foundation_model.user_message_text.format(
+            reference_documents=context,
+            question=question,
+        )
+        return reference_documents, user_message
+
+    def _build_rag_messages(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
+        """Add retrieved context to the last user message in a conversation."""
+        if not messages:
+            raise ValueError("`messages` must contain at least one message.")
+
+        *history, last_message = messages
+        _, enriched_content = self._build_enriched_user_message(last_message["content"], **kwargs)
+        return [
+            {"role": "system", "content": self.foundation_model.system_message_text},
+            *history,
+            {**last_message, "content": enriched_content},
+        ]
 
     @abstractmethod
     def generate(

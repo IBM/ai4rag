@@ -39,7 +39,7 @@ from ai4rag.rag.chunking import DoclingChunker, LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
@@ -153,7 +153,6 @@ class AI4RAGExperiment:
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
-
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
         self._optimization_phase: str | None = None
@@ -558,7 +557,7 @@ class AI4RAGExperiment:
                 ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
             )
 
-            rag_pattern = SimpleRAG(
+            rag_pattern = AgenticRAG(
                 foundation_model=foundation_model,
                 retriever=retriever,
             )

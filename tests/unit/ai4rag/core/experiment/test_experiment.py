@@ -74,7 +74,6 @@ def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS,
         kwargs["evaluators"] = evaluators
     if metrics is not None:
         kwargs["metrics"] = metrics
-
     return AI4RAGExperiment(
         documents=[],
         benchmark_data=_BENCHMARK_DF,

@@ -94,3 +94,42 @@ class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIM
             return no_retries_client.chat.completions.create(
                 model=self.model_id, messages=messages, **chat_params
             ).choices
+
+    def responses(self, messages: list[MessageTyped], **kwargs):
+        """Create a Responses API response without changing ``chat()`` semantics."""
+        system_messages = [message["content"] for message in messages if message["role"] == "system"]
+        input_messages = [message for message in messages if message["role"] != "system"]
+        response_params = {
+            "max_output_tokens": self.params.max_completion_tokens,
+            "temperature": self.params.temperature,
+        } | self._normalize_response_kwargs(kwargs)
+        response_params = {
+            "model": self.model_id,
+            "instructions": "\n\n".join(system_messages) if system_messages else None,
+            "input": input_messages,
+            **response_params,
+        }
+        response_params = {key: value for key, value in response_params.items() if value is not None}
+
+        try:
+            response = self.client.responses.create(**response_params)
+        except APITimeoutError:
+            logger.warning(
+                "Responses request timed out. Retrying with %.0fs timeout (no retries).",
+                _FALLBACK_TIMEOUT,
+            )
+
+            no_retries_client = self.client.with_options(timeout=_FALLBACK_TIMEOUT, max_retries=0)
+            response = no_retries_client.responses.create(**response_params)
+
+        return response
+
+    @staticmethod
+    def _normalize_response_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+        """Map legacy generation parameter names to Responses API names."""
+        normalized = dict(kwargs)
+        if "max_completion_tokens" in normalized and "max_output_tokens" not in normalized:
+            normalized["max_output_tokens"] = normalized.pop("max_completion_tokens")
+        else:
+            normalized.pop("max_completion_tokens", None)
+        return normalized
