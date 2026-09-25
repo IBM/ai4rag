@@ -188,6 +188,8 @@ nav:
       - Overview: architecture/overview.md
       - Core Components: architecture/core-components.md
       - RAG Components: architecture/rag-components.md
+      - Indexing and Search Lifecycle: architecture/indexing-and-search.md
+      - Neo4j Indexing and Graph Search: architecture/neo4j-indexing-and-search.md
       - Data Flow: architecture/data-flow.md
   - API Reference:
       - Core:

@@ -37,16 +37,6 @@ def _collection_vector_index_name(collection_name: str) -> str:
     return f"{collection_name}__embedding"
 
 
-def _community_label(collection_name: str) -> str:
-    """Return the collection-scoped label for materialized community summaries."""
-    return f"{collection_name}__CommunitySummary"
-
-
-def _community_vector_index_name(collection_name: str) -> str:
-    """Return the vector-index name dedicated to community summaries."""
-    return f"{collection_name}__community_embedding"
-
-
 def _validate_kg_extraction_config(config: dict[str, Any] | None) -> dict[str, Any]:
     """Validate KG extraction settings and apply the constrained default."""
     if config is None:
@@ -204,10 +194,8 @@ class Neo4jGraphStore(BaseVectorStore):
         self._ensure_kg_schema()
 
     def _ensure_kg_schema(self) -> None:
-        """Create this collection's chunk and community-summary vector indexes."""
+        """Create this collection's chunk vector index."""
         index_name = _collection_vector_index_name(self._collection_name)
-        community_index_name = _community_vector_index_name(self._collection_name)
-        community_label = _community_label(self._collection_name)
         with self._driver.session(database=self._config.database) as session:
             session.run(
                 f"CREATE VECTOR INDEX `{index_name}` IF NOT EXISTS "
@@ -215,12 +203,6 @@ class Neo4jGraphStore(BaseVectorStore):
                 # label scopes this index; nodes retain their :Chunk label for
                 # graph traversal queries.
                 f"FOR (n:`{self._collection_name}`) ON (n.embedding) "
-                f"OPTIONS {{indexConfig: {{`vector.dimensions`: $dim, `vector.similarity_function`: 'cosine'}}}}",
-                dim=self._embedding_dimension,
-            )
-            session.run(
-                f"CREATE VECTOR INDEX `{community_index_name}` IF NOT EXISTS "
-                f"FOR (n:`{community_label}`) ON (n.embedding) "
                 f"OPTIONS {{indexConfig: {{`vector.dimensions`: $dim, `vector.similarity_function`: 'cosine'}}}}",
                 dim=self._embedding_dimension,
             )
@@ -295,7 +277,6 @@ class Neo4jGraphStore(BaseVectorStore):
                 texts=[chunk.text for chunk, _ in unique_pairs],
                 model=model,
             )
-            self._build_community_summaries(model)
 
     def _run_kg_pipeline(self, texts: list[str], model: Any, max_concurrent: int = 8) -> None:
         """Run ``SimpleKGPipeline`` on chunk texts concurrently.
@@ -354,115 +335,6 @@ class Neo4jGraphStore(BaseVectorStore):
             )
 
         self._tag_kg_chunks(run_id)
-
-    def _build_community_summaries(self, model: OpenAIFoundationModel) -> None:
-        """Materialize Leiden communities and embed a grounded summary for each.
-
-        Graph Data Science is optional in Neo4j deployments.  Indexing remains
-        usable without it; in that case local and vector retrieval continue to
-        work while the global route returns no evidence.
-        """
-        graph_name = f"{self._collection_name}__entities"
-        rows: list[dict[str, Any]] = []
-        try:
-            with self._driver.session(database=self._config.database) as session:
-                session.run(
-                    "CALL gds.graph.project.cypher("
-                    "$name, "
-                    "'MATCH (e:__Entity__) WHERE $collection IN COALESCE(e.ai4rag_kg_collections, []) "
-                    "RETURN id(e) AS id', "
-                    "'MATCH (source:__Entity__)-[r]->(target:__Entity__) "
-                    "WHERE $collection IN COALESCE(source.ai4rag_kg_collections, []) "
-                    "AND $collection IN COALESCE(target.ai4rag_kg_collections, []) "
-                    "AND $collection IN COALESCE(r.ai4rag_kg_collections, []) "
-                    'AND type(r) <> \\"FROM_CHUNK\\" '
-                    "RETURN id(source) AS source, id(target) AS target, 1.0 AS weight', "
-                    "{parameters: {collection: $collection}}) YIELD graphName RETURN graphName",
-                    name=graph_name,
-                    collection=self._collection_name,
-                )
-                rows = session.run(
-                    "CALL gds.leiden.stream($name, {includeIntermediateCommunities: true}) "
-                    "YIELD nodeId, communityId, intermediateCommunityIds "
-                    "RETURN nodeId, communityId, intermediateCommunityIds",
-                    name=graph_name,
-                ).data()
-                session.run("CALL gds.graph.drop($name, false) YIELD graphName RETURN graphName", name=graph_name)
-        except Exception as exc:
-            logger.info("Skipping global GraphRAG summaries; Leiden/GDS is unavailable: %s", exc)
-            return
-
-        if not rows:
-            return
-
-        assignments: list[dict[str, Any]] = []
-        for row in rows:
-            community_ids = row.get("intermediateCommunityIds") or [row["communityId"]]
-            for level, community_id in enumerate(community_ids):
-                assignments.append(
-                    {
-                        "node_id": row["nodeId"],
-                        "id": f"{level}:{community_id}",
-                        "level": level,
-                        "parent_id": (
-                            f"{level + 1}:{community_ids[level + 1]}" if level + 1 < len(community_ids) else None
-                        ),
-                    }
-                )
-
-        community_label = _community_label(self._collection_name)
-        with self._driver.session(database=self._config.database) as session:
-            session.run(
-                f"UNWIND $assignments AS assignment "
-                f"MATCH (e:__Entity__) WHERE id(e) = assignment.node_id "
-                f"MERGE (c:{community_label}:Community {{collection: $collection, id: assignment.id}}) "
-                "SET c.level = assignment.level "
-                f"MERGE (e)-[:IN_COMMUNITY {{level: assignment.level}}]->(c) "
-                "FOREACH (parent_id IN CASE WHEN assignment.parent_id IS NULL THEN [] ELSE [assignment.parent_id] END | "
-                f"MERGE (parent:{community_label}:Community {{collection: $collection, id: parent_id}}) "
-                "MERGE (c)-[:PARENT_COMMUNITY]->(parent))",
-                assignments=assignments,
-                collection=self._collection_name,
-            )
-            communities = session.run(
-                f"MATCH (c:{community_label}:Community)<-[:IN_COMMUNITY]-(e:__Entity__) "
-                "RETURN c.id AS id, collect(DISTINCT e.name)[..30] AS entities",
-            ).data()
-
-        summaries: list[dict[str, Any]] = []
-        for community in communities:
-            entity_names = [name for name in community.get("entities", []) if name]
-            if not entity_names:
-                continue
-            choices = model.chat(
-                [
-                    {
-                        "role": "system",
-                        "content": "Summarize this knowledge-graph community in at most 120 words. "
-                        "Use only the supplied entity names; do not invent facts.",
-                    },
-                    {"role": "user", "content": ", ".join(entity_names)},
-                ]
-            )
-            summary = choices[0].message.content or ""
-            if summary.strip():
-                summaries.append({"id": community["id"], "text": summary})
-
-        if not summaries:
-            return
-        embeddings = self.embedding_model.embed_documents([item["text"] for item in summaries])
-        with self._driver.session(database=self._config.database) as session:
-            session.run(
-                f"UNWIND $summaries AS item "
-                f"MATCH (c:{community_label}:Community {{collection: $collection, id: item.id}}) "
-                f"MERGE (s:{community_label}:CommunitySummary {{collection: $collection, id: item.id}}) "
-                "SET s.text = item.text, s.embedding = item.embedding "
-                "MERGE (c)-[:HAS_SUMMARY]->(s)",
-                summaries=[
-                    item | {"embedding": embedding} for item, embedding in zip(summaries, embeddings, strict=True)
-                ],
-                collection=self._collection_name,
-            )
 
     def _tag_kg_chunks(self, run_id: str) -> None:
         """Tag nodes emitted by one KG pipeline run with collection ownership."""
@@ -634,16 +506,14 @@ class Neo4jGraphStore(BaseVectorStore):
         include_scores: bool,
         **kwargs,
     ) -> list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]:
-        """Run vector, local-graph, and global-community retrieval concurrently."""
+        """Run direct-vector and local-graph retrieval concurrently."""
         route_k = kwargs.get("route_k", max(k * 2, 10))
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=2) as executor:
             vector_future = executor.submit(self._search_vector_route, query, route_k)
             local_future = executor.submit(self._search_local_route, query, route_k, **kwargs)
-            global_future = executor.submit(self._search_global_route, query, route_k)
             routes = {
                 "vector": vector_future.result(),
                 "local": local_future.result(),
-                "global": global_future.result(),
             }
 
         pairs = self._fuse_graph_routes(routes, k)
@@ -724,22 +594,6 @@ class Neo4jGraphStore(BaseVectorStore):
             text_property="text",
             route="vector",
         )
-
-    def _search_global_route(self, query: str, k: int) -> list[tuple[AI4RAGChunk, float]]:
-        """Return materialized Leiden-community summaries relevant to *query*."""
-        try:
-            return self._search_vector_index(
-                query=query,
-                k=k,
-                index_name=_community_vector_index_name(self._collection_name),
-                text_property="text",
-                route="global",
-            )
-        except Exception as exc:
-            # A collection without GDS summaries has an empty/missing global
-            # index.  That must not make ordinary graph retrieval unavailable.
-            logger.debug("Global GraphRAG route returned no evidence: %s", exc)
-            return []
 
     def _search_vector_index(
         self,
@@ -888,7 +742,6 @@ class Neo4jGraphStore(BaseVectorStore):
             )
 
         self._tag_kg_chunks(run_id)
-        self._build_community_summaries(model)
 
         logger.info(
             "Knowledge graph built from %d documents (collection=%s).",
@@ -1122,7 +975,6 @@ class Neo4jGraphStore(BaseVectorStore):
         """Delete all nodes, KG entities, and the vector index for this collection."""
         with self._driver.session(database=self._config.database) as session:
             session.run(f"DROP INDEX `{_collection_vector_index_name(self._collection_name)}` IF EXISTS")
-            session.run(f"DROP INDEX `{_community_vector_index_name(self._collection_name)}` IF EXISTS")
             # Clean up indexes left by older Neo4j implementations.
             session.run(f"DROP INDEX `{self._collection_name}__vector` IF EXISTS")
             session.run(f"DROP INDEX `{self._collection_name}__fulltext` IF EXISTS")
@@ -1138,7 +990,6 @@ class Neo4jGraphStore(BaseVectorStore):
                 col=self._collection_name,
             )
             session.run(f"MATCH (n:{self._collection_name}) DETACH DELETE n")
-            session.run(f"MATCH (n:{_community_label(self._collection_name)}) DETACH DELETE n")
             # Pipeline documents are not connected to ordinary collection
             # documents, so delete them by their explicit run-to-collection tag.
             session.run(

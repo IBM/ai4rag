@@ -167,8 +167,6 @@ class TestNeo4jGraphStoreInit:
         joined = " ".join(cypher_calls)
         assert "VECTOR INDEX" in joined
         assert "ai4rag_col__embedding" in joined
-        assert "ai4rag_col__community_embedding" in joined
-        assert "ai4rag_col__CommunitySummary" in joined
         assert "(n:`ai4rag_col`)" in joined
         assert "(n:`ai4rag_col`:Chunk)" not in joined
         assert "FULLTEXT INDEX" not in joined
@@ -687,22 +685,6 @@ class TestBuildKnowledgeGraphFromDocuments:
         assert "MATCH (source:__Entity__)-[r]->(target:__Entity__)" in cypher_calls
         assert "r.ai4rag_kg_collections" in cypher_calls
         assert "$col IN COALESCE(r.ai4rag_kg_collections, [])" in cypher_calls
-
-    def test_community_projection_scopes_relationships_to_collection(
-        self, mock_driver_cls, mock_embedding, neo4j_config
-    ):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        session.run.reset_mock()
-        projected = MagicMock()
-        communities = MagicMock()
-        communities.data.return_value = []
-        session.run.side_effect = [projected, communities]
-
-        store._build_community_summaries(MagicMock())
-
-        projection_query = session.run.call_args_list[0].args[0]
-        assert "$collection IN COALESCE(r.ai4rag_kg_collections, [])" in projection_query
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
         """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""
