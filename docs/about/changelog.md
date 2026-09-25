@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.18.0](https://github.com/IBM/ai4rag/releases/tag/v0.18.0)
+
+### Added
+- **RAG optimization component** — GAM-based optimization gains a warm-start phase: `GAMOptSettings.warm_start_strategy` (`"random"` by default, or `"greedy"`/`"balanced"` via `fields_to_balance`) controls how the initial random evaluations are chosen before GAM iterations begin, auto-adjusting the warm-start size (with a logged notice) when the configured `n_random_nodes` is too small to guarantee full coverage of categorical values. A new `GAMOptSettings.max_iterations` setting caps how many evaluated patterns are retained and published, independent of the `max_evals` evaluation budget
+- **Document discovery** — benchmark keys are now validated against the discovered corpus. Each `test_data_doc_names` entry must identify exactly one document: an exact object-key match always wins, and a bare file name is accepted only when it resolves to a single document. Anything else raises the new `BenchmarkKeyError` (a `ValueError` subclass, exported from `ai4rag.utils.data`) listing the offending keys, the locations searched, and the expected key format. Previously a `correct_answer_document_keys` entry that matched no ingested object — a prefix-relative key, say — simply retrieved nothing, leaving the question ungrounded and the scores quietly wrong. Pass `validate_test_data_keys=False` to downgrade the failure to a warning. A benchmark document that is discovered but dropped by the sampling budget is reported separately, also as a warning
+
+### Changed
+- **BREAKING CHANGE: Document discovery** — `discover_documents()` now ingests **several bucket locations at once**: the `prefix: str` parameter is replaced by `prefixes: str | list[str] | None`, and `DiscoveryResult.prefix` by `DiscoveryResult.prefixes: tuple[str, ...]` (`to_dict()` and `documents_descriptor.json` emit `"prefixes"` accordingly). A bare string is still accepted and coerced to a one-element list, and omitting the argument still lists the whole bucket, so single-location callers only need to rename the keyword. Every prefix is listed and merged into one corpus deduplicated by object key — overlapping selections such as `docs/` and `docs/manuals/` are safe — and the `sampling_max_size_gb` budget applies to that union rather than to each location separately
+- **Document discovery** — listings are now paginated. `list_objects_v2` returns at most 1000 keys per call, so a location holding more than that was silently truncated; with several locations sharing one budget the truncation would have starved the later prefixes entirely
+- **BREAKING CHANGE: Asset generation** — `create_placeholder_mapping()` and `generate_notebook_from_template()` take `input_data_keys: list[str]` in place of `input_data_key: str`, and the indexing notebook template's `INPUT_DATA_KEY` placeholder becomes `INPUT_DATA_KEYS`, rendered as a Python list literal. The generated `indexing.ipynb` therefore rediscovers every location the pipeline ingested, not just the first
+- **BREAKING CHANGE: Event handler** — the pattern payload's settings block field `vector_store_binding` is renamed to `store_binding` (backend-agnostic naming). Code reading `on_pattern_creation()` payloads must switch to the new field name
+- **RAG optimization component** — only the best successful warm-start candidate is published as a pattern (as `Pattern1`), feeding into the subsequent GAM iterations; the other warm-start evaluations remain internal to the optimizer and are not streamed individually. GAM training now fits factor terms for categorical parameters and spline terms for numeric ones (previously every parameter was label-encoded and modeled with a spline), improving prediction quality once warm-start coverage is enabled
+
+### Fixed
+- **Notebooks** — fixed the MaaS indexing notebook template: corrected the table of contents/appendix links, removed a duplicate "Download HuggingFace Models" step (renumbering the subsequent steps), and cleaned up incorrect configuration descriptions
+
+---
+
 ## [0.17.0](https://github.com/IBM/ai4rag/releases/tag/v0.17.0)
 
 ### Added

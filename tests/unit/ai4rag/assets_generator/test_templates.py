@@ -27,7 +27,7 @@ _SAMPLE_PATTERN_DATA: dict = {
             "model_id": "publishers/ibm/models/slate-125m-english-rtrvr",
             "embedding_params": {"embedding_dimension": 768},
         },
-        "vector_store_binding": {
+        "store_binding": {
             "provider_type": "milvus",
             "collection_name": "test_collection",
         },
@@ -57,7 +57,7 @@ class TestCreatePlaceholderMapping:
         return create_placeholder_mapping(
             _SAMPLE_PATTERN_DATA,
             test_data_key="s3://bucket/test.jsonl",
-            input_data_key="s3://bucket/docs/",
+            input_data_keys=["s3://bucket/docs/", "s3://bucket/manuals/"],
         )
 
     def test_pattern_name(self, mapping: dict):
@@ -102,7 +102,12 @@ class TestCreatePlaceholderMapping:
 
     def test_s3_keys(self, mapping: dict):
         assert mapping["TEST_DATA_KEY"] == "s3://bucket/test.jsonl"
-        assert mapping["INPUT_DATA_KEY"] == "s3://bucket/docs/"
+        # Rendered as a literal so the notebook line stays valid Python.
+        assert mapping["INPUT_DATA_KEYS"] == '["s3://bucket/docs/", "s3://bucket/manuals/"]'
+
+    def test_input_data_keys_default_to_an_empty_list(self):
+        """A pattern generated without locations must still render a valid literal."""
+        assert create_placeholder_mapping({})["INPUT_DATA_KEYS"] == "[]"
 
     def test_all_expected_keys_present(self, mapping: dict):
         """All documented placeholder names must appear in the mapping."""
@@ -128,7 +133,7 @@ class TestCreatePlaceholderMapping:
             "CHUNK_SIZE",
             "CHUNK_OVERLAP",
             "TEST_DATA_KEY",
-            "INPUT_DATA_KEY",
+            "INPUT_DATA_KEYS",
         }
         assert expected_keys.issubset(set(mapping.keys()))
 
@@ -198,13 +203,13 @@ class TestGenerateNotebookFromTemplate:
             output_data={},
             output_notebook_path=tmp_path / "out.ipynb",
             test_data_key="key/test",
-            input_data_key="key/input",
+            input_data_keys=["key/input"],
         )
 
         mock_create.assert_called_once_with(
             {},
             test_data_key="key/test",
-            input_data_key="key/input",
+            input_data_keys=["key/input"],
         )
 
 
@@ -288,6 +293,29 @@ class TestGeneratedNotebookUsesDirectClients:
         # Escaped literal braces ({{ }}) are intentional; only single-brace ALL-CAPS tokens are placeholders.
         leftover = sorted(set(re.findall(r"(?<!\{)\{[A-Z_]+\}(?!\})", text)))
         assert leftover == [], f"Unresolved placeholders: {leftover}"
+
+
+def test_indexing_notebook_renders_every_input_location(tmp_path: Path):
+    """The indexing notebook must rediscover the same corpus the pipeline ingested.
+
+    The keys are rendered as a Python list literal and handed to
+    ``discover_documents`` as ``prefixes``, so a reader re-running the notebook
+    gets every location, not just the first.
+    """
+    output_path = tmp_path / "maas_indexing.ipynb"
+    generate_notebook_from_template(
+        notebook_template="maas_indexing",
+        output_data=_SAMPLE_PATTERN_DATA,
+        output_notebook_path=output_path,
+        test_data_key="benchmarks/test.json",
+        input_data_keys=["manuals/", "reports/"],
+    )
+    text = _read_notebook_text(output_path)
+
+    assert 'input_data_keys = ["manuals/", "reports/"]' in text
+    assert "prefixes=input_data_keys" in text
+    assert 'test_data_key = "benchmarks/test.json"' in text
+    assert "test_data_doc_names=test_data_doc_names" in text
 
 
 def test_inference_notebook_passes_detected_language(tmp_path: Path):

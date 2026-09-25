@@ -46,19 +46,41 @@ S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for 
 
 ### Document Discovery
 
-List and sample documents from an S3-compatible bucket:
+List and sample documents from one or more locations in an S3-compatible bucket:
 
 ```python
 from ai4rag.utils.data import discover_documents
 
 result = discover_documents(
     bucket_name="my-bucket",
-    prefix="documents/",
+    prefixes=["documents/", "manuals/"],
     sampling_enabled=True,
     sampling_max_size_gb=1.0,
 )
 print(f"Found {result.count} documents ({result.total_size_bytes} bytes)")
 result.save("/tmp/discovery_output")
+```
+
+Every prefix is listed and merged into a single corpus deduplicated by object key, so overlapping
+selections (`docs/` and `docs/manuals/`) are safe. The sampling budget applies to that union, not to
+each location. Omitting `prefixes` — or passing an empty list — lists the whole bucket; a bare string
+is accepted as a single location.
+
+When `test_data_doc_names` is given, every entry must identify exactly one discovered document.
+A key that matches nothing, or a bare file name shared by documents in two locations, raises
+`BenchmarkKeyError` naming the offending keys rather than leaving the question silently ungrounded:
+
+```python
+from ai4rag.utils.data import BenchmarkKeyError, discover_documents
+
+try:
+    result = discover_documents(
+        bucket_name="my-bucket",
+        prefixes=["documents/"],
+        test_data_doc_names=["documents/report.pdf"],
+    )
+except BenchmarkKeyError as exc:
+    print(exc)  # names the keys and the locations that were searched
 ```
 
 ### Text Extraction

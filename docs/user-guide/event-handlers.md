@@ -44,7 +44,10 @@ def on_status_change(self, level: LogLevel, message: str, step: str | None = Non
 
 ## `on_pattern_creation`
 
-Called once per evaluated RAG pattern. This is where you receive the full evaluation result and can persist, forward, or display it.
+Called once per evaluated RAG pattern that is published to the event handler. This is where you receive the full evaluation result and can persist, forward, or display it.
+
+!!! note "Warm-start evaluations are not all published"
+    When the GAM optimizer's warm-start phase is enabled (see [Optimizers](optimizers.md)), only the best successful warm-start candidate is published as `Pattern1`; the other warm-start evaluations are internal to the optimizer and never reach `on_pattern_creation`.
 
 ```python
 def on_pattern_creation(
@@ -89,7 +92,7 @@ def on_pattern_creation(
         "embedding":   {"model_id": "...", "embedding_params": {"embedding_dimension": 768}},
         "retrieval":   {"method": "simple", "number_of_chunks": 5, "search_mode": "vector"},
         "generation":  {"model_id": "...", ...},
-        "vector_store_binding": {"provider_type": "local_milvus", "collection_name": "..."},
+        "store_binding": {"provider_type": "local_milvus", "collection_name": "..."},
     },
 }
 ```
@@ -103,7 +106,7 @@ def on_pattern_creation(
         "answer": "According to the document ...",
         "correct_answers": ["The correct answer is ..."],
         "answer_contexts": [
-            {"text": "Retrieved chunk text ...", "document_id": "doc1.pdf"},
+            {"text": "Retrieved chunk text ...", "document_key": "manuals/doc1.pdf"},
         ],
         "metrics": [
             {"name": "faithfulness", "evaluator": "unitxt", "score": 0.71},

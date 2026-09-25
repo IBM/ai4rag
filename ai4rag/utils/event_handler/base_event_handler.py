@@ -93,7 +93,7 @@ class GenerationSettings(TypedDict):
 class PatternSettings(TypedDict):
     """Full settings block of :class:`PatternPayload`."""
 
-    vector_store_binding: VectorStoreSettings
+    store_binding: VectorStoreSettings
     chunking: ChunkingSettings
     embedding: EmbeddingSettings
     retrieval: RetrievalSettings
@@ -213,7 +213,7 @@ class BaseEventHandler(ABC):
                 },
                 'duration_seconds': 42,
                 'settings': {
-                    'vector_store_binding': {
+                    'store_binding': {
                         'provider_type': 'local_milvus', 'collection_name': 'ai4rag_20260317092550'
                     },
                     'chunking': {'method': 'recursive', 'chunk_size': 1024, 'chunk_overlap': 256},

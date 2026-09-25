@@ -819,7 +819,7 @@ event_handler.on_pattern_creation(
             "embedding": {...},
             "retrieval": {...},
             "generation": {...},
-            "vector_store_binding": {
+            "store_binding": {
                 "provider_type": "milvus",  # From vector_store_config.provider
                 "collection_name": "ai4rag_20260701120000_ab12cd34",
             },
