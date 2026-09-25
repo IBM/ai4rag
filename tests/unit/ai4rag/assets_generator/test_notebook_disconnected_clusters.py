@@ -32,7 +32,7 @@ class TestDisconnectedClusterDocumentation:
             "Notebook missing 'Prerequisites for Disconnected Clusters' section"
 
     def test_notebook_explains_model_requirements(self, indexing_notebook):
-        """Notebook must explain which models are required offline."""
+        """Notebook must describe format-specific offline model requirements."""
         sources = [
             "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
             for cell in indexing_notebook["cells"]
@@ -42,6 +42,11 @@ class TestDisconnectedClusterDocumentation:
 
         assert "Docling" in full_text, "Notebook must mention Docling artifacts"
         assert "DOCLING_ARTIFACTS_PATH" in full_text, "Notebook must mention DOCLING_ARTIFACTS_PATH env var"
+        assert "TXT-only corpora" in full_text, "Notebook must explain TXT-only offline requirements"
+        assert "Markdown-only corpora" in full_text, "Notebook must explain Markdown-only offline requirements"
+        assert "no Docling ML artifacts are required" in full_text, (
+            "Notebook must state that TXT-only and Markdown-only corpora do not need Docling ML artifacts"
+        )
 
     def test_notebook_includes_environment_setup_code(self, indexing_notebook):
         """Notebook must include code cells to set environment variables."""
@@ -69,7 +74,7 @@ class TestDisconnectedClusterDocumentation:
             "extract_text() call must include docling_artifacts_path parameter"
 
     def test_notebook_includes_appendix_with_download_instructions(self, indexing_notebook):
-        """Notebook must include appendix with offline download instructions."""
+        """Notebook must include model-backed offline download instructions only."""
         sources = [
             "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
             for cell in indexing_notebook["cells"]
@@ -78,7 +83,14 @@ class TestDisconnectedClusterDocumentation:
         full_text = "\n".join(sources)
 
         assert "Appendix" in full_text, "Notebook must include an appendix section"
-        assert "Download" in full_text, "Appendix must include download instructions"
+        assert "Model-backed formats or features" in full_text
+        assert "Do not use a `.txt` file as an artifact-validation trigger" in full_text
+        assert "docling-tools models download" in full_text
+        assert "oc rsync ~/.cache/docling/models/" in full_text
+        assert "DOCLING_ARTIFACTS_PATH=/opt/app-root/docling-artifacts" in full_text
+        assert 'suffix=".txt"' not in full_text
+        assert "download all Docling artifacts" not in full_text
+        assert "rsync -av" not in full_text
 
     def test_notebook_cells_are_valid_json(self, indexing_notebook):
         """All cells must be valid JSON with required fields."""
