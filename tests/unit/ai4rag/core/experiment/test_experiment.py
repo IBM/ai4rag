@@ -19,7 +19,6 @@ from ai4rag.evaluator.base_evaluator import (
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 
 # ---------------------------------------------------------------------------
@@ -61,7 +60,7 @@ def _make_result(
     )
 
 
-def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None, rag_template=None):
+def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None):
     """Construct an AI4RAGExperiment with all heavy deps mocked out."""
     from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
@@ -70,9 +69,6 @@ def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS,
         kwargs["evaluators"] = evaluators
     if metrics is not None:
         kwargs["metrics"] = metrics
-    if rag_template is not None:
-        kwargs["rag_template"] = rag_template
-
     return AI4RAGExperiment(
         documents=[],
         benchmark_data=_BENCHMARK_DF,
@@ -106,22 +102,6 @@ class TestEvaluatorType:
 
     def test_llmaj_evaluator_type(self):
         assert LLMaJEvaluator.EVALUATOR_TYPE == "judge"
-
-
-class TestRAGTemplate:
-    def test_agentic_rag_is_the_default_template(self):
-        experiment = _build_experiment()
-
-        assert experiment.rag_template is AgenticRAG
-
-    def test_custom_rag_template_is_stored(self):
-        experiment = _build_experiment(rag_template=AgenticRAG)
-
-        assert experiment.rag_template is AgenticRAG
-
-    def test_rag_template_must_extend_base_template(self):
-        with pytest.raises(TypeError, match="BaseRAGTemplate"):
-            _build_experiment(rag_template=object)
 
 
 class TestEvaluatorsSetter:

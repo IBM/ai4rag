@@ -1,4 +1,4 @@
-# Agentic RAG starter kit
+# Agentic RAG starter kit - `__PATTERN_NAME__`
 
 This project is generated from an optimized RAG pattern. Make sure you have
 access to MaaS and the vector database before deploying the application.

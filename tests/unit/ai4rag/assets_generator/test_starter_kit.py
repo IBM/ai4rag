@@ -38,7 +38,6 @@ _SAMPLE_PATTERN_DATA: dict = {
             "ranker_strategy": "weighted",
             "ranker_alpha": 0.5,
         },
-        "rag_template": "AgenticRAG",
     },
     "indexing": {
         "pipeline_spec": {
@@ -153,7 +152,7 @@ class TestApplyProviderConditionals:
         assert "MILVUS_HOST=" not in result
 
     def test_case_insensitive(self, tmp_path):
-        content = "# <<< BEGIN MILVUS >>>\n" "MILVUS_HOST=\n" "# <<< END MILVUS >>>\n"
+        content = "# <<< BEGIN MILVUS >>>\nMILVUS_HOST=\n# <<< END MILVUS >>>\n"
         f = tmp_path / "test.env"
         f.write_text(content)
         _apply_provider_conditionals(f, "Milvus")
@@ -186,6 +185,7 @@ class TestGenerateStarterKit:
             assert "starter_kit/Makefile" in names
             assert "starter_kit/Containerfile.openshell" in names
             assert "starter_kit/values.yaml" in names
+            assert "starter_kit/README.md" in names
             assert "starter_kit/agent.yaml" not in names
             assert "starter_kit/agent_config.json" in names
             assert "starter_kit/src/agentic_rag/agent.py" in names

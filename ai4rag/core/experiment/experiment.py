@@ -40,7 +40,6 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
-from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
@@ -93,11 +92,6 @@ class AI4RAGExperiment:
 
     Other Parameters
     ----------------
-    rag_template : type[BaseRAGTemplate], default=AgenticRAG
-        RAG template class used to evaluate each pattern. ``SimpleRAG`` is the
-        legacy alternative; custom templates must implement the
-        ``BaseRAGTemplate`` interface.
-
     metrics : Sequence[RAGMetric]
         Metrics evaluated during the AutoRAG experiment, each a ``RAGMetric``
         instance selected from :class:`Metrics`. Not all of these metrics are
@@ -159,10 +153,6 @@ class AI4RAGExperiment:
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
-        self.rag_template: type[BaseRAGTemplate] = kwargs.pop("rag_template", AgenticRAG)
-        if not isinstance(self.rag_template, type) or not issubclass(self.rag_template, BaseRAGTemplate):
-            raise TypeError("rag_template must be a BaseRAGTemplate subclass.")
-
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
 
@@ -561,7 +551,7 @@ class AI4RAGExperiment:
                 ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
             )
 
-            rag_pattern = self.rag_template(
+            rag_pattern = AgenticRAG(
                 foundation_model=foundation_model,
                 retriever=retriever,
             )
@@ -824,7 +814,6 @@ class AI4RAGExperiment:
             "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
             "settings": {
-                "rag_template": self.rag_template.__name__,
                 "store_binding": vector_store_payload,
                 **indexing_payload,
                 "retrieval": retrieval_payload,
