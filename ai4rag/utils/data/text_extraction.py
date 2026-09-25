@@ -40,6 +40,7 @@ from docling.document_converter import (
 from docling.pipeline.asr_pipeline import AsrPipeline
 
 from ai4rag import handler
+from ai4rag.utils.clients.s3 import create_s3_client
 
 from .constants import SUPPORTED_EXTENSIONS
 
@@ -371,21 +372,17 @@ def _resolve_s3_credentials(
 
 
 def _make_s3_client(s3_creds: dict[str, str | None], verify: bool = True) -> Any:
-    """Create a fresh ``boto3`` S3 client from explicit credentials.
+    """Create a fresh S3 client using the shared S3 client factory.
 
-    A fresh session is created on every call so the client is safe to use
-    from multiple threads without sharing state.
+    Keeping client construction in :func:`create_s3_client` makes extraction
+    use the same TLS and certificate-discovery behaviour as document
+    discovery.  A separate client is still created for every download thread.
     """
-    import boto3
-
-    session = boto3.session.Session(
-        aws_access_key_id=s3_creds["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=s3_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=s3_creds.get("AWS_DEFAULT_REGION"),
-    )
-    return session.client(
-        service_name="s3",
+    return create_s3_client(
         endpoint_url=s3_creds["AWS_S3_ENDPOINT"],
+        access_key_id=s3_creds["AWS_ACCESS_KEY_ID"],
+        secret_access_key=s3_creds["AWS_SECRET_ACCESS_KEY"],
+        region_name=s3_creds.get("AWS_DEFAULT_REGION"),
         verify=verify,
     )
 
