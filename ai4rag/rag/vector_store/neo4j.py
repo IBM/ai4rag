@@ -4,15 +4,20 @@
 # -----------------------------------------------------------------------------
 # pylint: disable=too-many-lines
 import asyncio
+import hashlib
 import json
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextvars import ContextVar
 from typing import Any
 
 import neo4j
 from docling_core.types.doc import DoclingDocument
 from json_repair import repair_json
+from neo4j_graphrag.components.kg_writer import KGWriterModel, Neo4jWriter
+from neo4j_graphrag.components.types import LexicalGraphConfig, Neo4jGraph, Neo4jRelationship
+from neo4j_graphrag.neo4j_queries import upsert_relationship_query
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -143,17 +148,107 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
         return await loop.run_in_executor(None, self.invoke, input, message_history, system_instruction)
 
 
+class _CollectionKGWriter(Neo4jWriter):
+    """Record ownership on precisely the relationships written by the pipeline."""
+
+    def __init__(self, driver: neo4j.Driver, database: str, collection_name: str) -> None:
+        super().__init__(driver=driver, neo4j_database=database)
+        self._collection_name = collection_name
+
+    async def run(
+        self,
+        graph: Neo4jGraph,
+        lexical_graph_config: LexicalGraphConfig = LexicalGraphConfig(),
+    ) -> KGWriterModel:
+        return await super().run(graph, lexical_graph_config)
+
+    def _upsert_relationships(self, rels: list[Neo4jRelationship]) -> None:
+        query = upsert_relationship_query(support_variable_scope_clause=self.is_version_5_23_or_above)
+        if query.count("RETURN elementId(rel)") != 1:
+            raise RuntimeError("Neo4j GraphRAG relationship writer query changed; cannot record collection ownership.")
+        query = query.replace(
+            "RETURN elementId(rel)",
+            "SET rel.ai4rag_kg_collections = CASE "
+            "WHEN $col IN COALESCE(rel.ai4rag_kg_collections, []) "
+            "THEN rel.ai4rag_kg_collections "
+            "ELSE COALESCE(rel.ai4rag_kg_collections, []) + $col END "
+            "RETURN elementId(rel)",
+        )
+        self.driver.execute_query(
+            query,
+            parameters_={"rows": self._relationships_to_rows(rels), "col": self._collection_name},
+            database_=self.neo4j_database,
+        )
+
+
+class _CanonicalKGWriter(_CollectionKGWriter):
+    """Write extracted entities onto chunks already stored by ``add_documents``."""
+
+    def __init__(self, driver: neo4j.Driver, database: str, collection_name: str) -> None:
+        super().__init__(driver, database, collection_name)
+        self._links: ContextVar[tuple[str, list[str]] | None] = ContextVar("canonical_kg_links", default=None)
+
+    async def run(
+        self,
+        graph: Neo4jGraph,
+        lexical_graph_config: LexicalGraphConfig = LexicalGraphConfig(),
+    ) -> KGWriterModel:
+        documents = [node for node in graph.nodes if node.label == lexical_graph_config.document_node_label]
+        if len(documents) != 1 or not documents[0].properties.get("ai4rag_chunk_id"):
+            raise ValueError("KG extraction requires the canonical chunk ID in document metadata.")
+
+        chunk_id = documents[0].properties["ai4rag_chunk_id"]
+        entity_nodes = [
+            node for node in graph.nodes if node.label not in lexical_graph_config.lexical_graph_node_labels
+        ]
+        entity_ids = {node.id for node in entity_nodes}
+        linked_entity_ids = sorted(
+            {
+                rel.start_node_id
+                for rel in graph.relationships
+                if rel.type == lexical_graph_config.node_to_chunk_relationship_type and rel.start_node_id in entity_ids
+            }
+        )
+        entity_graph = Neo4jGraph(
+            nodes=entity_nodes,
+            relationships=[
+                rel for rel in graph.relationships if rel.start_node_id in entity_ids and rel.end_node_id in entity_ids
+            ],
+        )
+        token = self._links.set((chunk_id, linked_entity_ids))
+        try:
+            return await super().run(entity_graph, lexical_graph_config)
+        finally:
+            self._links.reset(token)
+
+    def _db_cleaning(self) -> None:
+        links = self._links.get()
+        if links is not None:
+            chunk_id, entity_ids = links
+            if entity_ids:
+                self.driver.execute_query(
+                    f"UNWIND $entity_ids AS entity_id "
+                    f"MATCH (e:__Entity__ {{__tmp_internal_id: entity_id}}) "
+                    f"MATCH (c:`{self._collection_name}`:Chunk {{id: $chunk_id}}) "
+                    "MERGE (e)-[:FROM_CHUNK]->(c) "
+                    "SET e.ai4rag_kg_collections = CASE "
+                    "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
+                    "THEN e.ai4rag_kg_collections "
+                    "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
+                    parameters_={"entity_ids": entity_ids, "chunk_id": chunk_id, "col": self._collection_name},
+                    database_=self.neo4j_database,
+                )
+        super()._db_cleaning()
+
+
 class Neo4jGraphStore(BaseVectorStore):
     """Graph-only vector store backed by Neo4j.
 
-    Supports two independent workflows:
-
-    **Graph RAG workflow** — ``add_documents`` + ``search(mode="graph")``
-        Uses :class:`neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline`
-        to chunk documents, embed them, extract entities/relations with an LLM, and
-        write the resulting knowledge graph to Neo4j. Vector seeds are retrieved
-        from the collection-specific vector index; context is expanded via
-        ``__Entity__`` → ``FROM_CHUNK`` traversal.
+    ``add_documents`` stores one Document and Chunk set per collection. When a
+    foundation model is supplied, ``SimpleKGPipeline`` extracts entities and
+    relations from those chunks, and the graph writer links them back by chunk
+    ID. Graph search uses the collection-specific vector index and expands
+    context through ``__Entity__`` → ``FROM_CHUNK`` links.
 
     Parameters
     ----------
@@ -222,7 +317,7 @@ class Neo4jGraphStore(BaseVectorStore):
         :meth:`build_knowledge_graph_from_documents`.
 
         When *model* is provided via kwargs, entity extraction is performed after
-        indexing: chunks are sent in batches to the LLM, and the resulting
+        indexing: chunks are sent to the LLM, and the resulting
         ``__Entity__`` nodes are written to Neo4j with ``FROM_CHUNK``
         relationships so that ``search(mode="graph")`` can expand context via the
         knowledge graph.
@@ -236,9 +331,9 @@ class Neo4jGraphStore(BaseVectorStore):
 
             - ``batch_size`` (int) — max chunks per write transaction
               (default :attr:`_BATCH_SIZE`).
-            - ``model`` — foundation model used for entity extraction.  When
-              omitted, graph search returns ANN seed chunks without entity-based
-              context expansion.
+            - ``model`` — foundation model used for entity extraction. When
+              omitted and no model was supplied at construction, graph search
+              returns ANN seed chunks without entity-based context expansion.
         """
         if not documents:
             return
@@ -276,9 +371,22 @@ class Neo4jGraphStore(BaseVectorStore):
             self._run_kg_pipeline(
                 chunks=[chunk for chunk, _ in unique_pairs],
                 model=model,
+                chunk_size=kwargs.get("kg_chunk_size", 2000),
+                chunk_overlap=kwargs.get("kg_chunk_overlap", 200),
+                on_error=kwargs.get("on_error", "IGNORE"),
+                perform_entity_resolution=kwargs.get("perform_entity_resolution", True),
             )
 
-    def _run_kg_pipeline(self, chunks: list[AI4RAGChunk], model: Any, max_concurrent: int = 8) -> None:
+    def _run_kg_pipeline(
+        self,
+        chunks: list[AI4RAGChunk],
+        model: Any,
+        max_concurrent: int = 8,
+        chunk_size: int = 2000,
+        chunk_overlap: int = 200,
+        on_error: str = "IGNORE",
+        perform_entity_resolution: bool = True,
+    ) -> None:
         """Run ``SimpleKGPipeline`` on chunk texts concurrently.
 
         Explicit entity/relation types are provided so the pipeline uses
@@ -304,9 +412,10 @@ class Neo4jGraphStore(BaseVectorStore):
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
             from_pdf=False,
-            text_splitter=FixedSizeSplitter(chunk_size=2000, chunk_overlap=200),
-            on_error="IGNORE",
-            perform_entity_resolution=True,
+            text_splitter=FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+            on_error=on_error,
+            perform_entity_resolution=perform_entity_resolution,
+            kg_writer=_CanonicalKGWriter(self._driver, self._config.database, self._collection_name),
             neo4j_database=self._config.database,
             **_kg_pipeline_extraction_options(self._kg_extraction_config),
         )
@@ -322,7 +431,7 @@ class Neo4jGraphStore(BaseVectorStore):
                         file_path=f"ai4rag://{self._collection_name}/{run_id}/{uuid.uuid4().hex}",
                         text=chunk.text,
                         document_metadata={
-                            "ai4rag_kg_run": run_id,
+                            "ai4rag_chunk_id": chunk.chunk_id,
                             "document_id": chunk.metadata.get("document_id", chunk.chunk_id),
                             "source": chunk.metadata.get("source", ""),
                         },
@@ -338,69 +447,14 @@ class Neo4jGraphStore(BaseVectorStore):
                 "Install 'nest_asyncio' and call nest_asyncio.apply() beforehand."
             )
 
-        self._tag_kg_chunks(run_id)
-
-    def _tag_kg_chunks(self, run_id: str) -> None:
-        """Tag nodes emitted by one KG pipeline run with collection ownership."""
         with self._driver.session(database=self._config.database) as session:
             session.run(
-                f"MATCH (kc:Chunk)-[:FROM_DOCUMENT]->(kd:Document {{ai4rag_kg_run: $run_id}}) "
-                f"OPTIONAL MATCH (oc:{self._collection_name}:Chunk) WHERE oc.text = kc.text "
-                f"SET kc:{self._collection_name}, kc.collection = $col, "
-                f"    kc.metadata = COALESCE(oc.metadata, kc.metadata), "
-                f"    kc.document_id = COALESCE(oc.document_id, kd.document_id, kc.document_id)",
-                col=self._collection_name,
-                run_id=run_id,
-            )
-            session.run(
-                f"MATCH (kd:Document {{ai4rag_kg_run: $run_id}}) "
-                f"SET kd:`{self._collection_name}`, kd.ai4rag_kg_collection = $col",
-                col=self._collection_name,
-                run_id=run_id,
-            )
-            # SimpleKGPipeline's __Entity__ nodes are deliberately shared when
-            # the same entity is extracted from multiple inputs.  Record every
-            # AI4RAG collection that owns such a node instead of applying the
-            # collection label: a label would make clean_collection() delete a
-            # node still used by a different collection.
-            session.run(
-                "MATCH (e:__Entity__)-[:FROM_CHUNK]->(:Chunk)-[:FROM_DOCUMENT]->"
-                "(:Document {ai4rag_kg_run: $run_id}) "
+                f"MATCH (e:__Entity__)-[:FROM_CHUNK]->(:`{self._collection_name}`:Chunk) "
                 "SET e.ai4rag_kg_collections = CASE "
                 "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
                 "THEN e.ai4rag_kg_collections "
                 "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
                 col=self._collection_name,
-                run_id=run_id,
-            )
-            # Relationships are shared by Neo4j GraphRAG when their endpoint
-            # entities are resolved across documents. Track all collections
-            # that extracted each relationship so retrieval never traverses an
-            # edge that belongs only to another collection.
-            session.run(
-                "MATCH (source:__Entity__)-[r]->(target:__Entity__) "
-                "WHERE type(r) <> 'FROM_CHUNK' "
-                "AND EXISTS { MATCH (source)-[:FROM_CHUNK]->(:Chunk)-[:FROM_DOCUMENT]->"
-                "(:Document {ai4rag_kg_run: $run_id}) } "
-                "AND EXISTS { MATCH (target)-[:FROM_CHUNK]->(:Chunk)-[:FROM_DOCUMENT]->"
-                "(:Document {ai4rag_kg_run: $run_id}) } "
-                "SET r.ai4rag_kg_collections = CASE "
-                "WHEN $col IN COALESCE(r.ai4rag_kg_collections, []) "
-                "THEN r.ai4rag_kg_collections "
-                "ELSE COALESCE(r.ai4rag_kg_collections, []) + $col END",
-                col=self._collection_name,
-                run_id=run_id,
-            )
-            # The collection's canonical chunks are written before the
-            # SimpleKGPipeline pass. Link entities back to those chunks by
-            # exact text so vector seeds can use local graph expansion without
-            # relying on pipeline-internal chunk nodes.
-            session.run(
-                f"MATCH (e:__Entity__)-[:FROM_CHUNK]->(kc:Chunk)-[:FROM_DOCUMENT]->"
-                "(:Document {ai4rag_kg_run: $run_id}) "
-                f"MATCH (oc:{self._collection_name}:Chunk) WHERE oc.text = kc.text "
-                "MERGE (e)-[:FROM_CHUNK]->(oc)",
-                run_id=run_id,
             )
 
     def _upsert_doc_groups(self, doc_groups: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]]) -> None:
@@ -488,8 +542,8 @@ class Neo4jGraphStore(BaseVectorStore):
         search_mode : str, default="graph"
             ``"graph"`` — ANN seed retrieval + entity-based context expansion via
             :class:`neo4j_graphrag.retrievers.VectorCypherRetriever` against the
-            collection-specific vector index (requires
-            :meth:`build_knowledge_graph_from_documents`).
+            collection-specific vector index (requires extracted entities for
+            context expansion).
         **kwargs : Any
             Graph-mode parameters:
 
@@ -686,21 +740,12 @@ class Neo4jGraphStore(BaseVectorStore):
         on_error: str = "IGNORE",
         perform_entity_resolution: bool = True,
     ) -> None:
-        """Build a knowledge graph from documents using ``SimpleKGPipeline``.
+        """Chunk Docling documents and build one collection graph.
 
-        Delegates the full pipeline — text splitting, embedding, LLM-based entity
-        and relation extraction, and Neo4j write — to
-        :class:`neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline`.
-        The pipeline creates plain ``Chunk`` nodes (with ``embedding`` and ``text``
-        properties), ``__Entity__`` nodes, and ``FROM_CHUNK`` / ``NEXT_CHUNK``
-        relationships.  After the pipeline, every new ``Chunk`` node is tagged with
-        the ``collection`` property so that :meth:`search` (``mode="graph"``) can
-        scope results to this collection.
-
-        .. note::
-            This method is independent of :meth:`add_documents`.  For graph-RAG
-            workloads, call this method instead of ``add_documents``; for pure
-            vector search, use ``add_documents``.
+        Uses ``FixedSizeSplitter`` to create canonical ``AI4RAGChunk`` objects,
+        then delegates storage and entity extraction to :meth:`add_documents`.
+        The KG writer links extracted entities to those stored chunks by ID;
+        it does not persist a second set of pipeline document or chunk nodes.
 
         Parameters
         ----------
@@ -721,49 +766,48 @@ class Neo4jGraphStore(BaseVectorStore):
         from neo4j_graphrag.components.text_splitters.fixed_size_splitter import (
             FixedSizeSplitter,
         )
-        from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
-        self._ensure_kg_schema()
+        splitter = FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-        text = "\n\n".join(doc.export_to_markdown() for doc in documents)
-        if not text.strip():
-            logger.info("No text extracted from documents; skipping KG build.")
-            return
-
-        embedder = _EmbedderAdapter(self.embedding_model)
-        llm = _LLMAdapter(model)
-
-        pipeline = SimpleKGPipeline(
-            llm=llm,
-            driver=self._driver,
-            embedder=embedder,
-            from_pdf=False,
-            text_splitter=FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
-            on_error=on_error,
-            perform_entity_resolution=perform_entity_resolution,
-            neo4j_database=self._config.database,
-            **_kg_pipeline_extraction_options(self._kg_extraction_config),
-        )
-
-        run_id = uuid.uuid4().hex
-        try:
-            asyncio.run(
-                pipeline.run_async(
-                    file_path=f"ai4rag://{self._collection_name}/{run_id}",
-                    text=text,
-                    document_metadata={"ai4rag_kg_run": run_id},
+        async def _split_documents() -> list[AI4RAGChunk]:
+            chunks: list[AI4RAGChunk] = []
+            for doc in documents:
+                text = doc.export_to_markdown()
+                if not text.strip():
+                    continue
+                name = getattr(doc, "name", None)
+                document_id = name if isinstance(name, str) and name else hashlib.sha256(text.encode()).hexdigest()
+                result = await splitter.run(text)
+                chunks.extend(
+                    AI4RAGChunk(
+                        text=part.text,
+                        metadata={"document_id": document_id, "sequence_number": part.index, "source": document_id},
+                    )
+                    for part in result.chunks
                 )
-            )
+            return chunks
+
+        try:
+            chunks = asyncio.run(_split_documents())
         except RuntimeError:
-            # Already inside a running event loop (e.g. Jupyter).
-            # Users can install nest_asyncio and call nest_asyncio.apply() beforehand.
             raise RuntimeError(
                 "build_knowledge_graph_from_documents cannot be called from within a running "
                 "event loop.  Install 'nest_asyncio' and call nest_asyncio.apply() before "
                 "invoking this method in a Jupyter notebook or other async context."
             )
 
-        self._tag_kg_chunks(run_id)
+        if not chunks:
+            logger.info("No text extracted from documents; skipping KG build.")
+            return
+
+        self.add_documents(
+            chunks,
+            model=model,
+            kg_chunk_size=chunk_size,
+            kg_chunk_overlap=chunk_overlap,
+            on_error=on_error,
+            perform_entity_resolution=perform_entity_resolution,
+        )
 
         logger.info(
             "Knowledge graph built from %d documents (collection=%s).",
@@ -783,8 +827,8 @@ class Neo4jGraphStore(BaseVectorStore):
         """Extract entities and relations from already-indexed chunks.
 
         Reads all ``Chunk`` nodes in the collection (paginated), sends them in
-        batches to the LLM for extraction, and writes ``Entity`` nodes and
-        ``MENTIONS`` / ``RELATED_TO`` relationships back to Neo4j.
+        batches to the LLM for extraction, and writes ``__Entity__`` nodes and
+        ``FROM_CHUNK`` / ``RELATED_TO`` relationships back to Neo4j.
 
         Use :meth:`build_knowledge_graph_from_documents` for the recommended
         ``SimpleKGPipeline``-based workflow.  This method is kept for workloads
@@ -832,23 +876,13 @@ class Neo4jGraphStore(BaseVectorStore):
 
         def write_batch_result(chunk_entities: list[dict], relationships: list[dict]) -> None:
             with self._driver.session(database=self._config.database) as session:
-                for ent in chunk_entities:
-                    chunk_id = ent.get("chunk_id", "")
-                    session.execute_write(
-                        Neo4jGraphStore._write_kg_result_tx,
-                        chunk_id,
-                        [ent],
-                        [],
-                        self._collection_name,
-                    )
-                if relationships:
-                    session.execute_write(
-                        Neo4jGraphStore._write_kg_result_tx,
-                        "",
-                        [],
-                        relationships,
-                        self._collection_name,
-                    )
+                session.execute_write(
+                    Neo4jGraphStore._write_kg_result_tx,
+                    "",
+                    chunk_entities,
+                    relationships,
+                    self._collection_name,
+                )
 
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(extract_batch, batch): batch for batch in batches}
@@ -895,18 +929,24 @@ class Neo4jGraphStore(BaseVectorStore):
             if not name:
                 continue
             tx.run(
-                f"MERGE (e:{collection_name}:Entity {{name: $name, entity_type: $etype}}) "
-                f"SET e.description = $desc",
+                "MERGE (e:__Entity__ {name: $name, entity_type: $etype}) "
+                "SET e.description = $desc, "
+                "e.ai4rag_kg_collections = CASE "
+                "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
+                "THEN e.ai4rag_kg_collections "
+                "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
                 name=name,
                 etype=ent.get("type", "Other"),
                 desc=ent.get("description", ""),
+                col=collection_name,
             )
-            if chunk_id:
+            entity_chunk_id = ent.get("chunk_id") or chunk_id
+            if entity_chunk_id:
                 tx.run(
                     f"MATCH (c:{collection_name}:Chunk {{id: $cid}}) "
-                    f"MATCH (e:{collection_name}:Entity {{name: $name, entity_type: $etype}}) "
-                    f"MERGE (c)-[:MENTIONS]->(e)",
-                    cid=chunk_id,
+                    "MATCH (e:__Entity__ {name: $name, entity_type: $etype}) "
+                    "MERGE (e)-[:FROM_CHUNK]->(c)",
+                    cid=entity_chunk_id,
                     name=name,
                     etype=ent.get("type", "Other"),
                 )
@@ -921,15 +961,18 @@ class Neo4jGraphStore(BaseVectorStore):
             src_type = entity_type_map.get(src, "Other")
             tgt_type = entity_type_map.get(tgt, "Other")
             tx.run(
-                f"MERGE (e1:{collection_name}:Entity {{name: $src, entity_type: $stype}}) "
-                f"MERGE (e2:{collection_name}:Entity {{name: $tgt, entity_type: $ttype}}) "
-                f"MERGE (e1)-[:RELATED_TO {{keywords: $kw, description: $desc}}]->(e2)",
+                "MATCH (e1:__Entity__ {name: $src, entity_type: $stype}) "
+                "MATCH (e2:__Entity__ {name: $tgt, entity_type: $ttype}) "
+                "MERGE (e1)-[r:RELATED_TO {keywords: $kw, description: $desc, "
+                "ai4rag_kg_collection: $col}]->(e2) "
+                "SET r.ai4rag_kg_collections = [$col]",
                 src=src,
                 stype=src_type,
                 tgt=tgt,
                 ttype=tgt_type,
                 kw=rel.get("keywords", ""),
                 desc=rel.get("description", ""),
+                col=collection_name,
             )
 
     def resolve_entities(self) -> int:
@@ -1000,6 +1043,31 @@ class Neo4jGraphStore(BaseVectorStore):
             # Clean up indexes left by older Neo4j implementations.
             session.run(f"DROP INDEX `{self._collection_name}__vector` IF EXISTS")
             session.run(f"DROP INDEX `{self._collection_name}__fulltext` IF EXISTS")
+            session.run(
+                "MATCH (:__Entity__)-[r]->(:__Entity__) "
+                "WHERE $col IN COALESCE(r.ai4rag_kg_collections, []) "
+                "AND size(r.ai4rag_kg_collections) = 1 DELETE r",
+                col=self._collection_name,
+            )
+            session.run(
+                "MATCH (:__Entity__)-[r]->(:__Entity__) "
+                "WHERE $col IN COALESCE(r.ai4rag_kg_collections, []) "
+                "SET r.ai4rag_kg_collections = "
+                "[owner IN r.ai4rag_kg_collections WHERE owner <> $col]",
+                col=self._collection_name,
+            )
+            # Legacy entities have no ownership tag. Only delete those linked
+            # exclusively to chunks from this collection, while those links
+            # still exist to prove their provenance.
+            session.run(
+                "MATCH (e:__Entity__)-[:FROM_CHUNK]->(c:Chunk) "
+                "WHERE (c.collection = $col OR $col IN labels(c)) "
+                "AND size(COALESCE(e.ai4rag_kg_collections, [])) = 0 "
+                "AND NOT EXISTS { MATCH (e)-[:FROM_CHUNK]->(other:Chunk) "
+                "WHERE COALESCE(other.collection, '') <> $col AND NOT $col IN labels(other) } "
+                "DETACH DELETE e",
+                col=self._collection_name,
+            )
             # Entity nodes can be shared by several collections. Remove this
             # collection's ownership first and delete only entities no longer
             # owned by any AI4RAG collection.
@@ -1012,8 +1080,7 @@ class Neo4jGraphStore(BaseVectorStore):
                 col=self._collection_name,
             )
             session.run(f"MATCH (n:{self._collection_name}) DETACH DELETE n")
-            # Pipeline documents are not connected to ordinary collection
-            # documents, so delete them by their explicit run-to-collection tag.
+            # Remove pipeline documents from collections created by older releases.
             session.run(
                 "MATCH (d:Document {ai4rag_kg_collection: $col}) DETACH DELETE d",
                 col=self._collection_name,
@@ -1022,10 +1089,6 @@ class Neo4jGraphStore(BaseVectorStore):
                 "MATCH (c:Chunk {collection: $col}) DETACH DELETE c",
                 col=self._collection_name,
             )
-            # Remove unowned entities created by releases before entity
-            # ownership was tracked.  An entity still connected to a Chunk is
-            # retained because it may belong to an older, active collection.
-            session.run("MATCH (e:__Entity__) WHERE NOT (e)-[:FROM_CHUNK]-(:Chunk) DETACH DELETE e")
         logger.info("Collection %s cleaned.", self._collection_name)
 
     def close(self) -> None:

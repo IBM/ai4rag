@@ -2,17 +2,21 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import asyncio
 import json
 import os
 from unittest.mock import MagicMock, patch
 
 import pytest
+from neo4j_graphrag.components.types import Neo4jGraph, Neo4jNode, Neo4jRelationship
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import (
     Neo4jGraphStore,
     _build_graph_retrieval_query,
+    _CanonicalKGWriter,
+    _CollectionKGWriter,
     _kg_pipeline_extraction_options,
     _parse_kg_extraction,
     _validate_kg_extraction_config,
@@ -254,6 +258,26 @@ class TestAddDocuments:
         merge_chunk_calls = [c for c in tx.run.call_args_list if "Chunk" in str(c) and "MERGE (c:" in str(c)]
         assert len(merge_chunk_calls) == 1
 
+    def test_pipeline_reuses_canonical_chunk_id(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        chunk = self._make_chunks(1)[0]
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+
+        async def run_pipeline(*args, **kwargs):
+            return MagicMock()
+
+        with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+                pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                store.add_documents([chunk], model=MagicMock())
+
+        assert isinstance(pipeline_cls.call_args.kwargs["kg_writer"], _CanonicalKGWriter)
+        assert (
+            pipeline_cls.return_value.run_async.call_args.kwargs["document_metadata"]["ai4rag_chunk_id"]
+            == chunk.chunk_id
+        )
+        assert not any("SET kc:ai4rag_col" in call.args[0] for call in session.run.call_args_list)
+
 
 # ---------------------------------------------------------------------------
 # search — vector mode
@@ -456,7 +480,9 @@ class TestBuildKnowledgeGraph:
         call_kwargs = model.chat.call_args.kwargs
         assert "max_completion_tokens" in call_kwargs
 
-    def test_writes_entity_and_mentions_nodes(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_writes_entities_in_searchable_schema_with_original_types(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
 
@@ -474,8 +500,14 @@ class TestBuildKnowledgeGraph:
         store.build_knowledge_graph(model, chunk_batch_size=16)
 
         all_cypher = " ".join(str(c) for c in tx.run.call_args_list)
-        assert "Entity" in all_cypher
-        assert "MENTIONS" in all_cypher
+        assert "MERGE (e:__Entity__" in all_cypher
+        assert "MERGE (e)-[:FROM_CHUNK]->(c)" in all_cypher
+        assert "MENTIONS" not in all_cypher
+        relationship_call = next(c for c in tx.run.call_args_list if "RELATED_TO" in c.args[0])
+        assert relationship_call.kwargs["stype"] == "Person"
+        assert relationship_call.kwargs["ttype"] == "Organization"
+        assert relationship_call.kwargs["col"] == "ai4rag_col"
+        assert session.execute_write.call_count == 1
 
     def test_no_chunks_skips_llm(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
@@ -607,127 +639,155 @@ class TestParseKgExtraction:
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestBuildKnowledgeGraphFromDocuments:
-    """Tests for build_knowledge_graph_from_documents (SimpleKGPipeline-based)."""
+    """Docling input must become canonical chunks before KG extraction."""
 
-    def _make_docling_doc(self, text="Document text content."):
+    def _make_docling_doc(self, text="Document text content.", name="document.md"):
         doc = MagicMock()
         doc.export_to_markdown.return_value = text
+        doc.name = name
         return doc
 
-    def _make_pipeline_mock(self):
-        """Return a MagicMock for SimpleKGPipeline whose run_async returns a coroutine."""
-
-        async def _noop(*args, **kwargs):
-            return MagicMock()
-
-        pipeline = MagicMock()
-        pipeline.run_async.side_effect = _noop
-        return pipeline
-
-    def test_exports_each_document_to_markdown(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_uses_one_document_id_and_canonical_chunks_per_input(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         model = MagicMock()
-        doc1 = self._make_docling_doc("Text one.")
-        doc2 = self._make_docling_doc("Text two.")
+        doc1 = self._make_docling_doc("Text one.", "one.md")
+        doc2 = self._make_docling_doc("Text two.", "two.md")
 
-        with patch(
-            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
-            return_value=self._make_pipeline_mock(),
-        ):
+        with patch.object(store, "add_documents") as add_documents:
             store.build_knowledge_graph_from_documents(documents=[doc1, doc2], model=model)
 
         doc1.export_to_markdown.assert_called_once()
         doc2.export_to_markdown.assert_called_once()
+        chunks = add_documents.call_args.args[0]
+        assert len(chunks) == 2
+        assert [chunk.metadata["document_id"] for chunk in chunks] == ["one.md", "two.md"]
+        assert all(isinstance(chunk, AI4RAGChunk) for chunk in chunks)
+        assert add_documents.call_args.kwargs["model"] is model
 
     def test_empty_text_skips_pipeline(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         model = MagicMock()
         doc = self._make_docling_doc("")  # export produces empty string
 
-        with patch("asyncio.run") as mock_run:
+        with patch.object(store, "add_documents") as add_documents:
             store.build_knowledge_graph_from_documents(documents=[doc], model=model)
 
-        mock_run.assert_not_called()
+        add_documents.assert_not_called()
 
-    def test_creates_kg_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
+    def test_passes_extraction_options_to_shared_indexer(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        with patch.object(store, "add_documents") as add_documents:
+            store.build_knowledge_graph_from_documents(
+                documents=[self._make_docling_doc()],
+                model=MagicMock(),
+                chunk_size=500,
+                chunk_overlap=20,
+                on_error="RAISE",
+                perform_entity_resolution=False,
+            )
+
+        assert add_documents.call_args.kwargs["kg_chunk_size"] == 500
+        assert add_documents.call_args.kwargs["kg_chunk_overlap"] == 20
+        assert add_documents.call_args.kwargs["on_error"] == "RAISE"
+        assert add_documents.call_args.kwargs["perform_entity_resolution"] is False
+
+    def test_repeated_document_produces_the_same_chunk_ids(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        doc = self._make_docling_doc("Alice works at Acme.", "people.md")
+        with patch.object(store, "add_documents") as add_documents:
+            store.build_knowledge_graph_from_documents(documents=[doc], model=MagicMock())
+            first_ids = [chunk.chunk_id for chunk in add_documents.call_args.args[0]]
+            store.build_knowledge_graph_from_documents(documents=[doc], model=MagicMock())
+            second_ids = [chunk.chunk_id for chunk in add_documents.call_args.args[0]]
+
+        assert first_ids == second_ids
+
+    def test_writes_one_document_and_chunk_set(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        model = MagicMock()
+        tx = MagicMock()
+        session.execute_write.side_effect = lambda fn, *args: fn(tx, *args)
 
-        with patch(
-            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
-            return_value=self._make_pipeline_mock(),
-        ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+        async def run_pipeline(*args, **kwargs):
+            return MagicMock()
 
-        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "ai4rag_col__embedding" in cypher_calls
+        with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+                pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                store.build_knowledge_graph_from_documents(
+                    documents=[self._make_docling_doc("Alice works at Acme.")], model=MagicMock()
+                )
 
-    def test_tags_chunk_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        model = MagicMock()
+        queries = [call.args[0] for call in tx.run.call_args_list]
+        assert sum("MERGE (d:ai4rag_col:Document" in query for query in queries) == 1
+        assert sum("MERGE (c:ai4rag_col:Chunk" in query for query in queries) == 1
+        assert not any("FROM_DOCUMENT" in query for query in queries)
+        assert isinstance(pipeline_cls.call_args.kwargs["kg_writer"], _CanonicalKGWriter)
 
-        with patch(
-            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
-            return_value=self._make_pipeline_mock(),
-        ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
 
-        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "FROM_DOCUMENT" in cypher_calls
-        assert "ai4rag_kg_run: $run_id" in cypher_calls
-        assert "collection IS NULL" not in cypher_calls
-        assert "ai4rag_col" in cypher_calls
-        assert "COALESCE(oc.document_id, kd.document_id, kc.document_id)" in cypher_calls
+def test_collection_writer_tags_only_upserted_relationships():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CollectionKGWriter(driver, "neo4j", "ai4rag_col")
+    writer._upsert_relationships([Neo4jRelationship(start_node_id="alice", end_node_id="acme", type="WORKS_AT")])
 
-    def test_tags_pipeline_document_nodes_with_collection(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        model = MagicMock()
+    query = driver.execute_query.call_args.args[0]
+    parameters = driver.execute_query.call_args.kwargs["parameters_"]
+    assert "CALL apoc.merge.relationship(start, row.type" in query
+    assert "SET rel.ai4rag_kg_collections = CASE" in query
+    assert "WHEN $col IN COALESCE(rel.ai4rag_kg_collections, [])" in query
+    assert parameters["col"] == "ai4rag_col"
+    assert len(parameters["rows"]) == 1
 
-        with patch(
-            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
-            return_value=self._make_pipeline_mock(),
-        ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
 
-        cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "ai4rag_kg_collection" in cypher_calls
-        assert "SET kd:`ai4rag_col`" in cypher_calls
-        assert "__Entity__" in cypher_calls
-        assert "ai4rag_kg_collections" in cypher_calls
+def test_canonical_writer_skips_pipeline_document_and_chunk_nodes():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "neo4j", "ai4rag_col")
 
-    def test_tags_entity_relationships_with_collection_ownership(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        model = MagicMock()
+    graph = Neo4jGraph(
+        nodes=[
+            Neo4jNode(id="pipeline_doc", label="Document", properties={"ai4rag_chunk_id": "canonical_c1"}),
+            Neo4jNode(id="pipeline_chunk", label="Chunk", properties={"text": "Alice works at Acme"}),
+            Neo4jNode(id="alice", label="Person", properties={"name": "Alice"}),
+            Neo4jNode(id="acme", label="Organization", properties={"name": "Acme"}),
+        ],
+        relationships=[
+            Neo4jRelationship(start_node_id="pipeline_chunk", end_node_id="pipeline_doc", type="FROM_DOCUMENT"),
+            Neo4jRelationship(start_node_id="alice", end_node_id="pipeline_chunk", type="FROM_CHUNK"),
+            Neo4jRelationship(start_node_id="acme", end_node_id="pipeline_chunk", type="FROM_CHUNK"),
+            Neo4jRelationship(start_node_id="alice", end_node_id="acme", type="WORKS_AT"),
+        ],
+    )
 
-        with patch(
-            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
-            return_value=self._make_pipeline_mock(),
-        ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+    result = asyncio.run(writer.run(graph))
 
-        cypher_calls = " ".join(str(call) for call in session.run.call_args_list)
-        assert "MATCH (source:__Entity__)-[r]->(target:__Entity__)" in cypher_calls
-        assert "r.ai4rag_kg_collections" in cypher_calls
-        assert "$col IN COALESCE(r.ai4rag_kg_collections, [])" in cypher_calls
+    assert result.status == "SUCCESS"
+    calls = driver.execute_query.call_args_list
+    node_rows = next(call.kwargs["parameters_"]["rows"] for call in calls if "CREATE (n:__KGBuilder__" in call.args[0])
+    relation_rows = next(
+        call.kwargs["parameters_"]["rows"] for call in calls if "apoc.merge.relationship" in call.args[0]
+    )
+    link_call = next(call for call in calls if "MERGE (e)-[:FROM_CHUNK]->(c)" in call.args[0])
+    assert {row["label"] for row in node_rows} == {"Person", "Organization"}
+    assert [row["type"] for row in relation_rows] == ["WORKS_AT"]
+    assert link_call.kwargs["parameters_"] == {
+        "entity_ids": ["acme", "alice"],
+        "chunk_id": "canonical_c1",
+        "col": "ai4rag_col",
+    }
 
-    def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
-        """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-        model = MagicMock()
 
-        with patch(
-            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
-            return_value=self._make_pipeline_mock(),
-        ):
-            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+def test_canonical_writer_requires_chunk_identity():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "neo4j", "ai4rag_col")
+    graph = Neo4jGraph(nodes=[Neo4jNode(id="pipeline_doc", label="Document")])
+    driver.execute_query.reset_mock()
 
-        skip_calls = [c for c in session.run.call_args_list if "SKIP" in str(c)]
-        assert skip_calls == []
+    with pytest.raises(ValueError, match="canonical chunk ID"):
+        asyncio.run(writer.run(graph))
+    driver.execute_query.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -754,8 +814,16 @@ class TestCleanAndClose:
         assert "__Entity__" in cypher_calls
         assert "ai4rag_kg_collections" in cypher_calls
         assert "WHERE owner <> $col" in cypher_calls
-        assert "NOT (e)-[:FROM_CHUNK]-(:Chunk)" in cypher_calls
+        assert "MATCH (e:__Entity__)-[:FROM_CHUNK]->(c:Chunk)" in cypher_calls
+        assert "COALESCE(other.collection, '') <> $col" in cypher_calls
+        assert "WHERE NOT (e)-[:FROM_CHUNK]-(:Chunk)" not in cypher_calls
         assert "DETACH DELETE" in cypher_calls
+
+        queries = [call.args[0] for call in session.run.call_args_list]
+        legacy_cleanup = next(i for i, query in enumerate(queries) if "MATCH (e:__Entity__)-[:FROM_CHUNK]" in query)
+        chunk_cleanup = next(i for i, query in enumerate(queries) if "MATCH (n:ai4rag_col)" in query)
+        assert legacy_cleanup < chunk_cleanup
+        assert any("size(r.ai4rag_kg_collections) = 1 DELETE r" in query for query in queries)
 
     def test_close_closes_driver(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
