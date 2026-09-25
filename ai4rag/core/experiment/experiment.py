@@ -415,6 +415,7 @@ class AI4RAGExperiment:
 
         foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
+        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
 
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
@@ -427,12 +428,24 @@ class AI4RAGExperiment:
             },
         }
 
+        # A Neo4j collection contains LLM-extracted entities and relationships,
+        # not only chunk embeddings.  Those graph contents vary with the model
+        # and extraction settings, so they must participate in the collection
+        # reuse key as well.
+        if search_mode == "graph":
+            indexing_params["knowledge_graph"] = {
+                "model_id": foundation_model.model_id,
+                "model_params": {
+                    "temperature": foundation_model.params.temperature,
+                    "max_completion_tokens": foundation_model.params.max_completion_tokens,
+                },
+                "extraction_config": self.kg_extraction_config or {"mode": "constrained"},
+            }
+
         logger.info("Using indexing params: %s", indexing_params)
 
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
-
-        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
 
         context_template_text = foundation_model.context_template_text
         system_message_text = foundation_model.system_message_text

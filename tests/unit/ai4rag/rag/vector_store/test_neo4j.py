@@ -135,6 +135,7 @@ def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
     assert "[*1..2]-(related:__Entity__)" in query
     assert "collect(DISTINCT rel_nb.text)[..5]" in query
     assert "type(rel) <> 'FROM_CHUNK'" in query
+    assert "$col IN COALESCE(rel.ai4rag_kg_collections, [])" in query
 
 
 def test_graph_route_fusion_deduplicates_evidence_and_preserves_routes():
@@ -670,6 +671,38 @@ class TestBuildKnowledgeGraphFromDocuments:
         assert "SET kd:`ai4rag_col`" in cypher_calls
         assert "__Entity__" in cypher_calls
         assert "ai4rag_kg_collections" in cypher_calls
+
+    def test_tags_entity_relationships_with_collection_ownership(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        model = MagicMock()
+
+        with patch(
+            "neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline",
+            return_value=self._make_pipeline_mock(),
+        ):
+            store.build_knowledge_graph_from_documents(documents=[self._make_docling_doc()], model=model)
+
+        cypher_calls = " ".join(str(call) for call in session.run.call_args_list)
+        assert "MATCH (source:__Entity__)-[r]->(target:__Entity__)" in cypher_calls
+        assert "r.ai4rag_kg_collections" in cypher_calls
+        assert "$col IN COALESCE(r.ai4rag_kg_collections, [])" in cypher_calls
+
+    def test_community_projection_scopes_relationships_to_collection(
+        self, mock_driver_cls, mock_embedding, neo4j_config
+    ):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+        session.run.reset_mock()
+        projected = MagicMock()
+        communities = MagicMock()
+        communities.data.return_value = []
+        session.run.side_effect = [projected, communities]
+
+        store._build_community_summaries(MagicMock())
+
+        projection_query = session.run.call_args_list[0].args[0]
+        assert "$collection IN COALESCE(r.ai4rag_kg_collections, [])" in projection_query
 
     def test_no_db_readback(self, mock_driver_cls, mock_embedding, neo4j_config):
         """Pipeline must not issue paginated MATCH/SKIP queries against existing chunks."""

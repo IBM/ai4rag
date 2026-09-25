@@ -95,6 +95,10 @@ def _make_llmaj_evaluator():
     return LLMaJEvaluator(model=model)
 
 
+class _StopBeforeIndexing(Exception):
+    """Sentinel used to inspect evaluation settings before a store is created."""
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -109,6 +113,54 @@ class TestEvaluatorType:
 
     def test_llmaj_evaluator_type(self):
         assert LLMaJEvaluator.EVALUATOR_TYPE == "judge"
+
+
+class TestGraphCollectionReuse:
+    def test_graph_indexing_key_includes_extraction_model_and_settings(self):
+        experiment = _build_experiment()
+        foundation_model = MagicMock()
+        foundation_model.model_id = "kg-extractor"
+        foundation_model.params.temperature = 0.2
+        foundation_model.params.max_completion_tokens = 512
+        embedding_model = MagicMock()
+        embedding_model.model_id = "embedding"
+        embedding_model.params = {"embedding_dimension": 384}
+        experiment.kg_extraction_config = {
+            "mode": "free",
+            "max_entities_per_chunk": 3,
+            "max_relationships_per_chunk": 4,
+        }
+
+        captured: dict = {}
+
+        def stop_before_indexing(indexing_params):
+            captured.update(indexing_params)
+            raise _StopBeforeIndexing
+
+        experiment._get_reusable_collection_name = stop_before_indexing
+        params = {
+            AI4RAGParamNames.FOUNDATION_MODEL: foundation_model,
+            AI4RAGParamNames.EMBEDDING_MODEL: embedding_model,
+            AI4RAGParamNames.CHUNKING_METHOD: "recursive",
+            AI4RAGParamNames.CHUNK_SIZE: 1024,
+            AI4RAGParamNames.CHUNK_OVERLAP: 0,
+            AI4RAGParamNames.RETRIEVAL_METHOD: "simple",
+            AI4RAGParamNames.WINDOW_SIZE: 0,
+            AI4RAGParamNames.NUMBER_OF_CHUNKS: 3,
+            AI4RAGParamNames.SEARCH_MODE: "graph",
+            AI4RAGParamNames.RANKER_STRATEGY: "",
+            AI4RAGParamNames.RANKER_K: 0,
+            AI4RAGParamNames.RANKER_ALPHA: 1,
+        }
+
+        with pytest.raises(_StopBeforeIndexing):
+            experiment.run_single_evaluation(params)
+
+        assert captured["knowledge_graph"] == {
+            "model_id": "kg-extractor",
+            "model_params": {"temperature": 0.2, "max_completion_tokens": 512},
+            "extraction_config": experiment.kg_extraction_config,
+        }
 
 
 class TestEvaluatorsSetter:

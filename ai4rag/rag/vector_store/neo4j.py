@@ -374,6 +374,7 @@ class Neo4jGraphStore(BaseVectorStore):
                     "'MATCH (source:__Entity__)-[r]->(target:__Entity__) "
                     "WHERE $collection IN COALESCE(source.ai4rag_kg_collections, []) "
                     "AND $collection IN COALESCE(target.ai4rag_kg_collections, []) "
+                    "AND $collection IN COALESCE(r.ai4rag_kg_collections, []) "
                     'AND type(r) <> \\"FROM_CHUNK\\" '
                     "RETURN id(source) AS source, id(target) AS target, 1.0 AS weight', "
                     "{parameters: {collection: $collection}}) YIELD graphName RETURN graphName",
@@ -493,6 +494,24 @@ class Neo4jGraphStore(BaseVectorStore):
                 "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
                 "THEN e.ai4rag_kg_collections "
                 "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
+                col=self._collection_name,
+                run_id=run_id,
+            )
+            # Relationships are shared by Neo4j GraphRAG when their endpoint
+            # entities are resolved across documents. Track all collections
+            # that extracted each relationship so retrieval never traverses an
+            # edge that belongs only to another collection.
+            session.run(
+                "MATCH (source:__Entity__)-[r]->(target:__Entity__) "
+                "WHERE type(r) <> 'FROM_CHUNK' "
+                "AND EXISTS { MATCH (source)-[:FROM_CHUNK]->(:Chunk)-[:FROM_DOCUMENT]->"
+                "(:Document {ai4rag_kg_run: $run_id}) } "
+                "AND EXISTS { MATCH (target)-[:FROM_CHUNK]->(:Chunk)-[:FROM_DOCUMENT]->"
+                "(:Document {ai4rag_kg_run: $run_id}) } "
+                "SET r.ai4rag_kg_collections = CASE "
+                "WHEN $col IN COALESCE(r.ai4rag_kg_collections, []) "
+                "THEN r.ai4rag_kg_collections "
+                "ELSE COALESCE(r.ai4rag_kg_collections, []) + $col END",
                 col=self._collection_name,
                 run_id=run_id,
             )
@@ -1285,7 +1304,8 @@ def _build_graph_retrieval_query(
             f"WITH collect(DISTINCT pivot)[..{entity_pivot_limit}] AS pivots "
             "UNWIND pivots AS pivot "
             f"MATCH path = (pivot)-[*1..{entity_relationship_hops}]-(related:__Entity__) "
-            "WHERE ALL(rel IN relationships(path) WHERE type(rel) <> 'FROM_CHUNK') "
+            "WHERE ALL(rel IN relationships(path) WHERE type(rel) <> 'FROM_CHUNK' "
+            "AND $col IN COALESCE(rel.ai4rag_kg_collections, [])) "
             "MATCH (related)-[:FROM_CHUNK]->(rel_nb:Chunk) "
             "WHERE elementId(rel_nb) <> elementId(node) AND rel_nb.collection = $col "
             f"RETURN collect(DISTINCT rel_nb.text)[..{relationship_neighbor_limit}] AS rel_texts }} "
