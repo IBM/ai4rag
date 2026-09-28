@@ -18,7 +18,8 @@ import neo4j
 from docling_core.types.doc import DoclingDocument
 from json_repair import repair_json
 from neo4j_graphrag.components.kg_writer import KGWriterModel, Neo4jWriter
-from neo4j_graphrag.components.types import LexicalGraphConfig, Neo4jGraph, Neo4jRelationship
+from neo4j_graphrag.components.text_splitters.base import TextSplitter
+from neo4j_graphrag.components.types import LexicalGraphConfig, Neo4jGraph, Neo4jRelationship, TextChunk, TextChunks
 from neo4j_graphrag.neo4j_queries import db_cleaning_query, upsert_relationship_query
 
 from ai4rag import logger
@@ -45,6 +46,13 @@ _KG_LEXICAL_GRAPH_CONFIG = LexicalGraphConfig(
     document_node_label="__AI4RAG_KG_SOURCE_DOCUMENT__",
     chunk_node_label="__AI4RAG_KG_SOURCE_CHUNK__",
 )
+
+
+class _PreChunkedTextSplitter(TextSplitter):
+    """Preserve the canonical chunk passed to the KG pipeline as one text chunk."""
+
+    async def run(self, text: str) -> TextChunks:
+        return TextChunks(chunks=[TextChunk(text=text, index=0)])
 
 
 def _collection_vector_index_name(collection_name: str) -> str:
@@ -422,8 +430,6 @@ class Neo4jGraphStore(BaseVectorStore):
             self._run_kg_pipeline(
                 chunks=[chunk for chunk, _ in unique_pairs],
                 model=model,
-                chunk_size=kwargs.get("kg_chunk_size", 2000),
-                chunk_overlap=kwargs.get("kg_chunk_overlap", 200),
                 on_error=kwargs.get("on_error", "IGNORE"),
                 perform_entity_resolution=kwargs.get("perform_entity_resolution", True),
             )
@@ -433,8 +439,6 @@ class Neo4jGraphStore(BaseVectorStore):
         chunks: list[AI4RAGChunk],
         model: Any,
         max_concurrent: int = 8,
-        chunk_size: int = 2000,
-        chunk_overlap: int = 200,
         on_error: str = "IGNORE",
         perform_entity_resolution: bool = True,
     ) -> None:
@@ -449,9 +453,6 @@ class Neo4jGraphStore(BaseVectorStore):
         a single asyncio event loop, giving near-linear speedup over the
         sequential approach since LLM calls are I/O-bound.
         """
-        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import (
-            FixedSizeSplitter,
-        )
         from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
 
         chunks = [chunk for chunk in chunks if chunk.text.strip()]
@@ -464,7 +465,7 @@ class Neo4jGraphStore(BaseVectorStore):
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
             from_pdf=False,
-            text_splitter=FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
+            text_splitter=_PreChunkedTextSplitter(),
             on_error=on_error,
             # GraphRAG's built-in resolver scans every __Entity__ in the DB.
             # Resolve only this collection after all chunks have been written.
@@ -620,10 +621,10 @@ class Neo4jGraphStore(BaseVectorStore):
         include_scores : bool, default=False
             Whether to include similarity scores in the return value.
         search_mode : str, default="graph"
-            ``"graph"`` — ANN seed retrieval + entity-based context expansion via
+            ``"graph"`` — ANN seed retrieval + entity-based chunk discovery via
             :class:`neo4j_graphrag.retrievers.VectorCypherRetriever` against the
             collection-specific vector index (requires extracted entities for
-            context expansion).
+            graph-neighbor retrieval). Each result remains a single stored chunk.
         **kwargs : Any
             Graph-mode parameters:
 
@@ -665,7 +666,7 @@ class Neo4jGraphStore(BaseVectorStore):
         k: int,
         **kwargs,
     ) -> list[tuple[AI4RAGChunk, float]]:
-        """Return entity/path-expanded evidence using VectorCypherRetriever."""
+        """Return individual entity/path-linked chunks using VectorCypherRetriever."""
         from neo4j_graphrag.retrievers import VectorCypherRetriever
         from neo4j_graphrag.types import RetrieverResultItem
 
@@ -883,8 +884,6 @@ class Neo4jGraphStore(BaseVectorStore):
         self.add_documents(
             chunks,
             model=model,
-            kg_chunk_size=chunk_size,
-            kg_chunk_overlap=chunk_overlap,
             on_error=on_error,
             perform_entity_resolution=perform_entity_resolution,
         )
@@ -1058,12 +1057,10 @@ def _build_graph_retrieval_query(
 ) -> str:
     """Build the Cypher retrieval query for :class:`VectorCypherRetriever`.
 
-    The query receives ``node`` (seed ``Chunk``) and ``score`` from the vector
-    index call and expands context via:
-
-    - Entity-linked chunks: ``__Entity__`` → ``FROM_CHUNK`` (SimpleKGPipeline schema).
-    Expanded texts are appended to the seed text and returned as a single
-    ``text`` value per seed, which is what ``VectorCypherRetriever`` expects.
+    The query receives seed ``Chunk`` nodes and scores from vector search,
+    then returns distinct graph-neighbor chunks as individual results. If a
+    seed has no graph neighbors, it is returned as a fallback. Linked chunks
+    inherit the highest score of the seeds that reached them.
     """
     # $col is passed via query_params in _search_graph to scope graph expansion
     # to one collection. The seed index is already collection-specific.
@@ -1075,14 +1072,14 @@ def _build_graph_retrieval_query(
             f"WITH node, score, entity "
             f"OPTIONAL MATCH (entity)-[:FROM_CHUNK]->(ent_nb:Chunk) "
             f"WHERE elementId(ent_nb) <> elementId(node) AND ent_nb.collection = $col "
-            f"WITH node, score, collect(DISTINCT ent_nb.text)[..{entity_neighbor_limit}] AS ent_texts "
+            f"WITH node, score, collect(DISTINCT ent_nb)[..{entity_neighbor_limit}] AS ent_nodes "
         )
     else:
-        entity_block = "WITH node, score, [] AS ent_texts "
+        entity_block = "WITH node, score, [] AS ent_nodes "
 
     if entity_pivot_limit and entity_relationship_hops and relationship_neighbor_limit:
         relationship_block = (
-            "CALL { WITH node "
+            "CALL (node) { "
             "MATCH (pivot:__Entity__)-[:FROM_CHUNK]->(node) "
             f"WITH node, collect(DISTINCT pivot)[..{entity_pivot_limit}] AS pivots "
             "UNWIND pivots AS pivot "
@@ -1091,19 +1088,22 @@ def _build_graph_retrieval_query(
             "AND $col IN COALESCE(rel.ai4rag_kg_collections, [])) "
             "MATCH (related)-[:FROM_CHUNK]->(rel_nb:Chunk) "
             "WHERE elementId(rel_nb) <> elementId(node) AND rel_nb.collection = $col "
-            f"RETURN collect(DISTINCT rel_nb.text)[..{relationship_neighbor_limit}] AS rel_texts }} "
+            f"RETURN collect(DISTINCT rel_nb)[..{relationship_neighbor_limit}] AS rel_nodes }} "
         )
     else:
-        relationship_block = "WITH node, score, ent_texts, [] AS rel_texts "
+        relationship_block = "WITH node, score, ent_nodes, [] AS rel_nodes "
 
     return (
         collection_filter
         + entity_block
         + relationship_block
-        + "WITH node, score, ent_texts + rel_texts AS graph_texts "
-        + "WITH node, score, [x IN graph_texts WHERE x IS NOT NULL] AS ctx "
-        + "RETURN node.text + reduce(s='', t IN ctx | s + '\\n---\\n' + t) AS text, score, "
-        + "node.document_id AS document_id, node.metadata AS metadata"
+        + "WITH node, score, ent_nodes + rel_nodes AS graph_nodes "
+        + "WITH score, CASE WHEN size(graph_nodes) = 0 THEN [node] ELSE graph_nodes END AS candidates "
+        + "UNWIND candidates AS candidate "
+        + "WITH candidate, max(score) AS score "
+        + "ORDER BY score DESC, elementId(candidate) LIMIT $top_k "
+        + "RETURN candidate.text AS text, score, "
+        + "candidate.document_id AS document_id, candidate.metadata AS metadata"
     )
 
 

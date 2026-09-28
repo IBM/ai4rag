@@ -19,6 +19,7 @@ from ai4rag.rag.vector_store.neo4j import (
     _CanonicalKGWriter,
     _CollectionKGWriter,
     _kg_pipeline_extraction_options,
+    _PreChunkedTextSplitter,
     _validate_kg_extraction_config,
     _validate_neo4j_search_params,
 )
@@ -138,9 +139,24 @@ def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
 
     assert "WITH node, collect(DISTINCT pivot)[..3] AS pivots" in query
     assert "[*1..2]-(related:__Entity__)" in query
-    assert "collect(DISTINCT rel_nb.text)[..5]" in query
+    assert "collect(DISTINCT rel_nb)[..5]" in query
     assert "type(rel) <> 'FROM_CHUNK'" in query
     assert "$col IN COALESCE(rel.ai4rag_kg_collections, [])" in query
+    assert "UNWIND candidates AS candidate" in query
+    assert "WITH candidate, max(score) AS score" in query
+    assert "LIMIT $top_k" in query
+    assert "RETURN candidate.text AS text" in query
+    assert "reduce(s=" not in query
+
+
+def test_graph_query_returns_single_chunks_and_falls_back_to_seed():
+    query = _build_graph_retrieval_query(include_entity_neighbors=False, entity_neighbor_limit=0)
+
+    assert "[] AS ent_nodes" in query
+    assert "[] AS rel_nodes" in query
+    assert "CASE WHEN size(graph_nodes) = 0 THEN [node] ELSE graph_nodes END" in query
+    assert "RETURN candidate.text AS text" in query
+    assert "node.text +" not in query
 
 
 def test_graph_route_fusion_deduplicates_evidence_and_preserves_routes():
@@ -274,6 +290,7 @@ class TestAddDocuments:
                 store.add_documents([chunk], model=MagicMock())
 
         assert isinstance(pipeline_cls.call_args.kwargs["kg_writer"], _CanonicalKGWriter)
+        assert isinstance(pipeline_cls.call_args.kwargs["text_splitter"], _PreChunkedTextSplitter)
         assert pipeline_cls.call_args.kwargs["perform_entity_resolution"] is False
         lexical_config = pipeline_cls.call_args.kwargs["lexical_graph_config"]
         assert lexical_config.document_node_label != "Document"
@@ -294,6 +311,26 @@ class TestAddDocuments:
         assert "mergeRels: false" in resolution_query
         assert "SET node.ai4rag_kg_collections = reduce(" in resolution_query
         assert resolution_call.kwargs["col"] == "ai4rag_col"
+
+    def test_kg_pipeline_preserves_pre_chunked_text(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        text = "A long canonical chunk. " * 200
+        chunk = AI4RAGChunk(text=text, metadata={"document_id": "document.md"})
+
+        async def run_pipeline(*args, **kwargs):
+            return MagicMock()
+
+        with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+                pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                store.add_documents([chunk], model=MagicMock())
+
+        splitter = pipeline_cls.call_args.kwargs["text_splitter"]
+        result = asyncio.run(splitter.run(text))
+        assert len(result.chunks) == 1
+        assert result.chunks[0].text == text
+        assert result.chunks[0].index == 0
+        assert pipeline_cls.return_value.run_async.call_args.kwargs["text"] == text
 
     def test_pipeline_can_skip_scoped_entity_resolution(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
@@ -500,8 +537,8 @@ class TestBuildKnowledgeGraphFromDocuments:
                 perform_entity_resolution=False,
             )
 
-        assert add_documents.call_args.kwargs["kg_chunk_size"] == 500
-        assert add_documents.call_args.kwargs["kg_chunk_overlap"] == 20
+        assert "kg_chunk_size" not in add_documents.call_args.kwargs
+        assert "kg_chunk_overlap" not in add_documents.call_args.kwargs
         assert add_documents.call_args.kwargs["on_error"] == "RAISE"
         assert add_documents.call_args.kwargs["perform_entity_resolution"] is False
 
