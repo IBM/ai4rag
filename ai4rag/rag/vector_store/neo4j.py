@@ -191,9 +191,13 @@ class _CanonicalKGWriter(_CollectionKGWriter):
 
     async def run(
         self,
-        graph: Neo4jGraph,
+        graph: Neo4jGraph | dict[str, Any],
         lexical_graph_config: LexicalGraphConfig = LexicalGraphConfig(),
     ) -> KGWriterModel:
+        # The pipeline serializes component results before passing them to the
+        # next component, so pruner.graph arrives as a dictionary.
+        if isinstance(graph, dict):
+            graph = Neo4jGraph.model_validate(graph)
         documents = [node for node in graph.nodes if node.label == lexical_graph_config.document_node_label]
         if len(documents) != 1 or not documents[0].properties.get("ai4rag_chunk_id"):
             raise ValueError("KG extraction requires the canonical chunk ID in document metadata.")
@@ -390,10 +394,10 @@ class Neo4jGraphStore(BaseVectorStore):
     ) -> None:
         """Run ``SimpleKGPipeline`` on chunk texts concurrently.
 
-        Explicit entity/relation types are provided so the pipeline uses
-        ``SchemaBuilder`` instead of ``SchemaFromTextExtractor`` — the latter
-        sends the entire input text in a single LLM call, which exceeds
-        context limits for large corpora.
+        Constrained extraction supplies entity/relation types; free extraction
+        supplies an empty schema. Both use ``SchemaBuilder`` rather than
+        ``SchemaFromTextExtractor``, which sends the entire input text in one
+        LLM call and can exceed context limits for large corpora.
 
         Chunks are processed concurrently (bounded by ``max_concurrent``) inside
         a single asyncio event loop, giving near-linear speedup over the
@@ -415,7 +419,9 @@ class Neo4jGraphStore(BaseVectorStore):
             from_pdf=False,
             text_splitter=FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap),
             on_error=on_error,
-            perform_entity_resolution=perform_entity_resolution,
+            # GraphRAG's built-in resolver scans every __Entity__ in the DB.
+            # Resolve only this collection after all chunks have been written.
+            perform_entity_resolution=False,
             kg_writer=_CanonicalKGWriter(self._driver, self._config.database, self._collection_name),
             neo4j_database=self._config.database,
             **_kg_pipeline_extraction_options(self._kg_extraction_config),
@@ -455,6 +461,30 @@ class Neo4jGraphStore(BaseVectorStore):
                 "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
                 "THEN e.ai4rag_kg_collections "
                 "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
+                col=self._collection_name,
+            )
+
+        if perform_entity_resolution:
+            self._resolve_kg_entities()
+
+    def _resolve_kg_entities(self) -> None:
+        """Merge same-type, same-name entities exclusive to this collection."""
+        with self._driver.session(database=self._config.database) as session:
+            session.run(
+                f"MATCH (entity:__Entity__)-[:FROM_CHUNK]->(:`{self._collection_name}`:Chunk) "
+                "WHERE entity.ai4rag_kg_collections = [$col] "
+                "AND entity.name IS NOT NULL "
+                "WITH DISTINCT entity, head([label IN labels(entity) "
+                "WHERE NOT label IN ['__Entity__', '__KGBuilder__']]) AS entity_label "
+                "WHERE entity_label IS NOT NULL "
+                "WITH entity_label, entity.name AS name, collect(entity) AS entities "
+                "WHERE size(entities) > 1 "
+                "WITH entities, reduce(owners = [], e IN entities | "
+                "owners + COALESCE(e.ai4rag_kg_collections, [])) AS owners "
+                "CALL apoc.refactor.mergeNodes(entities, {properties: 'discard', mergeRels: false}) YIELD node "
+                "SET node.ai4rag_kg_collections = reduce(unique = [], owner IN owners | "
+                "CASE WHEN owner IN unique THEN unique ELSE unique + owner END) "
+                "RETURN count(node) AS merged_groups",
                 col=self._collection_name,
             )
 

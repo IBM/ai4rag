@@ -273,11 +273,37 @@ class TestAddDocuments:
                 store.add_documents([chunk], model=MagicMock())
 
         assert isinstance(pipeline_cls.call_args.kwargs["kg_writer"], _CanonicalKGWriter)
+        assert pipeline_cls.call_args.kwargs["perform_entity_resolution"] is False
         assert (
             pipeline_cls.return_value.run_async.call_args.kwargs["document_metadata"]["ai4rag_chunk_id"]
             == chunk.chunk_id
         )
         assert not any("SET kc:ai4rag_col" in call.args[0] for call in session.run.call_args_list)
+        resolution_call = next(
+            call for call in session.run.call_args_list if "apoc.refactor.mergeNodes" in call.args[0]
+        )
+        resolution_query = resolution_call.args[0]
+        assert "MATCH (entity:__Entity__)-[:FROM_CHUNK]->(:`ai4rag_col`:Chunk)" in resolution_query
+        assert "WHERE entity.ai4rag_kg_collections = [$col]" in resolution_query
+        assert "WITH entity_label, entity.name AS name" in resolution_query
+        assert "mergeRels: false" in resolution_query
+        assert "SET node.ai4rag_kg_collections = reduce(" in resolution_query
+        assert resolution_call.kwargs["col"] == "ai4rag_col"
+
+    def test_pipeline_can_skip_scoped_entity_resolution(self, mock_driver_cls, mock_embedding, neo4j_config):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
+
+        async def run_pipeline(*args, **kwargs):
+            return MagicMock()
+
+        with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+                pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                store._run_kg_pipeline([self._make_chunks(1)[0]], MagicMock(), perform_entity_resolution=False)
+
+        assert pipeline_cls.call_args.kwargs["perform_entity_resolution"] is False
+        assert not any("apoc.refactor.mergeNodes" in call.args[0] for call in session.run.call_args_list)
 
 
 # ---------------------------------------------------------------------------
@@ -741,7 +767,8 @@ def test_collection_writer_tags_only_upserted_relationships():
     assert len(parameters["rows"]) == 1
 
 
-def test_canonical_writer_skips_pipeline_document_and_chunk_nodes():
+@pytest.mark.parametrize("serialized", [False, True])
+def test_canonical_writer_skips_pipeline_document_and_chunk_nodes(serialized):
     driver = MagicMock()
     with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
         writer = _CanonicalKGWriter(driver, "neo4j", "ai4rag_col")
@@ -761,7 +788,7 @@ def test_canonical_writer_skips_pipeline_document_and_chunk_nodes():
         ],
     )
 
-    result = asyncio.run(writer.run(graph))
+    result = asyncio.run(writer.run(graph.model_dump() if serialized else graph))
 
     assert result.status == "SUCCESS"
     calls = driver.execute_query.call_args_list
