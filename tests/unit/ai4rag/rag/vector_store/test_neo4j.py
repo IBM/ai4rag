@@ -137,24 +137,32 @@ def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
         relationship_neighbor_limit=5,
     )
 
-    assert "WITH node, collect(DISTINCT pivot)[..3] AS pivots" in query
+    assert "count(DISTINCT entity) AS overlap" in query
+    assert "ORDER BY similarity DESC, overlap DESC, ent_nb.id ASC LIMIT 5" in query
+    assert "count(DISTINCT pivot_chunk) AS degree" in query
+    assert "ORDER BY degree DESC, pivot.name ASC, pivot.id ASC LIMIT 3" in query
     assert "[*1..2]-(related:__Entity__)" in query
-    assert "collect(DISTINCT rel_nb)[..5]" in query
+    assert "count(DISTINCT path) AS path_count, min(length(path)) AS hops" in query
+    assert "ORDER BY similarity DESC, path_count DESC, hops ASC, rel_nb.id ASC LIMIT 5" in query
     assert "type(rel) <> 'FROM_CHUNK'" in query
     assert "$col IN COALESCE(rel.ai4rag_kg_collections, [])" in query
-    assert "UNWIND candidates AS candidate" in query
-    assert "WITH candidate, max(score) AS score" in query
+    assert "UNWIND hits AS hit" in query
+    assert "sum(hit.strength) AS graph_strength" in query
+    assert "vector.similarity.cosine(candidate.embedding, $query_vector)" in query
+    assert "0.8 * semantic_score + 0.2 * graph_strength / (1.0 + graph_strength)" in query
     assert "LIMIT $top_k" in query
+    assert "ORDER BY score DESC, graph_strength DESC, candidate.id ASC" in query
     assert "RETURN candidate.text AS text" in query
-    assert "reduce(s=" not in query
+    assert "elementId(candidate)" not in query
+    assert "collect(DISTINCT ent_nb)[.." not in query
 
 
 def test_graph_query_returns_single_chunks_and_falls_back_to_seed():
     query = _build_graph_retrieval_query(include_entity_neighbors=False, entity_neighbor_limit=0)
 
-    assert "[] AS ent_nodes" in query
-    assert "[] AS rel_nodes" in query
-    assert "CASE WHEN size(graph_nodes) = 0 THEN [node] ELSE graph_nodes END" in query
+    assert "[] AS ent_hits" in query
+    assert "[] AS rel_hits" in query
+    assert "THEN [{chunk: node, strength: 0.0}] ELSE graph_hits END" in query
     assert "RETURN candidate.text AS text" in query
     assert "node.text +" not in query
 

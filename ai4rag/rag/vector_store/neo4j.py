@@ -1057,51 +1057,72 @@ def _build_graph_retrieval_query(
 ) -> str:
     """Build the Cypher retrieval query for :class:`VectorCypherRetriever`.
 
-    The query receives seed ``Chunk`` nodes and scores from vector search,
-    then returns distinct graph-neighbor chunks as individual results. If a
-    seed has no graph neighbors, it is returned as a fallback. Linked chunks
-    inherit the highest score of the seeds that reached them.
+    The query receives seed ``Chunk`` nodes from vector search, ranks their
+    graph neighbors by query similarity and graph support, then returns
+    distinct chunks as individual results. A seed with no graph neighbors is
+    returned as a fallback. Candidate chunks are scored using their own
+    embeddings rather than inheriting a seed's ANN score.
     """
     # $col is passed via query_params in _search_graph to scope graph expansion
     # to one collection. The seed index is already collection-specific.
     collection_filter = "WHERE node.collection = $col "
 
-    if include_entity_neighbors:
+    if include_entity_neighbors and entity_neighbor_limit:
         entity_block = (
-            f"OPTIONAL MATCH (entity:__Entity__)-[:FROM_CHUNK]->(node) "
-            f"WITH node, score, entity "
-            f"OPTIONAL MATCH (entity)-[:FROM_CHUNK]->(ent_nb:Chunk) "
-            f"WHERE elementId(ent_nb) <> elementId(node) AND ent_nb.collection = $col "
-            f"WITH node, score, collect(DISTINCT ent_nb)[..{entity_neighbor_limit}] AS ent_nodes "
+            "CALL (node) { "
+            "OPTIONAL MATCH (entity:__Entity__)-[:FROM_CHUNK]->(node) "
+            "OPTIONAL MATCH (entity)-[:FROM_CHUNK]->(ent_nb:Chunk) "
+            "WHERE ent_nb <> node AND ent_nb.collection = $col "
+            "WITH ent_nb, count(DISTINCT entity) AS overlap "
+            "WHERE ent_nb IS NOT NULL AND ent_nb.embedding IS NOT NULL "
+            "WITH ent_nb, overlap, vector.similarity.cosine(ent_nb.embedding, $query_vector) AS similarity "
+            "ORDER BY similarity DESC, overlap DESC, ent_nb.id ASC "
+            f"LIMIT {entity_neighbor_limit} "
+            "RETURN collect({chunk: ent_nb, strength: toFloat(overlap)}) AS ent_hits } "
         )
     else:
-        entity_block = "WITH node, score, [] AS ent_nodes "
+        entity_block = "WITH node, [] AS ent_hits "
 
     if entity_pivot_limit and entity_relationship_hops and relationship_neighbor_limit:
         relationship_block = (
             "CALL (node) { "
             "MATCH (pivot:__Entity__)-[:FROM_CHUNK]->(node) "
-            f"WITH node, collect(DISTINCT pivot)[..{entity_pivot_limit}] AS pivots "
-            "UNWIND pivots AS pivot "
+            "OPTIONAL MATCH (pivot)-[:FROM_CHUNK]->(pivot_chunk:Chunk) "
+            "WHERE pivot_chunk.collection = $col "
+            "WITH node, pivot, count(DISTINCT pivot_chunk) AS degree "
+            "ORDER BY degree DESC, pivot.name ASC, pivot.id ASC "
+            f"LIMIT {entity_pivot_limit} "
             f"MATCH path = (pivot)-[*1..{entity_relationship_hops}]-(related:__Entity__) "
             "WHERE ALL(rel IN relationships(path) WHERE type(rel) <> 'FROM_CHUNK' "
             "AND $col IN COALESCE(rel.ai4rag_kg_collections, [])) "
             "MATCH (related)-[:FROM_CHUNK]->(rel_nb:Chunk) "
-            "WHERE elementId(rel_nb) <> elementId(node) AND rel_nb.collection = $col "
-            f"RETURN collect(DISTINCT rel_nb)[..{relationship_neighbor_limit}] AS rel_nodes }} "
+            "WHERE rel_nb <> node AND rel_nb.collection = $col AND rel_nb.embedding IS NOT NULL "
+            "WITH rel_nb, count(DISTINCT path) AS path_count, min(length(path)) AS hops "
+            "WITH rel_nb, path_count, hops, "
+            "vector.similarity.cosine(rel_nb.embedding, $query_vector) AS similarity "
+            "ORDER BY similarity DESC, path_count DESC, hops ASC, rel_nb.id ASC "
+            f"LIMIT {relationship_neighbor_limit} "
+            "RETURN collect({chunk: rel_nb, strength: toFloat(path_count) / toFloat(hops)}) AS rel_hits } "
         )
     else:
-        relationship_block = "WITH node, score, ent_nodes, [] AS rel_nodes "
+        relationship_block = "WITH node, ent_hits, [] AS rel_hits "
 
+    # Give independent query similarity most of the weight; bound accumulated
+    # graph support so high-degree entities cannot dominate the local route.
     return (
         collection_filter
         + entity_block
         + relationship_block
-        + "WITH node, score, ent_nodes + rel_nodes AS graph_nodes "
-        + "WITH score, CASE WHEN size(graph_nodes) = 0 THEN [node] ELSE graph_nodes END AS candidates "
-        + "UNWIND candidates AS candidate "
-        + "WITH candidate, max(score) AS score "
-        + "ORDER BY score DESC, elementId(candidate) LIMIT $top_k "
+        + "WITH node, ent_hits + rel_hits AS graph_hits "
+        + "WITH CASE WHEN size(graph_hits) = 0 "
+        + "THEN [{chunk: node, strength: 0.0}] ELSE graph_hits END AS hits "
+        + "UNWIND hits AS hit "
+        + "WITH hit.chunk AS candidate, sum(hit.strength) AS graph_strength "
+        + "WITH candidate, graph_strength, "
+        + "coalesce(vector.similarity.cosine(candidate.embedding, $query_vector), 0.0) AS semantic_score "
+        + "WITH candidate, graph_strength, "
+        + "0.8 * semantic_score + 0.2 * graph_strength / (1.0 + graph_strength) AS score "
+        + "ORDER BY score DESC, graph_strength DESC, candidate.id ASC LIMIT $top_k "
         + "RETURN candidate.text AS text, score, "
         + "candidate.document_id AS document_id, candidate.metadata AS metadata"
     )
