@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 import pytest
 from docling_core.types.doc import DoclingDocument
+from docling_core.types.doc.document import TrackSource
 from docling_core.types.doc.labels import DocItemLabel
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -117,6 +118,31 @@ class TestDoclingChunkerSplitDocuments:
     def test_empty_input(self, chunker):
         chunks = chunker.split_documents([])
         assert chunks == []
+
+    def test_audio_timing_metadata_uses_complete_range_for_multiple_segments(self, chunker):
+        doc = DoclingDocument(name="meeting.wav")
+        doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text="First transcript segment.",
+            source=TrackSource(start_time=65.28, end_time=70.0),
+        )
+        doc.add_text(
+            label=DocItemLabel.PARAGRAPH,
+            text="Second transcript segment.",
+            source=TrackSource(start_time=70.0, end_time=94.12),
+        )
+
+        chunks = chunker.split_documents([doc])
+
+        assert len(chunks) == 1
+        assert chunks[0].metadata["audio_start_seconds"] == 65.28
+        assert chunks[0].metadata["audio_end_seconds"] == 94.12
+
+    def test_non_audio_document_has_no_audio_timing_metadata(self, chunker, doc_with_sections):
+        chunks = chunker.split_documents([doc_with_sections])
+
+        assert all("audio_start_seconds" not in chunk.metadata for chunk in chunks)
+        assert all("audio_end_seconds" not in chunk.metadata for chunk in chunks)
 
 
 class TestDoclingChunkerSerialization:
