@@ -136,7 +136,7 @@ def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
         relationship_neighbor_limit=5,
     )
 
-    assert "collect(DISTINCT pivot)[..3]" in query
+    assert "WITH node, collect(DISTINCT pivot)[..3] AS pivots" in query
     assert "[*1..2]-(related:__Entity__)" in query
     assert "collect(DISTINCT rel_nb.text)[..5]" in query
     assert "type(rel) <> 'FROM_CHUNK'" in query
@@ -265,6 +265,7 @@ class TestAddDocuments:
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
 
         async def run_pipeline(*args, **kwargs):
+            assert pipeline_cls.call_args.kwargs["kg_writer"]._chunk_id.get() == chunk.chunk_id
             return MagicMock()
 
         with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
@@ -278,6 +279,7 @@ class TestAddDocuments:
             pipeline_cls.return_value.run_async.call_args.kwargs["document_metadata"]["ai4rag_chunk_id"]
             == chunk.chunk_id
         )
+        assert pipeline_cls.call_args.kwargs["kg_writer"]._chunk_id.get() is None
         assert not any("SET kc:ai4rag_col" in call.args[0] for call in session.run.call_args_list)
         resolution_call = next(
             call for call in session.run.call_args_list if "apoc.refactor.mergeNodes" in call.args[0]
@@ -834,6 +836,49 @@ def test_canonical_writer_requires_chunk_identity():
 
     with pytest.raises(ValueError, match="canonical chunk ID"):
         asyncio.run(writer.run(graph))
+    driver.execute_query.assert_not_called()
+
+
+def test_canonical_writer_uses_bound_chunk_id_without_lexical_graph():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "tenant_graph", "ai4rag_col")
+    graph = Neo4jGraph(nodes=[Neo4jNode(id="alice", label="Person", properties={"name": "Alice"})])
+
+    with writer.for_chunk("canonical_c1"):
+        result = asyncio.run(writer.run(graph))
+
+    assert result.status == "SUCCESS"
+    link_call = next(
+        call for call in driver.execute_query.call_args_list if "MERGE (e)-[:FROM_CHUNK]->(c)" in call.args[0]
+    )
+    assert link_call.kwargs["parameters_"]["entity_ids"] == ["alice"]
+    assert link_call.kwargs["parameters_"]["chunk_id"] == "canonical_c1"
+    assert writer._chunk_id.get() is None
+
+
+def test_canonical_writer_allows_empty_extraction_with_bound_chunk_id():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "tenant_graph", "ai4rag_col")
+
+    with writer.for_chunk("canonical_c1"):
+        result = asyncio.run(writer.run(Neo4jGraph()))
+
+    assert result.status == "SUCCESS"
+    assert not any("MERGE (e)-[:FROM_CHUNK]->(c)" in call.args[0] for call in driver.execute_query.call_args_list)
+
+
+def test_canonical_writer_rejects_mismatched_document_chunk_id():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "neo4j", "ai4rag_col")
+    graph = Neo4jGraph(nodes=[Neo4jNode(id="doc", label="Document", properties={"ai4rag_chunk_id": "other"})])
+    driver.execute_query.reset_mock()
+
+    with writer.for_chunk("canonical_c1"):
+        with pytest.raises(ValueError, match="does not match"):
+            asyncio.run(writer.run(graph))
     driver.execute_query.assert_not_called()
 
 

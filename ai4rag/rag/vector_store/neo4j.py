@@ -9,8 +9,9 @@ import json
 import re
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Iterator
 
 import neo4j
 from docling_core.types.doc import DoclingDocument
@@ -202,6 +203,16 @@ class _CanonicalKGWriter(_CollectionKGWriter):
     def __init__(self, driver: neo4j.Driver, database: str, collection_name: str) -> None:
         super().__init__(driver, database, collection_name)
         self._links: ContextVar[tuple[str, list[str]] | None] = ContextVar("canonical_kg_links", default=None)
+        self._chunk_id: ContextVar[str | None] = ContextVar("canonical_kg_chunk_id", default=None)
+
+    @contextmanager
+    def for_chunk(self, chunk_id: str) -> Iterator[None]:
+        """Bind the canonical ID to one asynchronous KG pipeline run."""
+        token = self._chunk_id.set(chunk_id)
+        try:
+            yield
+        finally:
+            self._chunk_id.reset(token)
 
     async def run(
         self,
@@ -213,21 +224,25 @@ class _CanonicalKGWriter(_CollectionKGWriter):
         if isinstance(graph, dict):
             graph = Neo4jGraph.model_validate(graph)
         documents = [node for node in graph.nodes if node.label == lexical_graph_config.document_node_label]
-        if len(documents) != 1 or not documents[0].properties.get("ai4rag_chunk_id"):
-            raise ValueError("KG extraction requires the canonical chunk ID in document metadata.")
+        chunk_id = self._chunk_id.get()
+        if len(documents) > 1:
+            raise ValueError("KG extraction produced multiple document nodes for one canonical chunk.")
+        if documents:
+            document_chunk_id = documents[0].properties.get("ai4rag_chunk_id")
+            if chunk_id is not None and document_chunk_id is not None and document_chunk_id != chunk_id:
+                raise ValueError("KG extraction document metadata does not match the canonical chunk ID.")
+            chunk_id = chunk_id or document_chunk_id
+        if not chunk_id:
+            raise ValueError("KG extraction requires the canonical chunk ID.")
 
-        chunk_id = documents[0].properties["ai4rag_chunk_id"]
         entity_nodes = [
             node for node in graph.nodes if node.label not in lexical_graph_config.lexical_graph_node_labels
         ]
         entity_ids = {node.id for node in entity_nodes}
-        linked_entity_ids = sorted(
-            {
-                rel.start_node_id
-                for rel in graph.relationships
-                if rel.type == lexical_graph_config.node_to_chunk_relationship_type and rel.start_node_id in entity_ids
-            }
-        )
+        # This pipeline processes one canonical chunk per run. GraphRAG may omit
+        # lexical nodes and FROM_CHUNK edges, but all extracted entities still
+        # belong to that chunk.
+        linked_entity_ids = sorted(entity_ids)
         entity_graph = Neo4jGraph(
             nodes=entity_nodes,
             relationships=[
@@ -426,6 +441,7 @@ class Neo4jGraphStore(BaseVectorStore):
         if not chunks:
             return
 
+        kg_writer = _CanonicalKGWriter(self._driver, self._config.database, self._collection_name)
         pipeline = SimpleKGPipeline(
             llm=_LLMAdapter(model),
             driver=self._driver,
@@ -436,7 +452,7 @@ class Neo4jGraphStore(BaseVectorStore):
             # GraphRAG's built-in resolver scans every __Entity__ in the DB.
             # Resolve only this collection after all chunks have been written.
             perform_entity_resolution=False,
-            kg_writer=_CanonicalKGWriter(self._driver, self._config.database, self._collection_name),
+            kg_writer=kg_writer,
             neo4j_database=self._config.database,
             **_kg_pipeline_extraction_options(self._kg_extraction_config),
         )
@@ -448,15 +464,16 @@ class Neo4jGraphStore(BaseVectorStore):
 
             async def _run_one(chunk: AI4RAGChunk) -> None:
                 async with sem:
-                    await pipeline.run_async(
-                        file_path=f"ai4rag://{self._collection_name}/{run_id}/{uuid.uuid4().hex}",
-                        text=chunk.text,
-                        document_metadata={
-                            "ai4rag_chunk_id": chunk.chunk_id,
-                            "document_id": chunk.metadata.get("document_id", chunk.chunk_id),
-                            "source": chunk.metadata.get("source", ""),
-                        },
-                    )
+                    with kg_writer.for_chunk(chunk.chunk_id):
+                        await pipeline.run_async(
+                            file_path=f"ai4rag://{self._collection_name}/{run_id}/{uuid.uuid4().hex}",
+                            text=chunk.text,
+                            document_metadata={
+                                "ai4rag_chunk_id": chunk.chunk_id,
+                                "document_id": chunk.metadata.get("document_id", chunk.chunk_id),
+                                "source": chunk.metadata.get("source", ""),
+                            },
+                        )
 
             await asyncio.gather(*(_run_one(chunk) for chunk in chunks))
 
@@ -1282,7 +1299,7 @@ def _build_graph_retrieval_query(
         relationship_block = (
             "CALL { WITH node "
             "MATCH (pivot:__Entity__)-[:FROM_CHUNK]->(node) "
-            f"WITH collect(DISTINCT pivot)[..{entity_pivot_limit}] AS pivots "
+            f"WITH node, collect(DISTINCT pivot)[..{entity_pivot_limit}] AS pivots "
             "UNWIND pivots AS pivot "
             f"MATCH path = (pivot)-[*1..{entity_relationship_hops}]-(related:__Entity__) "
             "WHERE ALL(rel IN relationships(path) WHERE type(rel) <> 'FROM_CHUNK' "
