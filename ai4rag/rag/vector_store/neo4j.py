@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 import uuid
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Iterator
@@ -36,6 +36,14 @@ __all__ = ["Neo4jGraphStore"]
 
 _CONSTRAINED_KG_ENTITIES = ("Person", "Organization", "Place", "Concept", "Event", "Product", "Technology")
 _CONSTRAINED_KG_RELATIONS = ("RELATED_TO", "PART_OF", "LOCATED_IN", "BELONGS_TO", "CREATED_BY", "MENTIONS")
+
+# GraphRAG's lexical nodes are temporary: _CanonicalKGWriter discards them in
+# favor of the canonical nodes already stored by add_documents. Keep their
+# labels distinct from entity types chosen by free extraction (e.g. Document).
+_KG_LEXICAL_GRAPH_CONFIG = LexicalGraphConfig(
+    document_node_label="__AI4RAG_KG_SOURCE_DOCUMENT__",
+    chunk_node_label="__AI4RAG_KG_SOURCE_CHUNK__",
+)
 
 
 def _collection_vector_index_name(collection_name: str) -> str:
@@ -453,6 +461,7 @@ class Neo4jGraphStore(BaseVectorStore):
             # Resolve only this collection after all chunks have been written.
             perform_entity_resolution=False,
             kg_writer=kg_writer,
+            lexical_graph_config=_KG_LEXICAL_GRAPH_CONFIG,
             neo4j_database=self._config.database,
             **_kg_pipeline_extraction_options(self._kg_extraction_config),
         )
@@ -877,166 +886,6 @@ class Neo4jGraphStore(BaseVectorStore):
             self._collection_name,
         )
 
-    def build_knowledge_graph(
-        self,
-        model: OpenAIFoundationModel,
-        entities: list[str] | None = None,
-        relations: list[str] | None = None,
-        chunk_batch_size: int = 4,
-        max_workers: int = 4,
-        max_tokens: int = 2048,
-    ) -> None:
-        """Extract entities and relations from already-indexed chunks.
-
-        Reads all ``Chunk`` nodes in the collection (paginated), sends them in
-        batches to the LLM for extraction, and writes ``__Entity__`` nodes and
-        ``FROM_CHUNK`` / ``RELATED_TO`` relationships back to Neo4j.
-
-        Use :meth:`build_knowledge_graph_from_documents` for the recommended
-        ``SimpleKGPipeline``-based workflow.  This method is kept for workloads
-        where chunks are already loaded via :meth:`add_documents`.
-
-        Parameters
-        ----------
-        model : OpenAIFoundationModel
-            Foundation model used for chat completions.
-        entities : list[str] | None, default=None
-            Optional entity-type hints for the extraction prompt.
-        relations : list[str] | None, default=None
-            Optional relation-type hints for the extraction prompt.
-        chunk_batch_size : int, default=16
-            Number of chunks sent to the LLM per call.
-        max_workers : int, default=4
-            Number of parallel LLM threads.
-        max_tokens : int, default=512
-            Maximum output tokens per LLM call.
-        """
-        all_chunks = self._read_all_chunks()
-        if not all_chunks:
-            logger.info(
-                "No chunks found in collection %s; skipping KG build.",
-                self._collection_name,
-            )
-            return
-
-        batches = [all_chunks[i : i + chunk_batch_size] for i in range(0, len(all_chunks), chunk_batch_size)]
-        entity_hint = f"\nFocus on entity types: {', '.join(entities)}." if entities else ""
-        relation_hint = f"\nFocus on relation types: {', '.join(relations)}." if relations else ""
-        system_prompt = _KG_BATCH_SYSTEM_PROMPT + entity_hint + relation_hint
-
-        def extract_batch(batch: list[dict]) -> tuple[list[dict], list[dict]]:
-            texts = "\n\n".join(f"[{c['id']}] {c['text']}" for c in batch)
-            choices = model.chat(
-                [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": texts},
-                ],
-                max_completion_tokens=max_tokens,
-            )
-            raw = choices[0].message.content or ""
-            return _parse_kg_extraction(raw)
-
-        def write_batch_result(chunk_entities: list[dict], relationships: list[dict]) -> None:
-            with self._driver.session(database=self._config.database) as session:
-                session.execute_write(
-                    Neo4jGraphStore._write_kg_result_tx,
-                    "",
-                    chunk_entities,
-                    relationships,
-                    self._collection_name,
-                )
-
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(extract_batch, batch): batch for batch in batches}
-            for future in as_completed(futures):
-                try:
-                    batch_entities, batch_rels = future.result()
-                    if batch_entities or batch_rels:
-                        write_batch_result(batch_entities, batch_rels)
-                except Exception as exc:
-                    logger.warning("KG extraction batch failed: %s", exc)
-
-        logger.info("Knowledge graph built for collection %s.", self._collection_name)
-
-    def _read_all_chunks(self) -> list[dict]:
-        """Return all Chunk nodes in this collection, paginated."""
-        all_chunks: list[dict] = []
-        skip = 0
-        page_size = 1000
-        with self._driver.session(database=self._config.database) as session:
-            while True:
-                page = session.run(
-                    f"MATCH (c:{self._collection_name}:Chunk) "
-                    f"RETURN c.id AS id, c.text AS text "
-                    f"SKIP $skip LIMIT $limit",
-                    skip=skip,
-                    limit=page_size,
-                ).data()
-                all_chunks.extend(page)
-                if len(page) < page_size:
-                    break
-                skip += page_size
-        return all_chunks
-
-    @staticmethod
-    def _write_kg_result_tx(
-        tx: neo4j.Transaction,
-        chunk_id: str,
-        entities: list[dict],
-        relationships: list[dict],
-        collection_name: str,
-    ) -> None:
-        for ent in entities:
-            name = ent.get("name", "")
-            if not name:
-                continue
-            tx.run(
-                "MERGE (e:__Entity__ {name: $name, entity_type: $etype}) "
-                "SET e.description = $desc, "
-                "e.ai4rag_kg_collections = CASE "
-                "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
-                "THEN e.ai4rag_kg_collections "
-                "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
-                name=name,
-                etype=ent.get("type", "Other"),
-                desc=ent.get("description", ""),
-                col=collection_name,
-            )
-            entity_chunk_id = ent.get("chunk_id") or chunk_id
-            if entity_chunk_id:
-                tx.run(
-                    f"MATCH (c:{collection_name}:Chunk {{id: $cid}}) "
-                    "MATCH (e:__Entity__ {name: $name, entity_type: $etype}) "
-                    "MERGE (e)-[:FROM_CHUNK]->(c)",
-                    cid=entity_chunk_id,
-                    name=name,
-                    etype=ent.get("type", "Other"),
-                )
-
-        entity_type_map = {e["name"]: e.get("type", "Other") for e in entities if e.get("name")}
-
-        for rel in relationships:
-            src = rel.get("source", "")
-            tgt = rel.get("target", "")
-            if not src or not tgt:
-                continue
-            src_type = entity_type_map.get(src, "Other")
-            tgt_type = entity_type_map.get(tgt, "Other")
-            tx.run(
-                "MATCH (e1:__Entity__ {name: $src, entity_type: $stype}) "
-                "MATCH (e2:__Entity__ {name: $tgt, entity_type: $ttype}) "
-                "MERGE (e1)-[r:RELATED_TO {keywords: $kw, description: $desc, "
-                "ai4rag_kg_collection: $col}]->(e2) "
-                "SET r.ai4rag_kg_collections = [$col]",
-                src=src,
-                stype=src_type,
-                tgt=tgt,
-                ttype=tgt_type,
-                kw=rel.get("keywords", ""),
-                desc=rel.get("description", ""),
-                col=collection_name,
-            )
-
     def resolve_entities(self) -> int:
         """Merge duplicate Entity nodes that share the same name (case-insensitive).
 
@@ -1159,34 +1008,8 @@ class Neo4jGraphStore(BaseVectorStore):
 
 
 # ---------------------------------------------------------------------------
-# KG extraction helpers (used by build_knowledge_graph / batch mode)
+# KG extraction response normalization
 # ---------------------------------------------------------------------------
-
-_KG_BATCH_SYSTEM_PROMPT = """\
-You are a top-tier algorithm designed for extracting information in structured \
-formats to build a knowledge graph.
-
-You will receive several text chunks, each prefixed with [chunk_id]. \
-Extract ALL entities and ALL relationships from every chunk. \
-Do not apply any count limit.
-
----Entity types---
-Person, Organization, Location, Concept, Method, Artifact, Event, Data, Content, Other.
-
----Rules---
-- Retain established capitalisation (e.g. "vLLM", "OpenShift").
-- Assign a unique string ID (starting from "0") to each node and reuse that ID \
-in relationships.
-- Each node must carry a "chunk_id" property set to the ID of the chunk it was \
-extracted from (the value inside the brackets).
-- description: ONE sentence, max 20 words, third person.
-- Do not return anything other than the JSON object below.
-- Do not wrap the JSON in backticks or markdown fences.
-
----Output format---
-{"nodes": [{"id": "0", "label": "Person", "properties": {"name": "Alice", "chunk_id": "c1", "description": "..."}}],
- "relationships": [{"type": "WORKS_AT", "start_node_id": "0", "end_node_id": "1", "properties": {"description": "..."}}]}
-"""
 
 
 def _normalize_kg_json(content: str) -> str:
@@ -1210,53 +1033,6 @@ def _normalize_kg_json(content: str) -> str:
         return content
     except Exception:
         return content
-
-
-def _parse_kg_extraction(raw: str) -> tuple[list[dict], list[dict]]:
-    """Parse LLM JSON (node-ID format) into ``(entities, relationships)``."""
-    try:
-        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", raw).strip()
-        repaired = repair_json(cleaned, skip_json_loads=False, return_objects=False)
-        data = json.loads(repaired) if isinstance(repaired, str) else repaired
-        if not isinstance(data, dict):
-            return [], []
-
-        id_to_entity: dict[str, dict] = {}
-        entities: list[dict] = []
-        for node in data.get("nodes", []):
-            node_id = str(node.get("id", ""))
-            props = node.get("properties", {})
-            name = props.get("name", "")
-            if not name:
-                continue
-            entity = {
-                "name": name,
-                "type": node.get("label", "Other"),
-                "description": props.get("description", ""),
-                "chunk_id": props.get("chunk_id", ""),
-            }
-            id_to_entity[node_id] = entity
-            entities.append(entity)
-
-        relationships: list[dict] = []
-        for rel in data.get("relationships", []):
-            src = id_to_entity.get(str(rel.get("start_node_id", "")))
-            tgt = id_to_entity.get(str(rel.get("end_node_id", "")))
-            if not src or not tgt:
-                continue
-            props = rel.get("properties", {})
-            relationships.append(
-                {
-                    "source": src["name"],
-                    "target": tgt["name"],
-                    "keywords": rel.get("type", ""),
-                    "description": props.get("description", ""),
-                }
-            )
-
-        return entities, relationships
-    except Exception:
-        return [], []
 
 
 # ---------------------------------------------------------------------------

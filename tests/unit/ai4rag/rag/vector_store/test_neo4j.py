@@ -13,12 +13,12 @@ from neo4j_graphrag.components.types import Neo4jGraph, Neo4jNode, Neo4jRelation
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import (
+    _KG_LEXICAL_GRAPH_CONFIG,
     Neo4jGraphStore,
     _build_graph_retrieval_query,
     _CanonicalKGWriter,
     _CollectionKGWriter,
     _kg_pipeline_extraction_options,
-    _parse_kg_extraction,
     _validate_kg_extraction_config,
     _validate_neo4j_search_params,
 )
@@ -275,6 +275,9 @@ class TestAddDocuments:
 
         assert isinstance(pipeline_cls.call_args.kwargs["kg_writer"], _CanonicalKGWriter)
         assert pipeline_cls.call_args.kwargs["perform_entity_resolution"] is False
+        lexical_config = pipeline_cls.call_args.kwargs["lexical_graph_config"]
+        assert lexical_config.document_node_label != "Document"
+        assert lexical_config.chunk_node_label != "Chunk"
         assert (
             pipeline_cls.return_value.run_async.call_args.kwargs["document_metadata"]["ai4rag_chunk_id"]
             == chunk.chunk_id
@@ -444,224 +447,6 @@ class TestSearchGraph:
 
 
 # ---------------------------------------------------------------------------
-# build_knowledge_graph
-# ---------------------------------------------------------------------------
-
-
-@patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
-class TestBuildKnowledgeGraph:
-    def _make_model(self, response_json):
-        model = MagicMock()
-        choice = MagicMock()
-        choice.message.content = json.dumps(response_json)
-        model.chat.return_value = [choice]
-        return model
-
-    def _node_id_payload(self):
-        return _make_extraction_payload(
-            nodes=[
-                {
-                    "id": "0",
-                    "label": "Person",
-                    "properties": {
-                        "name": "Alice",
-                        "chunk_id": "c1",
-                        "description": "",
-                    },
-                },
-                {
-                    "id": "1",
-                    "label": "Organization",
-                    "properties": {"name": "Acme", "chunk_id": "c1", "description": ""},
-                },
-            ],
-            relationships=[
-                {
-                    "type": "WORKS_AT",
-                    "start_node_id": "0",
-                    "end_node_id": "1",
-                    "properties": {"description": ""},
-                },
-            ],
-        )
-
-    def test_calls_llm_for_each_batch(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-
-        chunk_data = [
-            {"id": "c1", "text": "Alice works at Acme."},
-            {"id": "c2", "text": "Bob is CEO."},
-        ]
-        page_result = MagicMock()
-        page_result.data.return_value = chunk_data
-        empty_page = MagicMock()
-        empty_page.data.return_value = []
-        session.run.side_effect = [page_result, empty_page]
-
-        model = self._make_model(self._node_id_payload())
-        tx = MagicMock()
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(tx, *args, **kwargs)
-
-        store.build_knowledge_graph(model, chunk_batch_size=16)
-
-        model.chat.assert_called_once()
-        call_kwargs = model.chat.call_args.kwargs
-        assert "max_completion_tokens" in call_kwargs
-
-    def test_writes_entities_in_searchable_schema_with_original_types(
-        self, mock_driver_cls, mock_embedding, neo4j_config
-    ):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-
-        chunk_data = [{"id": "c1", "text": "Alice works at Acme."}]
-        page_result = MagicMock()
-        page_result.data.return_value = chunk_data
-        empty_page = MagicMock()
-        empty_page.data.return_value = []
-        session.run.side_effect = [page_result, empty_page]
-
-        model = self._make_model(self._node_id_payload())
-        tx = MagicMock()
-        session.execute_write.side_effect = lambda fn, *args, **kwargs: fn(tx, *args, **kwargs)
-
-        store.build_knowledge_graph(model, chunk_batch_size=16)
-
-        all_cypher = " ".join(str(c) for c in tx.run.call_args_list)
-        assert "MERGE (e:__Entity__" in all_cypher
-        assert "MERGE (e)-[:FROM_CHUNK]->(c)" in all_cypher
-        assert "MENTIONS" not in all_cypher
-        relationship_call = next(c for c in tx.run.call_args_list if "RELATED_TO" in c.args[0])
-        assert relationship_call.kwargs["stype"] == "Person"
-        assert relationship_call.kwargs["ttype"] == "Organization"
-        assert relationship_call.kwargs["col"] == "ai4rag_col"
-        assert session.execute_write.call_count == 1
-
-    def test_no_chunks_skips_llm(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-
-        empty_page = MagicMock()
-        empty_page.data.return_value = []
-        session.run.return_value = empty_page
-
-        model = MagicMock()
-        store.build_knowledge_graph(model)
-        model.chat.assert_not_called()
-
-    def test_invalid_json_response_is_skipped(self, mock_driver_cls, mock_embedding, neo4j_config):
-        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
-
-        chunk_data = [{"id": "c1", "text": "some text"}]
-        page_result = MagicMock()
-        page_result.data.return_value = chunk_data
-        empty_page = MagicMock()
-        empty_page.data.return_value = []
-        session.run.side_effect = [page_result, empty_page]
-
-        model = MagicMock()
-        choice = MagicMock()
-        choice.message.content = "not valid json !!!"
-        model.chat.return_value = [choice]
-
-        # Must not raise
-        store.build_knowledge_graph(model)
-
-
-# ---------------------------------------------------------------------------
-# _parse_kg_extraction
-# ---------------------------------------------------------------------------
-
-
-def _make_extraction_payload(nodes, relationships=None):
-    """Build a node-ID-format extraction payload for tests."""
-    return {"nodes": nodes, "relationships": relationships or []}
-
-
-class TestParseKgExtraction:
-    def test_valid_json(self):
-        raw = json.dumps(
-            _make_extraction_payload(
-                nodes=[
-                    {
-                        "id": "0",
-                        "label": "Person",
-                        "properties": {"name": "Alice", "description": "A researcher."},
-                    },
-                    {
-                        "id": "1",
-                        "label": "Organization",
-                        "properties": {"name": "Acme", "description": "A company."},
-                    },
-                ],
-                relationships=[
-                    {
-                        "type": "WORKS_AT",
-                        "start_node_id": "0",
-                        "end_node_id": "1",
-                        "properties": {"description": "Alice works at Acme."},
-                    },
-                ],
-            )
-        )
-        ents, rels = _parse_kg_extraction(raw)
-        assert len(ents) == 2
-        assert ents[0]["name"] == "Alice"
-        assert len(rels) == 1
-        assert rels[0]["source"] == "Alice"
-        assert rels[0]["target"] == "Acme"
-        assert rels[0]["keywords"] == "WORKS_AT"
-
-    def test_strips_markdown_fences(self):
-        raw = "```json\n" + json.dumps({"nodes": [], "relationships": []}) + "\n```"
-        ents, rels = _parse_kg_extraction(raw)
-        assert ents == []
-        assert rels == []
-
-    def test_invalid_json_repaired(self):
-        # json_repair should recover a truncated but partially valid object.
-        ents, rels = _parse_kg_extraction('{"nodes": [], "relationships": []')
-        assert ents == []
-        assert rels == []
-
-    def test_garbage_returns_empty(self):
-        ents, rels = _parse_kg_extraction("not json at all!!! ???")
-        assert ents == []
-        assert rels == []
-
-    def test_nodes_without_name_are_skipped(self):
-        raw = json.dumps(
-            _make_extraction_payload(
-                nodes=[{"id": "0", "label": "Person", "properties": {}}],
-            )
-        )
-        ents, _ = _parse_kg_extraction(raw)
-        assert ents == []
-
-    def test_relationships_with_unknown_node_id_are_skipped(self):
-        raw = json.dumps(
-            _make_extraction_payload(
-                nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
-                relationships=[{"type": "KNOWS", "start_node_id": "0", "end_node_id": "99"}],
-            )
-        )
-        _, rels = _parse_kg_extraction(raw)
-        assert rels == []
-
-    def test_missing_optional_fields_default(self):
-        raw = json.dumps(
-            _make_extraction_payload(
-                nodes=[{"id": "0", "label": "Person", "properties": {"name": "Alice"}}],
-            )
-        )
-        ents, _ = _parse_kg_extraction(raw)
-        assert ents[0]["type"] == "Person"
-        assert ents[0]["description"] == ""
-
-
-# ---------------------------------------------------------------------------
 # build_knowledge_graph_from_documents
 # ---------------------------------------------------------------------------
 
@@ -825,6 +610,55 @@ def test_canonical_writer_skips_pipeline_document_and_chunk_nodes(serialized):
     }
     assert all(call.kwargs["database_"] == "tenant_graph" for call in calls)
     driver.session.assert_called_once_with(database="tenant_graph")
+
+
+def test_canonical_writer_keeps_entities_named_document_and_chunk():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "tenant_graph", "ai4rag_col")
+
+    lexical_config = _KG_LEXICAL_GRAPH_CONFIG
+    graph = Neo4jGraph(
+        nodes=[
+            Neo4jNode(
+                id="pipeline_doc",
+                label=lexical_config.document_node_label,
+                properties={"ai4rag_chunk_id": "canonical_c1"},
+            ),
+            Neo4jNode(
+                id="pipeline_chunk",
+                label=lexical_config.chunk_node_label,
+                properties={"text": "A document describes a chunk"},
+            ),
+            Neo4jNode(id="semantic_doc", label="Document", properties={"name": "Report"}),
+            Neo4jNode(id="semantic_chunk", label="Chunk", properties={"name": "Chapter"}),
+        ],
+        relationships=[
+            Neo4jRelationship(start_node_id="pipeline_chunk", end_node_id="pipeline_doc", type="FROM_DOCUMENT"),
+            Neo4jRelationship(start_node_id="semantic_doc", end_node_id="semantic_chunk", type="CONTAINS"),
+        ],
+    )
+
+    result = asyncio.run(writer.run(graph.model_dump(), lexical_config))
+
+    assert result.status == "SUCCESS"
+    node_rows = next(
+        call.kwargs["parameters_"]["rows"]
+        for call in driver.execute_query.call_args_list
+        if "CREATE (n:__KGBuilder__" in call.args[0]
+    )
+    assert {row["label"] for row in node_rows} == {"Document", "Chunk"}
+    assert all("__Entity__" in row["labels"] for row in node_rows)
+    relationship_rows = next(
+        call.kwargs["parameters_"]["rows"]
+        for call in driver.execute_query.call_args_list
+        if "apoc.merge.relationship" in call.args[0]
+    )
+    assert [row["type"] for row in relationship_rows] == ["CONTAINS"]
+    link_call = next(
+        call for call in driver.execute_query.call_args_list if "MERGE (e)-[:FROM_CHUNK]->(c)" in call.args[0]
+    )
+    assert link_call.kwargs["parameters_"]["entity_ids"] == ["semantic_chunk", "semantic_doc"]
 
 
 def test_canonical_writer_requires_chunk_identity():
