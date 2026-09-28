@@ -82,9 +82,10 @@ def _kg_pipeline_extraction_options(config: dict[str, Any]) -> dict[str, Any]:
         "Also extract the relationships between these nodes.",
         f"Also extract at most {relation_limit} relationships between these nodes.",
     )
-    # Do not supply entities or relations: in free mode the model determines
-    # their labels and types, while the prompt bounds extraction per chunk.
-    return {"prompt_template": ERExtractionTemplate(template=template)}
+    # "FREE" bypasses automatic schema extraction. Omitting the schema would
+    # ask the model to generate constraints, which can be invalid or conflicting.
+    # The model still determines entity and relationship types from each chunk.
+    return {"schema": "FREE", "prompt_template": ERExtractionTemplate(template=template)}
 
 
 try:

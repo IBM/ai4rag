@@ -112,13 +112,14 @@ class TestKGExtractionConfig:
         assert "entities" in options
         assert "relations" in options
 
-    def test_free_mode_uses_no_schema_and_caps_each_chunk(self):
+    def test_free_mode_skips_schema_extraction_and_caps_each_chunk(self):
         options = _kg_pipeline_extraction_options(
             _validate_kg_extraction_config(
                 {"mode": "free", "max_entities_per_chunk": 5, "max_relationships_per_chunk": 5}
             )
         )
 
+        assert options["schema"] == "FREE"
         assert "entities" not in options
         assert "relations" not in options
         assert "at most 5 entities" in options["prompt_template"].template
