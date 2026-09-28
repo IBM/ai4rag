@@ -639,9 +639,17 @@ def test_canonical_writer_keeps_entities_named_document_and_chunk():
         ],
     )
 
-    result = asyncio.run(writer.run(graph.model_dump(), lexical_config))
+    with patch("ai4rag.rag.vector_store.neo4j.logger") as mock_logger:
+        result = asyncio.run(writer.run(graph.model_dump(), lexical_config))
 
     assert result.status == "SUCCESS"
+    mock_logger.info.assert_called_once_with(
+        "KG extraction for collection '%s', chunk '%s': entity types=%s, source document nodes=%d",
+        "ai4rag_col",
+        "canonical_c1",
+        {"Chunk": 1, "Document": 1},
+        1,
+    )
     node_rows = next(
         call.kwargs["parameters_"]["rows"]
         for call in driver.execute_query.call_args_list
@@ -659,6 +667,34 @@ def test_canonical_writer_keeps_entities_named_document_and_chunk():
         call for call in driver.execute_query.call_args_list if "MERGE (e)-[:FROM_CHUNK]->(c)" in call.args[0]
     )
     assert link_call.kwargs["parameters_"]["entity_ids"] == ["semantic_chunk", "semantic_doc"]
+
+
+def test_canonical_writer_logs_entity_types_before_rejecting_multiple_source_documents():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CanonicalKGWriter(driver, "tenant_graph", "ai4rag_col")
+
+    lexical_config = _KG_LEXICAL_GRAPH_CONFIG
+    graph = Neo4jGraph(
+        nodes=[
+            Neo4jNode(id="source_1", label=lexical_config.document_node_label),
+            Neo4jNode(id="source_2", label=lexical_config.document_node_label),
+            Neo4jNode(id="report", label="Document", properties={"name": "Report"}),
+        ]
+    )
+
+    with writer.for_chunk("canonical_c1"), patch("ai4rag.rag.vector_store.neo4j.logger") as mock_logger:
+        with pytest.raises(ValueError, match="multiple document nodes"):
+            asyncio.run(writer.run(graph, lexical_config))
+
+    mock_logger.info.assert_called_once_with(
+        "KG extraction for collection '%s', chunk '%s': entity types=%s, source document nodes=%d",
+        "ai4rag_col",
+        "canonical_c1",
+        {"Document": 1},
+        2,
+    )
+    driver.execute_query.assert_not_called()
 
 
 def test_canonical_writer_requires_chunk_identity():

@@ -8,6 +8,7 @@ import hashlib
 import json
 import re
 import uuid
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -232,7 +233,18 @@ class _CanonicalKGWriter(_CollectionKGWriter):
         if isinstance(graph, dict):
             graph = Neo4jGraph.model_validate(graph)
         documents = [node for node in graph.nodes if node.label == lexical_graph_config.document_node_label]
+        entity_nodes = [
+            node for node in graph.nodes if node.label not in lexical_graph_config.lexical_graph_node_labels
+        ]
+        entity_types = dict(sorted(Counter(node.label for node in entity_nodes).items()))
         chunk_id = self._chunk_id.get()
+        logger.info(
+            "KG extraction for collection '%s', chunk '%s': entity types=%s, source document nodes=%d",
+            self._collection_name,
+            chunk_id or (documents[0].properties.get("ai4rag_chunk_id") if documents else "unknown"),
+            entity_types,
+            len(documents),
+        )
         if len(documents) > 1:
             raise ValueError("KG extraction produced multiple document nodes for one canonical chunk.")
         if documents:
@@ -243,9 +255,6 @@ class _CanonicalKGWriter(_CollectionKGWriter):
         if not chunk_id:
             raise ValueError("KG extraction requires the canonical chunk ID.")
 
-        entity_nodes = [
-            node for node in graph.nodes if node.label not in lexical_graph_config.lexical_graph_node_labels
-        ]
         entity_ids = {node.id for node in entity_nodes}
         # This pipeline processes one canonical chunk per run. GraphRAG may omit
         # lexical nodes and FROM_CHUNK edges, but all extracted entities still
