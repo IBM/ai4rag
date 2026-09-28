@@ -17,7 +17,7 @@ from docling_core.types.doc import DoclingDocument
 from json_repair import repair_json
 from neo4j_graphrag.components.kg_writer import KGWriterModel, Neo4jWriter
 from neo4j_graphrag.components.types import LexicalGraphConfig, Neo4jGraph, Neo4jRelationship
-from neo4j_graphrag.neo4j_queries import upsert_relationship_query
+from neo4j_graphrag.neo4j_queries import db_cleaning_query, upsert_relationship_query
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -155,6 +155,20 @@ class _CollectionKGWriter(Neo4jWriter):
     def __init__(self, driver: neo4j.Driver, database: str, collection_name: str) -> None:
         super().__init__(driver=driver, neo4j_database=database)
         self._collection_name = collection_name
+
+    def _db_setup(self) -> None:
+        self.driver.execute_query(
+            "CREATE INDEX __entity__tmp_internal_id IF NOT EXISTS FOR (n:__KGBuilder__) ON (n.__tmp_internal_id)",
+            database_=self.neo4j_database,
+        )
+
+    def _db_cleaning(self) -> None:
+        query = db_cleaning_query(
+            support_variable_scope_clause=self.is_version_5_23_or_above,
+            batch_size=self.batch_size,
+        )
+        with self.driver.session(database=self.neo4j_database) as session:
+            session.run(query)
 
     async def run(
         self,

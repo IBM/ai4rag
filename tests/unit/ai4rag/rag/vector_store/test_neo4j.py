@@ -767,11 +767,28 @@ def test_collection_writer_tags_only_upserted_relationships():
     assert len(parameters["rows"]) == 1
 
 
+def test_collection_writer_setup_and_cleanup_use_configured_database():
+    driver = MagicMock()
+    with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
+        writer = _CollectionKGWriter(driver, "tenant_graph", "ai4rag_col")
+
+    result = asyncio.run(writer.run(Neo4jGraph()))
+
+    assert result.status == "SUCCESS"
+    setup_call = driver.execute_query.call_args
+    assert "CREATE INDEX __entity__tmp_internal_id" in setup_call.args[0]
+    assert setup_call.kwargs["database_"] == "tenant_graph"
+    driver.session.assert_called_once_with(database="tenant_graph")
+    cleanup_query = driver.session.return_value.__enter__.return_value.run.call_args.args[0]
+    assert "MATCH (n:__KGBuilder__)" in cleanup_query
+    assert "IN TRANSACTIONS" in cleanup_query
+
+
 @pytest.mark.parametrize("serialized", [False, True])
 def test_canonical_writer_skips_pipeline_document_and_chunk_nodes(serialized):
     driver = MagicMock()
     with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
-        writer = _CanonicalKGWriter(driver, "neo4j", "ai4rag_col")
+        writer = _CanonicalKGWriter(driver, "tenant_graph", "ai4rag_col")
 
     graph = Neo4jGraph(
         nodes=[
@@ -804,6 +821,8 @@ def test_canonical_writer_skips_pipeline_document_and_chunk_nodes(serialized):
         "chunk_id": "canonical_c1",
         "col": "ai4rag_col",
     }
+    assert all(call.kwargs["database_"] == "tenant_graph" for call in calls)
+    driver.session.assert_called_once_with(database="tenant_graph")
 
 
 def test_canonical_writer_requires_chunk_identity():
