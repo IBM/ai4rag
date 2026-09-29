@@ -183,6 +183,37 @@ class TestMakeS3Client:
 
         assert create.call_args.kwargs["verify"] is True
 
+    def test_uses_explicit_ssl_cert_path(self, mocker, tmp_path):
+        """An explicit CA bundle takes precedence over environment-based discovery."""
+        ca_bundle = tmp_path / "ca-bundle.crt"
+        ca_bundle.write_text(
+            "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+            encoding="utf-8",
+        )
+        create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client")
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": None,
+        }
+
+        _make_s3_client(credentials, ssl_cert_path=str(ca_bundle))
+
+        assert create.call_args.kwargs["verify"] == str(ca_bundle)
+
+    def test_rejects_missing_ssl_cert_path(self):
+        """A nonexistent CA bundle fails before extraction starts workers."""
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": None,
+        }
+
+        with pytest.raises(FileNotFoundError, match="ssl_cert_path=.*readable PEM CA bundle"):
+            _make_s3_client(credentials, ssl_cert_path="/missing/ca-bundle.crt")
+
 
 # ---------------------------------------------------------------------------
 # _download_document
@@ -613,7 +644,10 @@ class TestDoclingExtractionConfig:
         """A sequence ``ocr_lang`` is normalized to a tuple in ``__post_init__``."""
         from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
 
-        assert DoclingExtractionConfig(ocr_lang=["english", "chinese"]).ocr_lang == ("english", "chinese")
+        assert DoclingExtractionConfig(ocr_lang=["english", "chinese"]).ocr_lang == (
+            "english",
+            "chinese",
+        )
 
     def test_empty_ocr_lang_falls_back_to_default(self):
         """An empty ``ocr_lang`` falls back to the default English tuple."""

@@ -172,6 +172,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     s3_access_key: str | None = None,
     s3_secret_key: str | None = None,
     s3_region: str | None = None,
+    ssl_cert_path: str | None = None,
     error_tolerance: float | None = None,
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
@@ -205,6 +206,10 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         AWS secret key.  Falls back to ``AWS_SECRET_ACCESS_KEY``.
     s3_region
         AWS region.  Falls back to ``AWS_DEFAULT_REGION``.
+    ssl_cert_path
+        Optional path to a PEM CA bundle used to verify the S3 endpoint. When
+        provided, it takes precedence over ``AWS_CA_BUNDLE``. The file must be
+        readable; certificate validation remains enabled.
     error_tolerance
         Fraction of documents (0.0--1.0) allowed to fail.  ``None`` means
         zero tolerance.
@@ -251,7 +256,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
 
     if s3_client is None:
         s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
-        s3_client = _make_s3_client(s3_creds)
+        s3_client = _make_s3_client(s3_creds, ssl_cert_path=ssl_cert_path)
     artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
     pipeline_config = docling_config or DoclingExtractionConfig()
 
@@ -379,7 +384,7 @@ def _resolve_s3_credentials(
     return creds
 
 
-def _make_s3_client(s3_creds: dict[str, str | None]) -> Any:
+def _make_s3_client(s3_creds: dict[str, str | None], ssl_cert_path: str | None = None) -> Any:
     """Create the S3 client used by an extraction run.
 
     Keeping client construction in :func:`create_s3_client` makes extraction
@@ -387,12 +392,23 @@ def _make_s3_client(s3_creds: dict[str, str | None]) -> Any:
     discovery. The returned client is shared by all download threads in the
     run; boto3 clients support concurrent use by threads.
     """
+    verify: bool | str = True
+    if ssl_cert_path:
+        ca_bundle = Path(ssl_cert_path)
+        if not ca_bundle.is_file() or not os.access(ca_bundle, os.R_OK):
+            raise FileNotFoundError(
+                f"ssl_cert_path={ssl_cert_path!r} is not a readable PEM CA bundle. "
+                "Mount the trusted CA bundle into the workbench and pass its path, "
+                "or configure AWS_CA_BUNDLE."
+            )
+        verify = str(ca_bundle)
+
     return create_s3_client(
         endpoint_url=s3_creds["AWS_S3_ENDPOINT"],
         access_key_id=s3_creds["AWS_ACCESS_KEY_ID"],
         secret_access_key=s3_creds["AWS_SECRET_ACCESS_KEY"],
         region_name=s3_creds.get("AWS_DEFAULT_REGION"),
-        verify=True,
+        verify=verify,
     )
 
 
@@ -799,7 +815,11 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     skipped = [d for d in docs if Path(d["key"]).suffix.lower() not in SUPPORTED_EXTENSIONS]
     if skipped:
         skipped_keys = ", ".join(d["key"] for d in skipped)
-        _logger.warning("Skipping %d document(s) with unsupported extensions: %s", len(skipped), skipped_keys)
+        _logger.warning(
+            "Skipping %d document(s) with unsupported extensions: %s",
+            len(skipped),
+            skipped_keys,
+        )
 
     with ThreadPoolExecutor(max_workers=DOWNLOAD_MAX_THREADS) as dl_pool:
         dl_futures = {
