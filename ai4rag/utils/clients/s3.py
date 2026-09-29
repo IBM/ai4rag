@@ -25,8 +25,7 @@ def get_s3_credentials_from_env() -> dict[str, str | None]:
     missing = [k for k, v in creds.items() if not v]
     if missing:
         raise ValueError(
-            f"Missing environment variable(s): {missing}. "
-            "Check that the Kubernetes secret is configured properly."
+            f"Missing environment variable(s): {missing}. " "Check that the Kubernetes secret is configured properly."
         )
     creds["AWS_DEFAULT_REGION"] = os.environ.get("AWS_DEFAULT_REGION")
     return creds
@@ -75,9 +74,7 @@ def create_s3_client(
     # boto3 honours AWS_CA_BUNDLE only when its ``verify`` argument is not
     # explicitly ``True``. Resolve it here so callers keep secure certificate
     # verification while disconnected environments can supply their own CA.
-    effective_verify = (
-        (os.environ.get("AWS_CA_BUNDLE") or True) if verify is True else verify
-    )
+    effective_verify = (os.environ.get("AWS_CA_BUNDLE") or True) if verify is True else verify
 
     return boto3.client(
         "s3",
