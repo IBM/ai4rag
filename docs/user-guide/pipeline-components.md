@@ -42,6 +42,44 @@ Data-stage and asset-generation business logic lives in `ai4rag`, so it can be e
 
 S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for born-digital documents (`docling-slim[feat-chunking]`) are all included in the core `ai4rag` install. OCR (scanned PDFs/images) and audio transcription additionally require the `text-extraction` extra — see [Installation](../getting-started/installation.md#basic-installation).
 
+## Private CA certificates on OpenShift AI
+
+For disconnected clusters or private endpoints that use a self-signed or private CA,
+configure the CA once through the OpenShift AI `DSCInitialization` (DSCI) object. Do
+not disable TLS verification with `verify=False`.
+
+1. Create or update a ConfigMap in the OpenShift AI applications namespace. The
+   `ca-bundle.crt` value can contain one or more PEM certificates.
+
+   ```sh
+   oc -n redhat-ods-applications create configmap custom-ca-bundle \
+     --from-file=ca-bundle.crt=/path/to/ca-bundle.crt \
+     --dry-run=client -o yaml | oc apply -f -
+   ```
+
+2. Reference it from the DSCI object. Replace `default-dsci` if your cluster uses
+   another DSCI resource name.
+
+   ```sh
+   oc patch dscinitialization default-dsci --type=merge \
+     -p '{"spec":{"trustedCABundle":{"customCABundle":"custom-ca-bundle"}}}'
+   ```
+
+OpenShift AI automatically propagates the configured certificate into the managed
+trust bundles used by workbenches and by other OpenShift AI services that consume the
+custom CA bundle. Restart affected workbenches after an update. The DSCI setting does
+not alter trust for arbitrary workloads that do not mount the OpenShift AI custom CA
+bundle.
+
+In a managed workbench, set `AWS_CA_BUNDLE` to the mounted bundle before constructing
+the S3 client when it is not already set:
+
+```python
+import os
+
+os.environ.setdefault("AWS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
+```
+
 ## Data Components
 
 ### Document Discovery
@@ -201,7 +239,7 @@ services pipeline steps talk to, and `ai4rag.utils.docling_io` loads persisted
 
 | Module | Function | Purpose |
 |--------|----------|---------|
-| `ai4rag.utils.clients.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
+| `ai4rag.utils.clients.s3` | `create_s3_client()` | S3 client factory with environment-based credentials and private-CA support via `AWS_CA_BUNDLE` |
 | `ai4rag.utils.clients.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with SSL self-signed cert fallback |
 | `ai4rag.utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
@@ -223,4 +261,4 @@ from ai4rag.utils.docling_io import load_docling_documents
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
 - **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
 - **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
-- **SSL fallback**: S3 operations and the MaaS client automatically retry with `verify=False` when self-signed certificate errors are detected.
+- **TLS verification**: Configure private CAs through the platform trust bundle and `AWS_CA_BUNDLE`; do not disable certificate verification.
