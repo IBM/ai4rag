@@ -38,23 +38,27 @@ The GAM Optimizer uses **Generalized Additive Models** to predict which configur
 
 The optimization process has two phases:
 
-**Phase 1: Stratified Random Exploration**
+**Phase 1: Warm-Start Exploration**
 
-- Select `n_random_nodes` configurations from the search space using stratified sampling
-- Stratification ensures every unique value of each string-valued categorical parameter (e.g. `search_mode`, `chunking_method`) is evaluated at least once before GAM training begins — this prevents biased model training when some parameter values dominate the search space
-- Integer/float parameters are not stratified; only string-typed categorical parameters participate
+- Select `n_random_nodes` configurations from the search space, ordered according to `warm_start_strategy`:
+    - `"random"` (default) — shuffle the candidates and take the first `n_random_nodes` as-is; no coverage guarantee
+    - `"greedy"` — greedily pick configurations so every discrete parameter value (categorical or numeric) appears at least twice, auto-adjusting `n_random_nodes` upward (with a logged notice) when it is too small for full coverage
+    - `"balanced"` — round-robin across the unique value combinations of `fields_to_balance`, guaranteeing every combination appears at least once, with other discrete values covered as a secondary goal
 - Evaluate each using the objective function (your chosen metric)
 - Build an initial dataset of (configuration, score) pairs
 
 **Phase 2: Model-Guided Search**
 
-- Train a LinearGAM model on the evaluated configurations
+- Train a `LinearGAM` model on the evaluated configurations, using factor terms for categorical parameters and spline terms for numeric ones (a categorical column falls back to a spline term if the warm-start sample didn't observe every one of its values)
 - Use the model to predict scores for all remaining (unevaluated) configurations
 - Select the top `evals_per_trial` configurations with highest predicted scores
 - Evaluate those configurations
-- Repeat until `max_evals` total evaluations are reached
+- Repeat until `max_evals` total evaluations are reached, or `max_iterations` published patterns have been produced
 
-This approach balances **exploration** (random phase) with **exploitation** (model-guided phase).
+This approach balances **exploration** (warm-start phase) with **exploitation** (model-guided phase).
+
+!!! note "Only the best warm-start result is published"
+    When warm-starting, every candidate in Phase 1 still counts against `max_evals`, but only the single best successful warm-start evaluation is published as a result pattern (`Pattern1`) and passed to your event handler — the rest remain internal to the optimizer. See [Event Handlers](event-handlers.md).
 
 ---
 
@@ -64,10 +68,11 @@ This approach balances **exploration** (random phase) with **exploitation** (mod
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
 
 optimizer_settings = GAMOptSettings(
-    max_evals=20,          # Total number of configurations to evaluate
-    n_random_nodes=4,      # Number of random evaluations before using the model
-    evals_per_trial=1,     # Number of configurations to evaluate per iteration (default: 1)
-    random_state=64        # Random seed for reproducibility (default: 64)
+    max_evals=20,                  # Total number of configurations to evaluate
+    n_random_nodes=4,              # Number of warm-start evaluations before using the model
+    evals_per_trial=1,             # Number of configurations to evaluate per iteration (default: 1)
+    warm_start_strategy="random",  # "random" (default), "greedy", or "balanced"
+    random_state=64                # Random seed for reproducibility (default: 64)
 )
 ```
 
@@ -97,11 +102,11 @@ optimizer_settings = GAMOptSettings(
 
 #### `n_random_nodes`
 
-**What it controls**: Number of configurations to evaluate before training the GAM model, selected using stratified sampling over string-valued categorical parameters.
+**What it controls**: Number of configurations to evaluate in the warm-start phase, before training the GAM model. How they are selected is controlled by `warm_start_strategy`.
 
 **Default**: 4
 
-**Why it matters**: The initial exploration phase uses stratified sampling to guarantee that every unique value of each string-valued categorical parameter (e.g. `search_mode`, `chunking_method`, `ranker_strategy`) is evaluated at least once. This ensures the GAM model is trained on diverse, representative configurations, avoiding local optima caused by search space imbalance.
+**Why it matters**: The warm-start phase builds the initial (configuration, score) dataset the GAM model trains on. With `warm_start_strategy="greedy"` or `"balanced"`, it also determines categorical coverage — the more diverse the sample, the less likely the model is to be biased toward over-represented parameter values.
 
 **Typical values**:
 
@@ -115,10 +120,57 @@ optimizer_settings = GAMOptSettings(
 - Lower = more model-guided iterations, but risk of poor model predictions if initial samples aren't diverse
 
 !!! warning "Balance with max_evals"
-    Ensure `n_random_nodes < max_evals`. If `n_random_nodes` equals or exceeds `max_evals`, the optimizer will only perform random search.
+    Ensure `n_random_nodes < max_evals`. If `n_random_nodes` equals or exceeds `max_evals`, the optimizer will only perform warm-start evaluations.
 
 !!! tip "Sizing for categorical coverage"
-    Set `n_random_nodes` to at least the number of unique values of your most varied string parameter. For example, if `chunking_method` has 3 values and `search_mode` has 2, use at least `n_random_nodes=3`. A warning is emitted when the value is too small for full coverage. When warm-starting, already-evaluated categorical values are accounted for automatically.
+    With `warm_start_strategy="greedy"` or `"balanced"`, `n_random_nodes` is auto-adjusted upward (with a logged notice) when it's too small to guarantee full coverage of discrete parameter values — you don't have to compute the minimum yourself. `"random"` (the default) performs no coverage adjustment. When warm-starting from `known_observations`, already-evaluated values are accounted for automatically.
+
+---
+
+#### `warm_start_strategy`
+
+**What it controls**: How the `n_random_nodes` warm-start configurations are selected.
+
+**Default**: `"random"`
+
+**Options**:
+
+- **`"random"`** — shuffle the candidate list and take the first `n_random_nodes`. No coverage guarantee; fastest and simplest.
+- **`"greedy"`** — greedily select configurations so every discrete parameter value (categorical or numeric) appears at least twice, maximizing coverage before falling back to model-guided search.
+- **`"balanced"`** — round-robin across the unique value combinations of `fields_to_balance` (e.g. ensure every `(foundation_model, embedding_model)` pair is tried at least once), with other discrete values covered as a secondary objective. Requires `fields_to_balance` to be set.
+
+**Why it matters**: `"greedy"` and `"balanced"` produce a more representative warm-start sample for the GAM model — especially useful when some parameter values dominate the search space or when a specific set of fields (e.g. model choices) must each get a fair trial.
+
+!!! tip "Choosing a strategy"
+    Use `"random"` for quick, low-overhead exploration. Use `"greedy"` when your search space has several categorical parameters and you want the model trained on diverse data. Use `"balanced"` when a specific subset of parameters (e.g. model combinations) must each be represented at least once, regardless of how the rest of the search space is skewed.
+
+---
+
+#### `fields_to_balance`
+
+**What it controls**: The parameter names balanced by round-robin when `warm_start_strategy="balanced"`.
+
+**Default**: `None`
+
+**Why it matters**: Each unique combination of values across these fields is guaranteed at least one warm-start evaluation before GAM training begins. Required (and must be non-empty) when `warm_start_strategy="balanced"`; ignored otherwise.
+
+```python
+GAMOptSettings(
+    max_evals=20,
+    warm_start_strategy="balanced",
+    fields_to_balance=["foundation_model", "embedding_model"],
+)
+```
+
+---
+
+#### `max_iterations`
+
+**What it controls**: The maximum number of evaluated patterns retained as results and published to the event handler.
+
+**Default**: `None` (falls back to the effective `max_evals`)
+
+**Why it matters**: `max_evals` bounds how many objective-function calls are made; `max_iterations` separately bounds how many of those evaluations become published `Pattern*` results. This lets you spend a larger evaluation budget on warm-start coverage or GAM refinement without flooding your event handler with every intermediate evaluation. It cannot exceed `max_evals`, and is clamped to the number of available search-space combinations.
 
 ---
 
@@ -187,7 +239,10 @@ best_pattern = experiment.search()
 
 ---
 
-### Warm-Starting with Known Observations
+### Resuming from Known Observations
+
+!!! note "Not the same as the warm-start phase"
+    This is a separate mechanism from the `warm_start_strategy` setting above. `known_observations` seeds the optimizer with results from a *previous run*; `warm_start_strategy` controls how *this run's* own initial evaluations (Phase 1) are chosen. The two combine: known observations count toward the `n_random_nodes` target and reduce how many new warm-start evaluations are needed.
 
 If you've already run experiments and want to continue optimization with new settings or a refined search space:
 
@@ -226,7 +281,7 @@ best_result = optimizer.search()
 - Skip re-evaluating configurations you've already tested
 - Build on previous optimization runs
 - Useful when expanding search space or changing objective metric
-- Stratified sampling accounts for categorical values already covered by warm-start observations, so early slots are not wasted on redundant coverage
+- With `warm_start_strategy="greedy"` or `"balanced"`, coverage already provided by known observations is accounted for automatically, so early slots are not wasted on redundant coverage
 
 !!! note "Known Observations Format"
     Each observation must include:
@@ -331,7 +386,8 @@ best_pattern = experiment.search()
 | **Convergence** | Typically 10-30 evaluations | Depends on luck |
 | **Overhead** | Model training (minimal) | None |
 | **Reproducibility** | Controlled by `random_state` | Controlled by `random_state` |
-| **Warm-start support** | Yes (`known_observations`) | No |
+| **Warm-start phase** | Yes (`warm_start_strategy`: random/greedy/balanced) | No |
+| **Resume from previous run** | Yes (`known_observations`) | No |
 | **Exploration** | Balanced (random + guided) | Pure random |
 
 ---
@@ -559,8 +615,8 @@ Optimizers in ai4rag:
 
 - **GAM Optimizer**: Recommended for most use cases, balances exploration and exploitation
 - **Random Optimizer**: Simple baseline, best for small search spaces
-- **Key settings**: `max_evals` (total evaluations), `n_random_nodes` (random exploration)
-- **Warm-starting**: Reuse previous results with `known_observations`
+- **Key settings**: `max_evals` (total evaluations), `n_random_nodes` (warm-start evaluations), `warm_start_strategy` (`random`/`greedy`/`balanced`), `max_iterations` (published results cap)
+- **Resuming**: Reuse previous results with `known_observations`
 - **Trade-offs**: More evaluations = better results but higher cost
 
 Start with the default GAM settings (`max_evals=20`, `n_random_nodes=4`) and adjust based on your search space size, evaluation cost, and optimization goals.
