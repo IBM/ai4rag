@@ -10,6 +10,7 @@ from ai4rag.utils.data import text_extraction
 from ai4rag.utils.data.text_extraction import (
     ExtractionResult,
     _build_docling_format_options,
+    _download_document,
     _effective_worker_count,
     _make_s3_client,
     _raise_if_threshold_exceeded,
@@ -168,8 +169,8 @@ class TestMakeS3Client:
             verify=True,
         )
 
-    def test_forwards_tls_verification_setting_to_shared_factory(self, mocker):
-        """The existing SSL fallback must request an unverified retry client."""
+    def test_uses_verified_client(self, mocker):
+        """A run creates one verified client when a client is not injected."""
         create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client")
         credentials = {
             "AWS_S3_ENDPOINT": "https://s3.example.com",
@@ -178,9 +179,32 @@ class TestMakeS3Client:
             "AWS_DEFAULT_REGION": None,
         }
 
-        _make_s3_client(credentials, verify=False)
+        _make_s3_client(credentials)
 
-        assert create.call_args.kwargs["verify"] is False
+        assert create.call_args.kwargs["verify"] is True
+
+
+# ---------------------------------------------------------------------------
+# _download_document
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadDocument:
+    """Tests for client injection into individual downloads."""
+
+    def test_uses_the_supplied_client(self, mocker, tmp_path):
+        """A download must not construct another S3 client."""
+        client = mocker.MagicMock()
+
+        local_path = _download_document(
+            {"key": "docs/example.txt"},
+            bucket="bucket",
+            base_path=tmp_path,
+            s3_client=client,
+        )
+
+        assert local_path == tmp_path / "docs/example.txt"
+        client.download_file.assert_called_once_with("bucket", "docs/example.txt", str(local_path))
 
 
 # ---------------------------------------------------------------------------
@@ -652,7 +676,7 @@ class _RecordingPool:
         return args
 
 
-def _fake_download(doc, _bucket, base_path, _s3_creds):
+def _fake_download(doc, _bucket, base_path, _s3_client):
     """Mimic ``_download_document``: normalize the key, then write the file."""
     safe_key = doc["key"].strip().lstrip("/")
     local_path = (base_path / safe_key).resolve()
@@ -676,7 +700,7 @@ class TestDownloadAndSubmitKeyPairing:
             download_path=download_path,
             process_pool=pool,
             out_dir=tmp_path / "out",
-            s3_creds={},
+            s3_client=object(),
         )
 
         assert not errors
@@ -701,10 +725,10 @@ class TestDownloadAndSubmitKeyPairing:
         assert self._submitted_keys(monkeypatch, tmp_path, keys) == set(keys)
 
     def test_no_key_is_lost_when_a_download_fails(self, monkeypatch, tmp_path):
-        def flaky_download(doc, bucket, base_path, s3_creds):
+        def flaky_download(doc, bucket, base_path, s3_client):
             if doc["key"].endswith("broken.txt"):
                 raise RuntimeError("boom")
-            return _fake_download(doc, bucket, base_path, s3_creds)
+            return _fake_download(doc, bucket, base_path, s3_client)
 
         monkeypatch.setattr(text_extraction, "_download_document", flaky_download)
         pool = _RecordingPool()
@@ -717,7 +741,7 @@ class TestDownloadAndSubmitKeyPairing:
             download_path=download_path,
             process_pool=pool,
             out_dir=tmp_path / "out",
-            s3_creds={},
+            s3_client=object(),
         )
 
         assert len(tasks) == 1

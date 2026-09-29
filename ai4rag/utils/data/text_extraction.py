@@ -176,6 +176,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
     docling_config: DoclingExtractionConfig | None = None,
+    s3_client: Any | None = None,
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -221,6 +222,11 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         table structure and OCR both disabled.  See
         :class:`DoclingExtractionConfig` for the per-field ``what``/``why``
         and for how ``ocr_lang`` maps to bundled OCR models.
+    s3_client
+        Pre-configured S3 client used for every download. When omitted, one
+        client is created from the S3 credentials supplied to this function or
+        from the environment. The client is shared only by download threads;
+        it is never sent to Docling worker processes.
 
     Returns
     -------
@@ -243,7 +249,9 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         _logger.info("No documents to process.")
         return ExtractionResult(processed_count=0, total_documents=0, error_count=0)
 
-    s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
+    if s3_client is None:
+        s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
+        s3_client = _make_s3_client(s3_creds)
     artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
     pipeline_config = docling_config or DoclingExtractionConfig()
 
@@ -290,7 +298,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
             download_path=Path(download_dir),
             process_pool=process_pool,
             out_dir=out_dir,
-            s3_creds=s3_creds,
+            s3_client=s3_client,
         )
         _logger.info(
             "Downloads finished in %.1fs; %d file(s) queued for extraction, %d download error(s).",
@@ -371,19 +379,20 @@ def _resolve_s3_credentials(
     return creds
 
 
-def _make_s3_client(s3_creds: dict[str, str | None], verify: bool = True) -> Any:
-    """Create a fresh S3 client using the shared S3 client factory.
+def _make_s3_client(s3_creds: dict[str, str | None]) -> Any:
+    """Create the S3 client used by an extraction run.
 
     Keeping client construction in :func:`create_s3_client` makes extraction
     use the same TLS and certificate-discovery behaviour as document
-    discovery.  A separate client is still created for every download thread.
+    discovery. The returned client is shared by all download threads in the
+    run; boto3 clients support concurrent use by threads.
     """
     return create_s3_client(
         endpoint_url=s3_creds["AWS_S3_ENDPOINT"],
         access_key_id=s3_creds["AWS_ACCESS_KEY_ID"],
         secret_access_key=s3_creds["AWS_SECRET_ACCESS_KEY"],
         region_name=s3_creds.get("AWS_DEFAULT_REGION"),
-        verify=verify,
+        verify=True,
     )
 
 
@@ -391,12 +400,9 @@ def _download_document(
     doc: dict,
     bucket: str,
     base_path: Path,
-    s3_creds: dict[str, str | None],
+    s3_client: Any,
 ) -> Path:
     """Download a single document from S3 with path-traversal protection.
-
-    On an ``SSLError`` the download is retried once with certificate
-    verification disabled.
 
     Parameters
     ----------
@@ -407,8 +413,8 @@ def _download_document(
     base_path
         Local directory under which the file is saved, preserving the S3
         key as a relative sub-path.
-    s3_creds
-        Credentials dict for creating per-thread S3 clients.
+    s3_client
+        Configured S3 client shared by the extraction run.
 
     Returns
     -------
@@ -430,13 +436,7 @@ def _download_document(
     dl_start = time.perf_counter()
     _logger.info("Downloading %s", raw_key)
 
-    from botocore.exceptions import SSLError
-
-    try:
-        _make_s3_client(s3_creds).download_file(bucket, raw_key, str(local_path))
-    except SSLError:
-        _logger.warning("SSL error when downloading %s, retrying with verify=False", raw_key)
-        _make_s3_client(s3_creds, verify=False).download_file(bucket, raw_key, str(local_path))
+    s3_client.download_file(bucket, raw_key, str(local_path))
 
     _logger.info("Download finished %s (%.1fs)", raw_key, time.perf_counter() - dl_start)
     return local_path
@@ -763,7 +763,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     download_path: Path,
     process_pool: Any,
     out_dir: Path,
-    s3_creds: dict[str, str | None],
+    s3_client: Any,
 ) -> tuple[list[tuple[str, Any]], list[dict]]:
     """Download all documents from S3, then submit for extraction largest-first.
 
@@ -784,8 +784,8 @@ def _download_and_submit(  # pylint: disable=too-many-locals
         Active multiprocessing pool.
     out_dir
         Directory where extracted DoclingDocument JSONs are written.
-    s3_creds
-        S3 credentials dict for per-thread client creation.
+    s3_client
+        Configured S3 client shared by the download threads.
 
     Returns
     -------
@@ -803,7 +803,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
 
     with ThreadPoolExecutor(max_workers=DOWNLOAD_MAX_THREADS) as dl_pool:
         dl_futures = {
-            dl_pool.submit(_download_document, doc, bucket, download_path, s3_creds): doc for doc in supported
+            dl_pool.submit(_download_document, doc, bucket, download_path, s3_client): doc for doc in supported
         }
         for dl_future in as_completed(dl_futures):
             doc = dl_futures[dl_future]
