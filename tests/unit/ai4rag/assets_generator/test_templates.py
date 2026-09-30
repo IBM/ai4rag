@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -90,6 +91,27 @@ class TestCreatePlaceholderMapping:
         mapping = create_placeholder_mapping({})
         assert mapping["PROVIDER_TYPE"] == ""
         assert mapping["REQUIRED_ENV_VARS"] == ""
+
+    def test_legacy_graph_pattern_binding_and_extraction_settings(self):
+        """Previously emitted Neo4j patterns remain usable by the KG templates."""
+        pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+        pattern["settings"]["vector_store_binding"] = pattern["settings"].pop("store_binding")
+        pattern["indexing"] = {
+            "pipeline_spec": {
+                "parameters": {
+                    "kg_extraction_config": {
+                        "mode": "free",
+                        "max_entities_per_chunk": 5,
+                        "max_relationships_per_chunk": 5,
+                    }
+                }
+            }
+        }
+
+        mapping = create_placeholder_mapping(pattern)
+
+        assert mapping["COLLECTION_NAME"] == "test_collection"
+        assert mapping["KG_EXTRACTION_CONFIG"]["mode"] == "free"
 
     def test_retrieval_fields(self, mapping: dict):
         assert mapping["RETRIEVAL_METHOD"] == "simple"
@@ -339,3 +361,59 @@ def test_inference_notebook_passes_detected_language(tmp_path: Path):
     # The detected language dict is rebuilt into a Language and passed to the model.
     assert "language = Language(**{'code': 'en', 'name': 'English'})" in text
     assert "language=language," in text
+
+
+@pytest.mark.parametrize(
+    "template",
+    ["mass_creating_knowledge_graph", "mass_inference_knowledge_graph"],
+)
+def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: Path):
+    """KG notebooks must restore canonical chunking and graph options from a pattern."""
+    pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+    pattern["settings"]["store_binding"] = {
+        "provider_type": "neo4j",
+        "collection_name": "ai4rag_graph_test",
+    }
+    pattern["settings"]["chunking"] = {
+        "method": "hybrid",
+        "chunk_size": 1024,
+        "chunk_overlap": 0,
+    }
+    pattern["settings"]["knowledge_graph"] = {
+        "extraction_config": {
+            "mode": "free",
+            "max_entities_per_chunk": 5,
+            "max_relationships_per_chunk": 4,
+        }
+    }
+    pattern["settings"]["retrieval"].update(
+        {
+            "search_mode": "graph",
+            "entity_pivot_limit": 3,
+            "entity_relationship_hops": 2,
+            "relationship_neighbor_limit": 5,
+        }
+    )
+    pattern["settings"]["generation"].update({"temperature": 0.1, "max_completion_tokens": 1024})
+
+    output_path = tmp_path / f"{template}.ipynb"
+    generate_notebook_from_template(template, pattern, output_path)
+    notebook = json.loads(output_path.read_text(encoding="utf-8"))
+    code = "\n".join(cell["source"] for cell in notebook["cells"] if cell["cell_type"] == "code")
+
+    for cell in notebook["cells"]:
+        if cell["cell_type"] == "code" and not cell["source"].startswith("%"):
+            compile(cell["source"], f"{template} cell", "exec")
+
+    assert "params={'temperature': 0.1, 'max_completion_tokens': 1024}" in code
+    if template == "mass_creating_knowledge_graph":
+        assert "DoclingChunker(max_tokens=chunk_size)" in code
+        assert "LangChainChunker(" in code
+        assert "chunks = chunker.split_documents(documents)" in code
+        assert "vector_store.add_documents(chunks)" in code
+        assert "build_knowledge_graph_from_documents" not in code
+        assert "kg_extraction_config={'mode': 'free'" in code
+    else:
+        assert "search_kwargs={'entity_pivot_limit': 3" in code
+        assert "**{'entity_pivot_limit': 3" in code
+        assert "It does not traverse `NEXT_CHUNK`" in _read_notebook_text(output_path)

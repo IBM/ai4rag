@@ -72,6 +72,7 @@ def create_placeholder_mapping(
     mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")
     mapping["USER_MESSAGE"] = fm.get("user_message_text", "")
     mapping["CONTEXT_TEXT"] = fm.get("context_template_text", "")
+    mapping["FM_PARAMS"] = {key: fm[key] for key in ("temperature", "max_completion_tokens") if key in fm}
     # Detected generation language ({"code", "name"}); defaults mirror
     # BaseFoundationModel's "auto" so the notebook restores the same behaviour.
     mapping["LANGUAGE"] = fm.get("language", {"code": "", "name": "auto"})
@@ -79,7 +80,7 @@ def create_placeholder_mapping(
     em = settings.get("embedding", {})
     mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
     mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
-    vs = settings.get("store_binding", {})
+    vs = settings.get("store_binding") or settings.get("vector_store_binding") or {}
     provider_type = vs.get("provider_type", "")
     mapping["PROVIDER_TYPE"] = provider_type
     mapping["COLLECTION_NAME"] = vs.get("collection_name", "")
@@ -92,11 +93,25 @@ def create_placeholder_mapping(
     mapping["RANKER_STRATEGY"] = ret.get("ranker_strategy")
     mapping["RANKER_K"] = ret.get("ranker_k")
     mapping["RANKER_ALPHA"] = ret.get("ranker_alpha")
+    graph_keys = (
+        "route_k",
+        "include_entity_neighbors",
+        "entity_neighbor_limit",
+        "entity_pivot_limit",
+        "entity_relationship_hops",
+        "relationship_neighbor_limit",
+    )
+    mapping["GRAPH_RETRIEVAL_CONFIG"] = {key: ret[key] for key in graph_keys if key in ret}
 
     ch = settings.get("chunking", {})
     mapping["CHUNKING_METHOD"] = ch.get("method", "")
     mapping["CHUNK_SIZE"] = ch.get("chunk_size", 512)
     mapping["CHUNK_OVERLAP"] = ch.get("chunk_overlap", 50)
+    kg = settings.get("knowledge_graph") or {}
+    indexing_parameters = output_data.get("indexing", {}).get("pipeline_spec", {}).get("parameters", {})
+    mapping["KG_EXTRACTION_CONFIG"] = (
+        kg.get("extraction_config") or indexing_parameters.get("kg_extraction_config") or {"mode": "constrained"}
+    )
 
     mapping["TEST_DATA_KEY"] = test_data_key
     # Rendered by ``str.format`` into a bare expression, so it has to carry its

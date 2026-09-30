@@ -162,6 +162,56 @@ class TestGraphCollectionReuse:
             "extraction_config": experiment.kg_extraction_config,
         }
 
+    def test_pattern_preserves_kg_and_graph_retrieval_settings(self):
+        experiment = _build_experiment()
+        experiment.vector_store_config = MagicMock(provider="neo4j")
+        kg_settings = {
+            "model_id": "kg-extractor",
+            "model_params": {"temperature": 0.2, "max_completion_tokens": 512},
+            "extraction_config": {
+                "mode": "free",
+                "max_entities_per_chunk": 3,
+                "max_relationships_per_chunk": 4,
+            },
+        }
+        result = EvaluationResult(
+            pattern_name="Pattern1",
+            collection="ai4rag_graph_test",
+            indexing_params={
+                "chunking": {
+                    "chunking_method": "recursive",
+                    "chunk_size": 1024,
+                    "chunk_overlap": 64,
+                    "include_metadata": False,
+                },
+                "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
+                "knowledge_graph": kg_settings,
+            },
+            rag_params={
+                "retrieval": {
+                    "retrieval_method": "simple",
+                    "number_of_chunks": 5,
+                    "search_mode": "graph",
+                    "window_size": 0,
+                    "entity_pivot_limit": 3,
+                    "entity_relationship_hops": 2,
+                    "relationship_neighbor_limit": 5,
+                },
+                "generation": {"model_id": "kg-extractor", "temperature": 0.2, "max_completion_tokens": 512},
+            },
+            scores={"metrics": []},
+            execution_time=1.0,
+            final_score=0.5,
+        )
+
+        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+
+        payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
+        assert payload["settings"]["knowledge_graph"] == kg_settings
+        assert payload["settings"]["retrieval"]["entity_pivot_limit"] == 3
+        assert payload["settings"]["retrieval"]["entity_relationship_hops"] == 2
+        assert payload["settings"]["retrieval"]["relationship_neighbor_limit"] == 5
+
 
 class TestEvaluatorsSetter:
     def test_default_evaluators_is_unitxt_only(self):

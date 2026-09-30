@@ -866,6 +866,17 @@ class AI4RAGExperiment:
                 retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
                     AI4RAGParamNames.RANKER_ALPHA
                 )
+        elif retrieval_payload["search_mode"] == "graph":
+            for key in (
+                "route_k",
+                "include_entity_neighbors",
+                "entity_neighbor_limit",
+                "entity_pivot_limit",
+                "entity_relationship_hops",
+                "relationship_neighbor_limit",
+            ):
+                if key in evaluation_result.rag_params["retrieval"]:
+                    retrieval_payload[key] = evaluation_result.rag_params["retrieval"][key]
 
         vector_store_payload = {
             "provider_type": self.vector_store_config.provider,
@@ -881,6 +892,8 @@ class AI4RAGExperiment:
             },
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
+        if evaluation_result.indexing_params.get("knowledge_graph") is not None:
+            indexing_payload["knowledge_graph"] = evaluation_result.indexing_params["knowledge_graph"]
 
         generation_payload = evaluation_result.rag_params.get("generation")
 
