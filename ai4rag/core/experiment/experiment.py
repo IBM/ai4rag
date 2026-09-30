@@ -786,7 +786,8 @@ class AI4RAGExperiment:
                 apply_custom_metrics(full_scores, self.metrics)
             except Exception:
                 logger.warning(
-                    "Unable to complete non-objective metrics for warm-start pattern '%s'; publishing its objective score.",
+                    "Unable to complete non-objective metrics for warm-start pattern '%s'; "
+                    "publishing its objective score.",
                     result.pattern_name,
                     exc_info=True,
                 )
