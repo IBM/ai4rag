@@ -3,7 +3,6 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import hashlib
-import math
 from typing import Any, Sequence
 
 from docling_core.transforms.chunker.hybrid_chunker import HybridChunker
@@ -115,20 +114,11 @@ class DoclingChunker(BaseChunker):
         source items that form a ``DocChunk``.  A hybrid chunk can span several
         source segments, so retrieval metadata must cover their complete range.
         """
-        timings: list[tuple[float, float]] = []
-        for doc_item in chunk.meta.doc_items:
-            for source in doc_item.source:
-                if getattr(source, "kind", None) != "track":
-                    continue
-
-                start_time = getattr(source, "start_time", None)
-                end_time = getattr(source, "end_time", None)
-                if not isinstance(start_time, (int, float)) or not isinstance(end_time, (int, float)):
-                    continue
-                if not math.isfinite(start_time) or not math.isfinite(end_time):
-                    continue
-
-                timings.append((float(start_time), float(end_time)))
+        timings = [
+            (source.start_time, source.end_time)
+            for doc_item in chunk.meta.doc_items
+            for source in doc_item.source
+        ]
 
         if not timings:
             return None
