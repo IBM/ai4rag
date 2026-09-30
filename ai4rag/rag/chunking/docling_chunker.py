@@ -114,11 +114,7 @@ class DoclingChunker(BaseChunker):
         source items that form a ``DocChunk``.  A hybrid chunk can span several
         source segments, so retrieval metadata must cover their complete range.
         """
-        timings = [
-            (source.start_time, source.end_time)
-            for doc_item in chunk.meta.doc_items
-            for source in doc_item.source
-        ]
+        timings = [(source.start_time, source.end_time) for doc_item in chunk.meta.doc_items for source in doc_item.source]
 
         if not timings:
             return None
