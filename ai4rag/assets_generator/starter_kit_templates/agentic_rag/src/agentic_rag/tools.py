@@ -5,18 +5,14 @@
 
 from os import getenv
 
-from .sqlite_shim import patch_sqlite3
+from openai import OpenAI
 
-patch_sqlite3()
-
-from openai import OpenAI  # noqa: E402
-
-from ai4rag.rag.embedding.openai_model import (  # noqa: E402
+from ai4rag.rag.embedding.openai_model import (
     OpenAIEmbeddingModel,
     OpenAIEmbeddingParams,
 )
-from ai4rag.rag.retrieval.retriever import Retriever  # noqa: E402
-from ai4rag.rag.vector_store import (  # noqa: E402
+from ai4rag.rag.retrieval.retriever import Retriever
+from ai4rag.rag.vector_store import (
     get_vector_store,
     get_vector_store_config,
 )

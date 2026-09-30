@@ -13,16 +13,12 @@ from contextlib import asynccontextmanager
 from os import getenv
 from typing import Any
 
-from agentic_rag.sqlite_shim import patch_sqlite3
-
-patch_sqlite3()
-
-import openai  # noqa: E402
-from agentic_rag.agent import create_rag  # noqa: E402
-from agentic_rag.config import AgentConfig  # noqa: E402
-from fastapi import FastAPI, HTTPException  # noqa: E402
-from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
-from pydantic import BaseModel, Field  # noqa: E402
+import openai
+from agentic_rag.agent import create_rag
+from agentic_rag.config import AgentConfig
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 

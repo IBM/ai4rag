@@ -190,11 +190,7 @@ class TestGenerateStarterKit:
             assert "starter_kit/agent_config.json" in names
             assert "starter_kit/src/agentic_rag/agent.py" in names
             assert "starter_kit/src/agentic_rag/tools.py" in names
-            assert "starter_kit/src/agentic_rag/sqlite_shim.py" in names
-            assert "starter_kit/sqlite_shim.py" not in names
             assert "starter_kit/src/agentic_rag/tracing.py" not in names
-            assert "starter_kit/src/agentic_rag/sqlite_shim.py" in names
-            assert "starter_kit/sqlite_shim.py" not in names
             assert "starter_kit/auth_wrapper.py" in names
 
     def test_agent_config_is_injected_at_deploy_time(self, tmp_path):

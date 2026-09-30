@@ -38,22 +38,26 @@ class AgenticRAG(BaseRAGTemplate):
         return chunk.text, repr(chunk.metadata)
 
     def _follow_up_query(self, question: str, documents: list[AI4RAGChunk]) -> str:
-        """Ask the model for a focused query that fills context gaps."""
-        context = "\n\n".join(document.text[:2000] for document in documents)
+        """Ask the model to refine the search query, with or without context."""
+        if documents:
+            system_message = (
+                "Create one concise follow-up search query for the original question. "
+                "Use the retrieved context to target information that is still missing. "
+                "Return only the query, without explanations."
+            )
+            context = "\n\n".join(document.text[:2000] for document in documents)
+            user_message = f"Original question: {question}\nRetrieved context:\n{context}"
+        else:
+            system_message = (
+                "Rephrase the original question as one concise search query to find relevant documents. "
+                "Return only the query, without explanations."
+            )
+            user_message = f"Original question: {question}"
+
         response = self.foundation_model.chat(
             messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "Create one concise follow-up search query for the original question. "
-                        "Use the retrieved context to target information that is still missing. "
-                        "Return only the query, without explanations."
-                    ),
-                },
-                {
-                    "role": "user",
-                    "content": f"Original question: {question}\nRetrieved context:\n{context}",
-                },
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
             ],
             temperature=0,
             max_completion_tokens=128,
@@ -73,9 +77,12 @@ class AgenticRAG(BaseRAGTemplate):
             documents.extend(new_documents)
             seen.update(self._chunk_key(document) for document in new_documents)
 
-            if step == self.max_retrieval_steps - 1 or not new_documents:
+            if step == self.max_retrieval_steps - 1 or (step > 0 and not new_documents):
                 break
-            query = self._follow_up_query(question, documents)
+            next_query = self._follow_up_query(question, documents)
+            if next_query.strip().casefold() == query.strip().casefold():
+                break
+            query = next_query
 
         return documents
 
