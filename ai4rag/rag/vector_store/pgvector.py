@@ -621,8 +621,7 @@ class PGVectorStore(BaseVectorStore):
         """
         if search_mode not in ("vector", "hybrid"):
             raise ValueError(
-                f"search_mode='{search_mode}' is not supported by PGVectorStore. "
-                "Use 'vector' or 'hybrid'."
+                f"search_mode='{search_mode}' is not supported by PGVectorStore. Use 'vector' or 'hybrid'."
             )
         validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
         self._ensure_indexes()
