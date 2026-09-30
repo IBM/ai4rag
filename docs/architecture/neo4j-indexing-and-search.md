@@ -125,8 +125,7 @@ are distinct from model-extracted entity types such as `Document` or `Chunk`.
 ai4rag's canonical graph writer stores only the extracted entities and their
 relationships. It connects each entity to the existing canonical chunk by its
 chunk ID. No second source document or chunk node is persisted, and linking
-does not depend on matching text. The writer logs extracted entity types and
-the source-document node count for each canonical chunk. It records ownership
+does not depend on matching text. The writer records ownership
 on the relationships it writes; entity ownership is tagged before resolution.
 The scoped resolver merges same-name entities of the same type only when they
 link to canonical chunks in this collection and are owned exclusively by this

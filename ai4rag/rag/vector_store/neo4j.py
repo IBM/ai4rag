@@ -8,7 +8,6 @@ import hashlib
 import json
 import re
 import uuid
-from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -236,15 +235,7 @@ class _CanonicalKGWriter(_CollectionKGWriter):
         entity_nodes = [
             node for node in graph.nodes if node.label not in lexical_graph_config.lexical_graph_node_labels
         ]
-        entity_types = dict(sorted(Counter(node.label for node in entity_nodes).items()))
         chunk_id = self._chunk_id.get()
-        logger.info(
-            "KG extraction for collection '%s', chunk '%s': entity types=%s, source document nodes=%d",
-            self._collection_name,
-            chunk_id or (documents[0].properties.get("ai4rag_chunk_id") if documents else "unknown"),
-            entity_types,
-            len(documents),
-        )
         if len(documents) > 1:
             raise ValueError("KG extraction produced multiple document nodes for one canonical chunk.")
         if documents:
@@ -940,11 +931,6 @@ class Neo4jGraphStore(BaseVectorStore):
                     )
                     removed += 1
 
-        logger.info(
-            "Entity resolver removed %d duplicate nodes from collection %s.",
-            removed,
-            self._collection_name,
-        )
         return removed
 
     def clean_collection(self) -> None:
