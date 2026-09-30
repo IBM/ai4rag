@@ -146,6 +146,12 @@ result = extract_text(
 )
 ```
 
+When using the hybrid/Docling chunker, chunks produced from ASR transcript
+segments also carry `audio_start_seconds` and `audio_end_seconds` in their
+vector metadata.  These are the earliest and latest Docling segment times in
+the chunk, so consumers can link a retrieval result back to the corresponding
+audio range.  They are not word-level seek positions.
+
 ### Test Data Loading
 
 Load benchmark test data from S3:

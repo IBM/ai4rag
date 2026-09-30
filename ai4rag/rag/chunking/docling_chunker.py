@@ -98,9 +98,30 @@ class DoclingChunker(BaseChunker):
                 if chunk.meta.headings:
                     metadata["headings"] = " > ".join(chunk.meta.headings)
 
+                audio_timing_range = self._get_audio_timing_range(chunk)
+                if audio_timing_range is not None:
+                    metadata["audio_start_seconds"], metadata["audio_end_seconds"] = audio_timing_range
+
                 all_chunks.append(AI4RAGChunk(text=text, metadata=metadata))
 
         return all_chunks
+
+    @staticmethod
+    def _get_audio_timing_range(chunk: Any) -> tuple[float, float] | None:
+        """Return the earliest and latest media-track timings represented by a chunk.
+
+        Docling stores ASR segment timings as ``TrackSource`` instances on the
+        source items that form a ``DocChunk``.  A hybrid chunk can span several
+        source segments, so retrieval metadata must cover their complete range.
+        """
+        timings = [
+            (source.start_time, source.end_time) for doc_item in chunk.meta.doc_items for source in doc_item.source
+        ]
+
+        if not timings:
+            return None
+
+        return min(start for start, _ in timings), max(end for _, end in timings)
 
     def to_dict(self) -> dict[str, Any]:
         """Return dictionary that can be used to recreate an instance."""
