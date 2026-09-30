@@ -20,6 +20,8 @@ from json_repair import repair_json
 from neo4j_graphrag.components.kg_writer import KGWriterModel, Neo4jWriter
 from neo4j_graphrag.components.text_splitters.base import TextSplitter
 from neo4j_graphrag.components.types import LexicalGraphConfig, Neo4jGraph, Neo4jRelationship, TextChunk, TextChunks
+from neo4j_graphrag.embeddings.base import Embedder as _NeoEmbedder
+from neo4j_graphrag.llm.base import LLMInterface as _NeoLLMInterface
 from neo4j_graphrag.neo4j_queries import db_cleaning_query, upsert_relationship_query
 
 from ai4rag import logger
@@ -106,24 +108,14 @@ def _kg_pipeline_extraction_options(config: dict[str, Any]) -> dict[str, Any]:
     return {"schema": "FREE", "prompt_template": ERExtractionTemplate(template=template)}
 
 
-try:
-    from neo4j_graphrag.embeddings.base import Embedder as _NeoEmbedder
-    from neo4j_graphrag.llm.base import LLMInterface as _NeoLLMInterface
-
-    _neo4j_graphrag_bases_available = True
-except ImportError:
-    _neo4j_graphrag_bases_available = False
-    _NeoEmbedder = object  # type: ignore[assignment,misc]
-    _NeoLLMInterface = object  # type: ignore[assignment,misc]
-
-
 class _EmbedderAdapter(_NeoEmbedder):  # type: ignore[misc]
     """Wraps :class:`BaseEmbeddingModel` to satisfy ``neo4j_graphrag``'s embedder interface."""
 
     def __init__(self, model: BaseEmbeddingModel) -> None:
+        super().__init__()
         self._model = model
 
-    def embed_query(self, text: str, **kwargs) -> list[float]:
+    def embed_query(self, text: str) -> list[float]:
         return self._model.embed_query(text)
 
 
@@ -143,8 +135,8 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
 
     def invoke(
         self,
-        input: str,
-        message_history=None,
+        input: str,  # pylint: disable=redefined-builtin
+        message_history=None,  # pylint: disable=unused-argument
         system_instruction: str | None = None,
     ):
         from neo4j_graphrag.llm.types import LLMResponse
@@ -159,7 +151,7 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
 
     async def ainvoke(
         self,
-        input: str,
+        input: str,  # pylint: disable=redefined-builtin
         message_history=None,
         system_instruction: str | None = None,
     ):
@@ -407,8 +399,8 @@ class Neo4jGraphStore(BaseVectorStore):
             doc_id = doc.metadata.get("document_id", doc.chunk_id)
             doc_groups.setdefault(doc_id, []).append((doc, emb))
 
-        for doc_id in doc_groups:
-            doc_groups[doc_id].sort(key=lambda p: p[0].metadata.get("sequence_number", 0))
+        for pairs in doc_groups.values():
+            pairs.sort(key=lambda p: p[0].metadata.get("sequence_number", 0))
 
         batch_size = kwargs.get("batch_size", self._BATCH_SIZE)
         pending: list[tuple[str, list[tuple[AI4RAGChunk, list[float]]]]] = []
@@ -498,11 +490,11 @@ class Neo4jGraphStore(BaseVectorStore):
 
         try:
             asyncio.run(_run_all())
-        except RuntimeError:
+        except RuntimeError as exc:
             raise RuntimeError(
                 "_run_kg_pipeline cannot be called from within a running event loop. "
                 "Install 'nest_asyncio' and call nest_asyncio.apply() beforehand."
-            )
+            ) from exc
 
         with self._driver.session(database=self._config.database) as session:
             session.run(
@@ -870,12 +862,12 @@ class Neo4jGraphStore(BaseVectorStore):
 
         try:
             chunks = asyncio.run(_split_documents())
-        except RuntimeError:
+        except RuntimeError as exc:
             raise RuntimeError(
                 "build_knowledge_graph_from_documents cannot be called from within a running "
                 "event loop.  Install 'nest_asyncio' and call nest_asyncio.apply() before "
                 "invoking this method in a Jupyter notebook or other async context."
-            )
+            ) from exc
 
         if not chunks:
             logger.info("No text extracted from documents; skipping KG build.")

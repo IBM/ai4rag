@@ -14,7 +14,17 @@ __all__ = [
     "ChatGenerationConstants",
     "TokenEstimation",
     "PreSelectorConstants",
+    "GRAPH_RETRIEVAL_KEYS",
 ]
+
+GRAPH_RETRIEVAL_KEYS = (
+    "route_k",
+    "include_entity_neighbors",
+    "entity_neighbor_limit",
+    "entity_pivot_limit",
+    "entity_relationship_hops",
+    "relationship_neighbor_limit",
+)
 
 
 class ConstantMeta(type):

@@ -44,7 +44,7 @@ from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
+from ai4rag.utils.constants import GRAPH_RETRIEVAL_KEYS, AI4RAGParamNames, ExperimentStep, PreSelectorConstants
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 
 
@@ -867,14 +867,7 @@ class AI4RAGExperiment:
                     AI4RAGParamNames.RANKER_ALPHA
                 )
         elif retrieval_payload["search_mode"] == "graph":
-            for key in (
-                "route_k",
-                "include_entity_neighbors",
-                "entity_neighbor_limit",
-                "entity_pivot_limit",
-                "entity_relationship_hops",
-                "relationship_neighbor_limit",
-            ):
+            for key in GRAPH_RETRIEVAL_KEYS:
                 if key in evaluation_result.rag_params["retrieval"]:
                     retrieval_payload[key] = evaluation_result.rag_params["retrieval"][key]
 
