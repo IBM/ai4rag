@@ -17,7 +17,7 @@ The application exposes `POST /v1/responses` and `GET /health`.
 - An OpenShift cluster with `oc` logged in and permission to create the required resources.
 - The `openshell` CLI and Helm 3 installed locally.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together with credentials for accessing it.
-- A reachable Milvus instance and credentials for accessing it, provided through the Kubernetes secrets referenced by `values.yaml` (`maas_secret_name` and `vector_db_secret_name`). The vector database secret must contain the Milvus CA certificate as `MILVUS_SERVER_CERT` when TLS is enabled.
+- A reachable Milvus instance and credentials for accessing it, provided through the Kubernetes secrets referenced by `values.yaml` (`maas_secret_name` and `db_secret_name`). The vector database secret must contain the Milvus CA certificate as `MILVUS_SERVER_CERT` when TLS is enabled.
 - The Red Hat build of the Agent Sandbox operator installed in the cluster.
 
 ### Commands

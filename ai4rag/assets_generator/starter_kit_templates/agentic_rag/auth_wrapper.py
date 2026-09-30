@@ -12,11 +12,12 @@ Usage:
     K8S_API_URL=https://... K8S_REVIEWER_TOKEN=... uvicorn auth_wrapper:app --host 0.0.0.0 --port 8080
 """
 
+import asyncio
 import logging
 from os import getenv
 from pathlib import Path
 
-import httpx
+import requests
 from main import app  # noqa: F401 — re-exported for uvicorn
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -28,7 +29,6 @@ _K8S_API_URL = getenv("K8S_API_URL", "").strip().rstrip("/")
 _K8S_REVIEWER_TOKEN = getenv("K8S_REVIEWER_TOKEN", "").strip()
 _ALLOWED_SA_USERNAME = getenv("ALLOWED_SA_USERNAME", "").strip()
 _K8S_CA_PATH = getenv("K8S_CA_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
-_K8S_API_INSECURE = getenv("K8S_API_INSECURE", "").strip().lower() == "true"
 _PROTECTED_PATHS = frozenset(
     {
         "/v1/responses",
@@ -38,44 +38,20 @@ _PROTECTED_PATHS = frozenset(
 
 _AUTH_ENABLED = bool(_K8S_API_URL and _K8S_REVIEWER_TOKEN)
 
-_ca_path_exists = Path(_K8S_CA_PATH).is_file()
-if _ca_path_exists:
-    _tls_verify: str | bool = _K8S_CA_PATH
-elif _K8S_API_INSECURE:
-    if _AUTH_ENABLED:
-        log.warning(
-            "K8S_API_INSECURE=true: Using insecure TLS verification (verify=False). "
-            "This is ONLY acceptable in isolated test environments like OpenShell sandbox. "
-            "NEVER use this in production."
-        )
-    _tls_verify: str | bool = False
-else:
-    if _AUTH_ENABLED:
-        raise RuntimeError(
-            f"K8s CA certificate not found at {_K8S_CA_PATH} and K8S_API_INSECURE is not set. "
-            "Either provide a valid CA certificate via K8S_CA_PATH, "
-            "or set K8S_API_INSECURE=true for test environments (NOT production)."
-        )
-    _tls_verify: str | bool = True
-
-
-_http_client: httpx.AsyncClient | None = None
-
-
-def _get_http_client() -> httpx.AsyncClient:
-    """Get or create the cached HTTP client for K8s TokenReview calls."""
-    global _http_client
-    if _http_client is None:
-        _http_client = httpx.AsyncClient(verify=_tls_verify, timeout=10.0)
-    return _http_client
+if not _AUTH_ENABLED:
+    raise RuntimeError("K8S_API_URL and K8S_REVIEWER_TOKEN are required for the auth wrapper")
+if not _K8S_API_URL.startswith("https://"):
+    raise RuntimeError("K8S_API_URL must use HTTPS")
+if not Path(_K8S_CA_PATH).is_file():
+    raise RuntimeError(f"K8s CA certificate not found at {_K8S_CA_PATH}")
 
 
 async def _validate_k8s_token(token: str) -> bool:
     if not (_K8S_API_URL and _K8S_REVIEWER_TOKEN):
         return False
     try:
-        client = _get_http_client()
-        resp = await client.post(
+        resp = await asyncio.to_thread(
+            requests.post,
             f"{_K8S_API_URL}/apis/authentication.k8s.io/v1/tokenreviews",
             json={
                 "apiVersion": "authentication.k8s.io/v1",
@@ -86,6 +62,8 @@ async def _validate_k8s_token(token: str) -> bool:
                 "Authorization": f"Bearer {_K8S_REVIEWER_TOKEN}",
                 "Content-Type": "application/json",
             },
+            verify=_K8S_CA_PATH,
+            timeout=10.0,
         )
         if resp.status_code == 201:
             status = resp.json().get("status", {})
@@ -107,8 +85,8 @@ async def _validate_k8s_token(token: str) -> bool:
 
 
 class _BearerAuthMiddleware:
-    def __init__(self, app: ASGIApp) -> None:
-        self.app = app
+    def __init__(self, wrapped_app: ASGIApp) -> None:
+        self.app = wrapped_app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":

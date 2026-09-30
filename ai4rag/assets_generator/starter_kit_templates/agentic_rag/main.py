@@ -10,8 +10,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from os import getenv
-from typing import Any
+from typing import Any, Literal
 
 import openai
 from agentic_rag.agent import create_rag
@@ -21,6 +20,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
+RAG = None
 
 _MAX_INVOKE_ATTEMPTS = 3
 _GRACEFUL_ERROR_MESSAGE = "I was unable to process this request due to repeated internal errors."
@@ -33,7 +33,7 @@ _RETRYABLE_EXCEPTIONS = (
 
 
 class ResponseInputMessage(BaseModel):
-    role: str = Field(..., examples=["user", "assistant", "system"])
+    role: Literal["user", "assistant", "system"] = Field(..., examples=["user", "assistant", "system"])
     content: str
 
 
@@ -59,7 +59,7 @@ class ResponseMessage(BaseModel):
 
 class ResponsesResponse(BaseModel):
     id: str
-    object: str = "response"
+    object: Literal["response"] = "response"
     created_at: int
     model: str
     status: str = "completed"
@@ -73,16 +73,13 @@ class HealthResponse(BaseModel):
     agent_initialized: bool
 
 
-rag = None
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    global rag
-    rag = create_rag()
-    app.state.rag = rag
+    global RAG
+    RAG = create_rag()
+    app.state.rag = RAG
     yield
-    rag = None
+    RAG = None
     app.state.rag = None
 
 
@@ -102,13 +99,13 @@ def _make_response_id() -> str:
 
 
 async def _invoke_with_retry(messages: list[dict[str, str]]) -> dict[str, Any]:
-    if rag is None:
+    if RAG is None:
         raise HTTPException(status_code=503, detail="Agent not initialized")
 
     last_exception: Exception = RuntimeError("no invocation attempts were made")
     for attempt in range(1, _MAX_INVOKE_ATTEMPTS + 1):
         try:
-            result = await asyncio.to_thread(rag.respond, messages)
+            result = await asyncio.to_thread(RAG.respond, messages)
             return {"content": result.output_text or "", "context": []}
         except _RETRYABLE_EXCEPTIONS as exc:
             last_exception = exc
@@ -137,7 +134,7 @@ async def responses(request: ResponsesRequest):
         messages = [message.model_dump() for message in request.input]
     if request.instructions:
         messages.insert(0, {"role": "system", "content": request.instructions})
-    model_id = request.model or getenv("MODEL_ID") or "model"
+    model_id = request.model or RAG.foundation_model.model_id
 
     try:
         result = await _invoke_with_retry(messages)
@@ -193,7 +190,7 @@ def _stream_response(response_id: str, model_id: str, content: str) -> Streaming
 
 @app.get("/health", response_model=HealthResponse, summary="Health check", tags=["Health"])
 async def health():
-    initialized = rag is not None
+    initialized = RAG is not None
     body = {
         "status": "healthy" if initialized else "not_ready",
         "agent_initialized": initialized,

@@ -24,7 +24,7 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.local_store import temporary_milvus_lite_store
 from ai4rag.utils.constants import AI4RAGParamNames, PreSelectorConstants
@@ -270,7 +270,7 @@ class ModelsPreSelector:
             Aggregate metrics with confidence intervals and per-question scores.
         """
 
-        rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
+        rag = AgenticRAG(foundation_model=foundation_model, retriever=retriever)
 
         inference_response = query_rag(
             rag=rag, questions=list(self.benchmark_data.questions), max_threads=self.max_threads

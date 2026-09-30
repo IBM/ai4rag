@@ -17,12 +17,6 @@ env: ## Create venv and install dependencies
 
 run-app: ## Run agent locally with hot-reload
 	@source .venv/bin/activate && set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
-	  yaml_env() { sed -n "s/^[[:space:]]*$$1:[[:space:]]*\"\(.*\)\"[[:space:]]*$$/\1/p" values.yaml; } && \
-	  export MODEL_ID="$$(yaml_env MODEL_ID)" EMBEDDING_MODEL_ID="$$(yaml_env EMBEDDING_MODEL_ID)" \
-	    EMBEDDING_DIMENSION="$$(yaml_env EMBEDDING_DIMENSION)" PROVIDER_TYPE="$$(yaml_env PROVIDER_TYPE)" \
-	    RETRIEVAL_METHOD="$$(yaml_env RETRIEVAL_METHOD)" NUMBER_OF_CHUNKS="$$(yaml_env NUMBER_OF_CHUNKS)" \
-	    SEARCH_MODE="$$(yaml_env SEARCH_MODE)" RANKER_STRATEGY="$$(yaml_env RANKER_STRATEGY)" \
-	    RANKER_ALPHA="$$(yaml_env RANKER_ALPHA)" && \
 	  if lsof -ti:$${PORT:-8000} >/dev/null 2>&1; then \
 	    echo "ERROR: Port $${PORT:-8000} is already in use." && \
 	    exit 1; \
@@ -111,31 +105,20 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	NS=$$(oc project -q) && \
 	IMAGE="image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
 	APPS_DOMAIN=$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}') && \
-	yaml_env() { sed -n "s/^[[:space:]]*$$1:[[:space:]]*\"\(.*\)\"[[:space:]]*$$/\1/p" values.yaml; } && \
-	MODEL_ID=$$(yaml_env MODEL_ID) && \
-	EMBEDDING_MODEL_ID=$$(yaml_env EMBEDDING_MODEL_ID) && \
-	EMBEDDING_DIMENSION=$$(yaml_env EMBEDDING_DIMENSION) && \
-	PROVIDER_TYPE=$$(yaml_env PROVIDER_TYPE) && \
-	RETRIEVAL_METHOD=$$(yaml_env RETRIEVAL_METHOD) && \
-	NUMBER_OF_CHUNKS=$$(yaml_env NUMBER_OF_CHUNKS) && \
-	SEARCH_MODE=$$(yaml_env SEARCH_MODE) && \
-	RANKER_STRATEGY=$$(yaml_env RANKER_STRATEGY) && \
-	RANKER_ALPHA=$$(yaml_env RANKER_ALPHA) && \
 	[ -f agent_config.json ] || { echo "ERROR: agent_config.json not found."; exit 1; } && \
 	AGENT_CONFIG_B64=$$(base64 < agent_config.json | tr -d '\n') && \
 	MAAS_SECRET_NAME=$$(sed -n 's/^[[:space:]]*maas_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml) && \
-	VECTOR_DB_SECRET_NAME=$${VECTOR_DB_SECRET_NAME:-$$(sed -n 's/^[[:space:]]*vector_db_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml)} && \
+	DB_SECRET_NAME=$${DB_SECRET_NAME:-$$(sed -n 's/^[[:space:]]*db_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml)} && \
 	secret_value() { oc get secret "$$1" -n "$$NS" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d; } && \
 	if [ -n "$$MAAS_SECRET_NAME" ] && [ "$$MAAS_SECRET_NAME" != "__MAAS_SECRET_NAME__" ]; then \
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_BASE_URL); [ -z "$$value" ] || MAAS_BASE_URL="$$value"; \
-	  value=$$(secret_value "$$MAAS_SECRET_NAME" CHAT_BASE_URL); [ -z "$$value" ] || CHAT_BASE_URL="$$value"; \
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_API_KEY); [ -z "$$value" ] || MAAS_API_KEY="$$value"; \
 	fi && \
-	if [ -n "$$VECTOR_DB_SECRET_NAME" ] && [ "$$VECTOR_DB_SECRET_NAME" != "__VECTOR_DB_SECRET_NAME__" ]; then \
+	if [ -n "$$DB_SECRET_NAME" ] && [ "$$DB_SECRET_NAME" != "__DB_SECRET_NAME__" ]; then \
 	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD; do \
-	    value=$$(secret_value "$$VECTOR_DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
+	    value=$$(secret_value "$$DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
 	  done; \
-	fi && export MAAS_BASE_URL CHAT_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD
+	fi && export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD
 
 build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	@oc new-build --strategy=docker --binary \
@@ -162,7 +145,6 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	  echo "    (timeout 120s — this may take a minute while the image is pulled)..." && \
 	  openshell sandbox create --name "$$SANDBOX" --from "$$IMAGE" \
 	    --env "MAAS_BASE_URL=$$MAAS_BASE_URL" \
-	    --env "CHAT_BASE_URL=$${CHAT_BASE_URL:-$$BASE_URL}" \
 	    --env "MAAS_API_KEY=$$MAAS_API_KEY" \
 	    --env "AGENT_CONFIG_B64=$$AGENT_CONFIG_B64" \
 	    --env "MILVUS_URI=$$MILVUS_URI" \
@@ -189,7 +171,7 @@ setup-egress: ## Add MaaS + Milvus egress policies for agent Python binary
 	  echo "==> Using agent Python binary: /usr/bin/python3.12" && \
 	  PYTHON_BIN="/usr/bin/python3.12" && \
 	  echo "==> Adding egress policy for MaaS..." && \
-	  MAAS_HOST=$$(echo "$${CHAT_BASE_URL:-$${BASE_URL:-$$MAAS_BASE_URL}}" | sed -E 's|^https?://||;s|/.*||') && \
+	  MAAS_HOST=$$(echo "$$MAAS_BASE_URL" | sed -E 's|^https?://||;s|/.*||') && \
 	  openshell policy update "$$SANDBOX" --add-endpoint "$$MAAS_HOST:443" --binary "$$PYTHON_BIN" --wait && \
 	  echo "==> Adding egress policies for K8s API + Milvus..." && \
 	  MILVUS_HOSTPORT=$$(echo "$$MILVUS_URI" | sed -E 's|^https?://||;s|/.*||') && \
@@ -213,15 +195,17 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  echo "==> Generating sandbox reviewer token..." && \
 	  K8S_API_URL="https://kubernetes.default.svc" && \
 	  K8S_REVIEWER_TOKEN=$$(oc create token openshell-sandbox -n openshell --duration=168h) && \
+	  K8S_CA_B64=$$(oc get configmap kube-root-ca.crt -n "$$NS" -o jsonpath='{.data.ca\.crt}' | base64 | tr -d '\n') && \
+	  [ -n "$$K8S_CA_B64" ] || { echo "ERROR: Kubernetes API CA certificate not found."; exit 1; } && \
 	  ALLOWED_SA_USERNAME="system:serviceaccount:$${NS}:agent-client" && \
 	  echo "==> Stopping any running agent..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c "pkill -f '[/]usr/bin/python3.12 -m uvicorn auth_wrapper:app'" 2>/dev/null || true && \
 	  sleep 5 && \
 	  echo "==> Starting agent (auth: enabled)..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c '\
+	    printf %s "'"$$K8S_CA_B64"'" | base64 -d > /sandbox/k8s-ca.crt && \
 	    export MAAS_API_KEY="'"$$MAAS_API_KEY"'" && \
 	    export MAAS_BASE_URL="'"$$MAAS_BASE_URL"'" && \
-	    export CHAT_BASE_URL="'"$${CHAT_BASE_URL:-$$BASE_URL}"'" && \
 	    export AGENT_CONFIG_B64="'"$$AGENT_CONFIG_B64"'" && \
 	    export MILVUS_URI="'"$$MILVUS_URI"'" && \
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
@@ -229,7 +213,7 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export MILVUS_SERVER_NAME="'"$$MILVUS_SERVER_NAME"'" && \
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
 	    export K8S_REVIEWER_TOKEN="'"$$K8S_REVIEWER_TOKEN"'" && \
-	    export K8S_API_INSECURE="true" && \
+	    export K8S_CA_PATH=/sandbox/k8s-ca.crt && \
 	    export ALLOWED_SA_USERNAME="'"$$ALLOWED_SA_USERNAME"'" && \
 	    export PYTHONPATH=/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib64/python3.12/site-packages:/sandbox && \
 	    cd /sandbox && \

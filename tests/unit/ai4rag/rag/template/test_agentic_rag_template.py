@@ -45,6 +45,18 @@ def test_agentic_rag_retrieves_again_with_a_follow_up_query(mocker):
     assert foundation_model.chat.call_count == 2
 
 
+def test_follow_up_query_uses_full_retrieved_chunk(mocker):
+    """The query model sees the complete chunk, including text after 2000 characters."""
+    foundation_model = mocker.MagicMock()
+    foundation_model.chat.return_value = [mocker.MagicMock(message=mocker.MagicMock(content="next query"))]
+    rag = AgenticRAG(foundation_model=foundation_model, retriever=mocker.MagicMock())
+    chunk = AI4RAGChunk(text="x" * 2000 + "important ending", metadata={})
+
+    rag._follow_up_query("question", [chunk])
+
+    assert "important ending" in foundation_model.chat.call_args.kwargs["messages"][1]["content"]
+
+
 def test_agentic_rag_rephrases_question_after_empty_first_retrieval(mocker):
     """An empty first retrieval triggers a new search using the rephrased question."""
     foundation_model = mocker.MagicMock()

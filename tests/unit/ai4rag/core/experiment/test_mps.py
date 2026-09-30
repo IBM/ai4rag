@@ -20,6 +20,7 @@ from ai4rag.core.experiment.mps import (
     PreSelectorError,
 )
 from ai4rag.evaluator.metric import Metrics
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 
 
 def _patch_temporary_store(mocker, store):
@@ -251,6 +252,16 @@ class TestModelsPreSelectorInit:
 
 
 class TestModelsPreSelector:
+    def test_preselection_evaluates_agentic_rag(self, mocker, fully_mocked_selector):
+        """Model pre-selection uses the same RAG strategy as the experiment."""
+        query_rag = mocker.patch("ai4rag.core.experiment.mps.query_rag", return_value=[])
+        mocker.patch.object(fully_mocked_selector, "_evaluate_response", return_value={})
+        mocker.patch("ai4rag.core.experiment.mps.apply_custom_metrics")
+
+        fully_mocked_selector._evaluate_single_pattern(mocker.sentinel.model, mocker.sentinel.retriever)
+
+        assert isinstance(query_rag.call_args.kwargs["rag"], AgenticRAG)
+
     def test_evaluate_patterns(self, fully_mocked_selector, caplog):
 
         fully_mocked_selector.evaluate_patterns()

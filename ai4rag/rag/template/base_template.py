@@ -49,13 +49,13 @@ class BaseRAGTemplate(ABC):
     def _build_enriched_user_message(self, question: str, **kwargs) -> tuple[list[AI4RAGChunk], str]:
         """Retrieve context for a question and render the user message."""
         reference_documents = self.retriever.retrieve(question, **kwargs)
-        return self._render_enriched_user_message(question, reference_documents)
+        return reference_documents, self._render_enriched_user_message(question, reference_documents)
 
     def _render_enriched_user_message(
         self,
         question: str,
         reference_documents: list[AI4RAGChunk],
-    ) -> tuple[list[AI4RAGChunk], str]:
+    ) -> str:
         """Render a user message from already retrieved context."""
         context = "\n\n".join(
             self.foundation_model.context_template_text.format(document=chunk.text, doc_number=doc_number)
@@ -65,7 +65,7 @@ class BaseRAGTemplate(ABC):
             reference_documents=context,
             question=question,
         )
-        return reference_documents, user_message
+        return user_message
 
     def _build_rag_messages(self, messages: list[MessageTyped], **kwargs) -> list[MessageTyped]:
         """Add retrieved context to the last user message in a conversation."""

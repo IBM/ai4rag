@@ -1,0 +1,2 @@
+global-exclude .DS_Store *.pyc
+prune ai4rag/assets_generator/starter_kit_templates/agentic_rag/.ruff_cache

@@ -92,8 +92,21 @@ version = { attr = "ai4rag.__version__" }
 [tool.setuptools.package-data]
 "ai4rag.assets_generator" = [
     "notebook_templates/*.ipynb",
-    "starter_kit_templates/**/*",
-    "starter_kit_templates/**/.*",
+    "starter_kit_templates/**/*.py",
+    "starter_kit_templates/agentic_rag/agent_config.json",
+    "starter_kit_templates/agentic_rag/uv.lock",
+    "starter_kit_templates/agentic_rag/Makefile",
+    "starter_kit_templates/agentic_rag/pyproject.toml",
+    "starter_kit_templates/agentic_rag/Containerfile.openshell",
+    "starter_kit_templates/agentic_rag/README.md",
+    "starter_kit_templates/agentic_rag/values.yaml",
+]
+
+[tool.setuptools.exclude-package-data]
+"ai4rag.assets_generator" = [
+    "starter_kit_templates/.DS_Store",
+    "starter_kit_templates/**/.DS_Store",
+    "starter_kit_templates/**/__pycache__/*",
 ]
 
 [tool.setuptools.packages.find]

@@ -158,7 +158,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vector store (pgvector)** — corrected `inner_product` scoring: the `<#>` operator returns the negative inner product, so the score is now derived by negation (cosine/l2/l1 keep `1/dist`), fixing an inverted ranking
 - **Vector store (pgvector)** — guarded lazy index creation with double-checked locking (plus a `UniqueViolation` fallback) so concurrent search threads no longer race on `CREATE INDEX`
 - **Experiment** — an optimization metric that is produced but unscored (`None` mean) is now recorded as a failed — not fatal — iteration; a genuinely absent metric still raises a `RAGExperimentError` with an evaluator-qualified message
-- **Components** — added `vector_db_secret_name` to the indexing pipeline params
+- **Components** — added `db_secret_name` to the indexing pipeline params
 - **Core** — `ensure_ascii=False` when JSON-dumping documents that may reach the end user, preserving non-ASCII characters
 - **Benchmark data** — reject `BenchmarkData` records with zero correct answers, preventing a downstream unitxt `TokenOverlap` crash on `max()` of an empty iterable
 - **Experiment** — benchmark JSON is now read with an explicit UTF-8 encoding

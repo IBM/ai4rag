@@ -11,8 +11,8 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-_CONFIGURABLE_FILES = {"values.yaml", "agent_config.json", "README.md"}
-_IGNORED_TEMPLATE_NAMES = {".DS_Store", ".env", ".venv", "__pycache__"}
+_CONFIGURABLE_FILES = frozenset({"values.yaml", "agent_config.json", "README.md"})
+_IGNORED_TEMPLATE_NAMES = frozenset({".DS_Store", ".env", ".venv", "__pycache__"})
 
 _PROVIDER_BLOCK_PATTERN = re.compile(
     r"^# <<< BEGIN (?P<provider>\w+) >>>\n(?P<body>.*?)^# <<< END \1 >>>\n",
@@ -67,7 +67,7 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
 
     indexing_params = output_data.get("indexing", {}).get("pipeline_spec", {}).get("parameters", {})
     mapping["__MAAS_SECRET_NAME__"] = _value(indexing_params.get("maas_secret_name"))
-    mapping["__VECTOR_DB_SECRET_NAME__"] = _value(indexing_params.get("vector_db_secret_name"))
+    mapping["__DB_SECRET_NAME__"] = _value(indexing_params.get("db_secret_name"))
 
     return mapping
 

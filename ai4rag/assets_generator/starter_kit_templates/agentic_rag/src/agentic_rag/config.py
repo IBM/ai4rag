@@ -3,34 +3,84 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import base64
+import binascii
 import json
 from dataclasses import dataclass
 from os import getenv
 from pathlib import Path
+from typing import TypedDict, cast
 
 
-def _decode_template(name: str) -> str:
-    """Decode a legacy base64-encoded template for older starter-kits."""
-    encoded = getenv(name, "")
-    if not encoded:
-        return ""
-    try:
-        return base64.b64decode(encoded).decode("utf-8")
-    except (ValueError, UnicodeDecodeError) as exc:
-        raise ValueError(f"{name} must contain valid base64-encoded UTF-8 text") from exc
+class GenerationConfig(TypedDict):
+    """Generated foundation-model settings."""
+
+    model_id: str
+    temperature: float
+    max_completion_tokens: int
+    language_code: str
+    language_name: str
 
 
-def _load_agent_config() -> dict:
+class PromptConfig(TypedDict):
+    """Generated prompt templates."""
+
+    system_message: str
+    user_message_template: str
+    context_template: str
+
+
+class EmbeddingConfig(TypedDict):
+    """Generated embedding settings."""
+
+    model_id: str
+    dimension: int
+
+
+class RetrievalConfig(TypedDict):
+    """Generated retriever settings."""
+
+    method: str
+    number_of_chunks: int
+    search_mode: str
+    ranker_strategy: str
+    ranker_alpha: float | None
+
+
+class VectorStoreConfig(TypedDict):
+    """Generated vector-store settings."""
+
+    provider_type: str
+    collection_name: str
+
+
+class RuntimeConfig(TypedDict):
+    """Generated runtime settings."""
+
+    port: int
+
+
+class AgentConfigData(TypedDict):
+    """Expected structure of the generated agent_config.json."""
+
+    runtime: RuntimeConfig
+    generation: GenerationConfig
+    prompts: PromptConfig
+    embedding: EmbeddingConfig
+    retrieval: RetrievalConfig
+    vector_store: VectorStoreConfig
+
+
+def _load_agent_config() -> AgentConfigData:
     """Load generated settings from deployment environment or a local file."""
     encoded_config = getenv("AGENT_CONFIG_B64", "").strip()
     if encoded_config:
         try:
-            data = json.loads(base64.b64decode(encoded_config).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            data = json.loads(base64.b64decode(encoded_config, validate=True).decode("utf-8"))
+        except (binascii.Error, ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ValueError("AGENT_CONFIG_B64 must contain valid base64-encoded JSON") from exc
         if not isinstance(data, dict):
             raise ValueError("AGENT_CONFIG_B64 must decode to a JSON object")
-        return data
+        return cast(AgentConfigData, data)
 
     # Local fallback keeps ``make run-app`` convenient. OpenShell deployments
     # inject the configuration through AGENT_CONFIG_B64 instead of copying the
@@ -47,27 +97,11 @@ def _load_agent_config() -> dict:
                 raise ValueError(f"Could not read agent configuration from {path}") from exc
             if not isinstance(data, dict):
                 raise ValueError(f"Agent configuration in {path} must be a JSON object")
-            return data
-    return {}
+            return cast(AgentConfigData, data)
+    raise ValueError("AGENT_CONFIG_B64 or agent_config.json is required")
 
 
-def get_chat_base_url() -> str | None:
-    """Return the shared OpenAI-compatible MaaS endpoint.
-
-    MaaS serves foundation and embedding models through the same ``/v1``
-    endpoint. The model identifier belongs in the request body, so it must not
-    be rewritten into a model-specific URL.
-    """
-    explicit_url = getenv("CHAT_BASE_URL", "").strip()
-    if explicit_url:
-        return explicit_url
-
-    maas_url = getenv("MAAS_BASE_URL", "").strip().rstrip("/")
-    if not maas_url:
-        return getenv("BASE_URL") or None
-    return maas_url
-
-
+# pylint: disable=too-many-instance-attributes
 @dataclass(frozen=True)
 class AgentConfig:
     """Runtime configuration generated from an optimized RAG pattern."""
@@ -93,51 +127,48 @@ class AgentConfig:
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
-        """Load and validate agent configuration from environment variables."""
+        """Load generated settings, with PORT as a runtime override."""
         file_config = _load_agent_config()
-        generation = file_config.get("generation", {})
-        prompts = file_config.get("prompts", {})
-        embedding = file_config.get("embedding", {})
-        retrieval = file_config.get("retrieval", {})
-        vector_store = file_config.get("vector_store", {})
-        runtime = file_config.get("runtime", {})
         try:
-            temperature = float(getenv("TEMPERATURE", generation.get("temperature", 0.0)))
-            max_completion_tokens = int(getenv("MAX_COMPLETION_TOKENS", generation.get("max_completion_tokens", 1024)))
-        except ValueError as exc:
-            raise ValueError("TEMPERATURE and MAX_COMPLETION_TOKENS must be numeric") from exc
-
-        return cls(
-            model_id=getenv("MODEL_ID", generation.get("model_id", "")),
-            temperature=temperature,
-            max_completion_tokens=max_completion_tokens,
-            system_message=prompts.get("system_message")
-            or _decode_template("SYSTEM_MESSAGE_B64")
-            or getenv("SYSTEM_MESSAGE", ""),
-            user_message_template=prompts.get("user_message_template")
-            or _decode_template("USER_MESSAGE_B64")
-            or "Context:\n{reference_documents}\n\nQuestion: {question}",
-            context_template=prompts.get("context_template")
-            or _decode_template("CONTEXT_TEMPLATE_B64")
-            or "{document}",
-            language_code=getenv("LANGUAGE_CODE", generation.get("language_code", "")),
-            language_name=getenv("LANGUAGE_NAME", generation.get("language_name", "auto")),
-            embedding_model_id=getenv("EMBEDDING_MODEL_ID", embedding.get("model_id", "")),
-            embedding_dimension=int(getenv("EMBEDDING_DIMENSION", embedding.get("dimension", 768))),
-            provider_type=getenv("PROVIDER_TYPE", vector_store.get("provider_type", "milvus")),
-            collection_name=(
-                getenv("MILVUS_COLLECTION_NAME")
-                or getenv("PGVECTOR_COLLECTION_NAME")
-                or vector_store.get("collection_name", "")
-            ),
-            retrieval_method=getenv("RETRIEVAL_METHOD", retrieval.get("method", "simple")),
-            number_of_chunks=int(getenv("NUMBER_OF_CHUNKS", retrieval.get("number_of_chunks", 5))),
-            search_mode=getenv("SEARCH_MODE", retrieval.get("search_mode", "vector")),
-            ranker_strategy=getenv("RANKER_STRATEGY", retrieval.get("ranker_strategy", "")),
-            ranker_alpha=(
-                float(getenv("RANKER_ALPHA", retrieval.get("ranker_alpha")))
-                if getenv("RANKER_ALPHA", retrieval.get("ranker_alpha")) not in (None, "")
-                else None
-            ),
-            port=int(getenv("PORT", runtime.get("port", 8000))),
-        )
+            generation = file_config["generation"]
+            prompts = file_config["prompts"]
+            embedding = file_config["embedding"]
+            retrieval = file_config["retrieval"]
+            vector_store = file_config["vector_store"]
+            config = cls(
+                model_id=generation["model_id"],
+                temperature=float(generation["temperature"]),
+                max_completion_tokens=int(generation["max_completion_tokens"]),
+                system_message=prompts["system_message"],
+                user_message_template=prompts["user_message_template"],
+                context_template=prompts["context_template"],
+                language_code=generation["language_code"],
+                language_name=generation["language_name"],
+                embedding_model_id=embedding["model_id"],
+                embedding_dimension=int(embedding["dimension"]),
+                provider_type=vector_store["provider_type"],
+                collection_name=vector_store["collection_name"],
+                retrieval_method=retrieval["method"],
+                number_of_chunks=int(retrieval["number_of_chunks"]),
+                search_mode=retrieval["search_mode"],
+                ranker_strategy=retrieval["ranker_strategy"],
+                ranker_alpha=float(retrieval["ranker_alpha"]) if retrieval["ranker_alpha"] is not None else None,
+                port=int(getenv("PORT", file_config["runtime"]["port"])),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid agent configuration: {exc}") from exc
+        for name in (
+            "model_id",
+            "user_message_template",
+            "context_template",
+            "embedding_model_id",
+            "collection_name",
+            "provider_type",
+            "retrieval_method",
+            "search_mode",
+        ):
+            if not isinstance(getattr(config, name), str) or not getattr(config, name).strip():
+                raise ValueError(f"Agent configuration requires a non-empty {name}")
+        if min(config.max_completion_tokens, config.embedding_dimension, config.number_of_chunks, config.port) < 1:
+            raise ValueError("Token, embedding dimension, chunk counts, and port must be positive")
+        return config

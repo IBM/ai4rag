@@ -45,7 +45,7 @@ class AgenticRAG(BaseRAGTemplate):
                 "Use the retrieved context to target information that is still missing. "
                 "Return only the query, without explanations."
             )
-            context = "\n\n".join(document.text[:2000] for document in documents)
+            context = "\n\n".join(document.text for document in documents)
             user_message = f"Original question: {question}\nRetrieved context:\n{context}"
         else:
             system_message = (
@@ -89,7 +89,7 @@ class AgenticRAG(BaseRAGTemplate):
     def _build_enriched_user_message(self, question: str, **kwargs) -> tuple[list[AI4RAGChunk], str]:
         """Retrieve iteratively and render the final enriched user message."""
         reference_documents = self._retrieve_until_sufficient(question, **kwargs)
-        return self._render_enriched_user_message(question, reference_documents)
+        return reference_documents, self._render_enriched_user_message(question, reference_documents)
 
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         """Generate an answer after bounded iterative retrieval."""

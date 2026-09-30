@@ -43,7 +43,7 @@ _SAMPLE_PATTERN_DATA: dict = {
         "pipeline_spec": {
             "parameters": {
                 "maas_secret_name": "maas-connection",
-                "vector_db_secret_name": "vector-db-connection",
+                "db_secret_name": "vector-db-connection",
             }
         }
     },
@@ -88,7 +88,7 @@ class TestCreateStarterKitMapping:
     def test_extracts_indexing_secret_names(self):
         mapping = _create_starter_kit_mapping(_SAMPLE_PATTERN_DATA)
         assert mapping["__MAAS_SECRET_NAME__"] == "maas-connection"
-        assert mapping["__VECTOR_DB_SECRET_NAME__"] == "vector-db-connection"
+        assert mapping["__DB_SECRET_NAME__"] == "vector-db-connection"
 
     def test_extracts_pattern_name(self):
         mapping = _create_starter_kit_mapping(_SAMPLE_PATTERN_DATA)
@@ -202,11 +202,11 @@ class TestGenerateStarterKit:
         assert "COPY --chown=1001:0 agent_config.json /sandbox/agent_config.json" not in containerfile
         assert "AGENT_CONFIG_B64" in makefile
 
-    def test_env_example_has_filled_values(self, tmp_path):
+    def test_agent_config_has_filled_values(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             values_content = zf.read("starter_kit/values.yaml").decode("utf-8")
-            assert 'MODEL_ID: "publishers/ibm/models/granite-3.1-8b-instruct"' in values_content
+            assert "MODEL_ID:" not in values_content
             agent_config = json.loads(zf.read("starter_kit/agent_config.json"))
             assert agent_config["runtime"]["port"] == 8000
             assert agent_config["generation"]["model_id"] == "publishers/ibm/models/granite-3.1-8b-instruct"
@@ -214,9 +214,8 @@ class TestGenerateStarterKit:
             assert agent_config["prompts"]["user_message_template"] == "Question: {question}"
             assert agent_config["prompts"]["context_template"] == "Context: {context}"
             assert agent_config["retrieval"]["number_of_chunks"] == 5
-            assert 'RETRIEVAL_METHOD: "simple"' in values_content
-            assert 'SEARCH_MODE: "hybrid"' in values_content
-            assert 'EMBEDDING_DIMENSION: "768"' in values_content
+            assert "RETRIEVAL_METHOD:" not in values_content
+            assert "EMBEDDING_DIMENSION:" not in values_content
 
     def test_no_placeholders_remain(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
@@ -255,14 +254,13 @@ class TestGenerateStarterKit:
             assert config["vector_store"]["provider_type"] == "pgvector"
             assert config["vector_store"]["collection_name"] == "pg_collection"
 
-    def test_values_yaml_has_filled_values(self, tmp_path):
+    def test_values_yaml_has_secret_names(self, tmp_path):
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             values_content = zf.read("starter_kit/values.yaml").decode("utf-8")
-            assert '"publishers/ibm/models/granite-3.1-8b-instruct"' in values_content
-            assert '"milvus"' in values_content
+            assert "env:" not in values_content
             assert 'maas_secret_name: "maas-connection"' in values_content
-            assert 'vector_db_secret_name: "vector-db-connection"' in values_content
+            assert 'db_secret_name: "vector-db-connection"' in values_content
 
     def test_creates_output_dir_if_needed(self, tmp_path):
         out = tmp_path / "nested" / "dir"

@@ -100,15 +100,12 @@ class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIM
         system_messages = [message["content"] for message in messages if message["role"] == "system"]
         input_messages = [message for message in messages if message["role"] != "system"]
         response_params = {
-            "max_output_tokens": self.params.max_completion_tokens,
-            "temperature": self.params.temperature,
-        } | self._normalize_response_kwargs(kwargs)
-        response_params = {
             "model": self.model_id,
             "instructions": "\n\n".join(system_messages) if system_messages else None,
             "input": input_messages,
-            **response_params,
-        }
+            "max_output_tokens": self.params.max_completion_tokens,
+            "temperature": self.params.temperature,
+        } | self._normalize_response_kwargs(kwargs)
         response_params = {key: value for key, value in response_params.items() if value is not None}
 
         try:
