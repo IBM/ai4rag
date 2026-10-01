@@ -542,6 +542,18 @@ class TestBuildDoclingFormatOptions:
         with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
+    def test_no_rapidocr_models_raise_instead_of_downloading(self, monkeypatch):
+        """OCR must not fall back to Docling's runtime model downloader."""
+        from ai4rag.utils.data import text_extraction as te
+
+        monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
+        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
+
+        with pytest.raises(
+            FileNotFoundError, match="Runtime Docling model downloads are disabled"
+        ):
+            te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+
     def test_missing_rapidocr_package_raises(self, monkeypatch):
         """A non-importable rapidocr on the OCR path fails fast with an actionable error."""
         import sys

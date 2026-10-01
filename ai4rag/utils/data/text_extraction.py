@@ -534,10 +534,18 @@ def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:
 
 
 def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
-    """Fail fast when Docling artifacts are configured but RapidOCR models are missing."""
+    """Fail fast unless the configured artifacts provide RapidOCR models.
+
+    This is called only after both explicit model paths and bundled RapidOCR
+    wheel models have been ruled out. Raising here prevents Docling from
+    falling back to its runtime model downloader.
+    """
     artifacts = _resolve_artifacts_path(None)
     if artifacts is None:
-        return
+        raise FileNotFoundError(
+            "RapidOCR model files are unavailable. Set DOCLING_ARTIFACTS_PATH to an image-baked "
+            "RapidOCR bundle or pass ocr_*_model_path explicitly. Runtime Docling model downloads are disabled."
+        )
     ocr_root = artifacts / "RapidOcr"
     missing = [str(ocr_root / rel) for rel in _rapidocr_artifacts_rel_paths(ocr_lang) if not (ocr_root / rel).is_file()]
     if missing:
@@ -555,8 +563,9 @@ def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
     Resolution order when custom paths are omitted:
 
     1. ONNX files shipped inside the ``rapidocr`` package (older / some local installs)
-    2. Otherwise leave paths unset so Docling loads from ``DOCLING_ARTIFACTS_PATH/RapidOcr``
-       (requires models baked into the image for disconnected clusters)
+    2. Otherwise validate the models under ``DOCLING_ARTIFACTS_PATH/RapidOcr``
+       before allowing Docling to load them. This prevents its runtime model
+       downloader from being used.
     """
     kwargs: dict[str, Any] = {
         "lang": list(config.ocr_lang),
