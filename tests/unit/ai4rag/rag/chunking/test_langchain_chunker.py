@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import math
+import logging
 
 import pytest
 from docling_core.types.doc import DoclingDocument
@@ -100,6 +101,23 @@ class TestLangChainChunkerSplitDocuments:
     def test_split_with_empty_list(self, chunker_small):
         chunks = chunker_small.split_documents([])
         assert chunks == []
+
+    def test_split_warns_when_audio_document_is_present(self, chunker_small, caplog):
+        audio_doc = _make_docling_doc("recording.mp3", "Transcript content.")
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag.rag.chunking.langchain_chunker"):
+            chunker_small.split_documents([audio_doc])
+
+        assert "audio_start_seconds or audio_end_seconds" in caplog.text
+        assert "Use DoclingChunker" in caplog.text
+
+    def test_split_does_not_warn_for_non_audio_document(self, chunker_small, caplog):
+        document = _make_docling_doc("report.pdf", "Document content.")
+
+        with caplog.at_level(logging.WARNING, logger="ai4rag.rag.chunking.langchain_chunker"):
+            chunker_small.split_documents([document])
+
+        assert not caplog.records
 
     def test_split_respects_chunk_size(self, sample_documents):
         chunker = LangChainChunker(chunk_size=10, chunk_overlap=2)

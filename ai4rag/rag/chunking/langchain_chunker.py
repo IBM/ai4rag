@@ -3,7 +3,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import hashlib
+import logging
 import math
+from pathlib import Path
 from typing import Any, Iterable, Literal, Sequence
 
 from docling_core.types.doc import DoclingDocument
@@ -18,6 +20,9 @@ from .chunk import AI4RAGChunk
 __all__ = [
     "LangChainChunker",
 ]
+
+_logger = logging.getLogger(__name__)
+_AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"})
 
 
 class LangChainChunker(BaseChunker):
@@ -189,6 +194,17 @@ class LangChainChunker(BaseChunker):
         list[AI4RAGChunk]
             Chunks with ``document_id``, ``sequence_number``, and ``start_index`` metadata.
         """
+        audio_document_count = sum(
+            1 for doc in documents if doc.name and Path(doc.name).suffix.lower() in _AUDIO_EXTENSIONS
+        )
+        if audio_document_count:
+            _logger.warning(
+                "LangChainChunker received %d audio document(s); audio chunks will not include "
+                "audio_start_seconds or audio_end_seconds because markdown conversion discards Docling timing "
+                "provenance. Use DoclingChunker to preserve audio timing metadata.",
+                audio_document_count,
+            )
+
         lc_docs = self._docling_to_langchain(documents)
         self._set_document_id_in_metadata_if_missing(lc_docs)
         chunks = self._text_splitter.split_documents(lc_docs)
