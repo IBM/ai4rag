@@ -490,13 +490,17 @@ class TestBuildDoclingFormatOptions:
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
 
-    def test_do_ocr_enables_rapidocr_english_default(self):
+    def test_do_ocr_enables_rapidocr_english_default(self, monkeypatch, tmp_path):
         """OCR enabled should set RapidOCR options with English default language."""
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import RapidOcrOptions
 
         from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
 
+        artifacts = tmp_path / "docling-artifacts"
+        artifacts.mkdir()
+        (artifacts / "placeholder").write_text("x", encoding="utf-8")
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
         options = _build_docling_format_options(
             config=DoclingExtractionConfig(do_ocr=True),
         )
@@ -506,12 +510,16 @@ class TestBuildDoclingFormatOptions:
         assert pdf_option.pipeline_options.ocr_options.lang == ["english"]
         assert InputFormat.IMAGE in options
 
-    def test_custom_ocr_model_paths(self):
+    def test_custom_ocr_model_paths(self, monkeypatch, tmp_path):
         """Custom RapidOCR model paths should be forwarded to Docling options."""
         from docling.datamodel.base_models import InputFormat
 
         from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
 
+        artifacts = tmp_path / "docling-artifacts"
+        artifacts.mkdir()
+        (artifacts / "placeholder").write_text("x", encoding="utf-8")
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
         options = _build_docling_format_options(
             config=DoclingExtractionConfig(
                 do_ocr=True,
@@ -542,16 +550,18 @@ class TestBuildDoclingFormatOptions:
         with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
-    def test_no_rapidocr_models_raise_instead_of_downloading(self, monkeypatch):
-        """OCR must not fall back to Docling's runtime model downloader."""
+    def test_ocr_requires_docling_artifacts_environment(self, monkeypatch):
+        """OCR must require a workbench-configured Docling artifacts directory."""
         from ai4rag.utils.data import text_extraction as te
 
         monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
-        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
+        monkeypatch.setattr(
+            te,
+            "_try_resolve_wheel_rapidocr_model_paths",
+            lambda: {"det_model_path": "/models/det.onnx"},
+        )
 
-        with pytest.raises(
-            FileNotFoundError, match="Runtime Docling model downloads are disabled"
-        ):
+        with pytest.raises(FileNotFoundError, match="DOCLING_ARTIFACTS_PATH is not set"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
     def test_missing_rapidocr_package_raises(self, monkeypatch):

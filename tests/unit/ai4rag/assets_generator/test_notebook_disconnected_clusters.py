@@ -54,6 +54,18 @@ class TestDisconnectedClusterDocumentation:
 
         assert "DOCLING_ARTIFACTS_PATH" in full_code, "Notebook must include code to configure DOCLING_ARTIFACTS_PATH"
 
+    def test_notebook_requires_workbench_docling_artifacts(self, indexing_notebook):
+        """The workbench must fail rather than download Docling artifacts at runtime."""
+        code_sources = [
+            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
+            for cell in indexing_notebook["cells"]
+            if cell["cell_type"] == "code"
+        ]
+        full_code = "\n".join(code_sources)
+
+        assert "DOCLING_ARTIFACTS_PATH is required" in full_code
+        assert "Use a workbench image with the Docling artifacts bundle" in full_code
+
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
         """The extract_text() call must include docling_artifacts_path parameter."""
         code_sources = [

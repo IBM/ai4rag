@@ -133,7 +133,8 @@ class DoclingExtractionConfig:
         value picks which bundled model set is loaded.  Latin-script languages
         map to the English models; only Chinese switches to the Chinese models
         (see :func:`_rapidocr_artifacts_rel_paths`).  Ignored when ``do_ocr``
-        is ``False``.
+        is ``False``. When OCR is enabled, the workbench must set
+        ``DOCLING_ARTIFACTS_PATH`` to a non-empty artifacts directory.
     ocr_det_model_path
         What/Why: optional path to a custom RapidOCR text-*detection* ONNX
         model, for disconnected clusters or specialised model sets that differ
@@ -557,6 +558,22 @@ def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
         )
 
 
+def _require_docling_artifacts_path_for_ocr() -> Path:
+    """Return the configured Docling artifacts path or fail before OCR starts.
+
+    Workbenches use a baked Docling artifacts bundle. Requiring its environment
+    variable for every OCR run keeps their configuration aligned with the
+    AutoRAG container and avoids accidental downloads from worker processes.
+    """
+    artifacts = _resolve_artifacts_path(None)
+    if artifacts is None:
+        raise FileNotFoundError(
+            "OCR was requested (do_ocr=True), but DOCLING_ARTIFACTS_PATH is not set to a non-empty "
+            "Docling artifacts directory. Set it in the workbench environment to the image-baked bundle."
+        )
+    return artifacts
+
+
 def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
     """Build Docling ``RapidOcrOptions`` from extraction config.
 
@@ -571,6 +588,7 @@ def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
         "lang": list(config.ocr_lang),
         "force_full_page_ocr": False,
     }
+    _require_docling_artifacts_path_for_ocr()
     custom_paths = {
         "det_model_path": config.ocr_det_model_path,
         "cls_model_path": config.ocr_cls_model_path,
