@@ -133,13 +133,14 @@ def validate_search_params(
     ranker_strategy: str | None,
     ranker_k: int | None,
     ranker_alpha: float | None,
+    *,
+    supported_modes: tuple[str, ...] = _VALID_SEARCH_MODES,
+    store_class: type | None = None,
 ) -> None:
     """Validate the search mode and hybrid ranker parameter combination.
 
-    Backend-agnostic guard shared by every hybrid-capable vector store (e.g.
-    Milvus, PGVector): it enforces that ranker parameters are only supplied for a
-    hybrid search and that each is paired with its matching strategy, before any
-    backend-specific query is issued.
+    Validates the modes supported by a vector store and ensures ranker parameters
+    are only supplied for hybrid search with their matching strategy.
 
     Parameters
     ----------
@@ -157,17 +158,27 @@ def validate_search_params(
         Weighting coefficient that determines how much the system trusts
         semantic (vector) search versus lexical (keyword/BM25) search. Valid
         only with ``ranker_strategy="weighted"``.
+    supported_modes : tuple[str, ...], default=("vector", "hybrid", "graph")
+        Modes accepted by the calling vector store.
+    store_class : type | None, default=None
+        Calling store class. When supplied, its class name is used in an
+        unsupported-mode error.
 
     Raises
     ------
     ValueError
-        If ``search_mode`` is unknown, if any ranker parameter is supplied
+        If ``search_mode`` is unsupported, if any ranker parameter is supplied
         for a non-hybrid search, if ``ranker_strategy`` is missing or invalid
         for a hybrid search, or if ``ranker_k``/``ranker_alpha`` are paired
         with the wrong strategy.
     """
-    if search_mode not in _VALID_SEARCH_MODES:
-        raise ValueError(f"Invalid search_mode '{search_mode}'. Must be one of {_VALID_SEARCH_MODES}.")
+    if search_mode not in supported_modes:
+        if store_class is None:
+            raise ValueError(f"Invalid search_mode '{search_mode}'. Must be one of {supported_modes}.")
+        supported = " or ".join(f"'{mode}'" for mode in supported_modes)
+        raise ValueError(
+            f"search_mode='{search_mode}' is not supported by {store_class.__name__}. Use {supported}."
+        )
 
     has_strategy = ranker_strategy is not None and ranker_strategy != ""
     has_k = ranker_k is not None and ranker_k > 0

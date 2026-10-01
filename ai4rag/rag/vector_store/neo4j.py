@@ -1113,10 +1113,14 @@ def _validate_neo4j_search_params(
     ranker_alpha: float | None = None,
     **kwargs: Any,
 ) -> None:
-    if search_mode != "graph":
-        raise ValueError("Neo4jGraphStore supports only search_mode='graph'.")
-
-    validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
+    validate_search_params(
+        search_mode,
+        ranker_strategy,
+        ranker_k,
+        ranker_alpha,
+        supported_modes=("graph",),
+        store_class=Neo4jGraphStore,
+    )
 
     if search_mode == "graph":
         graph_hops = kwargs.get("graph_hops", 0)

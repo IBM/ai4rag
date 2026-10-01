@@ -839,7 +839,7 @@ class TestCleanAndClose:
 class TestValidateNeo4jSearchParams:
     @pytest.mark.parametrize("search_mode", ["vector", "hybrid"])
     def test_non_graph_modes_rejected(self, search_mode):
-        with pytest.raises(ValueError, match="only search_mode='graph'"):
+        with pytest.raises(ValueError, match="not supported by Neo4jGraphStore"):
             _validate_neo4j_search_params(search_mode)
 
     def test_graph_mode_valid(self):
