@@ -137,6 +137,25 @@ result = extract_text(
 print(f"Processed {result.processed_count}/{result.total_documents}")
 ```
 
+By default `extract_text` builds its own S3 client from the `s3_*` arguments or the environment,
+using `AWS_CA_BUNDLE` for TLS verification as described above. Pass `ssl_cert_path` to point at a
+CA bundle for this call only (it takes precedence over `AWS_CA_BUNDLE`), or pass a pre-configured
+`s3_client` to reuse one you already built (e.g. via `create_s3_client`) instead of having
+`extract_text` construct its own:
+
+```python
+from ai4rag.utils.clients import create_s3_client
+from ai4rag.utils.data import extract_text
+
+s3_client = create_s3_client(verify="/etc/pki/tls/custom-certs/ca-bundle.crt")
+result = extract_text(
+    documents=[{"key": "docs/report.pdf", "size_bytes": 1024}],
+    bucket="my-bucket",
+    output_dir="/tmp/extracted",
+    s3_client=s3_client,
+)
+```
+
 Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email (`.eml`, `.msg`), Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
 OCR is **off by default**. Conversion behaviour (table structure and OCR) is
@@ -168,7 +187,7 @@ resolve to the English models; only Chinese switches to the dedicated Chinese
 models. `ocr_lang` accepts a single string (`"english"`) or a sequence
 (`["english", "chinese"]`) and defaults to `["english"]` when OCR is enabled.
 
-Default RapidOCR models are **not** in current PyPI `rapidocr` wheels. On AutoRAG/OpenShift images with `DOCLING_ARTIFACTS_PATH` set, bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`). Docling auto-detects pages that need OCR when `do_ocr=True`. Override with `ocr_*_model_path` for custom ONNX sets.
+Default RapidOCR models are **not** in current PyPI `rapidocr` wheels, and `extract_text` no longer falls back to Docling's runtime model downloader. Whenever `do_ocr=True`, `DOCLING_ARTIFACTS_PATH` must be set to a non-empty Docling artifacts directory — this is checked before anything else, **even when `ocr_*_model_path` is also set** — or `extract_text` raises `FileNotFoundError` immediately. Bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`); use `ocr_*_model_path` only to point at a different ONNX set once `DOCLING_ARTIFACTS_PATH` is set. Docling auto-detects pages that need OCR when `do_ocr=True`.
 
 #### Audio Transcription
 
