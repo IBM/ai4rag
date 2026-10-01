@@ -792,9 +792,7 @@ def test_canonical_writer_rejects_mismatched_document_chunk_id():
 
 @patch("ai4rag.rag.vector_store.neo4j.neo4j.GraphDatabase.driver")
 class TestCleanAndClose:
-    def test_clean_collection_drops_legacy_indexes_without_dropping_shared_index(
-        self, mock_driver_cls, mock_embedding, neo4j_config
-    ):
+    def test_clean_collection_drops_collection_vector_index(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value
         session.run.reset_mock()
@@ -802,8 +800,6 @@ class TestCleanAndClose:
         store.clean_collection()
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
-        assert "ai4rag_col__vector" in cypher_calls
-        assert "ai4rag_col__fulltext" in cypher_calls
         assert "ai4rag_col__embedding" in cypher_calls
         assert "ai4rag_kg_collection" in cypher_calls
         assert "__Entity__" in cypher_calls

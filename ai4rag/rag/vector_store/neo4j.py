@@ -937,9 +937,6 @@ class Neo4jGraphStore(BaseVectorStore):
         """Delete all nodes, KG entities, and the vector index for this collection."""
         with self._driver.session(database=self._config.database) as session:
             session.run(f"DROP INDEX `{_collection_vector_index_name(self._collection_name)}` IF EXISTS")
-            # Clean up indexes left by older Neo4j implementations.
-            session.run(f"DROP INDEX `{self._collection_name}__vector` IF EXISTS")
-            session.run(f"DROP INDEX `{self._collection_name}__fulltext` IF EXISTS")
             session.run(
                 "MATCH (:__Entity__)-[r]->(:__Entity__) "
                 "WHERE $col IN COALESCE(r.ai4rag_kg_collections, []) "
