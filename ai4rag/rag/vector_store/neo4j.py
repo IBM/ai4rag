@@ -613,9 +613,9 @@ class Neo4jGraphStore(BaseVectorStore):
 
             - ``include_entity_neighbors`` (bool, default True) — expand via ``__Entity__``.
             - ``entity_neighbor_limit`` (int, default 5) — max entity-linked neighbors per seed.
-            - ``entity_pivot_limit`` (int, default 0) — max entity pivots for relationship traversal.
-            - ``entity_relationship_hops`` (int, default 0) — relationship hops from each pivot.
-            - ``relationship_neighbor_limit`` (int, default 0) — max relationship-expanded chunks per seed.
+            - ``entity_pivot_limit`` (int, default 1) — max entity pivots for relationship traversal.
+            - ``entity_relationship_hops`` (int, default 1) — relationship hops from each pivot.
+            - ``relationship_neighbor_limit`` (int, default 5) — max relationship-expanded chunks per seed.
         """
         _validate_neo4j_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha, **kwargs)
 
@@ -655,9 +655,9 @@ class Neo4jGraphStore(BaseVectorStore):
 
         include_entity_neighbors = kwargs.get("include_entity_neighbors", True)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
-        entity_pivot_limit = kwargs.get("entity_pivot_limit", 0)
-        entity_relationship_hops = kwargs.get("entity_relationship_hops", 0)
-        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 0)
+        entity_pivot_limit = kwargs.get("entity_pivot_limit", 1)
+        entity_relationship_hops = kwargs.get("entity_relationship_hops", 1)
+        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 5)
 
         def _fmt(record) -> RetrieverResultItem:
             raw_meta = record.get("metadata")
@@ -1026,9 +1026,9 @@ def _normalize_kg_json(content: str) -> str:
 def _build_graph_retrieval_query(
     include_entity_neighbors: bool,
     entity_neighbor_limit: int,
-    entity_pivot_limit: int = 0,
-    entity_relationship_hops: int = 0,
-    relationship_neighbor_limit: int = 0,
+    entity_pivot_limit: int = 1,
+    entity_relationship_hops: int = 1,
+    relationship_neighbor_limit: int = 5,
 ) -> str:
     """Build the Cypher retrieval query for :class:`VectorCypherRetriever`.
 
@@ -1122,9 +1122,9 @@ def _validate_neo4j_search_params(
     if search_mode == "graph":
         graph_hops = kwargs.get("graph_hops", 0)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
-        entity_pivot_limit = kwargs.get("entity_pivot_limit", 0)
-        entity_relationship_hops = kwargs.get("entity_relationship_hops", 0)
-        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 0)
+        entity_pivot_limit = kwargs.get("entity_pivot_limit", 1)
+        entity_relationship_hops = kwargs.get("entity_relationship_hops", 1)
+        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 5)
         if not isinstance(graph_hops, int) or graph_hops != 0:
             raise ValueError(
                 f"graph_hops must be 0 because Neo4j graph search does not expand NEXT_CHUNK neighbors, "

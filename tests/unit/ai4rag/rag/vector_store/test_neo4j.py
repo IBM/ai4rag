@@ -157,8 +157,24 @@ def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
     assert "collect(DISTINCT ent_nb)[.." not in query
 
 
+def test_graph_query_uses_relationship_expansion_defaults():
+    """Relationship expansion defaults to one pivot, one hop, and five chunks."""
+    query = _build_graph_retrieval_query(
+        include_entity_neighbors=True,
+        entity_neighbor_limit=5,
+    )
+
+    assert "ORDER BY degree DESC, pivot.name ASC, pivot.id ASC LIMIT 1" in query
+    assert "[*1..1]-(related:__Entity__)" in query
+    assert "rel_nb.id ASC LIMIT 5" in query
+
+
 def test_graph_query_returns_single_chunks_and_falls_back_to_seed():
-    query = _build_graph_retrieval_query(include_entity_neighbors=False, entity_neighbor_limit=0)
+    query = _build_graph_retrieval_query(
+        include_entity_neighbors=False,
+        entity_neighbor_limit=0,
+        entity_pivot_limit=0,
+    )
 
     assert "[] AS ent_hits" in query
     assert "[] AS rel_hits" in query
