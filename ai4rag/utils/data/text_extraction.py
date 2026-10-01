@@ -149,6 +149,10 @@ class DoclingExtractionConfig:
         What/Why: optional path to the character-keys dictionary matching the
         custom recognition model; required when the recognition model uses a
         non-default character set.
+    device
+        Device for Docling's PDF, image, DOCX, and PPTX pipelines. Defaults to
+        ``"cpu"`` so existing extraction runs keep their device selection.
+        CUDA OCR requires a GPU-enabled ONNX Runtime.
     """
 
     do_table_structure: bool = False
@@ -158,6 +162,7 @@ class DoclingExtractionConfig:
     ocr_cls_model_path: str | None = None
     ocr_rec_model_path: str | None = None
     ocr_rec_keys_path: str | None = None
+    device: str = "cpu"
 
     def __post_init__(self) -> None:
         # Normalize ``ocr_lang`` in one place so callers may pass a single
@@ -221,8 +226,8 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         Path to pre-downloaded Docling model artifacts for offline use.
         Falls back to ``DOCLING_ARTIFACTS_PATH`` environment variable.
     docling_config
-        Ready :class:`DoclingExtractionConfig` controlling table-structure
-        and OCR behaviour.  Callers (e.g. ``pipelines-components``) construct
+        Ready :class:`DoclingExtractionConfig` controlling table-structure,
+        OCR, and device selection. Callers (e.g. ``pipelines-components``) construct
         it once and pass it here; it is forwarded unchanged to every worker
         process.  ``None`` (default) uses ``DoclingExtractionConfig()`` --
         table structure and OCR both disabled.  See
@@ -242,7 +247,8 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     Raises
     ------
     RuntimeError
-        If the error count exceeds the allowed tolerance.
+        If CUDA OCR lacks an ONNX Runtime GPU provider, or the error count
+        exceeds the allowed tolerance.
     """
     import tempfile
 
@@ -255,11 +261,13 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         _logger.info("No documents to process.")
         return ExtractionResult(processed_count=0, total_documents=0, error_count=0)
 
+    pipeline_config = docling_config or DoclingExtractionConfig()
+    _require_cuda_ocr_provider(pipeline_config)
+
     if s3_client is None:
         s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
         s3_client = _make_s3_client(s3_creds, ssl_cert_path=ssl_cert_path)
     artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
-    pipeline_config = docling_config or DoclingExtractionConfig()
 
     has_custom_models = bool(
         pipeline_config.ocr_det_model_path
@@ -574,6 +582,23 @@ def _require_docling_artifacts_path_for_ocr() -> Path:
     return artifacts
 
 
+def _require_cuda_ocr_provider(config: DoclingExtractionConfig) -> None:
+    """Fail before spawning workers if CUDA OCR cannot use ONNX Runtime's GPU provider."""
+    if not config.do_ocr or not config.device.startswith("cuda"):
+        return
+
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise RuntimeError("CUDA OCR requires ONNX Runtime with CUDA support, but it is not installed.") from exc
+
+    if "CUDAExecutionProvider" not in ort.get_available_providers() or ort.get_device() != "GPU":
+        raise RuntimeError(
+            "CUDA OCR was requested, but ONNX Runtime cannot use CUDAExecutionProvider. "
+            "Install a compatible GPU-enabled ONNX Runtime in the extraction image."
+        )
+
+
 def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
     """Build Docling ``RapidOcrOptions`` from extraction config.
 
@@ -627,7 +652,7 @@ def _build_docling_format_options(
     """
     cfg = config or DoclingExtractionConfig(do_table_structure=do_table_structure)
     ap = _resolve_artifacts_path(None)
-    accel = AcceleratorOptions(device="cpu", num_threads=2)
+    accel = AcceleratorOptions(device=cfg.device, num_threads=2)
     ocr_options = _build_rapidocr_options(cfg) if cfg.do_ocr else None
 
     pdf_kwargs: dict[str, Any] = {
