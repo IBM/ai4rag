@@ -158,13 +158,13 @@ def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():
 
 
 def test_graph_query_uses_relationship_expansion_defaults():
-    """Relationship expansion defaults to one pivot, one hop, and five chunks."""
+    """Relationship expansion defaults to three pivots, one hop, and five chunks."""
     query = _build_graph_retrieval_query(
         include_entity_neighbors=True,
         entity_neighbor_limit=5,
     )
 
-    assert "ORDER BY degree DESC, pivot.name ASC, pivot.id ASC LIMIT 1" in query
+    assert "ORDER BY degree DESC, pivot.name ASC, pivot.id ASC LIMIT 3" in query
     assert "[*1..1]-(related:__Entity__)" in query
     assert "rel_nb.id ASC LIMIT 5" in query
 

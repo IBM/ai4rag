@@ -8,9 +8,11 @@ import hashlib
 import json
 import re
 import uuid
+from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import asdict, dataclass, fields
 from typing import Any, Iterator
 
 import neo4j
@@ -35,7 +37,7 @@ from ai4rag.rag.vector_store.utils import (
     validate_search_params,
 )
 
-__all__ = ["Neo4jGraphStore"]
+__all__ = ["Neo4jGraphRetrievalConfig", "Neo4jGraphStore"]
 
 _CONSTRAINED_KG_ENTITIES = ("Person", "Organization", "Place", "Concept", "Event", "Product", "Technology")
 _CONSTRAINED_KG_RELATIONS = ("RELATED_TO", "PART_OF", "LOCATED_IN", "BELONGS_TO", "CREATED_BY", "MENTIONS")
@@ -82,6 +84,48 @@ def _validate_kg_extraction_config(config: dict[str, Any] | None) -> dict[str, A
         if not isinstance(value, int) or value < 1:
             raise ValueError(f"kg_extraction_config.{name} must be a positive integer for free extraction.")
     return {"mode": mode, **limits}
+
+
+@dataclass(frozen=True, kw_only=True)
+class Neo4jGraphRetrievalConfig:
+    """Controls graph expansion during `Neo4jGraphStore` retrieval."""
+
+    route_k: int | None = None
+    include_entity_neighbors: bool = True
+    entity_neighbor_limit: int = 5
+    entity_pivot_limit: int = 3
+    entity_relationship_hops: int = 1
+    relationship_neighbor_limit: int = 5
+
+    def __post_init__(self) -> None:
+        if self.route_k is not None and (
+            not isinstance(self.route_k, int) or isinstance(self.route_k, bool) or self.route_k < 1
+        ):
+            raise ValueError(f"route_k must be a positive integer or None, got {self.route_k!r}.")
+        if not isinstance(self.include_entity_neighbors, bool):
+            raise TypeError("include_entity_neighbors must be a boolean.")
+        for name, value in self.to_search_kwargs().items():
+            if name in {"route_k", "include_entity_neighbors"}:
+                continue
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer, got {value!r}.")
+
+    @classmethod
+    def from_mapping(cls, values: Mapping[str, object]) -> "Neo4jGraphRetrievalConfig":
+        """Create a configuration from graph-search keyword arguments."""
+        unexpected = set(values) - set(cls.keys())
+        if unexpected:
+            raise ValueError(f"Unsupported Neo4j graph retrieval settings: {sorted(unexpected)}.")
+        return cls(**dict(values))
+
+    @classmethod
+    def keys(cls) -> tuple[str, ...]:
+        """Return keyword names accepted by :meth:`to_search_kwargs`."""
+        return tuple(item.name for item in fields(cls))
+
+    def to_search_kwargs(self) -> dict[str, int | bool]:
+        """Return the configuration in :meth:`Neo4jGraphStore.search` keyword form."""
+        return {name: value for name, value in asdict(self).items() if value is not None}
 
 
 def _kg_pipeline_extraction_options(config: dict[str, Any]) -> dict[str, Any]:
@@ -613,7 +657,7 @@ class Neo4jGraphStore(BaseVectorStore):
 
             - ``include_entity_neighbors`` (bool, default True) — expand via ``__Entity__``.
             - ``entity_neighbor_limit`` (int, default 5) — max entity-linked neighbors per seed.
-            - ``entity_pivot_limit`` (int, default 1) — max entity pivots for relationship traversal.
+            - ``entity_pivot_limit`` (int, default 3) — max entity pivots for relationship traversal.
             - ``entity_relationship_hops`` (int, default 1) — relationship hops from each pivot.
             - ``relationship_neighbor_limit`` (int, default 5) — max relationship-expanded chunks per seed.
         """
@@ -655,7 +699,7 @@ class Neo4jGraphStore(BaseVectorStore):
 
         include_entity_neighbors = kwargs.get("include_entity_neighbors", True)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
-        entity_pivot_limit = kwargs.get("entity_pivot_limit", 1)
+        entity_pivot_limit = kwargs.get("entity_pivot_limit", 3)
         entity_relationship_hops = kwargs.get("entity_relationship_hops", 1)
         relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 5)
 
@@ -1026,7 +1070,7 @@ def _normalize_kg_json(content: str) -> str:
 def _build_graph_retrieval_query(
     include_entity_neighbors: bool,
     entity_neighbor_limit: int,
-    entity_pivot_limit: int = 1,
+    entity_pivot_limit: int = 3,
     entity_relationship_hops: int = 1,
     relationship_neighbor_limit: int = 5,
 ) -> str:
@@ -1122,7 +1166,7 @@ def _validate_neo4j_search_params(
     if search_mode == "graph":
         graph_hops = kwargs.get("graph_hops", 0)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
-        entity_pivot_limit = kwargs.get("entity_pivot_limit", 1)
+        entity_pivot_limit = kwargs.get("entity_pivot_limit", 3)
         entity_relationship_hops = kwargs.get("entity_relationship_hops", 1)
         relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 5)
         if not isinstance(graph_hops, int) or graph_hops != 0:

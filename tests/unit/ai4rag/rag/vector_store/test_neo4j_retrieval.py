@@ -4,7 +4,7 @@
 # -----------------------------------------------------------------------------
 import pytest
 
-from ai4rag.rag.vector_store.neo4j_retrieval import Neo4jGraphRetrievalConfig
+from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 
 
 class TestNeo4jGraphRetrievalConfig:
@@ -16,7 +16,7 @@ class TestNeo4jGraphRetrievalConfig:
         assert config.to_search_kwargs() == {
             "include_entity_neighbors": True,
             "entity_neighbor_limit": 5,
-            "entity_pivot_limit": 1,
+            "entity_pivot_limit": 3,
             "entity_relationship_hops": 1,
             "relationship_neighbor_limit": 5,
         }

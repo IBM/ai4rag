@@ -43,7 +43,7 @@ from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
-from ai4rag.rag.vector_store.neo4j_retrieval import Neo4jGraphRetrievalConfig
+from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
