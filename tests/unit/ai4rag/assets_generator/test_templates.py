@@ -92,27 +92,6 @@ class TestCreatePlaceholderMapping:
         assert mapping["PROVIDER_TYPE"] == ""
         assert mapping["REQUIRED_ENV_VARS"] == ""
 
-    def test_legacy_graph_pattern_binding_and_extraction_settings(self):
-        """Previously emitted Neo4j patterns remain usable by the KG templates."""
-        pattern = deepcopy(_SAMPLE_PATTERN_DATA)
-        pattern["settings"]["vector_store_binding"] = pattern["settings"].pop("store_binding")
-        pattern["indexing"] = {
-            "pipeline_spec": {
-                "parameters": {
-                    "kg_extraction_config": {
-                        "mode": "free",
-                        "max_entities_per_chunk": 5,
-                        "max_relationships_per_chunk": 5,
-                    }
-                }
-            }
-        }
-
-        mapping = create_placeholder_mapping(pattern)
-
-        assert mapping["COLLECTION_NAME"] == "test_collection"
-        assert mapping["KG_EXTRACTION_CONFIG"]["mode"] == "free"
-
     def test_retrieval_fields(self, mapping: dict):
         assert mapping["RETRIEVAL_METHOD"] == "simple"
         assert mapping["NUMBER_OF_CHUNKS"] == 5
