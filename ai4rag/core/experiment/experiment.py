@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass, replace
 from typing import Any, Sequence
 
@@ -42,9 +43,10 @@ from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
+from ai4rag.rag.vector_store.neo4j_retrieval import Neo4jGraphRetrievalConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import GRAPH_RETRIEVAL_KEYS, AI4RAGParamNames, ExperimentStep, PreSelectorConstants
+from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 
 
@@ -154,7 +156,15 @@ class AI4RAGExperiment:
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
-        self.graph_retrieval_config: dict[str, Any] | None = kwargs.pop("graph_retrieval_config", None)
+        graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
+        if graph_retrieval_config is None:
+            self.graph_retrieval_config: Neo4jGraphRetrievalConfig | None = None
+        elif isinstance(graph_retrieval_config, Neo4jGraphRetrievalConfig):
+            self.graph_retrieval_config = graph_retrieval_config
+        elif isinstance(graph_retrieval_config, Mapping):
+            self.graph_retrieval_config = Neo4jGraphRetrievalConfig.from_mapping(graph_retrieval_config)
+        else:
+            raise TypeError("graph_retrieval_config must be a mapping or Neo4jGraphRetrievalConfig.")
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -464,7 +474,7 @@ class AI4RAGExperiment:
             },
         }
         if search_mode == "graph" and self.graph_retrieval_config:
-            rag_params["retrieval"].update(self.graph_retrieval_config)
+            rag_params["retrieval"].update(self.graph_retrieval_config.to_search_kwargs())
 
         logger.info("Using retrieval and generation params: %s", rag_params)
 
@@ -575,7 +585,7 @@ class AI4RAGExperiment:
                 ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
                 ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
                 ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
-                search_kwargs=self.graph_retrieval_config if search_mode == "graph" else None,
+                search_kwargs=(self.graph_retrieval_config.to_search_kwargs() if search_mode == "graph" else None),
             )
 
             rag_pattern = SimpleRAG(
@@ -867,7 +877,7 @@ class AI4RAGExperiment:
                     AI4RAGParamNames.RANKER_ALPHA
                 )
         elif retrieval_payload["search_mode"] == "graph":
-            for key in GRAPH_RETRIEVAL_KEYS:
+            for key in Neo4jGraphRetrievalConfig.keys():
                 if key in evaluation_result.rag_params["retrieval"]:
                     retrieval_payload[key] = evaluation_result.rag_params["retrieval"][key]
 

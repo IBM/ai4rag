@@ -8,8 +8,7 @@ from typing import Any
 
 from ai4rag import __version__
 from ai4rag.assets_generator.notebook import Notebook
-from ai4rag.rag.vector_store import get_vector_store_env_vars
-from ai4rag.utils.constants import GRAPH_RETRIEVAL_KEYS
+from ai4rag.rag.vector_store import Neo4jGraphRetrievalConfig, get_vector_store_env_vars
 
 
 def _format_required_env_vars(provider: str) -> str:
@@ -94,7 +93,7 @@ def create_placeholder_mapping(
     mapping["RANKER_STRATEGY"] = ret.get("ranker_strategy")
     mapping["RANKER_K"] = ret.get("ranker_k")
     mapping["RANKER_ALPHA"] = ret.get("ranker_alpha")
-    mapping["GRAPH_RETRIEVAL_CONFIG"] = {key: ret[key] for key in GRAPH_RETRIEVAL_KEYS if key in ret}
+    mapping["GRAPH_RETRIEVAL_CONFIG"] = {key: ret[key] for key in Neo4jGraphRetrievalConfig.keys() if key in ret}
 
     ch = settings.get("chunking", {})
     mapping["CHUNKING_METHOD"] = ch.get("method", "")
