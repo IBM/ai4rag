@@ -28,7 +28,7 @@ from neo4j_graphrag.neo4j_queries import db_cleaning_query, upsert_relationship_
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.utils import (
@@ -163,16 +163,16 @@ class _EmbedderAdapter(_NeoEmbedder):  # type: ignore[misc]
 
 
 class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
-    """Wraps :class:`OpenAIFoundationModel` to satisfy ``neo4j_graphrag``'s LLM interface.
+    """Wraps :class:`BaseFoundationModel` to satisfy ``neo4j_graphrag``'s LLM interface.
 
     ``SimpleKGPipeline`` calls ``ainvoke`` (async); we bridge the sync
-    :meth:`OpenAIFoundationModel.chat` via ``run_in_executor``.  Response JSON
+    :meth:`BaseFoundationModel.chat` via ``run_in_executor``.  Response JSON
     is normalised so that models returning a JSON *array* (``[{...}]``) are
     converted to the expected object format (``{"nodes": [...], "relationships": [...]}``)
     before the extractor parses the output.
     """
 
-    def __init__(self, model: OpenAIFoundationModel) -> None:
+    def __init__(self, model: BaseFoundationModel) -> None:
         super().__init__(model_name=model.model_id)
         self._model = model
 
@@ -184,12 +184,12 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
     ):
         from neo4j_graphrag.llm.types import LLMResponse
 
-        messages: list[dict] = []
+        messages: list[MessageTyped] = []
         if system_instruction:
             messages.append({"role": "system", "content": system_instruction})
         messages.append({"role": "user", "content": input})
-        choices = self._model.chat(messages)
-        content = choices[0].message.content or ""
+        response = self._model.chat(messages)[0]
+        content = (response["content"] if isinstance(response, Mapping) else response.message.content) or ""
         return LLMResponse(content=_normalize_kg_json(content))
 
     async def ainvoke(
@@ -357,7 +357,7 @@ class Neo4jGraphStore(BaseVectorStore):
         config: Neo4jConfig,
         distance_metric: str = "cosine",
         collection_name: str | None = None,
-        foundation_model: Any = None,
+        foundation_model: BaseFoundationModel | None = None,
         kg_extraction_config: dict[str, Any] | None = None,
     ):
         super().__init__(embedding_model, config, distance_metric, collection_name)
@@ -842,7 +842,7 @@ class Neo4jGraphStore(BaseVectorStore):
     def build_knowledge_graph_from_documents(
         self,
         documents: list[DoclingDocument],
-        model: OpenAIFoundationModel,
+        model: BaseFoundationModel,
         chunk_size: int = 2000,
         chunk_overlap: int = 200,
         on_error: str = "IGNORE",
@@ -859,7 +859,7 @@ class Neo4jGraphStore(BaseVectorStore):
         ----------
         documents : list[DoclingDocument]
             Parsed documents to process.
-        model : OpenAIFoundationModel
+        model : BaseFoundationModel
             Foundation model used for entity and relation extraction.
         chunk_size : int, default=2000
             Target chunk size in characters (passed to ``FixedSizeSplitter``).

@@ -14,6 +14,7 @@ from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import (
     _KG_LEXICAL_GRAPH_CONFIG,
+    _LLMAdapter,
     Neo4jGraphStore,
     _build_graph_retrieval_query,
     _CanonicalKGWriter,
@@ -54,6 +55,17 @@ def _make_store(mock_driver_cls, mock_embedding, neo4j_config, collection_name="
     """Construct a Neo4jGraphStore with a fully mocked neo4j driver."""
     store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name=collection_name)
     return store
+
+
+def test_llm_adapter_accepts_base_foundation_model_message_response():
+    """The adapter accepts the message mapping promised by BaseFoundationModel."""
+    model = MagicMock(model_id="test-model")
+    model.chat.return_value = [{"role": "assistant", "content": '{"nodes": [], "relationships": []}'}]
+
+    response = _LLMAdapter(model).invoke("Extract entities.")
+
+    assert response.content == '{"nodes": [], "relationships": []}'
+    model.chat.assert_called_once_with([{"role": "user", "content": "Extract entities."}])
 
 
 # ---------------------------------------------------------------------------

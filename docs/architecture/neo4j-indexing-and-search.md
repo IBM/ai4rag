@@ -162,17 +162,17 @@ Hybrid settings (`ranker_strategy`, `ranker_k`, and `ranker_alpha`) do not apply
 | `route_k` | `max(2 * k, 10)` | Candidate count per route; can be overridden in `search()`. |
 | `include_entity_neighbors` | `True` | Enables expansion through a shared entity. |
 | `entity_neighbor_limit` | `5` | Maximum entity-linked chunks kept per seed after relevance ranking. |
-| `entity_pivot_limit` | `1` | Highest-degree entity pivots used for relationship traversal; zero disables it. |
+| `entity_pivot_limit` | `3` | Highest-degree entity pivots used for relationship traversal; zero disables it. |
 | `entity_relationship_hops` | `1` | Entity-to-entity hops when the related limits are nonzero. |
 | `relationship_neighbor_limit` | `5` | Maximum relationship-linked chunks kept after relevance ranking. |
 | `graph_hops` | `0` only | Sequential `NEXT_CHUNK` traversal is not implemented; another value raises `ValueError`. |
 
-The relationship controls default to one pivot, one hop, and five related chunks per seed.
+The relationship controls default to three pivots, one hop, and five related chunks per seed.
 Set any of them to `0` to disable that part of the query.
 `include_entity_neighbors=False` disables direct shared-entity expansion; relationship expansion is controlled separately.
 
 For example, assume a vector search selects a chunk about “Acme launches Product X.”
-The graph route selects Acme as its single highest-degree pivot entity.
+The graph route selects Acme when it is one of the three highest-degree pivot entities.
 It follows one owned entity relationship from Acme to Product X.
 It then finds collection chunks linked to Product X and keeps up to five after relevance ranking.
 
