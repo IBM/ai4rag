@@ -107,6 +107,7 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	APPS_DOMAIN=$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}') && \
 	[ -f agent_config.json ] || { echo "ERROR: agent_config.json not found."; exit 1; } && \
 	AGENT_CONFIG_B64=$$(base64 < agent_config.json | tr -d '\n') && \
+	VECTOR_STORE_PROVIDER=$$(python3 -c 'import json; print(json.load(open("agent_config.json"))["vector_store"]["provider_type"])') && \
 	MAAS_SECRET_NAME=$$(sed -n 's/^[[:space:]]*maas_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml) && \
 	DB_SECRET_NAME=$${DB_SECRET_NAME:-$$(sed -n 's/^[[:space:]]*db_secret_name:[[:space:]]*"\([^"\]*\)".*/\1/p' values.yaml)} && \
 	secret_value() { oc get secret "$$1" -n "$$NS" -o jsonpath="{.data.$$2}" 2>/dev/null | base64 -d; } && \
@@ -115,10 +116,17 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_API_KEY); [ -z "$$value" ] || MAAS_API_KEY="$$value"; \
 	fi && \
 	if [ -n "$$DB_SECRET_NAME" ] && [ "$$DB_SECRET_NAME" != "__DB_SECRET_NAME__" ]; then \
-	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD; do \
+	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD; do \
 	    value=$$(secret_value "$$DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
 	  done; \
-	fi && export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_DATABASE PGVECTOR_USER PGVECTOR_PASSWORD
+	fi && \
+	if [ "$$VECTOR_STORE_PROVIDER" = "pgvector" ]; then \
+	  [ -n "$$PGVECTOR_HOST" ] || { echo "ERROR: PGVECTOR_HOST is required for pgvector deployment."; exit 1; }; \
+	  PGVECTOR_PORT=$${PGVECTOR_PORT:-5432}; \
+	  PGVECTOR_DB=$${PGVECTOR_DB:-postgres}; \
+	  PGVECTOR_USER=$${PGVECTOR_USER:-postgres}; \
+	fi && \
+	export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD
 
 build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	@oc new-build --strategy=docker --binary \
@@ -149,6 +157,11 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	    --env "AGENT_CONFIG_B64=$$AGENT_CONFIG_B64" \
 	    --env "MILVUS_URI=$$MILVUS_URI" \
 	    --env "MILVUS_TOKEN=$$MILVUS_TOKEN" \
+	    --env "PGVECTOR_HOST=$$PGVECTOR_HOST" \
+	    --env "PGVECTOR_PORT=$$PGVECTOR_PORT" \
+	    --env "PGVECTOR_DB=$$PGVECTOR_DB" \
+	    --env "PGVECTOR_USER=$$PGVECTOR_USER" \
+	    --env "PGVECTOR_PASSWORD=$$PGVECTOR_PASSWORD" \
 	    --env "PORT=8080" </dev/null & \
 	  CPID=$$!; ( sleep 80 && kill $$CPID 2>/dev/null ) & TPID=$$!; \
 	  wait $$CPID 2>/dev/null; RC=$$?; kill $$TPID 2>/dev/null; wait $$TPID 2>/dev/null; \
@@ -166,21 +179,28 @@ wait-sandbox: ## Poll until sandbox phase is Ready (max 150s)
 	  done; \
 	  echo "ERROR: sandbox not ready after 150s"; exit 1
 
-setup-egress: ## Add MaaS + Milvus egress policies for agent Python binary
+setup-egress: ## Add MaaS + vector database egress policies for agent Python binary
 	@$(_openshell-env) && \
 	  echo "==> Using agent Python binary: /usr/bin/python3.12" && \
 	  PYTHON_BIN="/usr/bin/python3.12" && \
 	  echo "==> Adding egress policy for MaaS..." && \
 	  MAAS_HOST=$$(echo "$$MAAS_BASE_URL" | sed -E 's|^https?://||;s|/.*||') && \
 	  openshell policy update "$$SANDBOX" --add-endpoint "$$MAAS_HOST:443" --binary "$$PYTHON_BIN" --wait && \
-	  echo "==> Adding egress policies for K8s API + Milvus..." && \
-	  MILVUS_HOSTPORT=$$(echo "$$MILVUS_URI" | sed -E 's|^https?://||;s|/.*||') && \
-	  MILVUS_HOST_ONLY=$$(echo "$$MILVUS_HOSTPORT" | cut -d: -f1) && \
-	  MILVUS_PORT_ONLY=$$(echo "$$MILVUS_HOSTPORT" | cut -d: -f2) && \
+	  echo "==> Adding egress policies for K8s API + $$VECTOR_STORE_PROVIDER..." && \
+	  if [ "$$VECTOR_STORE_PROVIDER" = "pgvector" ]; then \
+	    DB_HOST=$${PGVECTOR_HOST:-localhost}; DB_PORT=$${PGVECTOR_PORT:-5432}; \
+	  elif [ "$$VECTOR_STORE_PROVIDER" = "milvus" ]; then \
+	    MILVUS_HOSTPORT=$$(echo "$$MILVUS_URI" | sed -E 's|^https?://||;s|/.*||'); \
+	    DB_HOST=$$(echo "$$MILVUS_HOSTPORT" | cut -d: -f1); \
+	    DB_PORT=$$(echo "$$MILVUS_HOSTPORT" | cut -d: -f2); \
+	  else \
+	    echo "ERROR: Unsupported deployment provider $$VECTOR_STORE_PROVIDER"; exit 1; \
+	  fi && \
+	  [ -n "$$DB_HOST" ] && [ -n "$$DB_PORT" ] || { echo "ERROR: Vector database host and port are required."; exit 1; } && \
 	  POLICY_FILE=$$(mktemp /tmp/openshell-policy.XXXXXX) && \
-	  export MILVUS_H="$$MILVUS_HOST_ONLY" MILVUS_P="$$MILVUS_PORT_ONLY" PY_BIN="$$PYTHON_BIN" && \
+	  export DB_HOST DB_PORT PY_BIN="$$PYTHON_BIN" && \
 	  openshell policy get "$$SANDBOX" --full -o json 2>/dev/null | sed -n '/^{/,$$p' | \
-	    python3 -c 'import json,sys,os;d=json.load(sys.stdin);p=d["policy"];p["network_policies"]["k8s_api"]={"name":"k8s-api","endpoints":[{"host":"kubernetes.default.svc","port":443,"tls":"skip"}],"binaries":[{"path":os.environ["PY_BIN"]}]};p["network_policies"]["milvus_grpc"]={"name":"milvus-grpc","endpoints":[{"host":os.environ["MILVUS_H"],"port":int(os.environ["MILVUS_P"]),"tls":"skip"}],"binaries":[{"path":os.environ["PY_BIN"]}]};json.dump(p,sys.stdout,indent=2)' > "$$POLICY_FILE" && \
+	    python3 -c 'import json,sys,os;d=json.load(sys.stdin);p=d["policy"];p["network_policies"]["k8s_api"]={"name":"k8s-api","endpoints":[{"host":"kubernetes.default.svc","port":443,"tls":"skip"}],"binaries":[{"path":os.environ["PY_BIN"]}]};p["network_policies"]["vector_db"]={"name":"vector-db","endpoints":[{"host":os.environ["DB_HOST"],"port":int(os.environ["DB_PORT"]),"tls":"skip"}],"binaries":[{"path":os.environ["PY_BIN"]}]};json.dump(p,sys.stdout,indent=2)' > "$$POLICY_FILE" && \
 	  openshell policy set "$$SANDBOX" --policy "$$POLICY_FILE" --wait && \
 	  rm -f "$$POLICY_FILE" && \
 	  echo "Done!"
@@ -201,6 +221,7 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  echo "==> Stopping any running agent..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c "pkill -f '[/]usr/bin/python3.12 -m uvicorn auth_wrapper:app'" 2>/dev/null || true && \
 	  sleep 5 && \
+	  PGVECTOR_PASSWORD_B64=$$(printf '%s' "$$PGVECTOR_PASSWORD" | base64 | tr -d '\n') && \
 	  echo "==> Starting agent (auth: enabled)..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c '\
 	    printf %s "'"$$K8S_CA_B64"'" | base64 -d > /sandbox/k8s-ca.crt && \
@@ -211,6 +232,11 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
 	    export MILVUS_SERVER_CERT="'"$$MILVUS_SERVER_CERT"'" && \
 	    export MILVUS_SERVER_NAME="'"$$MILVUS_SERVER_NAME"'" && \
+	    export PGVECTOR_HOST="'"$$PGVECTOR_HOST"'" && \
+	    export PGVECTOR_PORT="'"$$PGVECTOR_PORT"'" && \
+	    export PGVECTOR_DB="'"$$PGVECTOR_DB"'" && \
+	    export PGVECTOR_USER="'"$$PGVECTOR_USER"'" && \
+	    export PGVECTOR_PASSWORD=$$(printf %s "'"$$PGVECTOR_PASSWORD_B64"'" | base64 -d) && \
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
 	    export K8S_REVIEWER_TOKEN="'"$$K8S_REVIEWER_TOKEN"'" && \
 	    export K8S_CA_PATH=/sandbox/k8s-ca.crt && \

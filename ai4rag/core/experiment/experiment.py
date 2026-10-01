@@ -387,6 +387,7 @@ class AI4RAGExperiment:
             foundation_models=foundation_models,
             embedding_models=embedding_models,
             metric=Metrics.OVERALL_SCORE,
+            rag_template=self.rag_template,
         )
         mps.evaluate_patterns()
 

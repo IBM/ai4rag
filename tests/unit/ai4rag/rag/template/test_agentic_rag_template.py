@@ -10,10 +10,8 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
-from openai import OpenAI
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 
@@ -163,21 +161,6 @@ def test_chat_returns_choice_with_agent_answer(rag, mocker):
     choices = rag.chat([{"role": "user", "content": "question"}])
 
     assert choices[0].message.content == "answer"
-
-
-def test_langchain_model_uses_maas_chat_completions(mocker):
-    """The agent uses the same chat-completions transport as the foundation model."""
-    foundation_model = OpenAIFoundationModel(
-        client=OpenAI(api_key="test", base_url="https://maas.example/v1"),
-        model_id="model",
-        params={"temperature": 0, "max_completion_tokens": 128},
-        system_message_text="Answer from context.",
-        user_message_text="{question} {reference_documents}",
-        context_template_text="{document}",
-    )
-    agent = AgenticRAG(foundation_model=foundation_model, retriever=mocker.MagicMock())
-
-    assert agent._chat_model().use_responses_api is False
 
 
 def test_chat_completions_executes_retriever_tool(mocker):

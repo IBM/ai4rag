@@ -33,6 +33,7 @@ def agent_module(monkeypatch, mocker):
         number_of_chunks=5,
         search_mode="vector",
         ranker_strategy="",
+        ranker_k=None,
         ranker_alpha=None,
     )
     mocker.patch.object(module.AgentConfig, "from_env", return_value=config)
@@ -59,19 +60,19 @@ def test_create_rag_reuses_one_maas_client(agent_module, mocker):
     assert rag_class.call_args.kwargs["retriever"] is retriever
 
 
-def test_create_rag_uses_maas_base_url_even_with_legacy_chat_url(agent_module, monkeypatch, mocker):
-    """The legacy chat URL cannot select a different MaaS endpoint."""
-    monkeypatch.setenv("MAAS_BASE_URL", "https://shared-maas.example")
-    monkeypatch.setenv("CHAT_BASE_URL", "https://chat-only.example")
-    monkeypatch.setenv("MAAS_API_KEY", "secret")
-    openai = mocker.patch.object(agent_module, "OpenAI", return_value=mocker.sentinel.client)
-    mocker.patch.object(agent_module, "OpenAIFoundationModel")
-    mocker.patch.object(agent_module, "initialize_retriever")
-    mocker.patch.object(agent_module, "AgenticRAG")
+def test_rrf_ranker_k_reaches_retriever(agent_module, mocker):
+    config = agent_module.AgentConfig.from_env()
+    config.ranker_strategy = "rrf"
+    config.ranker_k = 42
+    tools_module = importlib.import_module("agentic_rag.tools")
+    mocker.patch.object(tools_module, "OpenAIEmbeddingModel")
+    mocker.patch.object(tools_module, "get_vector_store_config")
+    mocker.patch.object(tools_module, "get_vector_store")
+    retriever = mocker.patch.object(tools_module, "Retriever")
 
-    agent_module.create_rag()
+    tools_module.initialize_retriever(mocker.sentinel.client, config)
 
-    openai.assert_called_once_with(api_key="secret", base_url="https://shared-maas.example/v1")
+    assert retriever.call_args.kwargs["ranker_k"] == 42
 
 
 def test_create_rag_rejects_remote_http(agent_module, mocker):

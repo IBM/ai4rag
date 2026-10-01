@@ -43,6 +43,7 @@ class RetrievalConfig(TypedDict):
     number_of_chunks: int
     search_mode: str
     ranker_strategy: str
+    ranker_k: int | None
     ranker_alpha: float | None
 
 
@@ -122,6 +123,7 @@ class AgentConfig:
     number_of_chunks: int
     search_mode: str
     ranker_strategy: str
+    ranker_k: int | None
     ranker_alpha: float | None
     port: int
 
@@ -152,6 +154,7 @@ class AgentConfig:
                 number_of_chunks=int(retrieval["number_of_chunks"]),
                 search_mode=retrieval["search_mode"],
                 ranker_strategy=retrieval["ranker_strategy"],
+                ranker_k=int(retrieval["ranker_k"]) if retrieval["ranker_k"] is not None else None,
                 ranker_alpha=float(retrieval["ranker_alpha"]) if retrieval["ranker_alpha"] is not None else None,
                 port=int(getenv("PORT", file_config["runtime"]["port"])),
             )

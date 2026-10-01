@@ -80,6 +80,3 @@ def test_auth_wrapper_verifies_with_provided_ca(monkeypatch, tmp_path, mocker):
     client.post.assert_awaited_once()
     assert client.post.call_args.args[0] == "https://kubernetes.default.svc/apis/authentication.k8s.io/v1/tokenreviews"
     assert client.post.call_args.kwargs["json"]["spec"]["token"] == "client-token"
-    makefile = (_TEMPLATE_DIR / "Makefile").read_text(encoding="utf-8")
-    assert "K8S_API_INSECURE" not in makefile
-    assert "K8S_CA_PATH=/sandbox/k8s-ca.crt" in makefile

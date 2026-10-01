@@ -48,5 +48,6 @@ def initialize_retriever(
         number_of_chunks=config.number_of_chunks,
         search_mode=config.search_mode,
         ranker_strategy=config.ranker_strategy or None,
+        ranker_k=config.ranker_k,
         ranker_alpha=config.ranker_alpha,
     )

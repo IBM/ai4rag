@@ -120,6 +120,16 @@ class TestRAGTemplateSelection:
     def test_accepts_another_rag_template(self):
         assert _build_experiment(rag_template=SimpleRAG).rag_template is SimpleRAG
 
+    def test_preselection_receives_selected_rag_template(self, mocker):
+        experiment = _build_experiment(rag_template=SimpleRAG)
+        selector_class = mocker.patch("ai4rag.core.experiment.mps.ModelsPreSelector")
+        selector = selector_class.return_value
+        selector.select_models.return_value = {"foundation_models": [], "embedding_models": []}
+
+        experiment.run_pre_selection(foundation_models=[], embedding_models=[])
+
+        assert selector_class.call_args.kwargs["rag_template"] is SimpleRAG
+
     @pytest.mark.parametrize("invalid_template", ["SimpleRAG", object])
     def test_rejects_non_template_classes(self, invalid_template):
         with pytest.raises(TypeError, match="rag_template must be a BaseRAGTemplate subclass"):

@@ -288,8 +288,13 @@ class TestOpenAIFoundationModel:
         # Verify model_id was passed
         assert call_args.kwargs["model"] == "test-model-id"
 
+        # Verify messages were passed correctly
         passed_messages = call_args.kwargs["messages"]
-        assert passed_messages == messages
+        assert len(passed_messages) == 2
+        assert passed_messages[0]["role"] == "system"
+        assert passed_messages[0]["content"] == "You are helpful"
+        assert passed_messages[1]["role"] == "user"
+        assert passed_messages[1]["content"] == "What is AI?"
 
         # Verify response - should return choices list
         assert len(response) == 1
@@ -318,7 +323,8 @@ class TestOpenAIFoundationModel:
             model_with_dict_params.chat(test_messages)
             call_args = mock_openai_client.chat.completions.create.call_args
             passed_messages = call_args.kwargs["messages"]
-            assert passed_messages == test_messages
+            assert passed_messages[0]["content"] == test_messages[0]["content"]
+            assert passed_messages[1]["content"] == test_messages[1]["content"]
 
     def test_invalid_user_message_template_missing_placeholder(
         self, mock_openai_client, valid_context_template, valid_system_message

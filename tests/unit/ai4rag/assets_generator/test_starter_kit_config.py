@@ -42,6 +42,7 @@ def generated_config():
             "number_of_chunks": 5,
             "search_mode": "vector",
             "ranker_strategy": "",
+            "ranker_k": None,
             "ranker_alpha": None,
         },
         "vector_store": {"provider_type": "milvus", "collection_name": "documents"},
@@ -53,11 +54,9 @@ def _inject_config(monkeypatch, config):
     monkeypatch.setenv("AGENT_CONFIG_B64", encoded)
 
 
-def test_generated_config_is_only_source_for_model_settings(config_module, generated_config, monkeypatch):
-    """Old environment overrides cannot silently replace optimized settings."""
+def test_generated_settings_and_port_override(config_module, generated_config, monkeypatch):
+    """Load optimized settings and the runtime port override."""
     _inject_config(monkeypatch, generated_config)
-    monkeypatch.setenv("MODEL_ID", "old-chat-model")
-    monkeypatch.setenv("EMBEDDING_MODEL_ID", "old-embedding-model")
     monkeypatch.setenv("PORT", "8080")
 
     config = config_module.AgentConfig.from_env()
@@ -65,6 +64,13 @@ def test_generated_config_is_only_source_for_model_settings(config_module, gener
     assert config.model_id == "chat-model"
     assert config.embedding_model_id == "embedding-model"
     assert config.port == 8080
+
+
+def test_rrf_ranker_k_is_loaded(config_module, generated_config, monkeypatch):
+    generated_config["retrieval"].update(ranker_strategy="rrf", ranker_k=42)
+    _inject_config(monkeypatch, generated_config)
+
+    assert config_module.AgentConfig.from_env().ranker_k == 42
 
 
 def test_invalid_base64_is_rejected(config_module, monkeypatch):

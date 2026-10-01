@@ -4,7 +4,6 @@
 # -----------------------------------------------------------------------------
 import importlib.resources
 import json
-import re
 import shutil
 import tempfile
 import zipfile
@@ -13,11 +12,6 @@ from typing import Any
 
 _CONFIGURABLE_FILES = frozenset({"values.yaml", "agent_config.json", "README.md"})
 _IGNORED_TEMPLATE_NAMES = frozenset({".DS_Store", ".env", ".venv", "__pycache__"})
-
-_PROVIDER_BLOCK_PATTERN = re.compile(
-    r"^# <<< BEGIN (?P<provider>\w+) >>>\n(?P<body>.*?)^# <<< END \1 >>>\n",
-    re.MULTILINE | re.DOTALL,
-)
 
 
 def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
@@ -59,6 +53,7 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     mapping["__NUMBER_OF_CHUNKS__"] = _value(ret.get("number_of_chunks"), "5")
     mapping["__SEARCH_MODE__"] = _value(ret.get("search_mode"))
     mapping["__RANKER_STRATEGY__"] = _value(ret.get("ranker_strategy"))
+    mapping["__RANKER_K__"] = _value(ret.get("ranker_k"))
     mapping["__RANKER_ALPHA__"] = _value(ret.get("ranker_alpha"))
 
     vs = settings.get("store_binding", {})
@@ -123,6 +118,7 @@ def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
             "number_of_chunks": int(mapping["__NUMBER_OF_CHUNKS__"] or 5),
             "search_mode": mapping["__SEARCH_MODE__"] or "vector",
             "ranker_strategy": mapping["__RANKER_STRATEGY__"],
+            "ranker_k": int(mapping["__RANKER_K__"]) if mapping["__RANKER_K__"] else None,
             "ranker_alpha": float(mapping["__RANKER_ALPHA__"]) if mapping["__RANKER_ALPHA__"] else None,
         },
         "vector_store": {
@@ -131,21 +127,6 @@ def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
         },
     }
     file_path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-
-
-def _apply_provider_conditionals(file_path: Path, active_provider: str) -> None:
-    """Keep blocks for *active_provider* and strip blocks for others."""
-    content = file_path.read_text(encoding="utf-8")
-
-    def _replacer(match: re.Match) -> str:
-        provider = match.group("provider").lower()
-        body = match.group("body")
-        if provider == active_provider.lower():
-            return body
-        return ""
-
-    content = _PROVIDER_BLOCK_PATTERN.sub(_replacer, content)
-    file_path.write_text(content, encoding="utf-8")
 
 
 def generate_starter_kit(
@@ -172,7 +153,6 @@ def generate_starter_kit(
     output_dir.mkdir(parents=True, exist_ok=True)
 
     mapping = _create_starter_kit_mapping(output_data)
-    active_provider = mapping.get("__PROVIDER_TYPE__", "milvus")
 
     template_root = importlib.resources.files("ai4rag.assets_generator").joinpath(
         "starter_kit_templates", "agentic_rag"
@@ -191,7 +171,6 @@ def generate_starter_kit(
                     _write_agent_config_file(target, mapping)
                 else:
                     _replace_placeholders(target, mapping)
-                _apply_provider_conditionals(target, active_provider)
 
         zip_path = output_dir / "starter_kit.zip"
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:

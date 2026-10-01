@@ -23,6 +23,7 @@
     "number_of_chunks": "__NUMBER_OF_CHUNKS__",
     "search_mode": "__SEARCH_MODE__",
     "ranker_strategy": "__RANKER_STRATEGY__",
+    "ranker_k": "__RANKER_K__",
     "ranker_alpha": "__RANKER_ALPHA__"
   },
   "vector_store": {
