@@ -15,10 +15,12 @@ dependencies = [
     { name = "ai4rag" },
     { name = "fastapi" },
     { name = "flask" },
+    { name = "httpx2" },
+    { name = "langchain" },
+    { name = "langchain-openai" },
     { name = "openai" },
     { name = "pymilvus" },
     { name = "python-dotenv" },
-    { name = "requests" },
     { name = "uvicorn" },
 ]
 
@@ -32,11 +34,13 @@ requires-dist = [
     { name = "ai4rag", specifier = "==0.18.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "flask", specifier = ">=3.1" },
+    { name = "httpx2", specifier = ">=2.12,<3" },
+    { name = "langchain", specifier = ">=1.4,<2" },
+    { name = "langchain-openai", specifier = ">=1.6,<2" },
     { name = "openai", specifier = ">=2.0" },
     { name = "pymilvus", specifier = ">=3.0,<4" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "python-dotenv", specifier = ">=1.1" },
-    { name = "requests", specifier = ">=2.32" },
     { name = "uvicorn", specifier = ">=0.34" },
 ]
 provides-extras = ["dev"]

@@ -5,23 +5,27 @@
 """Thin auth layer that wraps main:app without modifying agent code.
 
 Authenticates requests using K8s ServiceAccount tokens via TokenReview API.
-Set ``K8S_API_URL`` and ``K8S_REVIEWER_TOKEN`` to enable auth.
-When not configured, every request passes through unchanged.
+``K8S_API_URL`` and ``K8S_REVIEWER_TOKEN`` are required.
 
 Usage:
     K8S_API_URL=https://... K8S_REVIEWER_TOKEN=... uvicorn auth_wrapper:app --host 0.0.0.0 --port 8080
 """
 
-import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from os import getenv
 from pathlib import Path
+from typing import Any
 
-import requests
+import httpx2
+from fastapi import Request
+from fastapi.responses import JSONResponse
 from main import app  # noqa: F401 — re-exported for uvicorn
-from starlette.requests import Request
-from starlette.responses import JSONResponse
-from starlette.types import ASGIApp, Receive, Scope, Send
+
+type ASGIMessage = dict[str, Any]
+type Receive = Callable[[], Awaitable[ASGIMessage]]
+type Send = Callable[[ASGIMessage], Awaitable[None]]
+type ASGIApp = Callable[[ASGIMessage, Receive, Send], Awaitable[None]]
 
 log = logging.getLogger("auth_wrapper")
 
@@ -50,21 +54,19 @@ async def _validate_k8s_token(token: str) -> bool:
     if not (_K8S_API_URL and _K8S_REVIEWER_TOKEN):
         return False
     try:
-        resp = await asyncio.to_thread(
-            requests.post,
-            f"{_K8S_API_URL}/apis/authentication.k8s.io/v1/tokenreviews",
-            json={
-                "apiVersion": "authentication.k8s.io/v1",
-                "kind": "TokenReview",
-                "spec": {"token": token},
-            },
-            headers={
-                "Authorization": f"Bearer {_K8S_REVIEWER_TOKEN}",
-                "Content-Type": "application/json",
-            },
-            verify=_K8S_CA_PATH,
-            timeout=10.0,
-        )
+        async with httpx2.AsyncClient(verify=_K8S_CA_PATH, timeout=10.0) as client:
+            resp = await client.post(
+                f"{_K8S_API_URL}/apis/authentication.k8s.io/v1/tokenreviews",
+                json={
+                    "apiVersion": "authentication.k8s.io/v1",
+                    "kind": "TokenReview",
+                    "spec": {"token": token},
+                },
+                headers={
+                    "Authorization": f"Bearer {_K8S_REVIEWER_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+            )
         if resp.status_code == 201:
             status = resp.json().get("status", {})
             if status.get("authenticated"):
@@ -88,7 +90,7 @@ class _BearerAuthMiddleware:
     def __init__(self, wrapped_app: ASGIApp) -> None:
         self.app = wrapped_app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+    async def __call__(self, scope: ASGIMessage, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return

@@ -11,10 +11,12 @@ requires-python = ">=3.12,<3.15"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn>=0.34",
+    "langchain>=1.4,<2",
+    "langchain-openai>=1.6,<2",
     "pymilvus>=3.0,<4",
     "ai4rag==0.18.0",
     "flask>=3.1",
-    "requests>=2.32",
+    "httpx2>=2.12,<3",
     "python-dotenv>=1.1",
     "openai>=2.0",
 ]

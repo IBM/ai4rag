@@ -105,8 +105,8 @@ async def _invoke_with_retry(messages: list[dict[str, str]]) -> dict[str, Any]:
     last_exception: Exception = RuntimeError("no invocation attempts were made")
     for attempt in range(1, _MAX_INVOKE_ATTEMPTS + 1):
         try:
-            result = await asyncio.to_thread(RAG.respond, messages)
-            return {"content": result.output_text or "", "context": []}
+            choices = await asyncio.to_thread(RAG.chat, messages)
+            return {"content": choices[0].message.content or "", "context": []}
         except _RETRYABLE_EXCEPTIONS as exc:
             last_exception = exc
             if attempt < _MAX_INVOKE_ATTEMPTS:

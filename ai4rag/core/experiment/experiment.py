@@ -48,6 +48,7 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.search_space.src.parameter import Parameter
@@ -126,6 +127,9 @@ class AI4RAGExperiment:
     inference_max_threads : int, default=10
         Defines the number of threads to use during generation model inference.
 
+    rag_template : type[BaseRAGTemplate], default=AgenticRAG
+        RAG template class used to evaluate each pattern.
+
     Attributes
     ----------
     results : ExperimentResults
@@ -163,9 +167,10 @@ class AI4RAGExperiment:
         self.n_mps_embedding_models = kwargs.pop(
             "n_mps_embedding_models", PreSelectorConstants.DEFAULT_N_EMBEDDING_MODELS
         )
-        self.known_observations: list[dict] | None = kwargs.pop(
-            "known_observations", None
-        )
+        self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
+        self.rag_template: type[BaseRAGTemplate] = kwargs.pop("rag_template", AgenticRAG)
+        if not isinstance(self.rag_template, type) or not issubclass(self.rag_template, BaseRAGTemplate):
+            raise TypeError("rag_template must be a BaseRAGTemplate subclass.")
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -195,9 +200,7 @@ class AI4RAGExperiment:
                         logger.warning("Document at index %s has no name set.", idx)
                     proper_docs.append(doc)
                 else:
-                    raise ValueError(
-                        f"Incorrect type of document provided at index: {idx}. Expected DoclingDocument."
-                    )
+                    raise ValueError(f"Incorrect type of document provided at index: {idx}. Expected DoclingDocument.")
 
         self._documents = proper_docs
 
@@ -281,9 +284,7 @@ class AI4RAGExperiment:
                     f"Each metric must be a RAGMetric instance selected from Metrics, got {type(item).__name__}."
                 )
             if item not in Metrics:
-                raise ValueError(
-                    f"Unknown RAGMetric '{item.name}'. Select a metric from Metrics."
-                )
+                raise ValueError(f"Unknown RAGMetric '{item.name}'. Select a metric from Metrics.")
             resolved.append(item)
 
         if not resolved:
@@ -381,9 +382,7 @@ class AI4RAGExperiment:
         from ai4rag.core.experiment.mps import ModelsPreSelector
 
         mps = ModelsPreSelector(
-            benchmark_data=self.benchmark_data.get_random_sample(
-                n_records=n_records, random_seed=random_seed
-            ),
+            benchmark_data=self.benchmark_data.get_random_sample(n_records=n_records, random_seed=random_seed),
             documents=self.documents.copy(),
             foundation_models=foundation_models,
             embedding_models=embedding_models,
@@ -405,9 +404,7 @@ class AI4RAGExperiment:
         return selected_models
 
     # pylint: disable=too-many-locals, too-many-statements, too-many-branches
-    def run_single_evaluation(
-        self, rag_params: RAGParamsType, publish_pattern: bool = True
-    ) -> float:
+    def run_single_evaluation(self, rag_params: RAGParamsType, publish_pattern: bool = True) -> float:
         """
         Evaluate a single RAG configuration and return its score using provided documents.
 
@@ -429,9 +426,7 @@ class AI4RAGExperiment:
         start_time = time.time()
 
         chunking_params = get_chunking_params(rag_params)
-        chunking_params["include_metadata"] = (
-            chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD) == "hybrid"
-        )
+        chunking_params["include_metadata"] = chunking_params.get(AI4RAGParamNames.CHUNKING_METHOD) == "hybrid"
 
         retrieval_params = get_retrieval_params(rag_params)
 
@@ -439,9 +434,7 @@ class AI4RAGExperiment:
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
 
         embedding_params_dict = (
-            asdict(embedding_model.params)
-            if is_dataclass(embedding_model.params)
-            else embedding_model.params
+            asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
         )
         indexing_params = {
             "chunking": chunking_params,
@@ -484,13 +477,9 @@ class AI4RAGExperiment:
             return result_score
 
         pattern_name = self._create_pattern_name()
-        logger.info(
-            "Using name '%s' for the currently evaluated pattern.", pattern_name
-        )
+        logger.info("Using name '%s' for the currently evaluated pattern.", pattern_name)
 
-        collection_name = self._get_reusable_collection_name(
-            indexing_params=indexing_params
-        )
+        collection_name = self._get_reusable_collection_name(indexing_params=indexing_params)
 
         vector_store_config = self.vector_store_config
         if isinstance(vector_store_config, PGVectorConfig):
@@ -500,9 +489,7 @@ class AI4RAGExperiment:
             # a caller who deliberately raised pool_max_size (e.g. to share the store
             # with other concurrent work) must keep that headroom, so take the larger
             # of the configured size and this run's inference concurrency.
-            pool_max_size = max(
-                vector_store_config.pool_max_size, self.inference_max_threads
-            )
+            pool_max_size = max(vector_store_config.pool_max_size, self.inference_max_threads)
             if pool_max_size != vector_store_config.pool_max_size:
                 logger.info(
                     "Raising PGVector pool_max_size from %d to %d to match inference_max_threads (%d).",
@@ -516,9 +503,7 @@ class AI4RAGExperiment:
                     vector_store_config.pool_max_size,
                     self.inference_max_threads,
                 )
-            vector_store_config = replace(
-                vector_store_config, pool_max_size=pool_max_size
-            )
+            vector_store_config = replace(vector_store_config, pool_max_size=pool_max_size)
 
         try:
             vector_store = get_vector_store(
@@ -573,9 +558,7 @@ class AI4RAGExperiment:
                 try:
                     vector_store.add_documents(chunked_documents)
                 except Exception as exc:
-                    raise IndexingError(
-                        exc, collection_name, embedding_model.model_id
-                    ) from exc
+                    raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
             else:
                 self.event_handler.on_status_change(
@@ -596,7 +579,7 @@ class AI4RAGExperiment:
                 ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
             )
 
-            rag_pattern = AgenticRAG(
+            rag_pattern = self.rag_template(
                 foundation_model=foundation_model,
                 retriever=retriever,
             )
@@ -628,9 +611,7 @@ class AI4RAGExperiment:
 
         final_score = self._resolve_optimization_score(result_scores, pattern_name)
 
-        logger.info(
-            "Calculated optimization score for '%s': %s", pattern_name, final_score
-        )
+        logger.info("Calculated optimization score for '%s': %s", pattern_name, final_score)
 
         evaluation_result = EvaluationResult(
             pattern_name=pattern_name,
@@ -648,16 +629,10 @@ class AI4RAGExperiment:
 
         logger.info(
             "Evaluation scores: %s",
-            {
-                el.get("question"): el.get("metrics")
-                for el in evaluation_results_json
-                if isinstance(el, dict)
-            },
+            {el.get("question"): el.get("metrics") for el in evaluation_results_json if isinstance(el, dict)},
         )
 
-        iteration = len(self.results) + (
-            len(self.known_observations) if self.known_observations else 0
-        )
+        iteration = len(self.results) + (len(self.known_observations) if self.known_observations else 0)
         if publish_pattern:
             try:
                 self._stream_finished_pattern(
@@ -675,9 +650,7 @@ class AI4RAGExperiment:
 
         return final_score
 
-    def _resolve_optimization_score(
-        self, result_scores: EvaluationMetricsResult, pattern_name: str
-    ) -> float | None:
+    def _resolve_optimization_score(self, result_scores: EvaluationMetricsResult, pattern_name: str) -> float | None:
         """Extract the optimization metric's mean score from a pattern's results.
 
         Matches on both name and evaluator: a metric name (e.g. ``"faithfulness"``)
@@ -708,15 +681,12 @@ class AI4RAGExperiment:
             (
                 r
                 for r in result_scores["metrics"]
-                if r["name"] == self.optimization_metric.name
-                and r["evaluator"] == self.optimization_metric.evaluator
+                if r["name"] == self.optimization_metric.name and r["evaluator"] == self.optimization_metric.evaluator
             ),
             None,
         )
         if optimization_metric_result is None:
-            available = [
-                f"{m['name']} ({m['evaluator']})" for m in result_scores["metrics"]
-            ]
+            available = [f"{m['name']} ({m['evaluator']})" for m in result_scores["metrics"]]
             raise RAGExperimentError(
                 f"Optimization metric '{self.optimization_metric.name}' "
                 f"({self.optimization_metric.evaluator}) not found in evaluation results. "
@@ -757,8 +727,7 @@ class AI4RAGExperiment:
             try:
                 return self.run_single_evaluation(
                     space,
-                    publish_pattern=not is_gam_optimizer
-                    or self._optimization_phase != "warm_start",
+                    publish_pattern=not is_gam_optimizer or self._optimization_phase != "warm_start",
                 )
             except AI4RAGError as err:
                 msg = self._exception_handler.handle_exception(err)
@@ -768,16 +737,11 @@ class AI4RAGExperiment:
 
         # MPS - models pre-selection based on sample evaluation.
         # Run if there are more than 3 foundation models or more than 2 embedding models.
-        foundation_models = list(
-            self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values
-        )
-        embedding_models = list(
-            self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values
-        )
+        foundation_models = list(self.search_space[AI4RAGParamNames.FOUNDATION_MODEL].values)
+        embedding_models = list(self.search_space[AI4RAGParamNames.EMBEDDING_MODEL].values)
 
         if (
-            len(embedding_models) > self.n_mps_embedding_models
-            or len(foundation_models) > self.n_mps_foundation_models
+            len(embedding_models) > self.n_mps_embedding_models or len(foundation_models) > self.n_mps_foundation_models
         ) and not kwargs.get("skip_mps", False):
             selected_models = self.run_pre_selection(
                 foundation_models=foundation_models, embedding_models=embedding_models
@@ -829,15 +793,12 @@ class AI4RAGExperiment:
         warm_start_evaluations = [
             evaluation
             for evaluation in evaluations
-            if evaluation[0].pattern_name.endswith("-warm-start")
-            and evaluation[0].final_score is not None
+            if evaluation[0].pattern_name.endswith("-warm-start") and evaluation[0].final_score is not None
         ]
         if not warm_start_evaluations:
             return
 
-        result, evaluation_data = max(
-            warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score
-        )
+        result, evaluation_data = max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score)
         evaluation_results_json = self.results.create_evaluation_results_json(
             evaluation_data=evaluation_data,
             evaluation_result=result,
@@ -868,37 +829,25 @@ class AI4RAGExperiment:
             Prepared partial payload for the streamed content.
         """
         retrieval_payload = {
-            "method": evaluation_result.rag_params["retrieval"][
-                AI4RAGParamNames.RETRIEVAL_METHOD
-            ],
-            "number_of_chunks": evaluation_result.rag_params["retrieval"][
-                AI4RAGParamNames.NUMBER_OF_CHUNKS
-            ],
-            "search_mode": evaluation_result.rag_params["retrieval"].get(
-                AI4RAGParamNames.SEARCH_MODE, "vector"
-            ),
+            "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
+            "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
+            "search_mode": evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.SEARCH_MODE, "vector"),
         }
 
         if evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]:
-            retrieval_payload["window_size"] = evaluation_result.rag_params[
-                "retrieval"
-            ][AI4RAGParamNames.WINDOW_SIZE]
+            retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
 
         if retrieval_payload["search_mode"] == "hybrid":
-            ranker_strategy = evaluation_result.rag_params["retrieval"].get(
-                AI4RAGParamNames.RANKER_STRATEGY
-            )
+            ranker_strategy = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_STRATEGY)
             retrieval_payload["ranker_strategy"] = ranker_strategy
 
             if ranker_strategy == "rrf":
-                retrieval_payload["ranker_k"] = evaluation_result.rag_params[
-                    "retrieval"
-                ].get(AI4RAGParamNames.RANKER_K)
+                retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
 
             if ranker_strategy == "weighted":
-                retrieval_payload["ranker_alpha"] = evaluation_result.rag_params[
-                    "retrieval"
-                ].get(AI4RAGParamNames.RANKER_ALPHA)
+                retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
+                    AI4RAGParamNames.RANKER_ALPHA
+                )
 
         vector_store_payload = {
             "provider_type": self.vector_store_config.provider,
@@ -907,18 +856,10 @@ class AI4RAGExperiment:
 
         indexing_payload = {
             "chunking": {
-                "method": evaluation_result.indexing_params["chunking"][
-                    AI4RAGParamNames.CHUNKING_METHOD
-                ],
-                "chunk_size": evaluation_result.indexing_params["chunking"][
-                    AI4RAGParamNames.CHUNK_SIZE
-                ],
-                "chunk_overlap": evaluation_result.indexing_params["chunking"][
-                    AI4RAGParamNames.CHUNK_OVERLAP
-                ],
-                "include_metadata": evaluation_result.indexing_params["chunking"][
-                    "include_metadata"
-                ],
+                "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
+                "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
+                "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
+                "include_metadata": evaluation_result.indexing_params["chunking"]["include_metadata"],
             },
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
@@ -932,8 +873,7 @@ class AI4RAGExperiment:
         metrics_payload = [
             (
                 {**m, "optimization_metric": True}
-                if m["name"] == self.optimization_metric.name
-                and m["evaluator"] == self.optimization_metric.evaluator
+                if m["name"] == self.optimization_metric.name and m["evaluator"] == self.optimization_metric.evaluator
                 else m
             )
             for m in evaluation_result.scores["metrics"]
@@ -950,13 +890,9 @@ class AI4RAGExperiment:
                 "retrieval": retrieval_payload,
                 "generation": generation_payload,
             },
-            "iteration": iteration
-            if iteration is not None
-            else len(self.results) + n_known,
+            "iteration": iteration if iteration is not None else len(self.results) + n_known,
         }
-        self.event_handler.on_pattern_creation(
-            payload=payload, evaluation_results=evaluation_results_json
-        )
+        self.event_handler.on_pattern_creation(payload=payload, evaluation_results=evaluation_results_json)
 
     def _evaluate_response(
         self,
@@ -986,22 +922,16 @@ class AI4RAGExperiment:
             Combined evaluation scores and input evaluation data.
         """
         evaluator_names = [e.EVALUATOR_TYPE for e in self.evaluators]
-        logger.info(
-            "Evaluating RAG Pattern '%s' using %s.", pattern_name, evaluator_names
-        )
+        logger.info("Evaluating RAG Pattern '%s' using %s.", pattern_name, evaluator_names)
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
             message=f"Evaluating RAG Pattern '{pattern_name}' using {evaluator_names}.",
             step="evaluation",
         )
 
-        eval_data = build_evaluation_data(
-            benchmark_data=self.benchmark_data, inference_response=inference_response
-        )
+        eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
 
-        evaluator_map: dict[str, BaseEvaluator] = {
-            e.EVALUATOR_TYPE: e for e in self.evaluators
-        }
+        evaluator_map: dict[str, BaseEvaluator] = {e.EVALUATOR_TYPE: e for e in self.evaluators}
 
         metrics_by_type: dict[str, list[RAGMetric]] = {}
         for m in self.metrics:
@@ -1018,11 +948,7 @@ class AI4RAGExperiment:
                     [m.name for m in type_metrics],
                 )
                 continue
-            partial_results.append(
-                evaluator.evaluate_metrics(
-                    evaluation_data=eval_data, metrics=type_metrics
-                )
-            )
+            partial_results.append(evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=type_metrics))
 
         result = merge_evaluation_results(partial_results)
         apply_custom_metrics(scores=result, metrics=self.metrics)
@@ -1050,9 +976,7 @@ class AI4RAGExperiment:
         """
         return collection_name in self.results.collection_names
 
-    def _get_reusable_collection_name(
-        self, indexing_params: dict[str, Any]
-    ) -> str | None:
+    def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
         This method returns the name of the collection if the chosen indexing
         params have already been used to create an index / collection.
@@ -1070,9 +994,7 @@ class AI4RAGExperiment:
             Collection name that is new or one of the previously created.
             None if there is no collection to reuse.
         """
-        collection = self.results.get_existing_collection(
-            indexing_params=indexing_params
-        )
+        collection = self.results.get_existing_collection(indexing_params=indexing_params)
         if collection is not None:
             collection_name = collection
             logger.info("Reusing existing collection: '%s'", collection_name)
@@ -1092,18 +1014,12 @@ class AI4RAGExperiment:
             Example: "Pattern7" or "Pattern7-warm-start".
         """
         if self._optimization_phase == "warm_start":
-            warm_start_count = sum(
-                result.pattern_name.endswith("-warm-start") for result in self.results
-            )
+            warm_start_count = sum(result.pattern_name.endswith("-warm-start") for result in self.results)
             return f"Pattern{warm_start_count + 1}-warm-start"
         if self._optimization_phase == "gam":
-            gam_count = sum(
-                not result.pattern_name.endswith("-warm-start")
-                for result in self.results
-            )
+            gam_count = sum(not result.pattern_name.endswith("-warm-start") for result in self.results)
             has_successful_warm_start = any(
-                result.pattern_name.endswith("-warm-start")
-                and result.final_score is not None
+                result.pattern_name.endswith("-warm-start") and result.final_score is not None
                 for result in self.results
             )
             return f"Pattern{gam_count + 1 + int(has_successful_warm_start)}"

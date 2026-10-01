@@ -106,9 +106,7 @@ class TestOpenAIFoundationModel:
         mock_response = mocker.MagicMock()
         mock_response.choices = [mocker.MagicMock()]
         mock_response.choices[0].message.content = "Test response from model"
-        mock_response.output_text = "Test response from model"
         mock_client.chat.completions.create.return_value = mock_response
-        mock_client.responses.create.return_value = mock_response
         return mock_client
 
     @pytest.fixture
@@ -321,22 +319,6 @@ class TestOpenAIFoundationModel:
             call_args = mock_openai_client.chat.completions.create.call_args
             passed_messages = call_args.kwargs["messages"]
             assert passed_messages == test_messages
-
-    def test_responses_method_uses_responses_api(self, model_with_dict_params, mock_openai_client):
-        """Test that the opt-in Responses API method leaves chat() untouched."""
-        messages = [
-            {"role": "system", "content": "You are helpful"},
-            {"role": "user", "content": "What is AI?"},
-        ]
-
-        response = model_with_dict_params.responses(messages)
-
-        mock_openai_client.responses.create.assert_called_once()
-        call_args = mock_openai_client.responses.create.call_args
-        assert call_args.kwargs["model"] == "test-model-id"
-        assert call_args.kwargs["instructions"] == "You are helpful"
-        assert call_args.kwargs["input"] == [messages[1]]
-        assert response.output_text == "Test response from model"
 
     def test_invalid_user_message_template_missing_placeholder(
         self, mock_openai_client, valid_context_template, valid_system_message

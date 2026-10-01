@@ -21,6 +21,8 @@ from ai4rag.evaluator.base_evaluator import (
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -65,7 +67,7 @@ def _make_result(
     )
 
 
-def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None):
+def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None, rag_template=None):
     """Construct an AI4RAGExperiment with all heavy deps mocked out."""
     from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
@@ -74,6 +76,8 @@ def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS,
         kwargs["evaluators"] = evaluators
     if metrics is not None:
         kwargs["metrics"] = metrics
+    if rag_template is not None:
+        kwargs["rag_template"] = rag_template
     return AI4RAGExperiment(
         documents=[],
         benchmark_data=_BENCHMARK_DF,
@@ -107,6 +111,19 @@ class TestEvaluatorType:
 
     def test_llmaj_evaluator_type(self):
         assert LLMaJEvaluator.EVALUATOR_TYPE == "judge"
+
+
+class TestRAGTemplateSelection:
+    def test_agentic_rag_is_the_default(self):
+        assert _build_experiment().rag_template is AgenticRAG
+
+    def test_accepts_another_rag_template(self):
+        assert _build_experiment(rag_template=SimpleRAG).rag_template is SimpleRAG
+
+    @pytest.mark.parametrize("invalid_template", ["SimpleRAG", object])
+    def test_rejects_non_template_classes(self, invalid_template):
+        with pytest.raises(TypeError, match="rag_template must be a BaseRAGTemplate subclass"):
+            _build_experiment(rag_template=invalid_template)
 
 
 class TestEvaluatorsSetter:

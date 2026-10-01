@@ -17,6 +17,8 @@ _TEMPLATE_DIR = Path(__file__).resolve().parents[4] / "ai4rag/assets_generator/s
 def _import_auth_wrapper(monkeypatch):
     app = SimpleNamespace(add_middleware=lambda middleware: None)
     monkeypatch.setitem(sys.modules, "main", SimpleNamespace(app=app))
+    monkeypatch.setitem(sys.modules, "fastapi", SimpleNamespace(Request=object))
+    monkeypatch.setitem(sys.modules, "fastapi.responses", SimpleNamespace(JSONResponse=object))
     spec = importlib.util.spec_from_file_location("starter_kit_auth_wrapper", _TEMPLATE_DIR / "auth_wrapper.py")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -63,12 +65,21 @@ def test_auth_wrapper_verifies_with_provided_ca(monkeypatch, tmp_path, mocker):
     monkeypatch.setenv("K8S_CA_PATH", str(ca_path))
 
     module = _import_auth_wrapper(monkeypatch)
-    post = mocker.patch.object(module.requests, "post")
-    post.return_value.status_code = 201
-    post.return_value.json.return_value = {"status": {"authenticated": True, "user": {"username": "allowed"}}}
+    client = mocker.MagicMock()
+    client.__aenter__ = mocker.AsyncMock(return_value=client)
+    client.__aexit__ = mocker.AsyncMock(return_value=None)
+    client.post = mocker.AsyncMock()
+    client.post.return_value = SimpleNamespace(
+        status_code=201,
+        json=lambda: {"status": {"authenticated": True, "user": {"username": "allowed"}}},
+    )
+    async_client = mocker.patch.object(module.httpx2, "AsyncClient", return_value=client)
 
     assert asyncio.run(module._validate_k8s_token("client-token"))
-    assert post.call_args.kwargs["verify"] == str(ca_path)
+    async_client.assert_called_once_with(verify=str(ca_path), timeout=10.0)
+    client.post.assert_awaited_once()
+    assert client.post.call_args.args[0] == "https://kubernetes.default.svc/apis/authentication.k8s.io/v1/tokenreviews"
+    assert client.post.call_args.kwargs["json"]["spec"]["token"] == "client-token"
     makefile = (_TEMPLATE_DIR / "Makefile").read_text(encoding="utf-8")
     assert "K8S_API_INSECURE" not in makefile
     assert "K8S_CA_PATH=/sandbox/k8s-ca.crt" in makefile
