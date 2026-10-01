@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from ai4rag.rag.vector_store.config import SUPPORTED_PROVIDERS
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.utils.constants import AI4RAGParamNames
 
@@ -19,8 +20,6 @@ _default_neo4j_chunk_sizes = (1024,)
 _default_neo4j_chunk_overlaps = (0, 64)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
-_default_chroma_retrieval_methods = ("simple",)
-_default_chroma_window_sizes = (0, 1, 3, 5)
 _default_numbers_of_chunks = (3, 5, 10)
 _default_search_modes = ("vector", "hybrid")
 _default_ranker_strategies = ("", "rrf", "weighted")
@@ -34,24 +33,21 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus"
     Parameters
     ----------
     vector_store_type : str, default="milvus"
-        Type of vector store. Supported values: ``"milvus"``, ``"pgvector"``,
-        ``"chroma"``, and ``"neo4j"``. When ``"chroma"``, hybrid search
-        parameters are excluded since ChromaDB does not support hybrid search.
-        When ``"neo4j"``, ``"graph"`` is included as an additional search mode
-        and chunk_size/chunk_overlap are fixed at 1024/64. Neo4j supports only
-        graph search, so its search mode is fixed to ``"graph"``.
+        Type of vector store. Supported values are listed in
+        :data:`ai4rag.rag.vector_store.config.SUPPORTED_PROVIDERS`. Neo4j
+        supports only graph search, so its search mode is fixed to ``"graph"``
+        and chunk_size/chunk_overlap are fixed at 1024/64.
 
     Returns
     -------
     list[Parameter]
         Parameters that will be used for creating AI4RAGSearchSpace.
     """
-    if vector_store_type == "chroma":
-        retrieval_methods = _default_chroma_retrieval_methods
-        window_sizes = _default_chroma_window_sizes
-    else:
-        retrieval_methods = _default_retrieval_methods
-        window_sizes = _default_window_sizes
+    if vector_store_type not in SUPPORTED_PROVIDERS:
+        raise ValueError(
+            f"Vector store type '{vector_store_type}' is not supported. "
+            f"Choose one of: {', '.join(SUPPORTED_PROVIDERS)}."
+        )
 
     if vector_store_type == "neo4j":
         chunk_sizes = _default_neo4j_chunk_sizes
@@ -64,14 +60,12 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus"
         Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
         Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=chunk_sizes),
         Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=chunk_overlaps),
-        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=retrieval_methods),
-        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=window_sizes),
+        Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=_default_retrieval_methods),
+        Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=_default_window_sizes),
         Parameter(name=AI4RAGParamNames.NUMBER_OF_CHUNKS, values=_default_numbers_of_chunks),
     ]
 
-    if vector_store_type == "chroma":
-        default_search_space_parameters.append(Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("vector",)))
-    elif vector_store_type == "neo4j":
+    if vector_store_type == "neo4j":
         default_search_space_parameters.append(Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("graph",)))
     else:
         default_search_space_parameters.extend(

@@ -321,18 +321,9 @@ class TestGetDefaultSearchSpaceParameters:
         assert "vector" in search_mode_param.values
         assert "hybrid" in search_mode_param.values
 
-    def test_chroma_excludes_hybrid_params(self):
-        params = get_default_ai4rag_search_space_parameters(vector_store_type="chroma")
-        param_names = {p.name for p in params}
-
-        assert "search_mode" in param_names
-        assert "ranker_strategy" not in param_names
-        assert "ranker_k" not in param_names
-        assert "ranker_alpha" not in param_names
-
-        search_mode_param = next(p for p in params if p.name == "search_mode")
-        assert search_mode_param.values == ("vector",)
-        assert "hybrid" not in search_mode_param.values
+    def test_unsupported_vector_store_type_is_rejected(self):
+        with pytest.raises(ValueError, match="Vector store type 'chroma' is not supported"):
+            get_default_ai4rag_search_space_parameters(vector_store_type="chroma")
 
     def test_neo4j_includes_graph_search_mode_and_fixed_chunk_geometry(self):
         params = get_default_ai4rag_search_space_parameters(vector_store_type="neo4j")
