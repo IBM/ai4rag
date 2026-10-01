@@ -61,8 +61,9 @@ The index targets the collection label. That label isolates ANN seed retrieval;
 graph expansion also filters by the `collection` property. Older
 `{collection}__vector` and `{collection}__fulltext` indexes are removed by
 `clean_collection()` if present, but they are not created by the current store.
-In the `add_documents()` workflow, only canonical chunks receive the
-collection label and enter this index.
+In the `add_documents()` workflow, both persistent `Document` nodes and
+canonical `Chunk` nodes receive the collection label; only chunks enter this
+vector index.
 
 ### Canonical chunks
 
