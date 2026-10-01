@@ -94,11 +94,9 @@ class _InlinePool:
 
 
 @pytest.fixture
-def fake_bucket(monkeypatch):
+def fake_bucket():
     """Serve ``CORPUS`` to both discovery and download."""
-    client = _FakeS3Client(CORPUS)
-    monkeypatch.setattr(text_extraction, "_make_s3_client", lambda *_args, **_kwargs: client)
-    return client
+    return _FakeS3Client(CORPUS)
 
 
 @pytest.fixture
@@ -109,10 +107,12 @@ def extracted(fake_bucket, tmp_path) -> Path:
     produces the descriptor, whose ``documents`` list is handed to extraction
     exactly as ``pipelines-components`` hands it over.
     """
-    return _ingest(discover_documents(bucket_name="bucket", prefixes=[PREFIX], s3_client=fake_bucket), tmp_path)
+    return _ingest(
+        discover_documents(bucket_name="bucket", prefixes=[PREFIX], s3_client=fake_bucket), tmp_path, fake_bucket
+    )
 
 
-def _ingest(discovery, tmp_path: Path) -> Path:
+def _ingest(discovery, tmp_path: Path, s3_client) -> Path:
     """Download and extract the documents of a discovery result."""
     download_dir = tmp_path / "download"
     download_dir.mkdir()
@@ -124,7 +124,7 @@ def _ingest(discovery, tmp_path: Path) -> Path:
         download_path=download_dir,
         process_pool=_InlinePool(),
         out_dir=out_dir,
-        s3_creds={},
+        s3_client=s3_client,
     )
 
     assert not errors, f"Downloads failed: {errors}"
@@ -172,7 +172,7 @@ class TestObjectKeyPreservation:
 
     def test_names_do_not_depend_on_the_discovery_prefix(self, fake_bucket, tmp_path):
         """Narrowing the listing prefix must not rename the documents it returns."""
-        out_dir = _ingest(discover_documents(bucket_name="bucket", s3_client=fake_bucket), tmp_path)
+        out_dir = _ingest(discover_documents(bucket_name="bucket", s3_client=fake_bucket), tmp_path, fake_bucket)
 
         assert _extracted_names(out_dir) == set(CORPUS)
 
@@ -183,14 +183,14 @@ class TestObjectKeyPreservation:
             prefixes=[f"{PREFIX}/manuals/xr-200", f"{PREFIX}/manuals/xr-300"],
             s3_client=fake_bucket,
         )
-        out_dir = _ingest(discovery, tmp_path)
+        out_dir = _ingest(discovery, tmp_path, fake_bucket)
 
         assert _extracted_names(out_dir) == {
             f"{PREFIX}/manuals/xr-200/setup.txt",
             f"{PREFIX}/manuals/xr-300/setup.txt",
         }
 
-    def test_key_needing_normalisation_still_names_the_document(self, monkeypatch, tmp_path):
+    def test_key_needing_normalisation_still_names_the_document(self, tmp_path):
         """A key needing normalisation must not fall back to the bare filename.
 
         ``_download_document`` strips the leading slash before building the local
@@ -198,7 +198,6 @@ class TestObjectKeyPreservation:
         recovered from it.
         """
         client = _FakeS3Client({"/docs/a/setup.txt": "content"})
-        monkeypatch.setattr(text_extraction, "_make_s3_client", lambda *_a, **_k: client)
 
         download_dir = tmp_path / "download"
         download_dir.mkdir()
@@ -210,7 +209,7 @@ class TestObjectKeyPreservation:
             download_path=download_dir,
             process_pool=_InlinePool(),
             out_dir=out_dir,
-            s3_creds={},
+            s3_client=client,
         )
 
         assert not errors

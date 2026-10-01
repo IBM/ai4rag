@@ -36,7 +36,7 @@ def create_s3_client(
     access_key_id: str | None = None,
     secret_access_key: str | None = None,
     region_name: str | None = None,
-    verify: bool = True,
+    verify: bool | str = True,
 ) -> Any:
     """Create an S3-compatible ``boto3`` client.
 
@@ -54,7 +54,10 @@ def create_s3_client(
     region_name
         AWS region.  Falls back to ``AWS_DEFAULT_REGION``.
     verify
-        Whether to verify TLS certificates.
+        Whether to verify TLS certificates, or a path to a CA bundle. When
+        left as ``True`` (the default), ``AWS_CA_BUNDLE`` is used when set;
+        otherwise boto3 uses its default trusted CA bundle. Pass a certificate
+        path explicitly to override ``AWS_CA_BUNDLE``.
 
     Returns
     -------
@@ -68,11 +71,16 @@ def create_s3_client(
         secret_access_key = secret_access_key or env["AWS_SECRET_ACCESS_KEY"]
         region_name = region_name or env.get("AWS_DEFAULT_REGION")
 
+    # boto3 honours AWS_CA_BUNDLE only when its ``verify`` argument is not
+    # explicitly ``True``. Resolve it here so callers keep secure certificate
+    # verification while disconnected environments can supply their own CA.
+    effective_verify = (os.environ.get("AWS_CA_BUNDLE") or True) if verify is True else verify
+
     return boto3.client(
         "s3",
         endpoint_url=endpoint_url,
         aws_access_key_id=access_key_id,
         aws_secret_access_key=secret_access_key,
         region_name=region_name,
-        verify=verify,
+        verify=effective_verify,
     )
