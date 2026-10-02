@@ -55,11 +55,7 @@ from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
-from ai4rag.utils.constants import (
-    AI4RAGParamNames,
-    ExperimentStep,
-    PreSelectorConstants,
-)
+from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
 from ai4rag.utils.event_handler.event_handler import BaseEventHandler, LogLevel
 
 
