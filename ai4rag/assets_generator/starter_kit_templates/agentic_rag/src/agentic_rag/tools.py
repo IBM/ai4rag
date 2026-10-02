@@ -33,7 +33,7 @@ def initialize_retriever(
     embedding_model = OpenAIEmbeddingModel(
         client=client,
         model_id=config.embedding_model_id,
-        params=OpenAIEmbeddingParams(embedding_dimension=config.embedding_dimension, context_length=1015),
+        params=OpenAIEmbeddingParams(embedding_dimension=config.embedding_dimension),
     )
 
     vector_store = get_vector_store(

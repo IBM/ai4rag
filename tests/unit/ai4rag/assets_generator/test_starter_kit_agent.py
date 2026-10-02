@@ -65,7 +65,7 @@ def test_rrf_ranker_k_reaches_retriever(agent_module, mocker):
     config.ranker_strategy = "rrf"
     config.ranker_k = 42
     tools_module = importlib.import_module("agentic_rag.tools")
-    mocker.patch.object(tools_module, "OpenAIEmbeddingModel")
+    embedding_model = mocker.patch.object(tools_module, "OpenAIEmbeddingModel")
     mocker.patch.object(tools_module, "get_vector_store_config")
     mocker.patch.object(tools_module, "get_vector_store")
     retriever = mocker.patch.object(tools_module, "Retriever")
@@ -73,6 +73,7 @@ def test_rrf_ranker_k_reaches_retriever(agent_module, mocker):
     tools_module.initialize_retriever(mocker.sentinel.client, config)
 
     assert retriever.call_args.kwargs["ranker_k"] == 42
+    assert embedding_model.call_args.kwargs["params"].context_length is None
 
 
 def test_create_rag_rejects_remote_http(agent_module, mocker):

@@ -21,7 +21,28 @@ def create_rag(
     base_url: str | None = None,
     api_key: str | None = None,
 ) -> AgenticRAG:
-    """Create the configured RAG template from environment settings."""
+    """Create the configured RAG template and its MaaS/vector-store clients.
+
+    Parameters
+    ----------
+    model_id : str | None, default=None
+        Chat model identifier. Defaults to the value in ``agent_config.json``.
+    base_url : str | None, default=None
+        OpenAI-compatible MaaS endpoint. Defaults to ``MAAS_BASE_URL``.
+    api_key : str | None, default=None
+        MaaS API key. Defaults to ``MAAS_API_KEY``.
+
+    Returns
+    -------
+    AgenticRAG
+        Configured RAG template using the MaaS chat model and vector-store retriever.
+
+    Raises
+    ------
+    ValueError
+        If the model identifier, MaaS endpoint, or required API key is missing,
+        or if the endpoint is not HTTPS (except for localhost).
+    """
     config = AgentConfig.from_env()
     model_id = model_id or config.model_id
     maas_base_url = (base_url or getenv("MAAS_BASE_URL", "")).strip().rstrip("/")
