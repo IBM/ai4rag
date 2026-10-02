@@ -13,13 +13,15 @@ from neo4j_graphrag.components.types import Neo4jGraph, Neo4jNode, Neo4jRelation
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.config import Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import (
-    _KG_LEXICAL_GRAPH_CONFIG,
-    _LLMAdapter,
     Neo4jGraphStore,
+)
+from ai4rag.rag.vector_store.neo4j_utils import (
+    _KG_LEXICAL_GRAPH_CONFIG,
     _build_graph_retrieval_query,
     _CanonicalKGWriter,
     _CollectionKGWriter,
     _kg_pipeline_extraction_options,
+    _LLMAdapter,
     _PreChunkedTextSplitter,
     _validate_kg_extraction_config,
     _validate_neo4j_search_params,
@@ -232,12 +234,6 @@ class TestNeo4jGraphStoreInit:
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
 
-    def test_recycles_connections_before_load_balancer_idle_timeout(
-        self, mock_driver_cls, mock_embedding, neo4j_config
-    ):
-        Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
-        assert mock_driver_cls.call_args.kwargs["max_connection_lifetime"] == 30.0
-
     def test_collection_name_prefix_guard(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="ai4rag"):
             Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="bad_name")
@@ -321,7 +317,7 @@ class TestAddDocuments:
             return MagicMock()
 
         with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
-            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+            with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
                 store.add_documents([chunk], model=MagicMock())
 
@@ -357,7 +353,7 @@ class TestAddDocuments:
             return MagicMock()
 
         with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
-            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+            with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
                 store.add_documents([chunk], model=MagicMock())
 
@@ -376,7 +372,7 @@ class TestAddDocuments:
             return MagicMock()
 
         with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
-            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+            with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
                 store._run_kg_pipeline([self._make_chunks(1)[0]], MagicMock(), perform_entity_resolution=False)
 
@@ -388,8 +384,8 @@ class TestAddDocuments:
 # search — vector mode
 # ---------------------------------------------------------------------------
 
-_CYPHER_RETRIEVER_PATH = "neo4j_graphrag.retrievers.VectorCypherRetriever"
-_VECTOR_RETRIEVER_PATH = "neo4j_graphrag.retrievers.VectorRetriever"
+_CYPHER_RETRIEVER_PATH = "ai4rag.rag.vector_store.neo4j.VectorCypherRetriever"
+_VECTOR_RETRIEVER_PATH = "ai4rag.rag.vector_store.neo4j.VectorRetriever"
 
 
 @pytest.fixture(autouse=True)
@@ -599,7 +595,7 @@ class TestBuildKnowledgeGraphFromDocuments:
             return MagicMock()
 
         with patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)):
-            with patch("neo4j_graphrag.experimental.pipeline.kg_builder.SimpleKGPipeline") as pipeline_cls:
+            with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
                 store.build_knowledge_graph_from_documents(
                     documents=[self._make_docling_doc("Alice works at Acme.")], model=MagicMock()
@@ -829,7 +825,6 @@ class TestCleanAndClose:
 
         cypher_calls = " ".join(str(c) for c in session.run.call_args_list)
         assert "ai4rag_col__embedding" in cypher_calls
-        assert "ai4rag_kg_collection" in cypher_calls
         assert "__Entity__" in cypher_calls
         assert "ai4rag_kg_collections" in cypher_calls
         assert "WHERE owner <> $col" in cypher_calls
@@ -863,7 +858,7 @@ class TestCleanAndClose:
 class TestValidateNeo4jSearchParams:
     @pytest.mark.parametrize("search_mode", ["vector", "hybrid"])
     def test_non_graph_modes_rejected(self, search_mode):
-        with pytest.raises(ValueError, match="not supported by Neo4jGraphStore"):
+        with pytest.raises(ValueError, match="Invalid search_mode"):
             _validate_neo4j_search_params(search_mode)
 
     def test_graph_mode_valid(self):

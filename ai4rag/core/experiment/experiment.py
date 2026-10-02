@@ -442,7 +442,7 @@ class AI4RAGExperiment:
         # not only chunk embeddings.  Those graph contents vary with the model
         # and extraction settings, so they must participate in the collection
         # reuse key as well.
-        if search_mode == "graph":
+        if self.vector_store_config.provider == "neo4j":
             indexing_params["knowledge_graph"] = {
                 "model_id": foundation_model.model_id,
                 "model_params": {
@@ -895,7 +895,10 @@ class AI4RAGExperiment:
             },
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
-        if evaluation_result.indexing_params.get("knowledge_graph") is not None:
+        if (
+            self.vector_store_config.provider == "neo4j"
+            and evaluation_result.indexing_params.get("knowledge_graph") is not None
+        ):
             indexing_payload["knowledge_graph"] = evaluation_result.indexing_params["knowledge_graph"]
 
         generation_payload = evaluation_result.rag_params.get("generation")

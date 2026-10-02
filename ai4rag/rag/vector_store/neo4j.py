@@ -6,84 +6,46 @@
 import asyncio
 import hashlib
 import json
-import re
 import uuid
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from contextvars import ContextVar
 from dataclasses import asdict, dataclass, fields
-from typing import Any, Iterator
+from typing import Any
 
 import neo4j
 from docling_core.types.doc import DoclingDocument
-from json_repair import repair_json
-from neo4j_graphrag.components.kg_writer import KGWriterModel, Neo4jWriter
-from neo4j_graphrag.components.text_splitters.base import TextSplitter
-from neo4j_graphrag.components.types import LexicalGraphConfig, Neo4jGraph, Neo4jRelationship, TextChunk, TextChunks
-from neo4j_graphrag.embeddings.base import Embedder as _NeoEmbedder
-from neo4j_graphrag.llm.base import LLMInterface as _NeoLLMInterface
-from neo4j_graphrag.neo4j_queries import db_cleaning_query, upsert_relationship_query
+from neo4j_graphrag.components.text_splitters.fixed_size_splitter import FixedSizeSplitter
+from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
+from neo4j_graphrag.retrievers import VectorCypherRetriever, VectorRetriever
+from neo4j_graphrag.types import RetrieverResultItem
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
-from ai4rag.rag.foundation_models.base_model import BaseFoundationModel, MessageTyped
+from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import Neo4jConfig
+from ai4rag.rag.vector_store.neo4j_utils import (
+    _KG_LEXICAL_GRAPH_CONFIG,
+    Neo4jGraphSchema,
+    _build_graph_retrieval_query,
+    _CanonicalKGWriter,
+    _collection_vector_index_name,
+    _EmbedderAdapter,
+    _kg_pipeline_extraction_options,
+    _LLMAdapter,
+    _PreChunkedTextSplitter,
+    _validate_kg_extraction_config,
+    _validate_neo4j_search_params,
+)
 from ai4rag.rag.vector_store.utils import (
     iter_unique_chunks,
     resolve_embedding_dimension,
-    validate_search_params,
 )
 
 __all__ = ["Neo4jGraphRetrievalConfig", "Neo4jGraphStore"]
 
-_CONSTRAINED_KG_ENTITIES = ("Person", "Organization", "Place", "Concept", "Event", "Product", "Technology")
-_CONSTRAINED_KG_RELATIONS = ("RELATED_TO", "PART_OF", "LOCATED_IN", "BELONGS_TO", "CREATED_BY", "MENTIONS")
-
-# GraphRAG's lexical nodes are temporary: _CanonicalKGWriter discards them in
-# favor of the canonical nodes already stored by add_documents. Keep their
-# labels distinct from entity types chosen by free extraction (e.g. Document).
-_KG_LEXICAL_GRAPH_CONFIG = LexicalGraphConfig(
-    document_node_label="__AI4RAG_KG_SOURCE_DOCUMENT__",
-    chunk_node_label="__AI4RAG_KG_SOURCE_CHUNK__",
-)
-
-
-class _PreChunkedTextSplitter(TextSplitter):
-    """Preserve the canonical chunk passed to the KG pipeline as one text chunk."""
-
-    async def run(self, text: str) -> TextChunks:
-        return TextChunks(chunks=[TextChunk(text=text, index=0)])
-
-
-def _collection_vector_index_name(collection_name: str) -> str:
-    """Return the vector-index name dedicated to *collection_name*."""
-    return f"{collection_name}__embedding"
-
-
-def _validate_kg_extraction_config(config: dict[str, Any] | None) -> dict[str, Any]:
-    """Validate KG extraction settings and apply the constrained default."""
-    if config is None:
-        return {"mode": "constrained"}
-    if not isinstance(config, dict):
-        raise TypeError("kg_extraction_config must be a dictionary or None.")
-
-    mode = config.get("mode", "constrained")
-    if mode not in {"constrained", "free"}:
-        raise ValueError("kg_extraction_config.mode must be 'constrained' or 'free'.")
-    if mode == "constrained":
-        return {"mode": mode}
-
-    limits = {
-        "max_entities_per_chunk": config.get("max_entities_per_chunk"),
-        "max_relationships_per_chunk": config.get("max_relationships_per_chunk"),
-    }
-    for name, value in limits.items():
-        if not isinstance(value, int) or value < 1:
-            raise ValueError(f"kg_extraction_config.{name} must be a positive integer for free extraction.")
-    return {"mode": mode, **limits}
+_SCHEMA = Neo4jGraphSchema
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -128,205 +90,6 @@ class Neo4jGraphRetrievalConfig:
         return {name: value for name, value in asdict(self).items() if value is not None}
 
 
-def _kg_pipeline_extraction_options(config: dict[str, Any]) -> dict[str, Any]:
-    """Return ``SimpleKGPipeline`` options for the requested extraction mode."""
-    if config["mode"] == "constrained":
-        return {"entities": _CONSTRAINED_KG_ENTITIES, "relations": _CONSTRAINED_KG_RELATIONS}
-
-    from neo4j_graphrag.generation.prompts import ERExtractionTemplate
-
-    entity_limit = config["max_entities_per_chunk"]
-    relation_limit = config["max_relationships_per_chunk"]
-    template = ERExtractionTemplate.DEFAULT_TEMPLATE.replace(
-        "Extract the entities (nodes) and specify their type from the following text.",
-        "Extract the entities (nodes) and specify their type from the following text. "
-        f"Extract at most {entity_limit} entities.",
-    ).replace(
-        "Also extract the relationships between these nodes.",
-        f"Also extract at most {relation_limit} relationships between these nodes.",
-    )
-    # "FREE" bypasses automatic schema extraction. Omitting the schema would
-    # ask the model to generate constraints, which can be invalid or conflicting.
-    # The model still determines entity and relationship types from each chunk.
-    return {"schema": "FREE", "prompt_template": ERExtractionTemplate(template=template)}
-
-
-class _EmbedderAdapter(_NeoEmbedder):  # type: ignore[misc]
-    """Wraps :class:`BaseEmbeddingModel` to satisfy ``neo4j_graphrag``'s embedder interface."""
-
-    def __init__(self, model: BaseEmbeddingModel) -> None:
-        super().__init__()
-        self._model = model
-
-    def embed_query(self, text: str) -> list[float]:
-        return self._model.embed_query(text)
-
-
-class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
-    """Wraps :class:`BaseFoundationModel` to satisfy ``neo4j_graphrag``'s LLM interface.
-
-    ``SimpleKGPipeline`` calls ``ainvoke`` (async); we bridge the sync
-    :meth:`BaseFoundationModel.chat` via ``run_in_executor``.  Response JSON
-    is normalised so that models returning a JSON *array* (``[{...}]``) are
-    converted to the expected object format (``{"nodes": [...], "relationships": [...]}``)
-    before the extractor parses the output.
-    """
-
-    def __init__(self, model: BaseFoundationModel) -> None:
-        super().__init__(model_name=model.model_id)
-        self._model = model
-
-    def invoke(
-        self,
-        input: str,  # pylint: disable=redefined-builtin
-        message_history=None,  # pylint: disable=unused-argument
-        system_instruction: str | None = None,
-    ):
-        from neo4j_graphrag.llm.types import LLMResponse
-
-        messages: list[MessageTyped] = []
-        if system_instruction:
-            messages.append({"role": "system", "content": system_instruction})
-        messages.append({"role": "user", "content": input})
-        response = self._model.chat(messages)[0]
-        content = (response["content"] if isinstance(response, Mapping) else response.message.content) or ""
-        return LLMResponse(content=_normalize_kg_json(content))
-
-    async def ainvoke(
-        self,
-        input: str,  # pylint: disable=redefined-builtin
-        message_history=None,
-        system_instruction: str | None = None,
-    ):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, self.invoke, input, message_history, system_instruction)
-
-
-class _CollectionKGWriter(Neo4jWriter):
-    """Record ownership on precisely the relationships written by the pipeline."""
-
-    def __init__(self, driver: neo4j.Driver, database: str, collection_name: str) -> None:
-        super().__init__(driver=driver, neo4j_database=database)
-        self._collection_name = collection_name
-
-    def _db_setup(self) -> None:
-        self.driver.execute_query(
-            "CREATE INDEX __entity__tmp_internal_id IF NOT EXISTS FOR (n:__KGBuilder__) ON (n.__tmp_internal_id)",
-            database_=self.neo4j_database,
-        )
-
-    def _db_cleaning(self) -> None:
-        query = db_cleaning_query(
-            support_variable_scope_clause=self.is_version_5_23_or_above,
-            batch_size=self.batch_size,
-        )
-        with self.driver.session(database=self.neo4j_database) as session:
-            session.run(query)
-
-    async def run(
-        self,
-        graph: Neo4jGraph,
-        lexical_graph_config: LexicalGraphConfig = LexicalGraphConfig(),
-    ) -> KGWriterModel:
-        return await super().run(graph, lexical_graph_config)
-
-    def _upsert_relationships(self, rels: list[Neo4jRelationship]) -> None:
-        query = upsert_relationship_query(support_variable_scope_clause=self.is_version_5_23_or_above)
-        if query.count("RETURN elementId(rel)") != 1:
-            raise RuntimeError("Neo4j GraphRAG relationship writer query changed; cannot record collection ownership.")
-        query = query.replace(
-            "RETURN elementId(rel)",
-            "SET rel.ai4rag_kg_collections = CASE "
-            "WHEN $col IN COALESCE(rel.ai4rag_kg_collections, []) "
-            "THEN rel.ai4rag_kg_collections "
-            "ELSE COALESCE(rel.ai4rag_kg_collections, []) + $col END "
-            "RETURN elementId(rel)",
-        )
-        self.driver.execute_query(
-            query,
-            parameters_={"rows": self._relationships_to_rows(rels), "col": self._collection_name},
-            database_=self.neo4j_database,
-        )
-
-
-class _CanonicalKGWriter(_CollectionKGWriter):
-    """Write extracted entities onto chunks already stored by ``add_documents``."""
-
-    def __init__(self, driver: neo4j.Driver, database: str, collection_name: str) -> None:
-        super().__init__(driver, database, collection_name)
-        self._links: ContextVar[tuple[str, list[str]] | None] = ContextVar("canonical_kg_links", default=None)
-        self._chunk_id: ContextVar[str | None] = ContextVar("canonical_kg_chunk_id", default=None)
-
-    @contextmanager
-    def for_chunk(self, chunk_id: str) -> Iterator[None]:
-        """Bind the canonical ID to one asynchronous KG pipeline run."""
-        token = self._chunk_id.set(chunk_id)
-        try:
-            yield
-        finally:
-            self._chunk_id.reset(token)
-
-    async def run(
-        self,
-        graph: Neo4jGraph | dict[str, Any],
-        lexical_graph_config: LexicalGraphConfig = LexicalGraphConfig(),
-    ) -> KGWriterModel:
-        # The pipeline serializes component results before passing them to the
-        # next component, so pruner.graph arrives as a dictionary.
-        if isinstance(graph, dict):
-            graph = Neo4jGraph.model_validate(graph)
-        documents = [node for node in graph.nodes if node.label == lexical_graph_config.document_node_label]
-        entity_nodes = [
-            node for node in graph.nodes if node.label not in lexical_graph_config.lexical_graph_node_labels
-        ]
-        chunk_id = self._chunk_id.get()
-        if len(documents) > 1:
-            raise ValueError("KG extraction produced multiple document nodes for one canonical chunk.")
-        if documents:
-            document_chunk_id = documents[0].properties.get("ai4rag_chunk_id")
-            if chunk_id is not None and document_chunk_id is not None and document_chunk_id != chunk_id:
-                raise ValueError("KG extraction document metadata does not match the canonical chunk ID.")
-            chunk_id = chunk_id or document_chunk_id
-        if not chunk_id:
-            raise ValueError("KG extraction requires the canonical chunk ID.")
-
-        entity_ids = {node.id for node in entity_nodes}
-        # This pipeline processes one canonical chunk per run. GraphRAG may omit
-        # lexical nodes and FROM_CHUNK edges, but all extracted entities still
-        # belong to that chunk.
-        linked_entity_ids = sorted(entity_ids)
-        entity_graph = Neo4jGraph(
-            nodes=entity_nodes,
-            relationships=[
-                rel for rel in graph.relationships if rel.start_node_id in entity_ids and rel.end_node_id in entity_ids
-            ],
-        )
-        token = self._links.set((chunk_id, linked_entity_ids))
-        try:
-            return await super().run(entity_graph, lexical_graph_config)
-        finally:
-            self._links.reset(token)
-
-    def _db_cleaning(self) -> None:
-        links = self._links.get()
-        if links is not None:
-            chunk_id, entity_ids = links
-            if entity_ids:
-                self.driver.execute_query(
-                    f"UNWIND $entity_ids AS entity_id "
-                    f"MATCH (e:__Entity__ {{__tmp_internal_id: entity_id}}) "
-                    f"MATCH (c:`{self._collection_name}`:Chunk {{id: $chunk_id}}) "
-                    "MERGE (e)-[:FROM_CHUNK]->(c) "
-                    "SET e.ai4rag_kg_collections = CASE "
-                    "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
-                    "THEN e.ai4rag_kg_collections "
-                    "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
-                    parameters_={"entity_ids": entity_ids, "chunk_id": chunk_id, "col": self._collection_name},
-                    database_=self.neo4j_database,
-                )
-        super()._db_cleaning()
-
-
 class Neo4jGraphStore(BaseVectorStore):
     """Graph-only vector store backed by Neo4j.
 
@@ -367,9 +130,6 @@ class Neo4jGraphStore(BaseVectorStore):
         self._driver = neo4j.GraphDatabase.driver(
             config.uri,
             auth=(config.username, config.password),
-            # MaaS embedding calls can exceed the load balancer's idle Bolt timeout.
-            # Recycle pooled connections before they become stale between indexing steps.
-            max_connection_lifetime=30.0,
         )
         self._driver.verify_connectivity()
         self._ensure_kg_schema()
@@ -383,14 +143,10 @@ class Neo4jGraphStore(BaseVectorStore):
                 # Neo4j vector indexes support one node label. The collection
                 # label scopes this index; nodes retain their :Chunk label for
                 # graph traversal queries.
-                f"FOR (n:`{self._collection_name}`) ON (n.embedding) "
+                f"FOR (n:`{self._collection_name}`) ON (n.{_SCHEMA.EMBEDDING}) "
                 f"OPTIONS {{indexConfig: {{`vector.dimensions`: $dim, `vector.similarity_function`: 'cosine'}}}}",
                 dim=self._embedding_dimension,
             )
-
-    # ------------------------------------------------------------------
-    # Vector workflow
-    # ------------------------------------------------------------------
 
     def add_documents(self, documents: list[AI4RAGChunk], **kwargs) -> None:
         """Embed, deduplicate, and upsert chunks into Neo4j.
@@ -480,8 +236,6 @@ class Neo4jGraphStore(BaseVectorStore):
         a single asyncio event loop, giving near-linear speedup over the
         sequential approach since LLM calls are I/O-bound.
         """
-        from neo4j_graphrag.experimental.pipeline.kg_builder import SimpleKGPipeline
-
         chunks = [chunk for chunk in chunks if chunk.text.strip()]
         if not chunks:
             return
@@ -533,11 +287,12 @@ class Neo4jGraphStore(BaseVectorStore):
 
         with self._driver.session(database=self._config.database) as session:
             session.run(
-                f"MATCH (e:__Entity__)-[:FROM_CHUNK]->(:`{self._collection_name}`:Chunk) "
-                "SET e.ai4rag_kg_collections = CASE "
-                "WHEN $col IN COALESCE(e.ai4rag_kg_collections, []) "
-                "THEN e.ai4rag_kg_collections "
-                "ELSE COALESCE(e.ai4rag_kg_collections, []) + $col END",
+                f"MATCH (e:{_SCHEMA.ENTITY_LABEL})-[:{_SCHEMA.FROM_CHUNK_RELATIONSHIP}]->("
+                f":`{self._collection_name}`:{_SCHEMA.CHUNK_LABEL}) "
+                f"SET e.{_SCHEMA.KG_COLLECTIONS} = CASE "
+                f"WHEN $col IN COALESCE(e.{_SCHEMA.KG_COLLECTIONS}, []) "
+                f"THEN e.{_SCHEMA.KG_COLLECTIONS} "
+                f"ELSE COALESCE(e.{_SCHEMA.KG_COLLECTIONS}, []) + $col END",
                 col=self._collection_name,
             )
 
@@ -548,18 +303,19 @@ class Neo4jGraphStore(BaseVectorStore):
         """Merge same-type, same-name entities exclusive to this collection."""
         with self._driver.session(database=self._config.database) as session:
             session.run(
-                f"MATCH (entity:__Entity__)-[:FROM_CHUNK]->(:`{self._collection_name}`:Chunk) "
-                "WHERE entity.ai4rag_kg_collections = [$col] "
+                f"MATCH (entity:{_SCHEMA.ENTITY_LABEL})-[:{_SCHEMA.FROM_CHUNK_RELATIONSHIP}]->("
+                f":`{self._collection_name}`:{_SCHEMA.CHUNK_LABEL}) "
+                f"WHERE entity.{_SCHEMA.KG_COLLECTIONS} = [$col] "
                 "AND entity.name IS NOT NULL "
                 "WITH DISTINCT entity, head([label IN labels(entity) "
-                "WHERE NOT label IN ['__Entity__', '__KGBuilder__']]) AS entity_label "
+                f"WHERE NOT label IN ['{_SCHEMA.ENTITY_LABEL}', '{_SCHEMA.KG_BUILDER_LABEL}']]) AS entity_label "
                 "WHERE entity_label IS NOT NULL "
                 "WITH entity_label, entity.name AS name, collect(entity) AS entities "
                 "WHERE size(entities) > 1 "
                 "WITH entities, reduce(owners = [], e IN entities | "
-                "owners + COALESCE(e.ai4rag_kg_collections, [])) AS owners "
+                f"owners + COALESCE(e.{_SCHEMA.KG_COLLECTIONS}, [])) AS owners "
                 "CALL apoc.refactor.mergeNodes(entities, {properties: 'discard', mergeRels: false}) YIELD node "
-                "SET node.ai4rag_kg_collections = reduce(unique = [], owner IN owners | "
+                f"SET node.{_SCHEMA.KG_COLLECTIONS} = reduce(unique = [], owner IN owners | "
                 "CASE WHEN owner IN unique THEN unique ELSE unique + owner END) "
                 "RETURN count(node) AS merged_groups",
                 col=self._collection_name,
@@ -578,8 +334,8 @@ class Neo4jGraphStore(BaseVectorStore):
         for doc_id, sorted_pairs in doc_groups:
             source = sorted_pairs[0][0].metadata.get("source", "")
             tx.run(
-                f"MERGE (d:{collection_name}:Document {{id: $doc_id}}) "
-                f"SET d.source = $source, d.metadata = $doc_metadata",
+                f"MERGE (d:{collection_name}:{_SCHEMA.DOCUMENT_LABEL} {{{_SCHEMA.ID}: $doc_id}}) "
+                f"SET d.{_SCHEMA.SOURCE} = $source, d.{_SCHEMA.METADATA} = $doc_metadata",
                 doc_id=doc_id,
                 source=source,
                 doc_metadata=json.dumps({"source": source}),
@@ -591,10 +347,10 @@ class Neo4jGraphStore(BaseVectorStore):
                     "source": chunk.metadata.get("source") or doc_id,
                 }
                 tx.run(
-                    f"MERGE (c:{collection_name}:Chunk {{id: $id}}) "
-                    f"SET c.text = $text, c.embedding = $embedding, "
-                    f"c.document_id = $document_id, c.sequence_number = $sequence_number, "
-                    f"c.metadata = $metadata, c.collection = $collection",
+                    f"MERGE (c:{collection_name}:{_SCHEMA.CHUNK_LABEL} {{{_SCHEMA.ID}: $id}}) "
+                    f"SET c.{_SCHEMA.TEXT} = $text, c.{_SCHEMA.EMBEDDING} = $embedding, "
+                    f"c.{_SCHEMA.DOCUMENT_ID} = $document_id, c.{_SCHEMA.SEQUENCE_NUMBER} = $sequence_number, "
+                    f"c.{_SCHEMA.METADATA} = $metadata, c.{_SCHEMA.COLLECTION} = $collection",
                     id=chunk.chunk_id,
                     text=chunk.text,
                     embedding=embedding,
@@ -604,9 +360,9 @@ class Neo4jGraphStore(BaseVectorStore):
                     collection=collection_name,
                 )
                 tx.run(
-                    f"MATCH (d:{collection_name}:Document {{id: $doc_id}}) "
-                    f"MATCH (c:{collection_name}:Chunk {{id: $chunk_id}}) "
-                    f"MERGE (d)-[:CONTAINS]->(c)",
+                    f"MATCH (d:{collection_name}:{_SCHEMA.DOCUMENT_LABEL} {{{_SCHEMA.ID}: $doc_id}}) "
+                    f"MATCH (c:{collection_name}:{_SCHEMA.CHUNK_LABEL} {{{_SCHEMA.ID}: $chunk_id}}) "
+                    f"MERGE (d)-[:{_SCHEMA.CONTAINS_RELATIONSHIP}]->(c)",
                     doc_id=doc_id,
                     chunk_id=chunk.chunk_id,
                 )
@@ -615,16 +371,12 @@ class Neo4jGraphStore(BaseVectorStore):
                 chunk_a = sorted_pairs[i][0]
                 chunk_b = sorted_pairs[i + 1][0]
                 tx.run(
-                    f"MATCH (a:{collection_name}:Chunk {{id: $id_a}}) "
-                    f"MATCH (b:{collection_name}:Chunk {{id: $id_b}}) "
-                    f"MERGE (a)-[:NEXT_CHUNK]->(b)",
+                    f"MATCH (a:{collection_name}:{_SCHEMA.CHUNK_LABEL} {{{_SCHEMA.ID}: $id_a}}) "
+                    f"MATCH (b:{collection_name}:{_SCHEMA.CHUNK_LABEL} {{{_SCHEMA.ID}: $id_b}}) "
+                    f"MERGE (a)-[:{_SCHEMA.NEXT_CHUNK_RELATIONSHIP}]->(b)",
                     id_a=chunk_a.chunk_id,
                     id_b=chunk_b.chunk_id,
                 )
-
-    # ------------------------------------------------------------------
-    # Search
-    # ------------------------------------------------------------------
 
     def search(
         self,
@@ -661,7 +413,14 @@ class Neo4jGraphStore(BaseVectorStore):
             - ``entity_relationship_hops`` (int, default 1) — relationship hops from each pivot.
             - ``relationship_neighbor_limit`` (int, default 5) — max relationship-expanded chunks per seed.
         """
-        _validate_neo4j_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha, **kwargs)
+        _validate_neo4j_search_params(
+            search_mode,
+            ranker_strategy,
+            ranker_k,
+            ranker_alpha,
+            store_class=type(self),
+            **kwargs,
+        )
 
         return self._search_graph(query, k, include_scores, **kwargs)
 
@@ -694,9 +453,6 @@ class Neo4jGraphStore(BaseVectorStore):
         **kwargs,
     ) -> list[tuple[AI4RAGChunk, float]]:
         """Return individual entity/path-linked chunks using VectorCypherRetriever."""
-        from neo4j_graphrag.retrievers import VectorCypherRetriever
-        from neo4j_graphrag.types import RetrieverResultItem
-
         include_entity_neighbors = kwargs.get("include_entity_neighbors", True)
         entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
         entity_pivot_limit = kwargs.get("entity_pivot_limit", 3)
@@ -757,7 +513,7 @@ class Neo4jGraphStore(BaseVectorStore):
             query=query,
             k=k,
             index_name=_collection_vector_index_name(self._collection_name),
-            text_property="text",
+            text_property=_SCHEMA.TEXT,
             route="vector",
         )
 
@@ -770,8 +526,6 @@ class Neo4jGraphStore(BaseVectorStore):
         route: str,
     ) -> list[tuple[AI4RAGChunk, float]]:
         """Run a Neo4j GraphRAG vector retriever and normalize its evidence."""
-        from neo4j_graphrag.retrievers import VectorRetriever
-        from neo4j_graphrag.types import RetrieverResultItem
 
         def _format(record) -> RetrieverResultItem:
             # VectorRetriever returns the indexed node under ``node``.  Retain
@@ -835,10 +589,6 @@ class Neo4jGraphStore(BaseVectorStore):
                     fused[key] = (chunk, contribution)
         return sorted(fused.values(), key=lambda pair: pair[1], reverse=True)[:k]
 
-    # ------------------------------------------------------------------
-    # Knowledge graph construction
-    # ------------------------------------------------------------------
-
     def build_knowledge_graph_from_documents(
         self,
         documents: list[DoclingDocument],
@@ -871,10 +621,6 @@ class Neo4jGraphStore(BaseVectorStore):
         perform_entity_resolution : bool, default=True
             Whether to merge duplicate entity nodes after extraction.
         """
-        from neo4j_graphrag.components.text_splitters.fixed_size_splitter import (
-            FixedSizeSplitter,
-        )
-
         splitter = FixedSizeSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
         async def _split_documents() -> list[AI4RAGChunk]:
@@ -982,27 +728,27 @@ class Neo4jGraphStore(BaseVectorStore):
         with self._driver.session(database=self._config.database) as session:
             session.run(f"DROP INDEX `{_collection_vector_index_name(self._collection_name)}` IF EXISTS")
             session.run(
-                "MATCH (:__Entity__)-[r]->(:__Entity__) "
-                "WHERE $col IN COALESCE(r.ai4rag_kg_collections, []) "
-                "AND size(r.ai4rag_kg_collections) = 1 DELETE r",
+                f"MATCH (:{_SCHEMA.ENTITY_LABEL})-[r]->(:{_SCHEMA.ENTITY_LABEL}) "
+                f"WHERE $col IN COALESCE(r.{_SCHEMA.KG_COLLECTIONS}, []) "
+                f"AND size(r.{_SCHEMA.KG_COLLECTIONS}) = 1 DELETE r",
                 col=self._collection_name,
             )
             session.run(
-                "MATCH (:__Entity__)-[r]->(:__Entity__) "
-                "WHERE $col IN COALESCE(r.ai4rag_kg_collections, []) "
-                "SET r.ai4rag_kg_collections = "
-                "[owner IN r.ai4rag_kg_collections WHERE owner <> $col]",
+                f"MATCH (:{_SCHEMA.ENTITY_LABEL})-[r]->(:{_SCHEMA.ENTITY_LABEL}) "
+                f"WHERE $col IN COALESCE(r.{_SCHEMA.KG_COLLECTIONS}, []) "
+                f"SET r.{_SCHEMA.KG_COLLECTIONS} = "
+                f"[owner IN r.{_SCHEMA.KG_COLLECTIONS} WHERE owner <> $col]",
                 col=self._collection_name,
             )
             # Legacy entities have no ownership tag. Only delete those linked
             # exclusively to chunks from this collection, while those links
             # still exist to prove their provenance.
             session.run(
-                "MATCH (e:__Entity__)-[:FROM_CHUNK]->(c:Chunk) "
-                "WHERE (c.collection = $col OR $col IN labels(c)) "
-                "AND size(COALESCE(e.ai4rag_kg_collections, [])) = 0 "
-                "AND NOT EXISTS { MATCH (e)-[:FROM_CHUNK]->(other:Chunk) "
-                "WHERE COALESCE(other.collection, '') <> $col AND NOT $col IN labels(other) } "
+                f"MATCH (e:{_SCHEMA.ENTITY_LABEL})-[:{_SCHEMA.FROM_CHUNK_RELATIONSHIP}]->(c:{_SCHEMA.CHUNK_LABEL}) "
+                f"WHERE (c.{_SCHEMA.COLLECTION} = $col OR $col IN labels(c)) "
+                f"AND size(COALESCE(e.{_SCHEMA.KG_COLLECTIONS}, [])) = 0 "
+                f"AND NOT EXISTS {{ MATCH (e)-[:{_SCHEMA.FROM_CHUNK_RELATIONSHIP}]->(other:{_SCHEMA.CHUNK_LABEL}) "
+                f"WHERE COALESCE(other.{_SCHEMA.COLLECTION}, '') <> $col AND NOT $col IN labels(other) }} "
                 "DETACH DELETE e",
                 col=self._collection_name,
             )
@@ -1010,21 +756,16 @@ class Neo4jGraphStore(BaseVectorStore):
             # collection's ownership first and delete only entities no longer
             # owned by any AI4RAG collection.
             session.run(
-                "MATCH (e:__Entity__) WHERE $col IN COALESCE(e.ai4rag_kg_collections, []) "
-                "SET e.ai4rag_kg_collections = "
-                "[owner IN e.ai4rag_kg_collections WHERE owner <> $col] "
-                "WITH e WHERE size(e.ai4rag_kg_collections) = 0 "
+                f"MATCH (e:{_SCHEMA.ENTITY_LABEL}) WHERE $col IN COALESCE(e.{_SCHEMA.KG_COLLECTIONS}, []) "
+                f"SET e.{_SCHEMA.KG_COLLECTIONS} = "
+                f"[owner IN e.{_SCHEMA.KG_COLLECTIONS} WHERE owner <> $col] "
+                f"WITH e WHERE size(e.{_SCHEMA.KG_COLLECTIONS}) = 0 "
                 "DETACH DELETE e",
                 col=self._collection_name,
             )
             session.run(f"MATCH (n:{self._collection_name}) DETACH DELETE n")
-            # Remove pipeline documents from collections created by older releases.
             session.run(
-                "MATCH (d:Document {ai4rag_kg_collection: $col}) DETACH DELETE d",
-                col=self._collection_name,
-            )
-            session.run(
-                "MATCH (c:Chunk {collection: $col}) DETACH DELETE c",
+                f"MATCH (c:{_SCHEMA.CHUNK_LABEL} {{{_SCHEMA.COLLECTION}: $col}}) DETACH DELETE c",
                 col=self._collection_name,
             )
         logger.info("Collection %s cleaned.", self._collection_name)
@@ -1032,154 +773,3 @@ class Neo4jGraphStore(BaseVectorStore):
     def close(self) -> None:
         """Close the Neo4j driver."""
         self._driver.close()
-
-
-# ---------------------------------------------------------------------------
-# KG extraction response normalization
-# ---------------------------------------------------------------------------
-
-
-def _normalize_kg_json(content: str) -> str:
-    """Normalise LLM output: convert a JSON array response to the expected object format.
-
-    Some models return ``[{...}]`` instead of ``{"nodes": [...], "relationships": [...]}``
-    causing the ``neo4j_graphrag`` extractor to raise a ``TypeError``.  This helper
-    repairs and normalises the response before it reaches the extractor.
-    """
-    try:
-        cleaned = re.sub(r"```(?:json)?\s*|\s*```", "", content).strip()
-        repaired = repair_json(cleaned, skip_json_loads=False, return_objects=False)
-        parsed = json.loads(repaired) if isinstance(repaired, str) else repaired
-        if isinstance(parsed, list):
-            merged: dict = {"nodes": [], "relationships": []}
-            for item in parsed:
-                if isinstance(item, dict):
-                    merged["nodes"].extend(item.get("nodes") or [])
-                    merged["relationships"].extend(item.get("relationships") or [])
-            return json.dumps(merged)
-        return content
-    except Exception:
-        return content
-
-
-# ---------------------------------------------------------------------------
-# Graph retrieval query builder
-# ---------------------------------------------------------------------------
-
-
-def _build_graph_retrieval_query(
-    include_entity_neighbors: bool,
-    entity_neighbor_limit: int,
-    entity_pivot_limit: int = 3,
-    entity_relationship_hops: int = 1,
-    relationship_neighbor_limit: int = 5,
-) -> str:
-    """Build the Cypher retrieval query for :class:`VectorCypherRetriever`.
-
-    The query receives seed ``Chunk`` nodes from vector search, ranks their
-    graph neighbors by query similarity and graph support, then returns
-    distinct chunks as individual results. A seed with no graph neighbors is
-    returned as a fallback. Candidate chunks are scored using their own
-    embeddings rather than inheriting a seed's ANN score.
-    """
-    # $col is passed via query_params in _search_graph to scope graph expansion
-    # to one collection. The seed index is already collection-specific.
-    collection_filter = "WHERE node.collection = $col "
-
-    if include_entity_neighbors and entity_neighbor_limit:
-        entity_block = (
-            "CALL (node) { "
-            "OPTIONAL MATCH (entity:__Entity__)-[:FROM_CHUNK]->(node) "
-            "OPTIONAL MATCH (entity)-[:FROM_CHUNK]->(ent_nb:Chunk) "
-            "WHERE ent_nb <> node AND ent_nb.collection = $col "
-            "WITH ent_nb, count(DISTINCT entity) AS overlap "
-            "WHERE ent_nb IS NOT NULL AND ent_nb.embedding IS NOT NULL "
-            "WITH ent_nb, overlap, vector.similarity.cosine(ent_nb.embedding, $query_vector) AS similarity "
-            "ORDER BY similarity DESC, overlap DESC, ent_nb.id ASC "
-            f"LIMIT {entity_neighbor_limit} "
-            "RETURN collect({chunk: ent_nb, strength: toFloat(overlap)}) AS ent_hits } "
-        )
-    else:
-        entity_block = "WITH node, [] AS ent_hits "
-
-    if entity_pivot_limit and entity_relationship_hops and relationship_neighbor_limit:
-        relationship_block = (
-            "CALL (node) { "
-            "MATCH (pivot:__Entity__)-[:FROM_CHUNK]->(node) "
-            "OPTIONAL MATCH (pivot)-[:FROM_CHUNK]->(pivot_chunk:Chunk) "
-            "WHERE pivot_chunk.collection = $col "
-            "WITH node, pivot, count(DISTINCT pivot_chunk) AS degree "
-            "ORDER BY degree DESC, pivot.name ASC, pivot.id ASC "
-            f"LIMIT {entity_pivot_limit} "
-            f"MATCH path = (pivot)-[*1..{entity_relationship_hops}]-(related:__Entity__) "
-            "WHERE ALL(rel IN relationships(path) WHERE type(rel) <> 'FROM_CHUNK' "
-            "AND $col IN COALESCE(rel.ai4rag_kg_collections, [])) "
-            "MATCH (related)-[:FROM_CHUNK]->(rel_nb:Chunk) "
-            "WHERE rel_nb <> node AND rel_nb.collection = $col AND rel_nb.embedding IS NOT NULL "
-            "WITH rel_nb, count(DISTINCT path) AS path_count, min(length(path)) AS hops "
-            "WITH rel_nb, path_count, hops, "
-            "vector.similarity.cosine(rel_nb.embedding, $query_vector) AS similarity "
-            "ORDER BY similarity DESC, path_count DESC, hops ASC, rel_nb.id ASC "
-            f"LIMIT {relationship_neighbor_limit} "
-            "RETURN collect({chunk: rel_nb, strength: toFloat(path_count) / toFloat(hops)}) AS rel_hits } "
-        )
-    else:
-        relationship_block = "WITH node, ent_hits, [] AS rel_hits "
-
-    # Give independent query similarity most of the weight; bound accumulated
-    # graph support so high-degree entities cannot dominate the local route.
-    return (
-        collection_filter
-        + entity_block
-        + relationship_block
-        + "WITH node, ent_hits + rel_hits AS graph_hits "
-        + "WITH CASE WHEN size(graph_hits) = 0 "
-        + "THEN [{chunk: node, strength: 0.0}] ELSE graph_hits END AS hits "
-        + "UNWIND hits AS hit "
-        + "WITH hit.chunk AS candidate, sum(hit.strength) AS graph_strength "
-        + "WITH candidate, graph_strength, "
-        + "coalesce(vector.similarity.cosine(candidate.embedding, $query_vector), 0.0) AS semantic_score "
-        + "WITH candidate, graph_strength, "
-        + "0.8 * semantic_score + 0.2 * graph_strength / (1.0 + graph_strength) AS score "
-        + "ORDER BY score DESC, graph_strength DESC, candidate.id ASC LIMIT $top_k "
-        + "RETURN candidate.text AS text, score, "
-        + "candidate.document_id AS document_id, candidate.metadata AS metadata"
-    )
-
-
-def _validate_neo4j_search_params(
-    search_mode: str,
-    ranker_strategy: str | None = None,
-    ranker_k: int | None = None,
-    ranker_alpha: float | None = None,
-    **kwargs: Any,
-) -> None:
-    validate_search_params(
-        search_mode,
-        ranker_strategy,
-        ranker_k,
-        ranker_alpha,
-        supported_modes=("graph",),
-        store_class=Neo4jGraphStore,
-    )
-
-    if search_mode == "graph":
-        graph_hops = kwargs.get("graph_hops", 0)
-        entity_neighbor_limit = kwargs.get("entity_neighbor_limit", 5)
-        entity_pivot_limit = kwargs.get("entity_pivot_limit", 3)
-        entity_relationship_hops = kwargs.get("entity_relationship_hops", 1)
-        relationship_neighbor_limit = kwargs.get("relationship_neighbor_limit", 5)
-        if not isinstance(graph_hops, int) or graph_hops != 0:
-            raise ValueError(
-                f"graph_hops must be 0 because Neo4j graph search does not expand NEXT_CHUNK neighbors, "
-                f"got {graph_hops!r}."
-            )
-        if not isinstance(entity_neighbor_limit, int) or entity_neighbor_limit < 0:
-            raise ValueError(f"entity_neighbor_limit must be a non-negative integer, got {entity_neighbor_limit!r}.")
-        for name, value in {
-            "entity_pivot_limit": entity_pivot_limit,
-            "entity_relationship_hops": entity_relationship_hops,
-            "relationship_neighbor_limit": relationship_neighbor_limit,
-        }.items():
-            if not isinstance(value, int) or value < 0:
-                raise ValueError(f"{name} must be a non-negative integer, got {value!r}.")

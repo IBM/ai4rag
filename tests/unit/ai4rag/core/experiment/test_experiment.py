@@ -118,6 +118,7 @@ class TestEvaluatorType:
 class TestGraphCollectionReuse:
     def test_graph_indexing_key_includes_extraction_model_and_settings(self):
         experiment = _build_experiment()
+        experiment.vector_store_config = MagicMock(provider="neo4j")
         foundation_model = MagicMock()
         foundation_model.model_id = "kg-extractor"
         foundation_model.params.temperature = 0.2
@@ -161,6 +162,40 @@ class TestGraphCollectionReuse:
             "model_params": {"temperature": 0.2, "max_completion_tokens": 512},
             "extraction_config": experiment.kg_extraction_config,
         }
+
+    def test_pattern_omits_knowledge_graph_settings_for_non_neo4j_store(self):
+        experiment = _build_experiment()
+        result = EvaluationResult(
+            pattern_name="Pattern1",
+            collection="ai4rag_test",
+            indexing_params={
+                "chunking": {
+                    "chunking_method": "recursive",
+                    "chunk_size": 1024,
+                    "chunk_overlap": 64,
+                    "include_metadata": False,
+                },
+                "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
+                "knowledge_graph": {"extraction_config": {"mode": "constrained"}},
+            },
+            rag_params={
+                "retrieval": {
+                    "retrieval_method": "simple",
+                    "number_of_chunks": 5,
+                    "search_mode": "vector",
+                    "window_size": 0,
+                },
+                "generation": {"model_id": "generator"},
+            },
+            scores={"metrics": []},
+            execution_time=1.0,
+            final_score=0.5,
+        )
+
+        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+
+        payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
+        assert "knowledge_graph" not in payload["settings"]
 
     def test_pattern_preserves_kg_and_graph_retrieval_settings(self):
         experiment = _build_experiment()
