@@ -23,7 +23,6 @@ def config_module(monkeypatch):
 def generated_config():
     """A complete generated agent configuration."""
     return {
-        "runtime": {"port": 8000},
         "generation": {
             "model_id": "chat-model",
             "temperature": 0.2,
@@ -54,16 +53,14 @@ def _inject_config(monkeypatch, config):
     monkeypatch.setenv("AGENT_CONFIG_B64", encoded)
 
 
-def test_generated_settings_and_port_override(config_module, generated_config, monkeypatch):
-    """Load optimized settings and the runtime port override."""
+def test_generated_settings(config_module, generated_config, monkeypatch):
+    """Load optimized RAG settings without deployment-specific runtime settings."""
     _inject_config(monkeypatch, generated_config)
-    monkeypatch.setenv("PORT", "8080")
 
     config = config_module.AgentConfig.from_env()
 
     assert config.model_id == "chat-model"
     assert config.embedding_model_id == "embedding-model"
-    assert config.port == 8080
 
 
 def test_rrf_ranker_k_is_loaded(config_module, generated_config, monkeypatch):

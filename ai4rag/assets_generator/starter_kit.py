@@ -97,9 +97,6 @@ def _replace_placeholders(file_path: Path, mapping: dict[str, str]) -> None:
 def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
     """Render generated prompts and RAG settings as readable JSON."""
     config = {
-        "runtime": {
-            "port": 8000,
-        },
         "generation": {
             "model_id": mapping["__FM_MODEL_ID__"],
             "temperature": float(mapping["__TEMPERATURE__"] or 0.0),

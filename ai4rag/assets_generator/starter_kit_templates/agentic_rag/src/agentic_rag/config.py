@@ -54,16 +54,9 @@ class VectorStoreConfig(TypedDict):
     collection_name: str
 
 
-class RuntimeConfig(TypedDict):
-    """Generated runtime settings."""
-
-    port: int
-
-
 class AgentConfigData(TypedDict):
     """Expected structure of the generated agent_config.json."""
 
-    runtime: RuntimeConfig
     generation: GenerationConfig
     prompts: PromptConfig
     embedding: EmbeddingConfig
@@ -125,11 +118,10 @@ class AgentConfig:
     ranker_strategy: str
     ranker_k: int | None
     ranker_alpha: float | None
-    port: int
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
-        """Load generated settings, with PORT as a runtime override."""
+        """Load generated RAG settings."""
         file_config = _load_agent_config()
         try:
             generation = file_config["generation"]
@@ -156,7 +148,6 @@ class AgentConfig:
                 ranker_strategy=retrieval["ranker_strategy"],
                 ranker_k=int(retrieval["ranker_k"]) if retrieval["ranker_k"] is not None else None,
                 ranker_alpha=float(retrieval["ranker_alpha"]) if retrieval["ranker_alpha"] is not None else None,
-                port=int(getenv("PORT", file_config["runtime"]["port"])),
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Invalid agent configuration: {exc}") from exc
@@ -172,6 +163,6 @@ class AgentConfig:
         ):
             if not isinstance(getattr(config, name), str) or not getattr(config, name).strip():
                 raise ValueError(f"Agent configuration requires a non-empty {name}")
-        if min(config.max_completion_tokens, config.embedding_dimension, config.number_of_chunks, config.port) < 1:
-            raise ValueError("Token, embedding dimension, chunk counts, and port must be positive")
+        if min(config.max_completion_tokens, config.embedding_dimension, config.number_of_chunks) < 1:
+            raise ValueError("Token limit, embedding dimension, and chunk count must be positive")
         return config

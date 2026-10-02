@@ -10,6 +10,7 @@ import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from os import getenv
 from typing import Any, Literal
 
 import openai
@@ -21,6 +22,7 @@ from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 RAG = None
+DEFAULT_APP_PORT = 8000
 
 _MAX_INVOKE_ATTEMPTS = 3
 _GRACEFUL_ERROR_MESSAGE = "I was unable to process this request due to repeated internal errors."
@@ -203,4 +205,4 @@ async def health():
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("main:app", host="0.0.0.0", port=AgentConfig.from_env().port)
+    uvicorn.run("main:app", host="0.0.0.0", port=int(getenv("PORT", str(DEFAULT_APP_PORT))))

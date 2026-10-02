@@ -1,7 +1,4 @@
 {
-  "runtime": {
-    "port": 8000
-  },
   "generation": {
     "model_id": "__FM_MODEL_ID__",
     "temperature": "__TEMPERATURE__",

@@ -66,7 +66,7 @@ class TestGenerateStarterKit:
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
         with zipfile.ZipFile(zip_path, "r") as zf:
             agent_config = json.loads(zf.read("starter_kit/agent_config.json"))
-            assert agent_config["runtime"]["port"] == 8000
+            assert "runtime" not in agent_config
             assert agent_config["generation"]["model_id"] == "publishers/ibm/models/granite-3.1-8b-instruct"
             assert agent_config["generation"]["temperature"] == 0.2
             assert agent_config["embedding"] == {
