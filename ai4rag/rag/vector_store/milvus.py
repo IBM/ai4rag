@@ -259,7 +259,16 @@ class MilvusVectorStore(BaseVectorStore):
         list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
             Matched chunks, optionally paired with their scores.
         """
-        validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha)
+        # pylint: disable=duplicate-code
+        validate_search_params(
+            search_mode,
+            ranker_strategy,
+            ranker_k,
+            ranker_alpha,
+            supported_modes=("vector", "hybrid"),
+            store_class=type(self),
+        )
+        # pylint: enable=duplicate-code
 
         if search_mode == "hybrid":
             return self._search_hybrid(query, k, include_scores, ranker_strategy, ranker_k, ranker_alpha)

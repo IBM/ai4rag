@@ -95,6 +95,10 @@ def _make_llmaj_evaluator():
     return LLMaJEvaluator(model=model)
 
 
+class _StopBeforeIndexing(Exception):
+    """Sentinel used to inspect evaluation settings before a store is created."""
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -109,6 +113,139 @@ class TestEvaluatorType:
 
     def test_llmaj_evaluator_type(self):
         assert LLMaJEvaluator.EVALUATOR_TYPE == "judge"
+
+
+class TestGraphCollectionReuse:
+    def test_graph_indexing_key_includes_extraction_model_and_settings(self):
+        experiment = _build_experiment()
+        experiment.vector_store_config = MagicMock(provider="neo4j")
+        foundation_model = MagicMock()
+        foundation_model.model_id = "kg-extractor"
+        foundation_model.params.temperature = 0.2
+        foundation_model.params.max_completion_tokens = 512
+        embedding_model = MagicMock()
+        embedding_model.model_id = "embedding"
+        embedding_model.params = {"embedding_dimension": 384}
+        experiment.kg_extraction_config = {
+            "mode": "free",
+            "max_entities_per_chunk": 3,
+            "max_relationships_per_chunk": 4,
+        }
+
+        captured: dict = {}
+
+        def stop_before_indexing(indexing_params):
+            captured.update(indexing_params)
+            raise _StopBeforeIndexing
+
+        experiment._get_reusable_collection_name = stop_before_indexing
+        params = {
+            AI4RAGParamNames.FOUNDATION_MODEL: foundation_model,
+            AI4RAGParamNames.EMBEDDING_MODEL: embedding_model,
+            AI4RAGParamNames.CHUNKING_METHOD: "recursive",
+            AI4RAGParamNames.CHUNK_SIZE: 1024,
+            AI4RAGParamNames.CHUNK_OVERLAP: 0,
+            AI4RAGParamNames.RETRIEVAL_METHOD: "simple",
+            AI4RAGParamNames.WINDOW_SIZE: 0,
+            AI4RAGParamNames.NUMBER_OF_CHUNKS: 3,
+            AI4RAGParamNames.SEARCH_MODE: "graph",
+            AI4RAGParamNames.RANKER_STRATEGY: "",
+            AI4RAGParamNames.RANKER_K: 0,
+            AI4RAGParamNames.RANKER_ALPHA: 1,
+        }
+
+        with pytest.raises(_StopBeforeIndexing):
+            experiment.run_single_evaluation(params)
+
+        assert captured["knowledge_graph"] == {
+            "model_id": "kg-extractor",
+            "model_params": {"temperature": 0.2, "max_completion_tokens": 512},
+            "extraction_config": experiment.kg_extraction_config,
+        }
+
+    def test_pattern_omits_knowledge_graph_settings_for_non_neo4j_store(self):
+        experiment = _build_experiment()
+        result = EvaluationResult(
+            pattern_name="Pattern1",
+            collection="ai4rag_test",
+            indexing_params={
+                "chunking": {
+                    "chunking_method": "recursive",
+                    "chunk_size": 1024,
+                    "chunk_overlap": 64,
+                    "include_metadata": False,
+                },
+                "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
+                "knowledge_graph": {"extraction_config": {"mode": "constrained"}},
+            },
+            rag_params={
+                "retrieval": {
+                    "retrieval_method": "simple",
+                    "number_of_chunks": 5,
+                    "search_mode": "vector",
+                    "window_size": 0,
+                },
+                "generation": {"model_id": "generator"},
+            },
+            scores={"metrics": []},
+            execution_time=1.0,
+            final_score=0.5,
+        )
+
+        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+
+        payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
+        assert "knowledge_graph" not in payload["settings"]
+
+    def test_pattern_preserves_kg_and_graph_retrieval_settings(self):
+        experiment = _build_experiment()
+        experiment.vector_store_config = MagicMock(provider="neo4j")
+        kg_settings = {
+            "model_id": "kg-extractor",
+            "model_params": {"temperature": 0.2, "max_completion_tokens": 512},
+            "extraction_config": {
+                "mode": "free",
+                "max_entities_per_chunk": 3,
+                "max_relationships_per_chunk": 4,
+            },
+        }
+        result = EvaluationResult(
+            pattern_name="Pattern1",
+            collection="ai4rag_graph_test",
+            indexing_params={
+                "chunking": {
+                    "chunking_method": "recursive",
+                    "chunk_size": 1024,
+                    "chunk_overlap": 64,
+                    "include_metadata": False,
+                },
+                "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
+                "knowledge_graph": kg_settings,
+            },
+            rag_params={
+                "retrieval": {
+                    "retrieval_method": "simple",
+                    "number_of_chunks": 5,
+                    "search_mode": "graph",
+                    "window_size": 0,
+                    "entity_pivot_limit": 3,
+                    "entity_relationship_hops": 2,
+                    "relationship_neighbor_limit": 5,
+                },
+                "generation": {"model_id": "kg-extractor", "temperature": 0.2, "max_completion_tokens": 512},
+            },
+            scores={"metrics": []},
+            execution_time=1.0,
+            final_score=0.5,
+        )
+
+        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+
+        payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
+        assert payload["settings"]["knowledge_graph"] == kg_settings
+        assert payload["settings"]["retrieval"]["entity_pivot_limit"] == 3
+        assert payload["settings"]["retrieval"]["entity_relationship_hops"] == 2
+        assert payload["settings"]["retrieval"]["relationship_neighbor_limit"] == 5
 
 
 class TestEvaluatorsSetter:

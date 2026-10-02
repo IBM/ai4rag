@@ -174,6 +174,13 @@ def test_rule_chunk_size_within_embedding_context_length_missing_fields():
         ({"search_mode": "hybrid", "ranker_strategy": "normalized", "ranker_k": 0, "ranker_alpha": 1}, True),
         # hybrid mode: empty ranker_strategy -> False
         ({"search_mode": "hybrid", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 1}, False),
+        # graph mode: all ranker params must be sentinels (same as vector mode)
+        ({"search_mode": "graph", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": 1}, True),
+        ({"search_mode": "graph", "ranker_strategy": "", "ranker_k": 0, "ranker_alpha": None}, True),
+        ({"search_mode": "graph"}, True),
+        # graph mode: ranker params set -> False
+        ({"search_mode": "graph", "ranker_strategy": "rrf", "ranker_k": 0, "ranker_alpha": 1}, False),
+        ({"search_mode": "graph", "ranker_strategy": "", "ranker_k": 60, "ranker_alpha": 1}, False),
     ),
 )
 def test_rule_search_mode_ranker_consistency(combination, expected_value):
@@ -314,6 +321,26 @@ class TestGetDefaultSearchSpaceParameters:
         assert "vector" in search_mode_param.values
         assert "hybrid" in search_mode_param.values
 
+    def test_unsupported_vector_store_type_is_rejected(self):
+        with pytest.raises(ValueError, match="Vector store type 'chroma' is not supported"):
+            get_default_ai4rag_search_space_parameters(vector_store_type="chroma")
+
+    def test_neo4j_includes_graph_search_mode_and_fixed_chunk_geometry(self):
+        params = get_default_ai4rag_search_space_parameters(vector_store_type="neo4j")
+        param_map = {p.name: p for p in params}
+
+        assert "search_mode" in param_map
+        assert param_map["search_mode"].values == ("graph",)
+
+        assert param_map["chunk_size"].values == (1024,), "chunk_size must be fixed at 1024 for neo4j"
+        assert param_map["chunk_overlap"].values == (0, 64), "Neo4j must allow zero overlap and the 64-token default"
+        assert "chunking_method" in param_map, "chunking_method must remain variable"
+
+    def test_default_is_milvus(self):
+        params_default = get_default_ai4rag_search_space_parameters()
+        params_milvus = get_default_ai4rag_search_space_parameters(vector_store_type="milvus")
+        assert params_default == params_milvus
+
     def test_common_params_present(self):
         common_params = {
             "chunking_method",
@@ -330,6 +357,13 @@ class TestGetDefaultSearchSpaceParameters:
 
 
 class TestAI4RAGSearchSpaceHybridDefaults:
+    def test_neo4j_defaults_to_graph_only_search(self):
+        ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS), vector_store_type="neo4j")
+
+        assert ss["search_mode"].values == ("graph",)
+        assert {combination["search_mode"] for combination in ss.combinations} == {"graph"}
+        assert "ranker_strategy" not in {param.name for param in ss.params}
+
     def test_includes_hybrid_params_by_default(self):
         ss = AI4RAGSearchSpace(params=list(_REQUIRED_PARAMS))
         param_names = {p.name for p in ss.params}
