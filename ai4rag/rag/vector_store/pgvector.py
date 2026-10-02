@@ -619,6 +619,7 @@ class PGVectorStore(BaseVectorStore):
         list[AI4RAGChunk] | list[tuple[AI4RAGChunk, float]]
             Matched chunks, optionally paired with their scores.
         """
+        # pylint: disable=duplicate-code
         validate_search_params(
             search_mode,
             ranker_strategy,
@@ -627,6 +628,7 @@ class PGVectorStore(BaseVectorStore):
             supported_modes=("vector", "hybrid"),
             store_class=type(self),
         )
+        # pylint: enable=duplicate-code
         self._ensure_indexes()
 
         if search_mode == "hybrid":

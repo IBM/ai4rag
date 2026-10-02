@@ -382,6 +382,7 @@ def _validate_neo4j_search_params(
     store_class: type | None = None,
     **kwargs: Any,
 ) -> None:
+    # pylint: disable=duplicate-code
     validate_search_params(
         search_mode,
         ranker_strategy,
@@ -390,6 +391,7 @@ def _validate_neo4j_search_params(
         supported_modes=("graph",),
         store_class=store_class,
     )
+    # pylint: enable=duplicate-code
 
     if search_mode == "graph":
         graph_hops = kwargs.get("graph_hops", 0)
