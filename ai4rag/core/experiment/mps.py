@@ -24,7 +24,8 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.local_store import temporary_milvus_lite_store
 from ai4rag.utils.constants import AI4RAGParamNames, PreSelectorConstants
@@ -74,6 +75,9 @@ class ModelsPreSelector:
     metric : RAGMetric, default=Metrics.OVERALL_SCORE
         Metric used for ranking models during pre-selection.
 
+    rag_template : type[BaseRAGTemplate], default=AgenticRAG
+        RAG template used to evaluate candidate model pairs.
+
     Attributes
     ----------
     evaluator : BaseEvaluator
@@ -107,6 +111,7 @@ class ModelsPreSelector:
         documents: list[DoclingDocument],
         benchmark_data: BenchmarkData,
         metric: RAGMetric = Metrics.OVERALL_SCORE,
+        rag_template: type[BaseRAGTemplate] = AgenticRAG,
         **kwargs,
     ):
         self.benchmark_data = benchmark_data
@@ -114,6 +119,7 @@ class ModelsPreSelector:
         self.foundation_models = foundation_models
         self.embedding_models = embedding_models
         self.metric = metric
+        self.rag_template = rag_template
 
         self.evaluator: BaseEvaluator = kwargs.pop("evaluator", UnitxtEvaluator())
         self.retrieval_params = {
@@ -270,7 +276,7 @@ class ModelsPreSelector:
             Aggregate metrics with confidence intervals and per-question scores.
         """
 
-        rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
+        rag = self.rag_template(foundation_model=foundation_model, retriever=retriever)
 
         inference_response = query_rag(
             rag=rag, questions=list(self.benchmark_data.questions), max_threads=self.max_threads

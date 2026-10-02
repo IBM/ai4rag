@@ -30,6 +30,8 @@ dynamic = ["version"]
 dependencies = [
   "boto3>=1.28",
   "docling-slim[feat-chunking]~=2.121.0",
+  "langchain>=1.4,<2",
+  "langchain-openai>=1.6,<2",
   "neo4j~=6.3.0",
   "neo4j-graphrag>=1.0,<2",
   "langchain-text-splitters~=1.1.0",
@@ -93,7 +95,24 @@ docs = [
 version = { attr = "ai4rag.__version__" }
 
 [tool.setuptools.package-data]
-"ai4rag.assets_generator" = ["notebook_templates/*.ipynb"]
+"ai4rag.assets_generator" = [
+    "notebook_templates/*.ipynb",
+    "starter_kit_templates/**/*.py",
+    "starter_kit_templates/agentic_rag/agent_config.json",
+    "starter_kit_templates/agentic_rag/uv.lock",
+    "starter_kit_templates/agentic_rag/Makefile",
+    "starter_kit_templates/agentic_rag/pyproject.toml",
+    "starter_kit_templates/agentic_rag/Containerfile.openshell",
+    "starter_kit_templates/agentic_rag/README.md",
+    "starter_kit_templates/agentic_rag/values.yaml",
+]
+
+[tool.setuptools.exclude-package-data]
+"ai4rag.assets_generator" = [
+    "starter_kit_templates/.DS_Store",
+    "starter_kit_templates/**/.DS_Store",
+    "starter_kit_templates/**/__pycache__/*",
+]
 
 [tool.setuptools.packages.find]
 exclude = ["tests*", "dev_utils*"]
