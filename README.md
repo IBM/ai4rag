@@ -78,6 +78,7 @@ ai4rag depends on models from two sources:
 | Component | Size | Purpose | Environment Variable |
 |-----------|------|---------|----------------------|
 | **Docling artifacts** | ~300-400 MB | Document text extraction and optional OCR | `DOCLING_ARTIFACTS_PATH` |
+| **Whisper ASR model** | ~150 MB | Offline audio transcription | `HF_MODEL_DIR` |
 | **HuggingFace models** | Variable | Embeddings and foundation models | `HF_HOME` |
 
 ### Setup Instructions
@@ -106,9 +107,13 @@ ai4rag depends on models from two sources:
 3. **On the disconnected cluster, set environment variables:**
    ```bash
    export DOCLING_ARTIFACTS_PATH=/offline/docling
+   export HF_MODEL_DIR=/offline/models/whisper-tiny
    export HF_HOME=/offline/hf_cache
    export HF_HUB_OFFLINE=1  # Enforce offline mode
    ```
+
+   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model. AI4RAG does not
+   download audio-transcription weights at runtime.
 
 ### Indexing Notebooks
 

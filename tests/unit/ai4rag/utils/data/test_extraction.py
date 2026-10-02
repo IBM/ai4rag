@@ -604,22 +604,25 @@ class TestBuildDoclingFormatOptions:
         options = _build_docling_format_options()
         assert InputFormat.IMAGE in options
 
-    def test_audio_format_uses_asr_pipeline(self):
-        """Audio format option must use the AsrPipeline class."""
+    def test_audio_format_uses_local_huggingface_asr_pipeline(self):
+        """Audio format option must use the offline local Hugging Face backend."""
         from docling.datamodel.base_models import InputFormat
-        from docling.pipeline.asr_pipeline import AsrPipeline
+
+        from ai4rag.utils.data.local_hf_asr_pipeline import LocalHuggingFaceAsrPipeline
 
         options = _build_docling_format_options()
         audio_option = options[InputFormat.AUDIO]
-        assert audio_option.pipeline_cls is AsrPipeline
+        assert audio_option.pipeline_cls is LocalHuggingFaceAsrPipeline
 
-    def test_audio_format_language_is_auto_detect(self):
-        """Audio ASR options must use language=None for auto-detection."""
+    def test_audio_format_forwards_configured_model_path(self):
+        """Audio ASR options must carry the approved local model path."""
         from docling.datamodel.base_models import InputFormat
 
-        options = _build_docling_format_options()
+        options = _build_docling_format_options(
+            config=DoclingExtractionConfig(asr_model_path="/models/whisper-tiny"),
+        )
         audio_option = options[InputFormat.AUDIO]
-        assert audio_option.pipeline_options.asr_options.language is None
+        assert audio_option.pipeline_options.asr_model_path == "/models/whisper-tiny"
 
 
 class TestNormalizeOcrLang:

@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
-from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
@@ -37,12 +36,12 @@ from docling.document_converter import (
     PowerpointFormatOption,
     WordFormatOption,
 )
-from docling.pipeline.asr_pipeline import AsrPipeline
 
 from ai4rag import handler
 from ai4rag.utils.clients.s3 import create_s3_client
 
 from .constants import SUPPORTED_EXTENSIONS
+from .local_hf_asr_pipeline import LocalHuggingFaceAsrPipeline, LocalHuggingFaceAsrPipelineOptions
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
@@ -149,6 +148,11 @@ class DoclingExtractionConfig:
         What/Why: optional path to the character-keys dictionary matching the
         custom recognition model; required when the recognition model uses a
         non-default character set.
+    asr_model_path
+        Directory containing the approved local Hugging Face Transformers
+        Whisper model. When ``None``, the audio pipeline resolves
+        ``HF_MODEL_DIR`` in its worker process. Audio extraction fails closed
+        when neither location provides a complete local model.
     """
 
     do_table_structure: bool = False
@@ -158,6 +162,7 @@ class DoclingExtractionConfig:
     ocr_cls_model_path: str | None = None
     ocr_rec_model_path: str | None = None
     ocr_rec_keys_path: str | None = None
+    asr_model_path: str | None = None
 
     def __post_init__(self) -> None:
         # Normalize ``ocr_lang`` in one place so callers may pass a single
@@ -641,10 +646,9 @@ def _build_docling_format_options(
 
     pdf_pipeline_options = ThreadedPdfPipelineOptions(**pdf_kwargs)
 
-    asr_pipeline_options = AsrPipelineOptions(
-        asr_options=asr_model_specs.WHISPER_TINY,
+    asr_pipeline_options = LocalHuggingFaceAsrPipelineOptions(
+        asr_model_path=cfg.asr_model_path or os.environ.get("HF_MODEL_DIR"),
     )
-    asr_pipeline_options.asr_options.language = None
 
     paginated_pipeline_options = PaginatedPipelineOptions(
         artifacts_path=ap,
@@ -664,7 +668,10 @@ def _build_docling_format_options(
         InputFormat.LATEX: LatexFormatOption(),
         InputFormat.EPUB: EpubFormatOption(),
         InputFormat.EMAIL: EmailFormatOption(),
-        InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=asr_pipeline_options),
+        InputFormat.AUDIO: AudioFormatOption(
+            pipeline_cls=LocalHuggingFaceAsrPipeline,
+            pipeline_options=asr_pipeline_options,
+        ),
     }
     # Images always go through the PDF/image pipeline so RapidOCR can run when enabled.
     format_options[InputFormat.IMAGE] = ImageFormatOption(pipeline_options=pdf_pipeline_options)

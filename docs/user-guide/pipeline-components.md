@@ -191,7 +191,10 @@ Default RapidOCR models are **not** in current PyPI `rapidocr` wheels, and `extr
 
 #### Audio Transcription
 
-Audio files (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) are transcribed automatically — no configuration flag is needed, unlike OCR. `extract_text` routes them through Docling's ASR pipeline using a Whisper (`whisper-tiny`) model, with the spoken language auto-detected per file:
+Audio files (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) are transcribed automatically. Set
+`HF_MODEL_DIR` to the approved local Hugging Face Transformers Whisper model directory before extraction.
+ai4rag loads that directory with `local_files_only=True` and fails with `FileNotFoundError` if it is
+missing or incomplete; it never downloads ASR weights at runtime.
 
 ```python
 from ai4rag.utils.data import extract_text
@@ -202,6 +205,9 @@ result = extract_text(
     output_dir="/tmp/extracted",
 )
 ```
+
+For an AutoRAG product deployment, `HF_MODEL_DIR` must be supplied by the approved Whisper modelcar.
+For other deployments, mount an equivalent locally verified model directory and make it read-only.
 
 When using the hybrid/Docling chunker, chunks produced from ASR transcript
 segments also carry `audio_start_seconds` and `audio_end_seconds` in their
