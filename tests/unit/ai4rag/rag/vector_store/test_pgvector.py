@@ -409,7 +409,7 @@ class TestPGVectorStoreValidation:
 
     def test_invalid_search_mode(self, mock_create_pool, mock_embedding, pgvector_config):
         store = self._make_store(mock_create_pool, mock_embedding, pgvector_config)
-        with pytest.raises(ValueError, match="Invalid search_mode"):
+        with pytest.raises(ValueError, match="not supported by PGVectorStore"):
             store.search("q", k=1, search_mode="full_text")
 
     def test_ranker_strategy_on_vector_mode(self, mock_create_pool, mock_embedding, pgvector_config):

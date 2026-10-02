@@ -155,7 +155,7 @@ def embed_documents(texts: list[str]) -> list[list[float]]:
 
 ### Vector Store Insertion
 
-The backend is selected by `vector_store_config` (a `MilvusConfig`, `MilvusLiteConfig`, or `PGVectorConfig`) passed to `AI4RAGExperiment`. The experiment resolves the concrete store once via `get_vector_store`, which talks **directly** to the configured backend (a remote Milvus server, embedded Milvus Lite, or PostgreSQL/pgvector) — there is no intermediary API server between ai4rag and the vector database.
+The backend is selected by `vector_store_config` (a `MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`, or `Neo4jConfig`) passed to `AI4RAGExperiment`. The experiment resolves the concrete store once via `get_vector_store`, which talks **directly** to the configured backend (a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j) — there is no intermediary API server between ai4rag and the vector database. The batch-insertion walkthrough below describes Milvus/PGVector; Neo4j's indexing flow (entity/relationship extraction via `SimpleKGPipeline`) is documented separately in [Neo4j Indexing and Graph Search](neo4j-indexing-and-search.md).
 
 **Vector Store Selection:**
 

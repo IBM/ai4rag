@@ -146,6 +146,14 @@ class TestPrepareSearchSpaceWithMaas:
         assert "vector" in search_mode_param.values
         assert "hybrid" in search_mode_param.values
 
+    def test_neo4j_search_space_is_graph_only(self, mocker):
+        client = _setup_client(mocker, ["default-llm", "default-embedding"])
+
+        result = prepare_search_space_with_maas(_payload(), client, vector_store_type="neo4j")
+
+        assert result["search_mode"].values == ("graph",)
+        assert "ranker_strategy" not in {param.name for param in result.params}
+
     def test_user_specifies_not_responding_foundation_model(self, mocker):
         """Error when a requested foundation model is available but does not respond."""
         client = _setup_client(

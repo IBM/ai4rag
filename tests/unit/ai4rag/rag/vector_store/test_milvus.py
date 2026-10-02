@@ -277,7 +277,7 @@ class TestMilvusVectorStoreValidation:
 
     def test_invalid_search_mode(self, MockClient, mock_embedding, milvus_config):
         store = self._make_store(MockClient, mock_embedding, milvus_config)
-        with pytest.raises(ValueError, match="Invalid search_mode"):
+        with pytest.raises(ValueError, match="not supported by MilvusVectorStore"):
             store.search("q", k=1, search_mode="invalid")
 
     def test_ranker_strategy_on_vector_mode(self, MockClient, mock_embedding, milvus_config):

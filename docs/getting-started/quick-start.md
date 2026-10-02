@@ -249,8 +249,9 @@ optimizer_settings = GAMOptSettings(
     - `MilvusLiteConfig(db_path="./ai4rag.db")` (or `MilvusLiteConfig()`) — zero-config, embedded **Milvus Lite** backed by a local file. Supports hybrid search (dense + BM25); intended for local development, tests, and small-scale workloads, not production.
     - `MilvusConfig.from_env()` or `MilvusConfig(uri="http(s)://host:19530")` — a running Milvus server (or Zilliz Cloud). `uri` must be an `http(s)://` URL — anything else (a bare host, a local file path, an empty string) raises `ValueError` rather than silently falling back to a local database. Supports hybrid search (dense + BM25).
     - `PGVectorConfig.from_env()` or `PGVectorConfig(host=...)` — a running PostgreSQL instance with `pgvector`. Supports hybrid search (dense + full-text).
+    - `Neo4jConfig.from_env()` or `Neo4jConfig(uri=...)` — a running Neo4j instance with APOC. Graph-only retrieval (`search_mode="graph"`); see [Neo4j Indexing and Graph Search](../architecture/neo4j-indexing-and-search.md).
 
-    All three classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
+    All four classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
 
 Create and run the optimization experiment:
 

@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Literal
+from typing import Any, Literal
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
@@ -22,8 +22,8 @@ class Retriever:
     number_of_chunks : int
         Number of chunks to retrieve.
 
-    search_mode : Literal["vector", "hybrid"], default="vector"
-        Search mode passed to the vector store: "vector" or "hybrid".
+    search_mode : Literal["vector", "hybrid", "graph"], default="vector"
+        Search mode passed to the vector store: "vector", "hybrid", or "graph".
 
     ranker_strategy : str | None, default=None
         Ranking strategy for hybrid search: "rrf", "weighted", or "normalized".
@@ -40,10 +40,11 @@ class Retriever:
         vector_store: BaseVectorStore,
         number_of_chunks: int,
         method: Literal["simple"] = "simple",
-        search_mode: Literal["vector", "hybrid"] = "vector",
+        search_mode: Literal["vector", "hybrid", "graph"] = "vector",
         ranker_strategy: str | None = None,
         ranker_k: int | None = None,
         ranker_alpha: float | None = None,
+        search_kwargs: dict[str, Any] | None = None,
     ):
         self._vector_store = vector_store
         self.method = method
@@ -52,6 +53,7 @@ class Retriever:
         self.ranker_strategy = ranker_strategy
         self.ranker_k = ranker_k
         self.ranker_alpha = ranker_alpha
+        self.search_kwargs = search_kwargs or {}
 
     def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
         """Retrieve relevant chunks from vector store.
@@ -75,4 +77,5 @@ class Retriever:
             ranker_strategy=self.ranker_strategy,
             ranker_k=self.ranker_k,
             ranker_alpha=self.ranker_alpha,
+            **self.search_kwargs,
         )

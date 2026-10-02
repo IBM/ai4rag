@@ -62,6 +62,11 @@ classDiagram
         +add_documents(AI4RAGChunk[]) void
     }
 
+    class Neo4jGraphStore {
+        +search(query, k, search_mode="graph") AI4RAGChunk[]
+        +add_documents(AI4RAGChunk[]) void
+    }
+
     class BaseChunker {
         <<abstract>>
         +split_documents(DoclingDocument[])* AI4RAGChunk[]
@@ -113,6 +118,7 @@ classDiagram
     BaseEmbeddingModel <|-- OpenAIEmbeddingModel
     BaseVectorStore <|-- MilvusVectorStore
     BaseVectorStore <|-- PGVectorStore
+    BaseVectorStore <|-- Neo4jGraphStore
     BaseChunker <|-- DoclingChunker
     BaseChunker <|-- LangChainChunker
     BaseRAGTemplate <|-- SimpleRAG
@@ -438,7 +444,7 @@ class BaseVectorStore(ABC):
 
 **Configuration:**
 
-Every concrete store is constructed from a typed, frozen `config` dataclass (`MilvusConfig`, `MilvusLiteConfig`, or `PGVectorConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"milvus"`, `"milvus_lite"`, `"pgvector"`). `MilvusConfig` and `MilvusLiteConfig` are separate, validated classes rather than two modes of a single config: `MilvusConfig.uri` must be an `http(s)://` URL (remote server or Zilliz Cloud) and raises `ValueError` otherwise, while `MilvusLiteConfig.db_path` is a local file path and raises `ValueError` if given an `http(s)://` value. Both are served by the same `MilvusVectorStore` implementation. Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
+Every concrete store is constructed from a typed, frozen `config` dataclass (`MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`, or `Neo4jConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"milvus"`, `"milvus_lite"`, `"pgvector"`, `"neo4j"`). `MilvusConfig` and `MilvusLiteConfig` are separate, validated classes rather than two modes of a single config: `MilvusConfig.uri` must be an `http(s)://` URL (remote server or Zilliz Cloud) and raises `ValueError` otherwise, while `MilvusLiteConfig.db_path` is a local file path and raises `ValueError` if given an `http(s)://` value. Both are served by the same `MilvusVectorStore` implementation. Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
 
 **Collection naming (shared across all backends):**
 
@@ -499,11 +505,16 @@ vector_store = get_vector_store(
 ```python
 def get_vector_store(
     embedding_model: BaseEmbeddingModel,
-    config: MilvusConfig | MilvusLiteConfig | PGVectorConfig,
+    config: BaseVectorStoreConfig,
     collection_name: str | None = None,
+    foundation_model: Any = None,
+    kg_extraction_config: dict[str, Any] | None = None,
 ) -> BaseVectorStore:
     """Backend selected by ``config.provider``; raises TypeError on a
-    config/provider mismatch, ValueError for an unsupported provider."""
+    config/provider mismatch, ValueError for an unsupported provider.
+    ``foundation_model``/``kg_extraction_config`` are forwarded to
+    ``Neo4jGraphStore`` for entity extraction and ignored by every other
+    backend."""
 ```
 
 **Available Configs:**
@@ -513,6 +524,7 @@ def get_vector_store(
 | `MilvusConfig` | `"milvus"` | `uri` (required, must be an `http(s)://` URL — a remote server or Zilliz Cloud; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
 | `MilvusLiteConfig` | `"milvus_lite"` | `db_path` (a local file path, default `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given an `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
+| `Neo4jConfig` | `"neo4j"` | `uri` (required, Bolt/neo4j URI), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
 
 !!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
     Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite purely from
@@ -650,10 +662,16 @@ results = vector_store.search(
 
 **Validation:**
 
-`MilvusVectorStore` and `PGVectorStore` both validate their hybrid search parameters through the shared `ai4rag.rag.vector_store.utils.validate_search_params`:
+Every backend validates its search parameters through the shared `ai4rag.rag.vector_store.utils.validate_search_params`, passing its own `supported_modes` and `store_class` so an unsupported mode raises a backend-named error:
 
 ```python
-def validate_search_params(search_mode, ranker_strategy, ranker_k, ranker_alpha):
+def validate_search_params(
+    search_mode, ranker_strategy, ranker_k, ranker_alpha,
+    *, supported_modes=("vector", "hybrid", "graph"), store_class=None,
+):
+    # search_mode must be one of supported_modes (Milvus/PGVector pass
+    # ("vector", "hybrid"); Neo4jGraphStore only accepts "graph")
+
     # When search_mode != "hybrid":
     #   - ranker_strategy must be None or ""
     #   - ranker_k must be None or 0
@@ -790,6 +808,24 @@ results = vector_store.search(
     ranker_strategy="rrf",
     ranker_k=60,
 )
+```
+
+### Neo4jGraphStore
+
+Graph-only backend backed by Neo4j (`neo4j-graphrag`), configured via `Neo4jConfig`. Unlike the other backends, `search()` only accepts `search_mode="graph"` — there is no vector/hybrid mode. `add_documents()` stores canonical chunks and, when constructed with a `foundation_model`, runs `SimpleKGPipeline` to extract entities and relationships per chunk; `search()` fuses direct vector retrieval with graph-expanded (entity-neighbor and relationship-hop) retrieval via reciprocal-rank fusion. See [Neo4j Indexing and Graph Search](neo4j-indexing-and-search.md) for the full flow and `Neo4jGraphRetrievalConfig` tuning knobs.
+
+```python
+from ai4rag.rag.vector_store import Neo4jConfig, get_vector_store
+
+vector_store = get_vector_store(
+    embedding_model=embedding_model,
+    config=Neo4jConfig.from_env(),  # reads NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE
+    foundation_model=foundation_model,  # required for entity/relationship extraction
+)
+
+vector_store.add_documents(chunked_documents)
+
+results = vector_store.search(query="What is X?", k=5, search_mode="graph")
 ```
 
 ### Reranker
@@ -1005,11 +1041,12 @@ class Retriever:
         self,
         vector_store: BaseVectorStore,
         number_of_chunks: int,
-        method: Literal["simple", "window"] = "simple",
-        search_mode: Literal["vector", "hybrid"] = "vector",
+        method: Literal["simple"] = "simple",
+        search_mode: Literal["vector", "hybrid", "graph"] = "vector",
         ranker_strategy: str | None = None,
         ranker_k: int | None = None,
         ranker_alpha: float | None = None,
+        search_kwargs: dict[str, Any] | None = None,
     ):
 ```
 
@@ -1023,9 +1060,11 @@ class Retriever:
 - **search_mode**: Search type
   - `"vector"`: Dense semantic search only
   - `"hybrid"`: Dense + sparse (keyword) search
+  - `"graph"`: Neo4j-only graph-expanded retrieval
 - **ranker_strategy**: Hybrid search ranker (`"rrf"`, `"weighted"`, `"normalized"`)
 - **ranker_k**: RRF smoothing parameter
 - **ranker_alpha**: Weighted ranker dense/sparse balance
+- **search_kwargs**: Extra backend-specific search parameters, forwarded as-is — e.g. `Neo4jGraphRetrievalConfig.to_search_kwargs()` for graph mode
 
 **Retrieve Method:**
 
@@ -1041,6 +1080,7 @@ def retrieve(self, query: str, **kwargs) -> list[AI4RAGChunk]:
         ranker_strategy=self.ranker_strategy,
         ranker_k=self.ranker_k,
         ranker_alpha=self.ranker_alpha,
+        **self.search_kwargs,
     )
 ```
 

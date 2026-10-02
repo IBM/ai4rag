@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.20.0](https://github.com/IBM/ai4rag/releases/tag/v0.20.0)
+
+### Added
+- **Vector store** — new Neo4j backend (`Neo4jConfig`, `Neo4jGraphStore`, selected via `vector_store_type="neo4j"`) for graph-based RAG. `add_documents()` stores canonical chunks and, when a foundation model is supplied, runs `SimpleKGPipeline` to extract entities and relationships per chunk (`kg_extraction_config={"mode": "constrained"}` by default, or `"free"` with `max_entities_per_chunk`/`max_relationships_per_chunk` caps), linking them back via `FROM_CHUNK`. The new `search_mode="graph"` fuses direct vector retrieval with graph-expanded retrieval (entity neighbors and relationship-hop traversal) via reciprocal-rank fusion, tunable through `Neo4jGraphRetrievalConfig` (`route_k`, `include_entity_neighbors`, `entity_neighbor_limit`, `entity_pivot_limit`, `entity_relationship_hops`, `relationship_neighbor_limit`). `neo4j` and `neo4j-graphrag` are new core dependencies
+- **Experiment** — `AI4RAGExperiment` accepts `kg_extraction_config` and `graph_retrieval_config` (mapping or `Neo4jGraphRetrievalConfig`) constructor arguments, applied whenever the resolved `search_mode` is `"graph"`; the published pattern payload now carries a `knowledge_graph` block (extraction model, model params, extraction config) alongside the existing indexing/retrieval settings
+- **Search space** — `AI4RAGSearchSpace`, `get_default_ai4rag_search_space_parameters()`, and `prepare_search_space_with_maas()` take a new `vector_store_type` parameter (default `"milvus"`); when `"neo4j"`, the default search space fixes `chunk_size`/`chunk_overlap` (1024/0,64) and `search_mode="graph"`, omitting the hybrid ranker parameters that Neo4j does not support
+- **Notebooks** — two new templates, `mass_creating_knowledge_graph_template.ipynb` and `mass_inference_knowledge_graph_template.ipynb`, for running Neo4j GraphRAG indexing and inference at scale
+- **Docs** — new architecture page "Neo4j Indexing and Graph Search" documenting the indexing and dual-route retrieval flow, plus prerequisites (APOC, required `NEO4J_*` env vars)
+
+### Changed
+- **Vector store** — `validate_search_params()` now takes `supported_modes` and `store_class` keyword arguments instead of hardcoding `("vector", "hybrid")`, so each backend validates against its own supported modes and raises a backend-named error for an unsupported one; Milvus and pgvector pass `supported_modes=("vector", "hybrid")` explicitly, so they are unaffected by the new `"graph"` mode
+- **Notebook generation** — `create_placeholder_mapping()` emits `FM_PARAMS`, `GRAPH_RETRIEVAL_CONFIG`, and `KG_EXTRACTION_CONFIG` placeholders consumed by the new knowledge-graph notebook templates
+
+### Fixed
+- **Text extraction** — `DoclingExtractionConfig.device` (default `"cpu"`) is now honored when building Docling's PDF, image, DOCX, and PPTX pipeline options; previously `AcceleratorOptions` was hardcoded to `device="cpu"`, so a GPU-configured extraction run silently executed on CPU. `extract_text()` now also fails fast with a `RuntimeError` when `do_ocr=True` and `device` starts with `"cuda"` but ONNX Runtime has no available `CUDAExecutionProvider`, instead of discovering the missing GPU support deep inside a worker process
+
+---
+
 ## [0.19.0](https://github.com/IBM/ai4rag/releases/tag/v0.19.0)
 
 ### Added

@@ -13,13 +13,13 @@ Rather than locking you into a specific vendor or technology stack, `ai4rag` def
 2. **Embedding Models** (for document and query embeddings)
 3. **Vector Stores** (for storing and retrieving document chunks)
 
-Concrete implementations for different providers — an OpenAI-compatible endpoint (OpenShift MaaS out of the box, accessed through the OpenAI SDK) for foundation and embedding models; Milvus (remote server), Milvus Lite (embedded, local), and PGVector for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
+Concrete implementations for different providers — an OpenAI-compatible endpoint (OpenShift MaaS out of the box, accessed through the OpenAI SDK) for foundation and embedding models; Milvus (remote server), Milvus Lite (embedded, local), PGVector, and Neo4j (graph-only) for vector stores — all adhere to these interfaces, making them **interchangeable** within the optimization framework.
 
 ---
 
 ## Supported Providers
 
-For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint works — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or OpenShift MaaS (the integration shipped out of the box, detailed below). Not OpenAI-compatible? Implement `BaseFoundationModel` / `BaseEmbeddingModel` (see [Extending with Custom Providers](#extending-with-custom-providers)). For **vector stores**, pick from the built-in Milvus (remote server, via `MilvusConfig`), Milvus Lite (embedded, local, via `MilvusLiteConfig`), or PGVector backends, or add your own via `BaseVectorStore`.
+For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint works — a hosted service, a self-managed server (vLLM, TGI, Ollama, …), or OpenShift MaaS (the integration shipped out of the box, detailed below). Not OpenAI-compatible? Implement `BaseFoundationModel` / `BaseEmbeddingModel` (see [Extending with Custom Providers](#extending-with-custom-providers)). For **vector stores**, pick from the built-in Milvus (remote server, via `MilvusConfig`), Milvus Lite (embedded, local, via `MilvusLiteConfig`), PGVector, or Neo4j (graph-only, via `Neo4jConfig`) backends, or add your own via `BaseVectorStore`.
 
 ### OpenShift MaaS Integration
 
@@ -465,13 +465,14 @@ class MyCustomVectorStore(BaseVectorStore):
 | `MilvusConfig` | Milvus — remote server or Zilliz Cloud only (hybrid: dense + BM25) | `uri` (required, must be `http(s)://`; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
 | `MilvusLiteConfig` | Milvus Lite — embedded, local file only (hybrid: dense + BM25) | `db_path` (local file path; defaults to `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given a `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | PostgreSQL + pgvector (hybrid: dense + full-text) | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
+| `Neo4jConfig` | Neo4j — graph-only (`search_mode="graph"`, no hybrid/vector modes) | `uri` (required, Bolt/neo4j URI), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
 
 Both `MilvusConfig` and `MilvusLiteConfig` are served by the same `MilvusVectorStore` implementation; they only differ in where the data lives (remote server vs. local file) and are validated to prevent mixing the two up (see the note under [Milvus Lite (Embedded, Local File)](#milvus-lite-embedded-local-file)).
 
 Each config class is a frozen, keyword-only dataclass with a `.from_env()` classmethod that builds an instance from the environment variables above:
 
 ```python
-from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, PGVectorConfig
+from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, Neo4jConfig, PGVectorConfig
 
 # Embedded Milvus Lite backed by a local file — no external service, no env vars required
 milvus_lite_config = MilvusLiteConfig(db_path="./ai4rag.db")
@@ -481,6 +482,9 @@ milvus_config = MilvusConfig.from_env()
 
 # PGVector, reading PGVECTOR_HOST / PGVECTOR_PORT / PGVECTOR_DB / PGVECTOR_USER / PGVECTOR_PASSWORD
 pgvector_config = PGVectorConfig.from_env()
+
+# Neo4j, reading NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD / NEO4J_DATABASE
+neo4j_config = Neo4jConfig.from_env()
 ```
 
 Pass the resulting config as `vector_store_config` to `AI4RAGExperiment`, or build a store directly with `get_vector_store(embedding_model, config, collection_name=None)`.
@@ -489,15 +493,15 @@ Pass the resulting config as `vector_store_config` to `AI4RAGExperiment`, or bui
 
 ## Provider Comparison
 
-| Feature | OpenShift MaaS | Milvus Lite (embedded) | Milvus (server) | PGVector |
-|---------|------------|----------|--------|----------|
-| **Foundation Models** | Yes (any deployed chat model) | N/A | N/A | N/A |
-| **Embedding Models** | Yes (any deployed embedding model) | N/A | N/A | N/A |
-| **Vector Store** | No (models only) | Yes (local file) | Yes | Yes |
-| **Hybrid Search** | N/A | Yes (dense + BM25, segment-local IDF) | Yes (dense + BM25) | Yes (dense + full-text) |
-| **Setup Complexity** | Medium (MaaS deployment required) | None | Medium (server required) | Medium (server required) |
-| **Cost** | Self-hosted (infra cost) | Free | Self-hosted (infra cost) | Self-hosted (infra cost) |
-| **Best For** | On-prem, self-hosted OpenAI-compatible models | Local dev, testing, prototyping | Production, hybrid search | Production, hybrid search, existing Postgres infra |
+| Feature | OpenShift MaaS | Milvus Lite (embedded) | Milvus (server) | PGVector | Neo4j |
+|---------|------------|----------|--------|----------|-------|
+| **Foundation Models** | Yes (any deployed chat model) | N/A | N/A | N/A | N/A |
+| **Embedding Models** | Yes (any deployed embedding model) | N/A | N/A | N/A | N/A |
+| **Vector Store** | No (models only) | Yes (local file) | Yes | Yes | Yes (graph-only) |
+| **Hybrid Search** | N/A | Yes (dense + BM25, segment-local IDF) | Yes (dense + BM25) | Yes (dense + full-text) | No — `search_mode="graph"` only |
+| **Setup Complexity** | Medium (MaaS deployment required) | None | Medium (server required) | Medium (server required) | Medium (server + APOC required) |
+| **Cost** | Self-hosted (infra cost) | Free | Self-hosted (infra cost) | Self-hosted (infra cost) | Self-hosted (infra cost) |
+| **Best For** | On-prem, self-hosted OpenAI-compatible models | Local dev, testing, prototyping | Production, hybrid search | Production, hybrid search, existing Postgres infra | Entity/relationship-centric retrieval |
 
 ---
 
@@ -508,6 +512,6 @@ Pass the resulting config as `vector_store_config` to `AI4RAGExperiment`, or bui
 - **Abstract base classes**: `BaseFoundationModel`, `BaseEmbeddingModel`, `BaseVectorStore`
 - **Extensible**: Add support for new providers by implementing base classes
 - **OpenShift MaaS**: OpenAI-SDK access to any deployed foundation and embedding model
-- **Direct-client vector stores**: `MilvusVectorStore`, backed by either `MilvusLiteConfig` (embedded Milvus Lite for zero-config local development) or `MilvusConfig` (remote server/Zilliz Cloud for production), plus `PGVectorConfig`/`PGVectorStore` for production deployments — all with hybrid search
+- **Direct-client vector stores**: `MilvusVectorStore`, backed by either `MilvusLiteConfig` (embedded Milvus Lite for zero-config local development) or `MilvusConfig` (remote server/Zilliz Cloud for production), plus `PGVectorConfig`/`PGVectorStore` for production deployments — all with hybrid search — and `Neo4jConfig`/`Neo4jGraphStore` for graph-only retrieval
 
 The choice of provider doesn't affect the optimization process - ai4rag works the same regardless of which model you're using. Focus on finding the best RAG configuration for your use case, not your infrastructure.
