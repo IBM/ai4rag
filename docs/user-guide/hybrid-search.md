@@ -54,6 +54,11 @@ experiment = AI4RAGExperiment(
 )
 ```
 
+!!! note "Graph search is a separate mode"
+    The Neo4j backend (`Neo4jConfig`) does not support `"vector"` or `"hybrid"` search — it only accepts
+    `search_mode="graph"`, which expands retrieval through extracted entities and relationships instead of
+    a keyword ranker. See [Neo4j Indexing and Graph Search](../architecture/neo4j-indexing-and-search.md).
+
 !!! warning "Milvus Lite hybrid-ranking fidelity"
     Milvus Lite (`MilvusLiteConfig`, backed by a local file) computes BM25 IDF statistics segment-locally rather
     than corpus-wide, so hybrid-search ranking fidelity is lower than on a full Milvus server — benchmark or HPO
