@@ -176,9 +176,7 @@ def validate_search_params(
         if store_class is None:
             raise ValueError(f"Invalid search_mode '{search_mode}'. Must be one of {supported_modes}.")
         supported = " or ".join(f"'{mode}'" for mode in supported_modes)
-        raise ValueError(
-            f"search_mode='{search_mode}' is not supported by {store_class.__name__}. Use {supported}."
-        )
+        raise ValueError(f"search_mode='{search_mode}' is not supported by {store_class.__name__}. Use {supported}.")
 
     has_strategy = ranker_strategy is not None and ranker_strategy != ""
     has_k = ranker_k is not None and ranker_k > 0
