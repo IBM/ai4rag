@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.19.0](https://github.com/IBM/ai4rag/releases/tag/v0.19.0)
+
+### Added
+- **Chunker** — `DoclingChunker` now preserves Docling ASR segment timing on audio/hybrid chunks, emitting `audio_start_seconds` and `audio_end_seconds` in chunk metadata as the min/max timing across every source segment a chunk spans. `LangChainChunker` logs a warning when it receives audio documents, since converting them to markdown discards the Docling timing provenance needed to populate these fields — use `DoclingChunker` to retain them
+- **Text extraction** — `extract_text()` gains `ssl_cert_path` (an explicit PEM CA bundle used to verify the S3 endpoint, taking precedence over `AWS_CA_BUNDLE`) and `s3_client` (inject a pre-configured client instead of having `extract_text` build one from credentials or the environment)
+- **S3 client** — `create_s3_client()`'s `verify` parameter now also accepts a CA bundle path (`bool | str`, previously `bool` only); its default (`True`) now resolves `AWS_CA_BUNDLE` when set, where boto3 previously ignored that variable whenever `verify` was passed as the literal `True`
+- **Notebooks** — the MaaS indexing template documents how to trust a private/self-signed CA on OpenShift AI via the `DSCInitialization` (DSCI) trust bundle, and the S3 setup cell now uses the mounted workbench CA bundle (or `AWS_CA_BUNDLE`) to verify the S3 endpoint
+
+### Changed
+- **Text extraction** — the S3 client used by an extraction run is now created once and shared across all download threads, instead of a fresh client being constructed per download
+- **Notebooks** — the generated MaaS indexing template pins a tested `opencv-python-headless==4.14.0.94` reinstall step for disconnected clusters, and checks `discover_documents()`'s signature before calling it, so a notebook generated against this release still runs against an ai4rag install predating the `prefixes` parameter (erroring clearly if more than one input location was configured)
+- **BREAKING CHANGE: Text extraction / Notebooks** — `DOCLING_ARTIFACTS_PATH` is now mandatory wherever Docling needs model artifacts: `extract_text()` raises `FileNotFoundError` whenever OCR is requested (`do_ocr=True`) without `DOCLING_ARTIFACTS_PATH` set — this check runs before custom `ocr_*_model_path`s are even considered, so setting those does not exempt you from it — and the generated MaaS indexing notebook now raises at startup if it's unset. Both previously fell back to Docling's runtime model downloader / an "online mode" message. Bake Docling artifacts into the workbench image and set the environment variable before upgrading
+
+### Fixed
+- **RAG optimization component** — the warm-start phase now evaluates only the configured optimization metric for each candidate pattern instead of recomputing every configured metric; the remaining metrics are computed and merged in only for the best warm-start candidate, once it is selected and published as a pattern. Avoids redundant evaluator calls (including LLM-judge metrics) for warm-start candidates that are discarded, without changing the scores of the pattern that's ultimately published
+
+### Removed
+- **BREAKING CHANGE: Text extraction** — removed the automatic insecure retry that caught `SSLError` during S3 downloads and silently re-attempted with certificate verification disabled (`verify=False`). Configure a trusted CA via `AWS_CA_BUNDLE` or `extract_text(ssl_cert_path=...)` instead
+
+---
+
 ## [0.18.0](https://github.com/IBM/ai4rag/releases/tag/v0.18.0)
 
 ### Added

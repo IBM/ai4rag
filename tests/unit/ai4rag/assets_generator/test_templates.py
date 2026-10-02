@@ -298,9 +298,9 @@ class TestGeneratedNotebookUsesDirectClients:
 def test_indexing_notebook_renders_every_input_location(tmp_path: Path):
     """The indexing notebook must rediscover the same corpus the pipeline ingested.
 
-    The keys are rendered as a Python list literal and handed to
-    ``discover_documents`` as ``prefixes``, so a reader re-running the notebook
-    gets every location, not just the first.
+    The keys are rendered as a Python list literal and sent to
+    ``discover_documents`` through its ``prefixes`` API when it is available.
+    An older installation fails clearly instead of silently dropping locations.
     """
     output_path = tmp_path / "maas_indexing.ipynb"
     generate_notebook_from_template(
@@ -313,9 +313,11 @@ def test_indexing_notebook_renders_every_input_location(tmp_path: Path):
     text = _read_notebook_text(output_path)
 
     assert 'input_data_keys = ["manuals/", "reports/"]' in text
-    assert "prefixes=input_data_keys" in text
+    assert 'discovery_kwargs["prefixes"] = input_data_keys' in text
+    assert 'discovery_kwargs["prefix"] = input_data_keys[0] if input_data_keys else ""' in text
+    assert "Install ai4rag >= 0.18.0." in text
     assert 'test_data_key = "benchmarks/test.json"' in text
-    assert "test_data_doc_names=test_data_doc_names" in text
+    assert '"test_data_doc_names": test_data_doc_names' in text
 
 
 def test_inference_notebook_passes_detected_language(tmp_path: Path):

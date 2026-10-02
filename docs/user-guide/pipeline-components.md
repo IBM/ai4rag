@@ -42,6 +42,44 @@ Data-stage and asset-generation business logic lives in `ai4rag`, so it can be e
 
 S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for born-digital documents (`docling-slim[feat-chunking]`) are all included in the core `ai4rag` install. OCR (scanned PDFs/images) and audio transcription additionally require the `text-extraction` extra — see [Installation](../getting-started/installation.md#basic-installation).
 
+## Private CA certificates on OpenShift AI
+
+For disconnected clusters or private endpoints that use a self-signed or private CA,
+configure the CA once through the OpenShift AI `DSCInitialization` (DSCI) object. Do
+not disable TLS verification with `verify=False`.
+
+1. Create or update a ConfigMap in the OpenShift AI applications namespace. The
+   `ca-bundle.crt` value can contain one or more PEM certificates.
+
+   ```sh
+   oc -n redhat-ods-applications create configmap custom-ca-bundle \
+     --from-file=ca-bundle.crt=/path/to/ca-bundle.crt \
+     --dry-run=client -o yaml | oc apply -f -
+   ```
+
+2. Reference it from the DSCI object. Replace `default-dsci` if your cluster uses
+   another DSCI resource name.
+
+   ```sh
+   oc patch dscinitialization default-dsci --type=merge \
+     -p '{"spec":{"trustedCABundle":{"customCABundle":"custom-ca-bundle"}}}'
+   ```
+
+OpenShift AI automatically propagates the configured certificate into the managed
+trust bundles used by workbenches and by other OpenShift AI services that consume the
+custom CA bundle. Restart affected workbenches after an update. The DSCI setting does
+not alter trust for arbitrary workloads that do not mount the OpenShift AI custom CA
+bundle.
+
+In a managed workbench, set `AWS_CA_BUNDLE` to the mounted bundle before constructing
+the S3 client when it is not already set:
+
+```python
+import os
+
+os.environ.setdefault("AWS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
+```
+
 ## Data Components
 
 ### Document Discovery
@@ -99,6 +137,25 @@ result = extract_text(
 print(f"Processed {result.processed_count}/{result.total_documents}")
 ```
 
+By default `extract_text` builds its own S3 client from the `s3_*` arguments or the environment,
+using `AWS_CA_BUNDLE` for TLS verification as described above. Pass `ssl_cert_path` to point at a
+CA bundle for this call only (it takes precedence over `AWS_CA_BUNDLE`), or pass a pre-configured
+`s3_client` to reuse one you already built (e.g. via `create_s3_client`) instead of having
+`extract_text` construct its own:
+
+```python
+from ai4rag.utils.clients import create_s3_client
+from ai4rag.utils.data import extract_text
+
+s3_client = create_s3_client(verify="/etc/pki/tls/custom-certs/ca-bundle.crt")
+result = extract_text(
+    documents=[{"key": "docs/report.pdf", "size_bytes": 1024}],
+    bucket="my-bucket",
+    output_dir="/tmp/extracted",
+    s3_client=s3_client,
+)
+```
+
 Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email (`.eml`, `.msg`), Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
 OCR is **off by default**. Conversion behaviour (table structure and OCR) is
@@ -130,7 +187,7 @@ resolve to the English models; only Chinese switches to the dedicated Chinese
 models. `ocr_lang` accepts a single string (`"english"`) or a sequence
 (`["english", "chinese"]`) and defaults to `["english"]` when OCR is enabled.
 
-Default RapidOCR models are **not** in current PyPI `rapidocr` wheels. On AutoRAG/OpenShift images with `DOCLING_ARTIFACTS_PATH` set, bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`). Docling auto-detects pages that need OCR when `do_ocr=True`. Override with `ocr_*_model_path` for custom ONNX sets.
+Default RapidOCR models are **not** in current PyPI `rapidocr` wheels, and `extract_text` no longer falls back to Docling's runtime model downloader. Whenever `do_ocr=True`, `DOCLING_ARTIFACTS_PATH` must be set to a non-empty Docling artifacts directory — this is checked before anything else, **even when `ocr_*_model_path` is also set** — or `extract_text` raises `FileNotFoundError` immediately. Bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`); use `ocr_*_model_path` only to point at a different ONNX set once `DOCLING_ARTIFACTS_PATH` is set. Docling auto-detects pages that need OCR when `do_ocr=True`.
 
 #### Audio Transcription
 
@@ -207,7 +264,7 @@ services pipeline steps talk to, and `ai4rag.utils.docling_io` loads persisted
 
 | Module | Function | Purpose |
 |--------|----------|---------|
-| `ai4rag.utils.clients.s3` | `create_s3_client()` | S3 client factory with env-var fallback |
+| `ai4rag.utils.clients.s3` | `create_s3_client()` | S3 client factory with environment-based credentials and private-CA support via `AWS_CA_BUNDLE` |
 | `ai4rag.utils.clients.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with SSL self-signed cert fallback |
 | `ai4rag.utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
@@ -229,4 +286,4 @@ from ai4rag.utils.docling_io import load_docling_documents
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
 - **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
 - **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
-- **SSL fallback**: S3 operations and the MaaS client automatically retry with `verify=False` when self-signed certificate errors are detected.
+- **TLS verification**: Configure private CAs through the platform trust bundle and `AWS_CA_BUNDLE`; do not disable certificate verification.

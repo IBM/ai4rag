@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
+from ai4rag.core.experiment.exception_handler import EvaluationError
 from ai4rag.core.experiment.results import EvaluationResult
 from ai4rag.core.experiment.utils import merge_evaluation_results
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -461,6 +462,134 @@ class TestResolveOptimizationScore:
 
         with pytest.raises(RAGExperimentError, match="not found in evaluation results"):
             experiment._resolve_optimization_score(scores, "pattern_1")
+
+
+class TestWarmStartMetrics:
+    @pytest.mark.parametrize(
+        "optimization_metric, expected_metrics",
+        [
+            (Metrics.FAITHFULNESS, {"unitxt": [Metrics.FAITHFULNESS]}),
+            (Metrics.RAGAS_FAITHFULNESS, {"ragas": [Metrics.RAGAS_FAITHFULNESS]}),
+            (Metrics.RAGAS_CONTEXT_RECALL, {"ragas": [Metrics.RAGAS_CONTEXT_RECALL]}),
+            (
+                Metrics.OVERALL_SCORE,
+                {
+                    "unitxt": [Metrics.ANSWER_CORRECTNESS, Metrics.FAITHFULNESS, Metrics.CONTEXT_CORRECTNESS],
+                    "ragas": [
+                        Metrics.RAGAS_FAITHFULNESS,
+                        Metrics.RAGAS_ANSWER_RELEVANCY,
+                        Metrics.RAGAS_CONTEXT_PRECISION,
+                        Metrics.RAGAS_CONTEXT_RECALL,
+                    ],
+                },
+            ),
+        ],
+    )
+    def test_only_objective_metrics_are_evaluated(self, mocker, optimization_metric, expected_metrics):
+        evaluators = []
+        for evaluator_type in ("unitxt", "ragas"):
+            evaluator = MagicMock(spec=BaseEvaluator)
+            evaluator.EVALUATOR_TYPE = evaluator_type
+            evaluator.evaluate_metrics.side_effect = lambda evaluation_data, metrics: merge_evaluation_results(
+                [
+                    _make_result(
+                        metric.name,
+                        metric.evaluator,
+                        0.2 if metric.evaluator == "ragas" else 0.8,
+                        {"q1": 0.2 if metric.evaluator == "ragas" else 0.8},
+                    )
+                    for metric in metrics
+                ]
+            )
+            evaluators.append(evaluator)
+
+        experiment = _build_experiment(evaluators=evaluators, optimization_metric=optimization_metric)
+        mocker.patch("ai4rag.core.experiment.experiment.build_evaluation_data", return_value=[])
+        experiment._optimization_phase = "warm_start"
+
+        scores, _ = experiment._evaluate_response([], "Pattern1-warm-start")
+
+        for evaluator in evaluators:
+            if evaluator.EVALUATOR_TYPE in expected_metrics:
+                assert (
+                    evaluator.evaluate_metrics.call_args.kwargs["metrics"] == expected_metrics[evaluator.EVALUATOR_TYPE]
+                )
+            else:
+                evaluator.evaluate_metrics.assert_not_called()
+        expected_score = (
+            0.4571
+            if optimization_metric == Metrics.OVERALL_SCORE
+            else (0.2 if optimization_metric.evaluator == "ragas" else 0.8)
+        )
+        assert experiment._resolve_optimization_score(scores, "Pattern1-warm-start") == expected_score
+        if optimization_metric == Metrics.OVERALL_SCORE:
+            assert len(scores["metrics"]) == 8
+            assert scores["question_scores"][0]["metrics"][-1]["value"] == expected_score
+        else:
+            assert [(metric["evaluator"], metric["name"]) for metric in scores["metrics"]] == [
+                (optimization_metric.evaluator, optimization_metric.name)
+            ]
+
+        experiment._optimization_phase = "gam"
+        experiment._evaluate_response([], "Pattern2")
+        assert [len(evaluator.evaluate_metrics.call_args.kwargs["metrics"]) for evaluator in evaluators] == [3, 4]
+
+    def test_published_best_warm_start_has_full_metrics(self, mocker):
+        experiment = _build_experiment(metrics=[Metrics.FAITHFULNESS, Metrics.ANSWER_CORRECTNESS])
+        evaluation_data = [MagicMock()]
+        partial_scores = _make_result("faithfulness", "unitxt", 0.9, {"q1": 0.9})
+        experiment.results.add_evaluation(
+            evaluation_data,
+            EvaluationResult(
+                pattern_name="Pattern1-warm-start",
+                collection="collection",
+                indexing_params={},
+                rag_params={},
+                scores=partial_scores,
+                execution_time=1.0,
+                final_score=0.9,
+            ),
+        )
+        remaining_scores = _make_result("answer_correctness", "unitxt", 0.5, {"q1": 0.5})
+        evaluate = mocker.patch.object(experiment, "_evaluate_data", return_value=remaining_scores)
+        publish = mocker.patch.object(experiment, "_stream_finished_pattern")
+
+        experiment._publish_best_warm_start_pattern()
+
+        evaluate.assert_called_once_with(evaluation_data, [Metrics.ANSWER_CORRECTNESS])
+        assert [metric["name"] for metric in experiment.results.evaluations[0].scores["metrics"]] == [
+            "faithfulness",
+            "answer_correctness",
+        ]
+        assert experiment.results.evaluations[0].final_score == 0.9
+        assert publish.call_args.kwargs["evaluation_result"].scores == experiment.results.evaluations[0].scores
+
+    @pytest.mark.parametrize("error", [EvaluationError(RuntimeError("unavailable")), RuntimeError("unavailable")])
+    def test_failed_completion_publishes_objective_score(self, mocker, caplog, error):
+        experiment = _build_experiment(metrics=[Metrics.FAITHFULNESS, Metrics.RAGAS_FAITHFULNESS])
+        partial_scores = _make_result("faithfulness", "unitxt", 0.9, {"q1": 0.9})
+        result = EvaluationResult(
+            pattern_name="Pattern1-warm-start",
+            collection="collection",
+            indexing_params={},
+            rag_params={},
+            scores=partial_scores,
+            execution_time=1.0,
+            final_score=0.9,
+        )
+        experiment.results.add_evaluation([MagicMock()], result)
+        evaluate = mocker.patch.object(experiment, "_evaluate_data", side_effect=error)
+        publish = mocker.patch.object(experiment, "_stream_finished_pattern")
+
+        experiment._publish_best_warm_start_pattern()
+
+        evaluate.assert_called_once_with(experiment.results.evaluation_data[0], [Metrics.RAGAS_FAITHFULNESS])
+        assert experiment.results.evaluations[0] is result
+        assert result.scores is partial_scores
+        assert result.final_score == 0.9
+        assert publish.call_args.kwargs["evaluation_result"] is result
+        assert publish.call_args.kwargs["pattern_name"] == "Pattern1"
+        assert "Unable to complete non-objective metrics" in caplog.text
 
 
 class TestMergeEvaluationResults:

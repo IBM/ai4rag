@@ -312,7 +312,10 @@ experiment = AI4RAGExperiment(
 | **Answer Relevance** | Direct, helpful responses (LLM judge) | Requires a judge model; adds inference cost |
 
 !!! tip "Multi-Objective Optimization"
-    While ai4rag optimizes a single metric, all configured metrics are computed for every evaluation. Review all metrics when analyzing results to ensure your best configuration doesn't sacrifice one quality for another.
+    While ai4rag optimizes a single metric, all configured metrics are computed for every evaluation in the GAM optimizer's model-guided phase. Review all metrics when analyzing results to ensure your best configuration doesn't sacrifice one quality for another.
+
+!!! note "Warm-start phase computes only the optimization metric"
+    When `optimization_metric` is not `Metrics.OVERALL_SCORE` and more than one metric is configured, each warm-start candidate (see [Optimizers](optimizers.md)) is scored on `optimization_metric` alone; the remaining configured metrics are computed and merged in only for the single best warm-start candidate, once it is selected and published as a pattern. Published results always carry every configured metric — this only affects discarded warm-start candidates, which are never scored on metrics other than the one driving optimization.
 
 ---
 

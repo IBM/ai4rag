@@ -40,6 +40,7 @@ from docling.document_converter import (
 from docling.pipeline.asr_pipeline import AsrPipeline
 
 from ai4rag import handler
+from ai4rag.utils.clients.s3 import create_s3_client
 
 from .constants import SUPPORTED_EXTENSIONS
 
@@ -132,7 +133,8 @@ class DoclingExtractionConfig:
         value picks which bundled model set is loaded.  Latin-script languages
         map to the English models; only Chinese switches to the Chinese models
         (see :func:`_rapidocr_artifacts_rel_paths`).  Ignored when ``do_ocr``
-        is ``False``.
+        is ``False``. When OCR is enabled, the workbench must set
+        ``DOCLING_ARTIFACTS_PATH`` to a non-empty artifacts directory.
     ocr_det_model_path
         What/Why: optional path to a custom RapidOCR text-*detection* ONNX
         model, for disconnected clusters or specialised model sets that differ
@@ -147,6 +149,10 @@ class DoclingExtractionConfig:
         What/Why: optional path to the character-keys dictionary matching the
         custom recognition model; required when the recognition model uses a
         non-default character set.
+    device
+        Device for Docling's PDF, image, DOCX, and PPTX pipelines. Defaults to
+        ``"cpu"`` so existing extraction runs keep their device selection.
+        CUDA OCR requires a GPU-enabled ONNX Runtime.
     """
 
     do_table_structure: bool = False
@@ -156,6 +162,7 @@ class DoclingExtractionConfig:
     ocr_cls_model_path: str | None = None
     ocr_rec_model_path: str | None = None
     ocr_rec_keys_path: str | None = None
+    device: str = "cpu"
 
     def __post_init__(self) -> None:
         # Normalize ``ocr_lang`` in one place so callers may pass a single
@@ -171,10 +178,12 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     s3_access_key: str | None = None,
     s3_secret_key: str | None = None,
     s3_region: str | None = None,
+    ssl_cert_path: str | None = None,
     error_tolerance: float | None = None,
     max_extraction_workers: int | None = None,
     docling_artifacts_path: str | None = None,
     docling_config: DoclingExtractionConfig | None = None,
+    s3_client: Any | None = None,
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
@@ -203,6 +212,10 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         AWS secret key.  Falls back to ``AWS_SECRET_ACCESS_KEY``.
     s3_region
         AWS region.  Falls back to ``AWS_DEFAULT_REGION``.
+    ssl_cert_path
+        Optional path to a PEM CA bundle used to verify the S3 endpoint. When
+        provided, it takes precedence over ``AWS_CA_BUNDLE``. The file must be
+        readable; certificate validation remains enabled.
     error_tolerance
         Fraction of documents (0.0--1.0) allowed to fail.  ``None`` means
         zero tolerance.
@@ -213,13 +226,18 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         Path to pre-downloaded Docling model artifacts for offline use.
         Falls back to ``DOCLING_ARTIFACTS_PATH`` environment variable.
     docling_config
-        Ready :class:`DoclingExtractionConfig` controlling table-structure
-        and OCR behaviour.  Callers (e.g. ``pipelines-components``) construct
+        Ready :class:`DoclingExtractionConfig` controlling table-structure,
+        OCR, and device selection. Callers (e.g. ``pipelines-components``) construct
         it once and pass it here; it is forwarded unchanged to every worker
         process.  ``None`` (default) uses ``DoclingExtractionConfig()`` --
         table structure and OCR both disabled.  See
         :class:`DoclingExtractionConfig` for the per-field ``what``/``why``
         and for how ``ocr_lang`` maps to bundled OCR models.
+    s3_client
+        Pre-configured S3 client used for every download. When omitted, one
+        client is created from the S3 credentials supplied to this function or
+        from the environment. The client is shared only by download threads;
+        it is never sent to Docling worker processes.
 
     Returns
     -------
@@ -229,7 +247,8 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     Raises
     ------
     RuntimeError
-        If the error count exceeds the allowed tolerance.
+        If CUDA OCR lacks an ONNX Runtime GPU provider, or the error count
+        exceeds the allowed tolerance.
     """
     import tempfile
 
@@ -242,9 +261,13 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         _logger.info("No documents to process.")
         return ExtractionResult(processed_count=0, total_documents=0, error_count=0)
 
-    s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
-    artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
     pipeline_config = docling_config or DoclingExtractionConfig()
+    _require_cuda_ocr_provider(pipeline_config)
+
+    if s3_client is None:
+        s3_creds = _resolve_s3_credentials(s3_endpoint, s3_access_key, s3_secret_key, s3_region)
+        s3_client = _make_s3_client(s3_creds, ssl_cert_path=ssl_cert_path)
+    artifacts_path = _resolve_artifacts_path(docling_artifacts_path)
 
     has_custom_models = bool(
         pipeline_config.ocr_det_model_path
@@ -289,7 +312,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
             download_path=Path(download_dir),
             process_pool=process_pool,
             out_dir=out_dir,
-            s3_creds=s3_creds,
+            s3_client=s3_client,
         )
         _logger.info(
             "Downloads finished in %.1fs; %d file(s) queued for extraction, %d download error(s).",
@@ -370,22 +393,30 @@ def _resolve_s3_credentials(
     return creds
 
 
-def _make_s3_client(s3_creds: dict[str, str | None], verify: bool = True) -> Any:
-    """Create a fresh ``boto3`` S3 client from explicit credentials.
+def _make_s3_client(s3_creds: dict[str, str | None], ssl_cert_path: str | None = None) -> Any:
+    """Create the S3 client used by an extraction run.
 
-    A fresh session is created on every call so the client is safe to use
-    from multiple threads without sharing state.
+    Keeping client construction in :func:`create_s3_client` makes extraction
+    use the same TLS and certificate-discovery behaviour as document
+    discovery. The returned client is shared by all download threads in the
+    run; boto3 clients support concurrent use by threads.
     """
-    import boto3
+    verify: bool | str = True
+    if ssl_cert_path:
+        ca_bundle = Path(ssl_cert_path)
+        if not ca_bundle.is_file() or not os.access(ca_bundle, os.R_OK):
+            raise FileNotFoundError(
+                f"ssl_cert_path={ssl_cert_path!r} is not a readable PEM CA bundle. "
+                "Mount the trusted CA bundle into the workbench and pass its path, "
+                "or configure AWS_CA_BUNDLE."
+            )
+        verify = str(ca_bundle)
 
-    session = boto3.session.Session(
-        aws_access_key_id=s3_creds["AWS_ACCESS_KEY_ID"],
-        aws_secret_access_key=s3_creds["AWS_SECRET_ACCESS_KEY"],
-        region_name=s3_creds.get("AWS_DEFAULT_REGION"),
-    )
-    return session.client(
-        service_name="s3",
+    return create_s3_client(
         endpoint_url=s3_creds["AWS_S3_ENDPOINT"],
+        access_key_id=s3_creds["AWS_ACCESS_KEY_ID"],
+        secret_access_key=s3_creds["AWS_SECRET_ACCESS_KEY"],
+        region_name=s3_creds.get("AWS_DEFAULT_REGION"),
         verify=verify,
     )
 
@@ -394,12 +425,9 @@ def _download_document(
     doc: dict,
     bucket: str,
     base_path: Path,
-    s3_creds: dict[str, str | None],
+    s3_client: Any,
 ) -> Path:
     """Download a single document from S3 with path-traversal protection.
-
-    On an ``SSLError`` the download is retried once with certificate
-    verification disabled.
 
     Parameters
     ----------
@@ -410,8 +438,8 @@ def _download_document(
     base_path
         Local directory under which the file is saved, preserving the S3
         key as a relative sub-path.
-    s3_creds
-        Credentials dict for creating per-thread S3 clients.
+    s3_client
+        Configured S3 client shared by the extraction run.
 
     Returns
     -------
@@ -433,13 +461,7 @@ def _download_document(
     dl_start = time.perf_counter()
     _logger.info("Downloading %s", raw_key)
 
-    from botocore.exceptions import SSLError
-
-    try:
-        _make_s3_client(s3_creds).download_file(bucket, raw_key, str(local_path))
-    except SSLError:
-        _logger.warning("SSL error when downloading %s, retrying with verify=False", raw_key)
-        _make_s3_client(s3_creds, verify=False).download_file(bucket, raw_key, str(local_path))
+    s3_client.download_file(bucket, raw_key, str(local_path))
 
     _logger.info("Download finished %s (%.1fs)", raw_key, time.perf_counter() - dl_start)
     return local_path
@@ -521,10 +543,18 @@ def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:
 
 
 def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
-    """Fail fast when Docling artifacts are configured but RapidOCR models are missing."""
+    """Fail fast unless the configured artifacts provide RapidOCR models.
+
+    This is called only after both explicit model paths and bundled RapidOCR
+    wheel models have been ruled out. Raising here prevents Docling from
+    falling back to its runtime model downloader.
+    """
     artifacts = _resolve_artifacts_path(None)
     if artifacts is None:
-        return
+        raise FileNotFoundError(
+            "RapidOCR model files are unavailable. Set DOCLING_ARTIFACTS_PATH to an image-baked "
+            "RapidOCR bundle or pass ocr_*_model_path explicitly. Runtime Docling model downloads are disabled."
+        )
     ocr_root = artifacts / "RapidOcr"
     missing = [str(ocr_root / rel) for rel in _rapidocr_artifacts_rel_paths(ocr_lang) if not (ocr_root / rel).is_file()]
     if missing:
@@ -536,19 +566,54 @@ def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
         )
 
 
+def _require_docling_artifacts_path_for_ocr() -> Path:
+    """Return the configured Docling artifacts path or fail before OCR starts.
+
+    Workbenches use a baked Docling artifacts bundle. Requiring its environment
+    variable for every OCR run keeps their configuration aligned with the
+    AutoRAG container and avoids accidental downloads from worker processes.
+    """
+    artifacts = _resolve_artifacts_path(None)
+    if artifacts is None:
+        raise FileNotFoundError(
+            "OCR was requested (do_ocr=True), but DOCLING_ARTIFACTS_PATH is not set to a non-empty "
+            "Docling artifacts directory. Set it in the workbench environment to the image-baked bundle."
+        )
+    return artifacts
+
+
+def _require_cuda_ocr_provider(config: DoclingExtractionConfig) -> None:
+    """Fail before spawning workers if CUDA OCR cannot use ONNX Runtime's GPU provider."""
+    if not config.do_ocr or not config.device.startswith("cuda"):
+        return
+
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise RuntimeError("CUDA OCR requires ONNX Runtime with CUDA support, but it is not installed.") from exc
+
+    if "CUDAExecutionProvider" not in ort.get_available_providers() or ort.get_device() != "GPU":
+        raise RuntimeError(
+            "CUDA OCR was requested, but ONNX Runtime cannot use CUDAExecutionProvider. "
+            "Install a compatible GPU-enabled ONNX Runtime in the extraction image."
+        )
+
+
 def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
     """Build Docling ``RapidOcrOptions`` from extraction config.
 
     Resolution order when custom paths are omitted:
 
     1. ONNX files shipped inside the ``rapidocr`` package (older / some local installs)
-    2. Otherwise leave paths unset so Docling loads from ``DOCLING_ARTIFACTS_PATH/RapidOcr``
-       (requires models baked into the image for disconnected clusters)
+    2. Otherwise validate the models under ``DOCLING_ARTIFACTS_PATH/RapidOcr``
+       before allowing Docling to load them. This prevents its runtime model
+       downloader from being used.
     """
     kwargs: dict[str, Any] = {
         "lang": list(config.ocr_lang),
         "force_full_page_ocr": False,
     }
+    _require_docling_artifacts_path_for_ocr()
     custom_paths = {
         "det_model_path": config.ocr_det_model_path,
         "cls_model_path": config.ocr_cls_model_path,
@@ -587,7 +652,7 @@ def _build_docling_format_options(
     """
     cfg = config or DoclingExtractionConfig(do_table_structure=do_table_structure)
     ap = _resolve_artifacts_path(None)
-    accel = AcceleratorOptions(device="cpu", num_threads=2)
+    accel = AcceleratorOptions(device=cfg.device, num_threads=2)
     ocr_options = _build_rapidocr_options(cfg) if cfg.do_ocr else None
 
     pdf_kwargs: dict[str, Any] = {
@@ -766,7 +831,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     download_path: Path,
     process_pool: Any,
     out_dir: Path,
-    s3_creds: dict[str, str | None],
+    s3_client: Any,
 ) -> tuple[list[tuple[str, Any]], list[dict]]:
     """Download all documents from S3, then submit for extraction largest-first.
 
@@ -787,8 +852,8 @@ def _download_and_submit(  # pylint: disable=too-many-locals
         Active multiprocessing pool.
     out_dir
         Directory where extracted DoclingDocument JSONs are written.
-    s3_creds
-        S3 credentials dict for per-thread client creation.
+    s3_client
+        Configured S3 client shared by the download threads.
 
     Returns
     -------
@@ -802,11 +867,15 @@ def _download_and_submit(  # pylint: disable=too-many-locals
     skipped = [d for d in docs if Path(d["key"]).suffix.lower() not in SUPPORTED_EXTENSIONS]
     if skipped:
         skipped_keys = ", ".join(d["key"] for d in skipped)
-        _logger.warning("Skipping %d document(s) with unsupported extensions: %s", len(skipped), skipped_keys)
+        _logger.warning(
+            "Skipping %d document(s) with unsupported extensions: %s",
+            len(skipped),
+            skipped_keys,
+        )
 
     with ThreadPoolExecutor(max_workers=DOWNLOAD_MAX_THREADS) as dl_pool:
         dl_futures = {
-            dl_pool.submit(_download_document, doc, bucket, download_path, s3_creds): doc for doc in supported
+            dl_pool.submit(_download_document, doc, bucket, download_path, s3_client): doc for doc in supported
         }
         for dl_future in as_completed(dl_futures):
             doc = dl_futures[dl_future]

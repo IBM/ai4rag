@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import os
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -10,7 +12,9 @@ from ai4rag.utils.data import text_extraction
 from ai4rag.utils.data.text_extraction import (
     ExtractionResult,
     _build_docling_format_options,
+    _download_document,
     _effective_worker_count,
+    _make_s3_client,
     _raise_if_threshold_exceeded,
     _resolve_artifacts_path,
     _resolve_s3_credentials,
@@ -136,6 +140,104 @@ class TestResolveS3Credentials:
             region=None,
         )
         assert creds["AWS_DEFAULT_REGION"] is None
+
+
+# ---------------------------------------------------------------------------
+# _make_s3_client
+# ---------------------------------------------------------------------------
+
+
+class TestMakeS3Client:
+    """Tests for shared-factory S3 client construction."""
+
+    def test_delegates_to_shared_factory_with_explicit_credentials(self, mocker):
+        """Extraction must use the same client factory as document discovery."""
+        client = mocker.MagicMock()
+        create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client", return_value=client)
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": "us-east-1",
+        }
+
+        assert _make_s3_client(credentials) is client
+
+        create.assert_called_once_with(
+            endpoint_url="https://s3.example.com",
+            access_key_id="access-key",
+            secret_access_key="secret-key",
+            region_name="us-east-1",
+            verify=True,
+        )
+
+    def test_uses_verified_client(self, mocker):
+        """A run creates one verified client when a client is not injected."""
+        create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client")
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": None,
+        }
+
+        _make_s3_client(credentials)
+
+        assert create.call_args.kwargs["verify"] is True
+
+    def test_uses_explicit_ssl_cert_path(self, mocker, tmp_path):
+        """An explicit CA bundle takes precedence over environment-based discovery."""
+        ca_bundle = tmp_path / "ca-bundle.crt"
+        ca_bundle.write_text(
+            "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n",
+            encoding="utf-8",
+        )
+        create = mocker.patch("ai4rag.utils.data.text_extraction.create_s3_client")
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": None,
+        }
+
+        _make_s3_client(credentials, ssl_cert_path=str(ca_bundle))
+
+        assert create.call_args.kwargs["verify"] == str(ca_bundle)
+
+    def test_rejects_missing_ssl_cert_path(self):
+        """A nonexistent CA bundle fails before extraction starts workers."""
+        credentials = {
+            "AWS_S3_ENDPOINT": "https://s3.example.com",
+            "AWS_ACCESS_KEY_ID": "access-key",
+            "AWS_SECRET_ACCESS_KEY": "secret-key",
+            "AWS_DEFAULT_REGION": None,
+        }
+
+        with pytest.raises(FileNotFoundError, match="ssl_cert_path=.*readable PEM CA bundle"):
+            _make_s3_client(credentials, ssl_cert_path="/missing/ca-bundle.crt")
+
+
+# ---------------------------------------------------------------------------
+# _download_document
+# ---------------------------------------------------------------------------
+
+
+class TestDownloadDocument:
+    """Tests for client injection into individual downloads."""
+
+    def test_uses_the_supplied_client(self, mocker, tmp_path):
+        """A download must not construct another S3 client."""
+        client = mocker.MagicMock()
+
+        local_path = _download_document(
+            {"key": "docs/example.txt"},
+            bucket="bucket",
+            base_path=tmp_path,
+            s3_client=client,
+        )
+
+        assert local_path == tmp_path / "docs/example.txt"
+        client.download_file.assert_called_once_with("bucket", "docs/example.txt", str(local_path))
 
 
 # ---------------------------------------------------------------------------
@@ -348,6 +450,19 @@ class TestRaiseIfThresholdExceeded:
 class TestBuildDoclingFormatOptions:
     """Tests for Docling format options including table structure and OCR."""
 
+    @pytest.mark.parametrize("device,environment_device", [("cpu", "cuda"), ("cuda", "cpu")])
+    def test_device_applies_to_document_pipelines(self, monkeypatch, device, environment_device):
+        """Explicit device reaches each document pipeline despite the environment."""
+        from docling.datamodel.base_models import InputFormat
+
+        from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
+
+        monkeypatch.setenv("DOCLING_DEVICE", environment_device)
+        options = _build_docling_format_options(config=DoclingExtractionConfig(device=device))
+
+        for fmt in (InputFormat.PDF, InputFormat.IMAGE, InputFormat.DOCX, InputFormat.PPTX):
+            assert options[fmt].pipeline_options.accelerator_options.device == device
+
     def test_default_disables_table_structure(self):
         """Default call should produce PDF options with ``do_table_structure=False``."""
         from docling.datamodel.base_models import InputFormat
@@ -390,13 +505,17 @@ class TestBuildDoclingFormatOptions:
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_table_structure is False
 
-    def test_do_ocr_enables_rapidocr_english_default(self):
+    def test_do_ocr_enables_rapidocr_english_default(self, monkeypatch, tmp_path):
         """OCR enabled should set RapidOCR options with English default language."""
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import RapidOcrOptions
 
         from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
 
+        artifacts = tmp_path / "docling-artifacts"
+        artifacts.mkdir()
+        (artifacts / "placeholder").write_text("x", encoding="utf-8")
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
         options = _build_docling_format_options(
             config=DoclingExtractionConfig(do_ocr=True),
         )
@@ -406,12 +525,16 @@ class TestBuildDoclingFormatOptions:
         assert pdf_option.pipeline_options.ocr_options.lang == ["english"]
         assert InputFormat.IMAGE in options
 
-    def test_custom_ocr_model_paths(self):
+    def test_custom_ocr_model_paths(self, monkeypatch, tmp_path):
         """Custom RapidOCR model paths should be forwarded to Docling options."""
         from docling.datamodel.base_models import InputFormat
 
         from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
 
+        artifacts = tmp_path / "docling-artifacts"
+        artifacts.mkdir()
+        (artifacts / "placeholder").write_text("x", encoding="utf-8")
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
         options = _build_docling_format_options(
             config=DoclingExtractionConfig(
                 do_ocr=True,
@@ -440,6 +563,20 @@ class TestBuildDoclingFormatOptions:
         monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
 
         with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
+            te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+
+    def test_ocr_requires_docling_artifacts_environment(self, monkeypatch):
+        """OCR must require a workbench-configured Docling artifacts directory."""
+        from ai4rag.utils.data import text_extraction as te
+
+        monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
+        monkeypatch.setattr(
+            te,
+            "_try_resolve_wheel_rapidocr_model_paths",
+            lambda: {"det_model_path": "/models/det.onnx"},
+        )
+
+        with pytest.raises(FileNotFoundError, match="DOCLING_ARTIFACTS_PATH is not set"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
     def test_missing_rapidocr_package_raises(self, monkeypatch):
@@ -500,6 +637,67 @@ class TestBuildDoclingFormatOptions:
         assert audio_option.pipeline_options.asr_options.language is None
 
 
+class TestCudaOcrProvider:
+    """CUDA OCR must not silently fall back to CPU when its provider is missing."""
+
+    @pytest.mark.parametrize("device,do_ocr", [("cpu", True), ("cuda", False)])
+    def test_cpu_or_disabled_ocr_does_not_need_onnxruntime(self, monkeypatch, device, do_ocr):
+        """Other extraction modes do not depend on ONNX Runtime's CUDA provider."""
+        monkeypatch.setitem(sys.modules, "onnxruntime", None)
+        text_extraction._require_cuda_ocr_provider(
+            text_extraction.DoclingExtractionConfig(device=device, do_ocr=do_ocr)
+        )
+
+    def test_cuda_ocr_fails_before_starting_workers_without_provider(self, monkeypatch, tmp_path):
+        """A CPU-only ONNX Runtime cannot satisfy a CUDA OCR request."""
+        monkeypatch.setitem(
+            sys.modules,
+            "onnxruntime",
+            SimpleNamespace(get_available_providers=lambda: ["CPUExecutionProvider"]),
+        )
+
+        with pytest.raises(RuntimeError, match="ONNX Runtime cannot use CUDAExecutionProvider"):
+            text_extraction.extract_text(
+                documents=[{"key": "scan.pdf", "size_bytes": 1}],
+                bucket="bucket",
+                output_dir=tmp_path,
+                docling_config=text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True),
+                s3_client=object(),
+            )
+
+    def test_cuda_ocr_accepts_available_provider(self, monkeypatch):
+        """A CUDA-capable ONNX Runtime passes the preflight check."""
+        monkeypatch.setitem(
+            sys.modules,
+            "onnxruntime",
+            SimpleNamespace(
+                get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+                get_device=lambda: "GPU",
+            ),
+        )
+        text_extraction._require_cuda_ocr_provider(text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True))
+
+    def test_cuda_ocr_rejects_cpu_only_device(self, monkeypatch):
+        """A listed CUDA provider is insufficient when ONNX Runtime reports CPU."""
+        monkeypatch.setitem(
+            sys.modules,
+            "onnxruntime",
+            SimpleNamespace(get_available_providers=lambda: ["CUDAExecutionProvider"], get_device=lambda: "CPU"),
+        )
+        with pytest.raises(RuntimeError, match="ONNX Runtime cannot use CUDAExecutionProvider"):
+            text_extraction._require_cuda_ocr_provider(
+                text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True)
+            )
+
+    def test_cuda_ocr_reports_missing_onnxruntime(self, monkeypatch):
+        """An absent ONNX Runtime produces a clear error before worker startup."""
+        monkeypatch.setitem(sys.modules, "onnxruntime", None)
+        with pytest.raises(RuntimeError, match="ONNX Runtime with CUDA support"):
+            text_extraction._require_cuda_ocr_provider(
+                text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True)
+            )
+
+
 class TestNormalizeOcrLang:
     """Tests for OCR language normalization."""
 
@@ -533,6 +731,7 @@ class TestDoclingExtractionConfig:
         assert cfg.do_ocr is False
         assert cfg.do_table_structure is False
         assert cfg.ocr_lang == ("english",)
+        assert cfg.device == "cpu"
 
     def test_ocr_lang_string_is_normalized(self):
         """A string ``ocr_lang`` is normalized to a tuple in ``__post_init__``."""
@@ -544,7 +743,10 @@ class TestDoclingExtractionConfig:
         """A sequence ``ocr_lang`` is normalized to a tuple in ``__post_init__``."""
         from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
 
-        assert DoclingExtractionConfig(ocr_lang=["english", "chinese"]).ocr_lang == ("english", "chinese")
+        assert DoclingExtractionConfig(ocr_lang=["english", "chinese"]).ocr_lang == (
+            "english",
+            "chinese",
+        )
 
     def test_empty_ocr_lang_falls_back_to_default(self):
         """An empty ``ocr_lang`` falls back to the default English tuple."""
@@ -607,7 +809,7 @@ class _RecordingPool:
         return args
 
 
-def _fake_download(doc, _bucket, base_path, _s3_creds):
+def _fake_download(doc, _bucket, base_path, _s3_client):
     """Mimic ``_download_document``: normalize the key, then write the file."""
     safe_key = doc["key"].strip().lstrip("/")
     local_path = (base_path / safe_key).resolve()
@@ -631,7 +833,7 @@ class TestDownloadAndSubmitKeyPairing:
             download_path=download_path,
             process_pool=pool,
             out_dir=tmp_path / "out",
-            s3_creds={},
+            s3_client=object(),
         )
 
         assert not errors
@@ -656,10 +858,10 @@ class TestDownloadAndSubmitKeyPairing:
         assert self._submitted_keys(monkeypatch, tmp_path, keys) == set(keys)
 
     def test_no_key_is_lost_when_a_download_fails(self, monkeypatch, tmp_path):
-        def flaky_download(doc, bucket, base_path, s3_creds):
+        def flaky_download(doc, bucket, base_path, s3_client):
             if doc["key"].endswith("broken.txt"):
                 raise RuntimeError("boom")
-            return _fake_download(doc, bucket, base_path, s3_creds)
+            return _fake_download(doc, bucket, base_path, s3_client)
 
         monkeypatch.setattr(text_extraction, "_download_document", flaky_download)
         pool = _RecordingPool()
@@ -672,7 +874,7 @@ class TestDownloadAndSubmitKeyPairing:
             download_path=download_path,
             process_pool=pool,
             out_dir=tmp_path / "out",
-            s3_creds={},
+            s3_client=object(),
         )
 
         assert len(tasks) == 1

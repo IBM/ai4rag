@@ -800,6 +800,31 @@ class AI4RAGExperiment:
             return
 
         result, evaluation_data = max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score)
+        if evaluation_data and self.optimization_metric != Metrics.OVERALL_SCORE and len(self.metrics) > 1:
+            scored_metrics = {(metric["evaluator"], metric["name"]) for metric in result.scores["metrics"]}
+            missing_metrics = [
+                metric
+                for metric in self.metrics
+                if metric.evaluator != "custom" and (metric.evaluator, metric.name) not in scored_metrics
+            ]
+            try:
+                full_scores = merge_evaluation_results(
+                    [result.scores, self._evaluate_data(evaluation_data, missing_metrics)]
+                )
+                apply_custom_metrics(full_scores, self.metrics)
+            except Exception:
+                logger.warning(
+                    "Unable to complete non-objective metrics for warm-start pattern '%s'; "
+                    "publishing its objective score.",
+                    result.pattern_name,
+                    exc_info=True,
+                )
+            else:
+                result_index = next(
+                    index for index, evaluation in enumerate(self.results.evaluations) if evaluation is result
+                )
+                result = replace(result, scores=full_scores)
+                self.results.evaluations[result_index] = result
         evaluation_results_json = self.results.create_evaluation_results_json(
             evaluation_data=evaluation_data,
             evaluation_result=result,
@@ -901,7 +926,7 @@ class AI4RAGExperiment:
         pattern_name: str,
     ) -> tuple[EvaluationMetricsResult, list[EvaluationData]]:
         """
-        Evaluate response using all configured evaluators and merge results.
+        Evaluate response using the metrics needed for the current phase.
 
         Each evaluator receives only the metrics matching its
         ``EVALUATOR_TYPE``.  Results are merged into a single
@@ -922,7 +947,13 @@ class AI4RAGExperiment:
         tuple[EvaluationMetricsResult, list[EvaluationData]]
             Combined evaluation scores and input evaluation data.
         """
-        evaluator_names = [e.EVALUATOR_TYPE for e in self.evaluators]
+        metrics = self.metrics
+        if self._optimization_phase == "warm_start" and self.optimization_metric != Metrics.OVERALL_SCORE:
+            metrics = (self.optimization_metric,)
+
+        evaluator_names = [
+            e.EVALUATOR_TYPE for e in self.evaluators if any(m.evaluator == e.EVALUATOR_TYPE for m in metrics)
+        ]
         logger.info("Evaluating RAG Pattern '%s' using %s.", pattern_name, evaluator_names)
         self.event_handler.on_status_change(
             level=LogLevel.INFO,
@@ -931,11 +962,18 @@ class AI4RAGExperiment:
         )
 
         eval_data = build_evaluation_data(benchmark_data=self.benchmark_data, inference_response=inference_response)
+        result = self._evaluate_data(eval_data, metrics)
+
+        logger.info("Evaluation results for '%s': %s.", pattern_name, result)
+        return result, eval_data
+
+    def _evaluate_data(self, eval_data: list[EvaluationData], metrics: Sequence[RAGMetric]) -> EvaluationMetricsResult:
+        """Dispatch selected metrics to their evaluators and combine the scores."""
 
         evaluator_map: dict[str, BaseEvaluator] = {e.EVALUATOR_TYPE: e for e in self.evaluators}
 
         metrics_by_type: dict[str, list[RAGMetric]] = {}
-        for m in self.metrics:
+        for m in metrics:
             if m.evaluator != "custom":
                 metrics_by_type.setdefault(m.evaluator, []).append(m)
 
@@ -952,10 +990,9 @@ class AI4RAGExperiment:
             partial_results.append(evaluator.evaluate_metrics(evaluation_data=eval_data, metrics=type_metrics))
 
         result = merge_evaluation_results(partial_results)
-        apply_custom_metrics(scores=result, metrics=self.metrics)
+        apply_custom_metrics(scores=result, metrics=metrics)
 
-        logger.info("Evaluation results for '%s': %s.", pattern_name, result)
-        return result, eval_data
+        return result
 
     def _collection_exists(self, collection_name: str) -> bool:
         """
