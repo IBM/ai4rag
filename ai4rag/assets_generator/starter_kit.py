@@ -10,7 +10,9 @@ import zipfile
 from pathlib import Path
 from typing import Any
 
-_CONFIGURABLE_FILES = frozenset({"values.yaml", "agent_config.json", "README.md"})
+from ai4rag import __version__
+
+_CONFIGURABLE_FILES = frozenset({"values.yaml", "agent_config.json", "README.md", "pyproject.toml"})
 _IGNORED_TEMPLATE_NAMES = frozenset({".DS_Store", ".env", ".venv", "__pycache__"})
 
 
@@ -25,6 +27,7 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
         return default if value is None else str(value)
 
     mapping["__PATTERN_NAME__"] = _value(output_data.get("name"))
+    mapping["__AI4RAG_VERSION__"] = __version__
 
     settings = output_data.get("settings", {})
 

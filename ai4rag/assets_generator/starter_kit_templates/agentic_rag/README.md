@@ -17,6 +17,7 @@ The agent can call `rewrite_query` to refine a search, call `retriever` to fetch
 
 - An OpenShift cluster with `oc` logged in and permission to create the required resources.
 - The `openshell` CLI and Helm 3 installed locally.
+- `uv` installed locally to update the dependency lockfile.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together with credentials for accessing it. The chat model must support tool calling so the agent can invoke the retriever.
 - A reachable Milvus or PostgreSQL/pgvector instance and credentials for accessing it, provided through the Kubernetes secrets referenced by `values.yaml` (`maas_secret_name` and `db_secret_name`). For Milvus, provide `MILVUS_URI` and optionally `MILVUS_TOKEN` and `MILVUS_SERVER_CERT` for TLS. For pgvector, provide `PGVECTOR_HOST` and optionally `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, and `PGVECTOR_PASSWORD`.
 - The Red Hat build of the Agent Sandbox operator installed in the cluster.
@@ -26,6 +27,9 @@ The agent can call `rewrite_query` to refine a search, call `retriever` to fetch
 Run the following commands from the starter-kit root directory:
 
 ```bash
+# Update the lockfile to the latest ai4rag release before building.
+uv lock --upgrade-package ai4rag
+
 # Run once per cluster.
 make setup-gateway
 

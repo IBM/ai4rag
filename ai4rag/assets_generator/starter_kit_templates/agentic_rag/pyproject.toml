@@ -14,7 +14,7 @@ dependencies = [
     "langchain>=1.4,<2",
     "langchain-openai>=1.6,<2",
     "pymilvus>=3.0,<4",
-    "ai4rag==0.18.0",
+    "ai4rag>=__AI4RAG_VERSION__",
     "flask>=3.1",
     "httpx2>=2.12,<3",
     "python-dotenv>=1.1",

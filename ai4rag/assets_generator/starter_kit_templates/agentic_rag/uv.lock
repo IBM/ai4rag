@@ -31,7 +31,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "ai4rag", specifier = "==0.18.0" },
+    { name = "ai4rag", specifier = ">=0.19.0,<0.21.0" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "flask", specifier = ">=3.1" },
     { name = "httpx2", specifier = ">=2.12,<3" },
