@@ -34,14 +34,17 @@ No extra step is needed to use a remote Milvus server, embedded Milvus Lite, or 
 
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
-    Scanned PDFs/images (via RapidOCR) and audio transcription (via Whisper) additionally require the
-    `text-extraction` extra, which pulls in `torch`, `docling-ibm-models`, `rapidocr`, and `whisper`:
+    Scanned PDFs/images (via RapidOCR) and audio transcription (via a local Hugging Face Whisper model)
+    additionally require the `text-extraction` extra, which pulls in `torch`, `docling-ibm-models`,
+    `rapidocr`, and the audio dependencies:
 
     ```bash
     pip install "ai4rag[text-extraction] @ git+https://github.com/IBM/ai4rag.git@main"
     ```
 
-    See [Pipeline Components](../user-guide/pipeline-components.md#text-extraction) for usage.
+    Audio extraction also requires `HF_MODEL_DIR` to point to an approved local Whisper model directory;
+    ai4rag does not download ASR weights at runtime. See
+    [Pipeline Components](../user-guide/pipeline-components.md#text-extraction) for usage.
 
 ---
 
