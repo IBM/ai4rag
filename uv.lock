@@ -75,6 +75,7 @@ dev = [
     { name = "pytest-mock" },
 ]
 docs = [
+    { name = "black" },
     { name = "mkdocs" },
     { name = "mkdocs-git-revision-date-localized-plugin" },
     { name = "mkdocs-material" },
@@ -102,6 +103,7 @@ requires-dist = [
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "beautifulsoup4", marker = "extra == 'dev'" },
     { name = "black", marker = "extra == 'code-check'" },
+    { name = "black", marker = "extra == 'docs'" },
     { name = "boto3", specifier = ">=1.28" },
     { name = "docling-slim", extras = ["feat-chunking"], specifier = "~=2.121.0" },
     { name = "docling-slim", extras = ["format-audio", "format-opendocument", "standard"], marker = "extra == 'text-extraction'", specifier = "~=2.121.0" },
