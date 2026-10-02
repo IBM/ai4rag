@@ -246,9 +246,15 @@ search_space = prepare_search_space_with_maas(
     },
     client=client,
     benchmark_data=benchmark_df,  # optional: used for language detection
+    vector_store_type="milvus",   # optional: "milvus", "milvus_lite", "pgvector", or "neo4j"
 )
 build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
+
+!!! note "Neo4j search space defaults"
+    Passing `vector_store_type="neo4j"` fixes `chunk_size`/`chunk_overlap` and `search_mode="graph"`, and
+    omits the hybrid ranker parameters, since the Neo4j backend supports graph retrieval only. See
+    [Search Space defaults](../user-guide/search-space.md#default-parameters).
 
 !!! note "RAG optimization orchestration"
     Running a full optimization experiment (`run_rag_optimization`) — wiring search-space
