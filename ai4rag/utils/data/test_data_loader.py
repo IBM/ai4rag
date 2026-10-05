@@ -81,7 +81,7 @@ def load_test_data(
         raise TypeError("bucket_name must be a non-empty string")
 
     if s3_client is None:
-        s3_client = _make_s3_client_with_ssl_fallback(bucket_name, key)
+        s3_client = create_s3_client()
 
     raw_data = _download_object(s3_client, bucket_name, key)
     benchmark_data = _parse_and_validate(raw_data)
@@ -99,24 +99,6 @@ def load_test_data(
     return TestDataResult(data=benchmark_data, record_count=len(benchmark_data), sampled=sampled)
 
 
-def _make_s3_client_with_ssl_fallback(bucket_name: str, key: str) -> Any:
-    """Create an S3 client, retrying with ``verify=False`` on SSL errors.
-
-    Uses ``head_object`` as a lightweight SSL probe.  Non-SSL errors
-    (e.g. 404) are silently ignored here -- they will surface with proper
-    context in :func:`_download_object`.
-    """
-    from botocore.exceptions import SSLError
-
-    client = create_s3_client()
-    try:
-        client.head_object(Bucket=bucket_name, Key=key)
-    except SSLError:
-        _logger.warning("SSL error when accessing %s, retrying with verify=False.", key)
-        return create_s3_client(verify=False)
-    return client
-
-
 def _download_object(s3_client: Any, bucket_name: str, key: str) -> str:
     """Download an S3 object and return its UTF-8 body."""
     from botocore.exceptions import ClientError, SSLError
@@ -124,10 +106,12 @@ def _download_object(s3_client: Any, bucket_name: str, key: str) -> str:
     _logger.info("Fetching test data from S3: bucket=%r, key=%r.", bucket_name, key)
     try:
         response = s3_client.get_object(Bucket=bucket_name, Key=key)
-    except SSLError:
-        _logger.warning("SSL error when downloading %s, retrying with verify=False.", key)
-        s3_client = create_s3_client(verify=False)
-        response = s3_client.get_object(Bucket=bucket_name, Key=key)
+    except SSLError as exc:
+        raise TestDataLoaderError(
+            f"TLS certificate verification failed while fetching {key}: {exc}. If this S3 endpoint "
+            "uses a private or self-signed CA, set AWS_CA_BUNDLE to that CA's PEM bundle. ai4rag "
+            "does not fall back to unverified TLS."
+        ) from exc
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey"):
             raise FileNotFoundError(

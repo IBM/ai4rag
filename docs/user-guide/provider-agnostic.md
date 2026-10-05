@@ -64,7 +64,7 @@ embedding_model = OpenAIEmbeddingModel(
 # Vector store: chosen independently of the model clients via a typed config
 from ai4rag.rag.vector_store import MilvusConfig
 
-vector_store_config = MilvusConfig.from_env()  # remote Milvus server; reads MILVUS_URI (http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
+vector_store_config = MilvusConfig.from_env()  # remote Milvus server; reads MILVUS_URI (http(s)://), MILVUS_TOKEN, MILVUS_CA_CERT
 ```
 
 !!! tip "Discovering models automatically"
@@ -462,10 +462,10 @@ class MyCustomVectorStore(BaseVectorStore):
 
 | Config class | Provider | Key connection params | Env vars (`.from_env()`) |
 |---|---|---|---|
-| `MilvusConfig` | Milvus — remote server or Zilliz Cloud only (hybrid: dense + BM25) | `uri` (required, must be `http(s)://`; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusConfig` | Milvus — remote server or Zilliz Cloud only (hybrid: dense + BM25) | `uri` (required, must be `http(s)://`; raises `ValueError` otherwise; plaintext `http://` only allowed against a local or in-cluster host), `token`, `ca_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_CA_CERT` |
 | `MilvusLiteConfig` | Milvus Lite — embedded, local file only (hybrid: dense + BM25) | `db_path` (local file path; defaults to `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given a `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
-| `PGVectorConfig` | PostgreSQL + pgvector (hybrid: dense + full-text) | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
-| `Neo4jConfig` | Neo4j — graph-only (`search_mode="graph"`, no hybrid/vector modes) | `uri` (required, Bolt/neo4j URI), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
+| `PGVectorConfig` | PostgreSQL + pgvector (hybrid: dense + full-text) | `host`, `port`, `dbname`, `user`, `password`, `ca_cert` (PEM text for a private CA; non-local hosts always get verified TLS) | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD`, `PGVECTOR_CA_CERT` |
+| `Neo4jConfig` | Neo4j — graph-only (`search_mode="graph"`, no hybrid/vector modes) | `uri` (required, Bolt/neo4j URI; plaintext `neo4j://`/`bolt://` only allowed against a local or in-cluster host), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
 
 Both `MilvusConfig` and `MilvusLiteConfig` are served by the same `MilvusVectorStore` implementation; they only differ in where the data lives (remote server vs. local file) and are validated to prevent mixing the two up (see the note under [Milvus Lite (Embedded, Local File)](#milvus-lite-embedded-local-file)).
 
@@ -477,7 +477,7 @@ from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, Neo4jConfig,
 # Embedded Milvus Lite backed by a local file — no external service, no env vars required
 milvus_lite_config = MilvusLiteConfig(db_path="./ai4rag.db")
 
-# Remote Milvus server (or Zilliz Cloud), reading MILVUS_URI / MILVUS_TOKEN / MILVUS_SERVER_CERT
+# Remote Milvus server (or Zilliz Cloud), reading MILVUS_URI / MILVUS_TOKEN / MILVUS_CA_CERT
 milvus_config = MilvusConfig.from_env()
 
 # PGVector, reading PGVECTOR_HOST / PGVECTOR_PORT / PGVECTOR_DB / PGVECTOR_USER / PGVECTOR_PASSWORD

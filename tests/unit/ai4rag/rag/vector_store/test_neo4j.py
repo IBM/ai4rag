@@ -78,19 +78,19 @@ def test_llm_adapter_accepts_base_foundation_model_message_response():
 class TestNeo4jConfig:
     def test_from_env_reads_required_vars(self):
         env = {
-            "NEO4J_URI": "neo4j://host:7687",
+            "NEO4J_URI": "neo4j://localhost:7687",
             "NEO4J_PASSWORD": "secret",
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = Neo4jConfig.from_env()
-        assert cfg.uri == "neo4j://host:7687"
+        assert cfg.uri == "neo4j://localhost:7687"
         assert cfg.password == "secret"
         assert cfg.username == "neo4j"
         assert cfg.database == "neo4j"
 
     def test_from_env_reads_optional_vars(self):
         env = {
-            "NEO4J_URI": "neo4j://host:7687",
+            "NEO4J_URI": "neo4j://localhost:7687",
             "NEO4J_PASSWORD": "pw",
             "NEO4J_USERNAME": "admin",
             "NEO4J_DATABASE": "mydb",
@@ -109,15 +109,30 @@ class TestNeo4jConfig:
                 Neo4jConfig.from_env()
 
     def test_from_env_missing_password_raises(self):
-        env = {"NEO4J_URI": "neo4j://host:7687"}
+        env = {"NEO4J_URI": "neo4j://localhost:7687"}
         with patch.dict(os.environ, env, clear=False):
             with pytest.raises(KeyError):
                 os.environ.pop("NEO4J_PASSWORD", None)
                 Neo4jConfig.from_env()
 
     def test_provider_is_neo4j(self):
-        cfg = Neo4jConfig(uri="neo4j://h:7687", password="pw")
+        cfg = Neo4jConfig(uri="neo4j://localhost:7687", password="pw")
         assert cfg.provider == "neo4j"
+
+    def test_rejects_plain_neo4j_scheme_to_remote_host(self):
+        """A plaintext neo4j:// uri against a non-local host must be rejected."""
+        with pytest.raises(ValueError, match="Neo4jConfig.uri"):
+            Neo4jConfig(uri="neo4j://evil.example.com:7687", password="pw")
+
+    def test_allows_plain_bolt_scheme_to_cluster_local_host(self):
+        """A plaintext bolt:// uri against an in-cluster '*.cluster.local' host is allowed."""
+        cfg = Neo4jConfig(uri="bolt://neo4j.svc.cluster.local:7687", password="pw")
+        assert cfg.uri == "bolt://neo4j.svc.cluster.local:7687"
+
+    def test_allows_encrypted_scheme_to_remote_host(self):
+        """neo4j+s:// (encrypted) is always allowed, regardless of host."""
+        cfg = Neo4jConfig(uri="neo4j+s://remote.example.com:7687", password="pw")
+        assert cfg.uri == "neo4j+s://remote.example.com:7687"
 
 
 class TestKGExtractionConfig:

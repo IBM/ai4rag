@@ -13,18 +13,14 @@ class TestGetS3CredentialsFromEnv:
     def test_returns_credentials_when_all_env_vars_set(self, monkeypatch):
         """All required variables present -- should return a dict with four keys."""
         monkeypatch.setenv("AWS_ACCESS_KEY_ID", "AKIAIOSFODNN7EXAMPLE")
-        monkeypatch.setenv(
-            "AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-        )
+        monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY")
         monkeypatch.setenv("AWS_S3_ENDPOINT", "https://s3.example.com")
         monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
 
         creds = get_s3_credentials_from_env()
 
         assert creds["AWS_ACCESS_KEY_ID"] == "AKIAIOSFODNN7EXAMPLE"
-        assert (
-            creds["AWS_SECRET_ACCESS_KEY"] == "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
-        )
+        assert creds["AWS_SECRET_ACCESS_KEY"] == "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
         assert creds["AWS_S3_ENDPOINT"] == "https://s3.example.com"
         assert creds["AWS_DEFAULT_REGION"] == "us-east-1"
 
@@ -43,9 +39,7 @@ class TestGetS3CredentialsFromEnv:
         "missing_var",
         ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_ENDPOINT"],
     )
-    def test_raises_value_error_when_required_var_missing(
-        self, monkeypatch, missing_var
-    ):
+    def test_raises_value_error_when_required_var_missing(self, monkeypatch, missing_var):
         """A ``ValueError`` must be raised when any required env var is absent."""
         all_vars = {
             "AWS_ACCESS_KEY_ID": "key-id",
@@ -171,3 +165,21 @@ class TestCreateS3Client:
 
         call_kwargs = mock_boto3.client.call_args
         assert call_kwargs.kwargs["verify"] == "/etc/pki/tls/explicit-ca.crt"
+
+    def test_rejects_plain_http_to_external_host(self, mocker):
+        """A plaintext http:// endpoint against a non-local host is rejected before boto3.client()."""
+        mock_boto3 = mocker.patch("ai4rag.utils.clients.s3.boto3")
+
+        with pytest.raises(ValueError, match="S3 endpoint_url"):
+            create_s3_client(endpoint_url="http://s3.example.com")
+
+        mock_boto3.client.assert_not_called()
+
+    def test_allows_plain_http_to_localhost(self, mocker):
+        """A plaintext http:// endpoint against localhost is allowed (e.g. MinIO in dev)."""
+        mock_boto3 = mocker.patch("ai4rag.utils.clients.s3.boto3")
+        mock_boto3.client.return_value = mocker.MagicMock()
+
+        create_s3_client(endpoint_url="http://localhost:9000")
+
+        mock_boto3.client.assert_called_once()
