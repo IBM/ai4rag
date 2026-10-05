@@ -102,16 +102,16 @@ class TestNeo4jConfig:
         assert cfg.username == "admin"
         assert cfg.database == "mydb"
 
-    def test_from_env_reads_server_cert(self):
+    def test_from_env_reads_ca_cert(self):
         cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
         env = {
             "NEO4J_URI": "neo4j+s://host:7687",
             "NEO4J_PASSWORD": "pw",
-            "NEO4J_SERVER_CERT": cert,
+            "NEO4J_CA_CERT": cert,
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = Neo4jConfig.from_env()
-        assert cfg.server_cert == cert
+        assert cfg.ca_cert == cert
 
     def test_from_env_missing_uri_raises(self):
         env = {"NEO4J_PASSWORD": "pw"}
@@ -132,11 +132,11 @@ class TestNeo4jConfig:
         cfg = Neo4jConfig(uri="neo4j://localhost:7687", password="pw")
         assert cfg.provider == "neo4j"
 
-    def test_repr_redacts_password_and_server_cert(self):
+    def test_repr_redacts_password_and_ca_cert(self):
         cfg = Neo4jConfig(
             uri="neo4j+s://host:7687",
             password="do-not-log-password",
-            server_cert="do-not-log-certificate",
+            ca_cert="do-not-log-certificate",
         )
 
         config_repr = repr(cfg)
@@ -259,13 +259,13 @@ class TestNeo4jGraphStoreInit:
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
 
-    def test_trusts_configured_server_cert(self, mock_driver_cls, mock_embedding):
+    def test_trusts_configured_ca_cert(self, mock_driver_cls, mock_embedding):
         cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
         config = Neo4jConfig(
             uri="neo4j+s://host:7687",
             username="neo4j",
             password="test",
-            server_cert=cert,
+            ca_cert=cert,
         )
 
         Neo4jGraphStore(mock_embedding, config, collection_name="ai4rag_col")

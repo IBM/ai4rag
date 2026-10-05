@@ -60,7 +60,7 @@ _CERT_CACHE: dict[str, str] = {}
 _CERT_CACHE_LOCK = threading.Lock()
 
 
-def _materialize_server_cert(cert: str) -> str:
+def _materialize_ca_cert(cert: str) -> str:
     """Return a process-lifetime PEM file for inline certificate *cert*."""
     with _CERT_CACHE_LOCK:
         path = _CERT_CACHE.get(cert)
@@ -76,8 +76,8 @@ def _materialize_server_cert(cert: str) -> str:
 
 
 @atexit.register
-def _cleanup_server_certs() -> None:
-    """Remove materialized Neo4j server certificates at process exit."""
+def _cleanup_ca_certs() -> None:
+    """Remove materialized Neo4j CA certificates at process exit."""
     with _CERT_CACHE_LOCK:
         for path in _CERT_CACHE.values():
             Path(path).unlink(missing_ok=True)
@@ -164,8 +164,8 @@ class Neo4jGraphStore(BaseVectorStore):
         self._foundation_model = foundation_model
         self._kg_extraction_config = _validate_kg_extraction_config(kg_extraction_config)
         driver_kwargs: dict[str, Any] = {"auth": (config.username, config.password)}
-        if config.server_cert:
-            driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(_materialize_server_cert(config.server_cert))
+        if config.ca_cert:
+            driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(_materialize_ca_cert(config.ca_cert))
         self._driver = neo4j.GraphDatabase.driver(config.uri, **driver_kwargs)
         self._driver.verify_connectivity()
         self._ensure_kg_schema()
