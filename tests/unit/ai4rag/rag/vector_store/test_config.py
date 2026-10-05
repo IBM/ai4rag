@@ -23,7 +23,7 @@ class TestMilvusConfig:
         cfg = MilvusConfig(uri="https://milvus:19530")
         assert cfg.uri == "https://milvus:19530"
         assert cfg.token is None
-        assert cfg.server_cert is None
+        assert cfg.ca_cert is None
 
     @pytest.mark.parametrize("bad_uri", ["./ai4rag.db", "ai4rag.db", "/tmp/x.db", "localhost:19530", "milvus", ""])
     def test_non_url_uri_is_rejected(self, bad_uri):
@@ -40,10 +40,10 @@ class TestMilvusConfig:
         assert cfg.uri == "https://milvus:19530"
         assert cfg.token == "root:Milvus"
 
-    def test_constructor_with_server_cert(self):
+    def test_constructor_with_ca_cert(self):
         cert_pem = "-----BEGIN CERTIFICATE-----\nMIICert\n-----END CERTIFICATE-----\n"
-        cfg = MilvusConfig(uri="https://milvus:19530", server_cert=cert_pem)
-        assert cfg.server_cert == cert_pem
+        cfg = MilvusConfig(uri="https://milvus:19530", ca_cert=cert_pem)
+        assert cfg.ca_cert == cert_pem
 
     def test_frozen(self):
         cfg = MilvusConfig(uri="http://localhost:19530")
@@ -51,27 +51,42 @@ class TestMilvusConfig:
             cfg.uri = "new"
 
     def test_from_env_uri_only(self, monkeypatch):
-        monkeypatch.setenv("MILVUS_URI", "http://host:19530")
+        monkeypatch.setenv("MILVUS_URI", "http://localhost:19530")
         monkeypatch.delenv("MILVUS_TOKEN", raising=False)
-        monkeypatch.delenv("MILVUS_SERVER_CERT", raising=False)
+        monkeypatch.delenv("MILVUS_CA_CERT", raising=False)
         cfg = MilvusConfig.from_env()
-        assert cfg.uri == "http://host:19530"
+        assert cfg.uri == "http://localhost:19530"
         assert cfg.token is None
-        assert cfg.server_cert is None
+        assert cfg.ca_cert is None
 
     def test_from_env_uri_and_token(self, monkeypatch):
-        monkeypatch.setenv("MILVUS_URI", "http://host:19530")
+        monkeypatch.setenv("MILVUS_URI", "http://localhost:19530")
         monkeypatch.setenv("MILVUS_TOKEN", "user:pass")
         cfg = MilvusConfig.from_env()
-        assert cfg.uri == "http://host:19530"
+        assert cfg.uri == "http://localhost:19530"
         assert cfg.token == "user:pass"
 
-    def test_from_env_with_server_cert(self, monkeypatch):
+    def test_rejects_plain_http_to_remote_host(self):
+        """A plaintext http:// uri against a non-local host must be rejected."""
+        with pytest.raises(ValueError, match="MilvusConfig.uri"):
+            MilvusConfig(uri="http://evil.example.com:19530")
+
+    def test_allows_plain_http_to_localhost(self):
+        """A plaintext http:// uri against localhost is allowed."""
+        cfg = MilvusConfig(uri="http://localhost:19530")
+        assert cfg.uri == "http://localhost:19530"
+
+    def test_allows_plain_http_to_cluster_local_host(self):
+        """A plaintext http:// uri against an in-cluster '*.cluster.local' host is allowed."""
+        cfg = MilvusConfig(uri="http://milvus.svc.cluster.local:19530")
+        assert cfg.uri == "http://milvus.svc.cluster.local:19530"
+
+    def test_from_env_with_ca_cert(self, monkeypatch):
         cert_pem = "-----BEGIN CERTIFICATE-----\nMIICert\n-----END CERTIFICATE-----\n"
         monkeypatch.setenv("MILVUS_URI", "https://host:19530")
-        monkeypatch.setenv("MILVUS_SERVER_CERT", cert_pem)
+        monkeypatch.setenv("MILVUS_CA_CERT", cert_pem)
         cfg = MilvusConfig.from_env()
-        assert cfg.server_cert == cert_pem
+        assert cfg.ca_cert == cert_pem
 
     def test_from_env_missing_uri_raises(self, monkeypatch):
         monkeypatch.delenv("MILVUS_URI", raising=False)
@@ -123,6 +138,7 @@ class TestPGVectorConfig:
         assert cfg.dbname == "postgres"
         assert cfg.user == "postgres"
         assert cfg.password is None
+        assert cfg.ca_cert is None
 
     def test_custom_values(self):
         cfg = PGVectorConfig(host="db.local", port=5433, dbname="mydb", user="admin", password="secret")
@@ -144,7 +160,14 @@ class TestPGVectorConfig:
             cfg.host = "other"
 
     def test_from_env_defaults(self, monkeypatch):
-        for var in ("PGVECTOR_HOST", "PGVECTOR_PORT", "PGVECTOR_DB", "PGVECTOR_USER", "PGVECTOR_PASSWORD"):
+        for var in (
+            "PGVECTOR_HOST",
+            "PGVECTOR_PORT",
+            "PGVECTOR_DB",
+            "PGVECTOR_USER",
+            "PGVECTOR_PASSWORD",
+            "PGVECTOR_CA_CERT",
+        ):
             monkeypatch.delenv(var, raising=False)
         cfg = PGVectorConfig.from_env()
         assert cfg.host == "localhost"
@@ -152,6 +175,7 @@ class TestPGVectorConfig:
         assert cfg.dbname == "postgres"
         assert cfg.user == "postgres"
         assert cfg.password is None
+        assert cfg.ca_cert is None
 
     def test_from_env_custom(self, monkeypatch):
         monkeypatch.setenv("PGVECTOR_HOST", "pghost")
@@ -159,12 +183,14 @@ class TestPGVectorConfig:
         monkeypatch.setenv("PGVECTOR_DB", "testdb")
         monkeypatch.setenv("PGVECTOR_USER", "testuser")
         monkeypatch.setenv("PGVECTOR_PASSWORD", "testpass")
+        monkeypatch.setenv("PGVECTOR_CA_CERT", "-----BEGIN CERTIFICATE-----\nMIICert\n-----END CERTIFICATE-----\n")
         cfg = PGVectorConfig.from_env()
         assert cfg.host == "pghost"
         assert cfg.port == 5433
         assert cfg.dbname == "testdb"
         assert cfg.user == "testuser"
         assert cfg.password == "testpass"
+        assert cfg.ca_cert == "-----BEGIN CERTIFICATE-----\nMIICert\n-----END CERTIFICATE-----\n"
 
 
 class TestGetVectorStoreConfig:
@@ -178,12 +204,12 @@ class TestGetVectorStoreConfig:
         assert cfg.provider == "pgvector"
 
     def test_returns_milvus_config_from_env(self, monkeypatch):
-        monkeypatch.setenv("MILVUS_URI", "http://host:19530")
+        monkeypatch.setenv("MILVUS_URI", "http://localhost:19530")
         monkeypatch.delenv("MILVUS_TOKEN", raising=False)
-        monkeypatch.delenv("MILVUS_SERVER_CERT", raising=False)
+        monkeypatch.delenv("MILVUS_CA_CERT", raising=False)
         cfg = get_vector_store_config("milvus")
         assert isinstance(cfg, MilvusConfig)
-        assert cfg.uri == "http://host:19530"
+        assert cfg.uri == "http://localhost:19530"
 
     def test_returns_milvus_lite_config_from_env(self, monkeypatch):
         monkeypatch.setenv("MILVUS_LITE_DB_PATH", "/tmp/lite.db")

@@ -141,7 +141,7 @@ from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, Neo4jConfig,
 vector_store_config = MilvusLiteConfig(db_path="./ai4rag.db")
 
 # Or build configs from environment variables
-vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
+vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_CA_CERT
 vector_store_config = MilvusLiteConfig.from_env()   # reads MILVUS_LITE_DB_PATH (optional; defaults to "./ai4rag_milvus_lite.db")
 vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
 vector_store_config = Neo4jConfig.from_env()        # reads NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE

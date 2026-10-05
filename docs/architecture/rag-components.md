@@ -521,10 +521,10 @@ def get_vector_store(
 
 | Config | `provider` | Key Fields | Env Vars |
 |--------|------------|------------|----------|
-| `MilvusConfig` | `"milvus"` | `uri` (required, must be an `http(s)://` URL — a remote server or Zilliz Cloud; raises `ValueError` otherwise), `token`, `server_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_SERVER_CERT` |
+| `MilvusConfig` | `"milvus"` | `uri` (required, must be an `http(s)://` URL — a remote server or Zilliz Cloud; raises `ValueError` otherwise; plaintext `http://` only allowed against a local or in-cluster host), `token`, `ca_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_CA_CERT` |
 | `MilvusLiteConfig` | `"milvus_lite"` | `db_path` (a local file path, default `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given an `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
-| `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password` | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` |
-| `Neo4jConfig` | `"neo4j"` | `uri` (required, Bolt/neo4j URI), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
+| `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password`, `ca_cert` (PEM text for a private CA; non-local hosts always get verified TLS) | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD`, `PGVECTOR_CA_CERT` |
+| `Neo4jConfig` | `"neo4j"` | `uri` (required, Bolt/neo4j URI; plaintext `neo4j://`/`bolt://` only allowed against a local or in-cluster host, raises `ValueError` otherwise), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
 
 !!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
     Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite purely from
@@ -564,12 +564,12 @@ class MilvusVectorStore(BaseVectorStore):
 
 **Connection Configuration:**
 
-For `MilvusConfig`, TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `server_cert`. `MilvusLiteConfig` has no network/TLS concerns — it only takes a local `db_path`.
+For `MilvusConfig`, TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `ca_cert`. `MilvusLiteConfig` has no network/TLS concerns — it only takes a local `db_path`.
 
 ```python
 from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig
 
-# Remote server, from environment: MILVUS_URI (required, http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
+# Remote server, from environment: MILVUS_URI (required, http(s)://), MILVUS_TOKEN, MILVUS_CA_CERT
 config = MilvusConfig.from_env()
 
 # Remote server, explicit
@@ -775,6 +775,15 @@ config = PGVectorConfig.from_env()
 # Or explicit
 config = PGVectorConfig(host="localhost", port=5432, dbname="ai4rag", user="ai4rag", password="secret")
 ```
+
+!!! note "TLS and certificate verification"
+    `PGVectorStore` never falls back to unverified TLS, and there is no setting to weaken
+    verification for a non-local host. A local or in-cluster `host` (loopback, or a
+    `*.cluster.local` Kubernetes service) keeps asyncpg's own opportunistic, unverified-TLS default,
+    matching previous behavior. Any other `host` unconditionally gets a verified TLS connection
+    (certificate chain and hostname both checked) against the system's trusted CA store. Set
+    `ca_cert` to a private/self-signed CA's PEM text to verify against it instead of the system
+    trust store.
 
 **Table Mapping:**
 

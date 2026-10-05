@@ -84,7 +84,7 @@ class TestCreatePlaceholderMapping:
         rendered = mapping["REQUIRED_ENV_VARS"]
         assert "- `MILVUS_URI`" in rendered
         assert "- `MILVUS_TOKEN`" in rendered
-        assert "- `MILVUS_SERVER_CERT`" in rendered
+        assert "- `MILVUS_CA_CERT`" in rendered
 
     def test_required_env_vars_empty_for_unknown_provider(self):
         """An unknown or missing provider must yield an empty env-var block."""

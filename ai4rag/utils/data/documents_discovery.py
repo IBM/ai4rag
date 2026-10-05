@@ -175,7 +175,7 @@ def discover_documents(
     max_size_bytes = float(sampling_max_size_gb) * 1024**3 if sampling_enabled else float(inf)
 
     if s3_client is None:
-        s3_client = _create_s3_client_with_ssl_fallback(bucket_name, resolved_prefixes[0])
+        s3_client = create_s3_client()
     contents = _list_objects_union(s3_client, bucket_name, resolved_prefixes)
     supported_files = [c for c in contents if c["Key"].endswith(ext_tuple)]
 
@@ -352,26 +352,3 @@ def _format_unresolved_keys(
     )
     lines.append(f"Searched {_location(bucket_name, prefixes)}.")
     return " ".join(lines)
-
-
-def _create_s3_client_with_ssl_fallback(bucket_name: str, probe_prefix: str) -> Any:
-    """Create an S3 client, retrying with ``verify=False`` on SSL errors.
-
-    Returns
-    -------
-    Any
-        A client that has successfully listed against *bucket_name*.
-    """
-    from botocore.exceptions import SSLError
-
-    client = create_s3_client()
-    try:
-        client.list_objects_v2(Bucket=bucket_name, Prefix=probe_prefix, MaxKeys=1)
-        return client
-    except SSLError:
-        _logger.warning(
-            "SSL error when listing objects in s3://%s/%s, retrying with verify=False",
-            bucket_name,
-            probe_prefix,
-        )
-        return create_s3_client(verify=False)

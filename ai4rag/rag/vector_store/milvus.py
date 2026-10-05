@@ -38,17 +38,17 @@ __all__ = ["MilvusVectorStore"]
 # whole process. Deleting it on ``close()`` or garbage collection races the
 # reconnect and raises ``FileNotFoundError``. We therefore materialize each
 # distinct certificate exactly once, keep it until interpreter exit, and share it
-# across stores; an HPO run over one ``MILVUS_SERVER_CERT`` creates a single file
+# across stores; an HPO run over one ``MILVUS_CA_CERT`` creates a single file
 # rather than one per evaluated pattern.
 _CERT_CACHE: dict[str, str] = {}
 _CERT_CACHE_LOCK = threading.Lock()
 
 
-def _materialize_server_cert(cert: str) -> str:
+def _materialize_ca_cert(cert: str) -> str:
     """Return a filesystem path to *cert*, writing it to a process-lifetime tempfile once.
 
     Identical certificate text reuses the same file. ``NamedTemporaryFile`` creates
-    it with owner-only permissions; :func:`_cleanup_server_certs` removes every
+    it with owner-only permissions; :func:`_cleanup_ca_certs` removes every
     cached file at interpreter exit.
 
     Parameters
@@ -75,7 +75,7 @@ def _materialize_server_cert(cert: str) -> str:
 
 
 @atexit.register
-def _cleanup_server_certs() -> None:
+def _cleanup_ca_certs() -> None:
     """Remove every materialized certificate file at interpreter exit."""
     with _CERT_CACHE_LOCK:
         for path in _CERT_CACHE.values():
@@ -99,7 +99,7 @@ class MilvusVectorStore(BaseVectorStore):
         Model used to embed documents and queries.
     config : MilvusConfig | MilvusLiteConfig
         Connection parameters. A :class:`MilvusConfig` connects to a remote server
-        (TLS via an ``https://`` URI; ``config.server_cert`` supplies a self-signed
+        (TLS via an ``https://`` URI; ``config.ca_cert`` supplies a self-signed
         CA certificate, materialized to a temporary file and passed to
         ``MilvusClient`` as ``server_pem_path``). A :class:`MilvusLiteConfig` opens
         the embedded engine backed by its local ``db_path``.
@@ -125,8 +125,8 @@ class MilvusVectorStore(BaseVectorStore):
         The ``MilvusClient`` is built according to the config type: a
         :class:`MilvusLiteConfig` opens the embedded engine at its local
         ``db_path``; a :class:`MilvusConfig` connects to a remote server and, when
-        ``config.server_cert`` is set, materializes its PEM text to a temporary
-        file (see :func:`_materialize_server_cert`) passed as ``server_pem_path``
+        ``config.ca_cert`` is set, materializes its PEM text to a temporary
+        file (see :func:`_materialize_ca_cert`) passed as ``server_pem_path``
         for TLS verification. The target collection — with its dense, sparse/BM25,
         and JSON fields — is created only when it does not already exist.
 
@@ -158,7 +158,7 @@ class MilvusVectorStore(BaseVectorStore):
         For :class:`MilvusLiteConfig` the ``uri`` is the local database file path
         (the embedded engine needs no auth or TLS). For :class:`MilvusConfig` the
         ``uri`` is the server URL, with an optional ``token`` and, when a
-        self-signed ``server_cert`` is supplied, a ``server_pem_path`` pointing at
+        self-signed ``ca_cert`` is supplied, a ``server_pem_path`` pointing at
         the materialized certificate file.
 
         Parameters
@@ -177,8 +177,8 @@ class MilvusVectorStore(BaseVectorStore):
         connect_kwargs: dict[str, Any] = {"uri": config.uri}
         if config.token:
             connect_kwargs["token"] = config.token
-        if config.server_cert:
-            connect_kwargs["server_pem_path"] = _materialize_server_cert(config.server_cert)
+        if config.ca_cert:
+            connect_kwargs["server_pem_path"] = _materialize_ca_cert(config.ca_cert)
         return connect_kwargs
 
     def _create_collection(self) -> None:
@@ -449,6 +449,6 @@ class MilvusVectorStore(BaseVectorStore):
         intentionally *not* removed here: pymilvus can reconnect an idle channel
         from a background thread and re-read ``server_pem_path`` after ``close()``,
         so the file is kept for the process lifetime and cleaned at interpreter
-        exit by :func:`_cleanup_server_certs`.
+        exit by :func:`_cleanup_ca_certs`.
         """
         self._client.close()
