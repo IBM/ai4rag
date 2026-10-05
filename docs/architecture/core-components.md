@@ -64,6 +64,13 @@ experiment = AI4RAGExperiment(
 experiment.search()  # Execute optimization
 ```
 
+**RAG Template Selection:**
+
+Each candidate pattern is evaluated through a `rag_template` constructor argument — a `BaseRAGTemplate`
+subclass, defaulting to `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again
+before answering). Pass `rag_template=SimpleRAG` for the previous single-pass retrieve-then-generate
+behavior. The same parameter is accepted by `ModelsPreSelector` for the pre-selection phase below.
+
 ### search() Method
 
 The `search()` method is the main entry point that executes the optimization loop:
@@ -100,7 +107,7 @@ sequenceDiagram
     participant Optimizer
     participant Exp as AI4RAGExperiment
     participant VS as VectorStore
-    participant RAG as SimpleRAG
+    participant RAG as rag_template
     participant Eval as Evaluator
     participant EH as EventHandler
 
@@ -117,7 +124,7 @@ sequenceDiagram
         VS-->>Exp: indexing complete
         deactivate VS
 
-        Exp->>RAG: create SimpleRAG instance
+        Exp->>RAG: create rag_template instance (AgenticRAG by default)
         activate RAG
         Note over RAG: Parallel query execution
         RAG-->>Exp: inference responses

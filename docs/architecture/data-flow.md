@@ -227,7 +227,11 @@ indexing_params = {
 
 ## Query Phase
 
-The query phase retrieves relevant chunks and generates answers for benchmark questions.
+The query phase retrieves relevant chunks and generates answers for benchmark questions. The
+diagram below shows `SimpleRAG`'s single-pass flow; `AgenticRAG` (the experiment's default
+`rag_template`, see [AgenticRAG](rag-components.md#agenticrag)) starts with the same initial
+retrieval but then lets an agent loop through further `retriever`/`rewrite_query` tool calls,
+bounded by `max_retrieval_steps`, before generating the final answer.
 
 ```mermaid
 sequenceDiagram
@@ -359,7 +363,7 @@ Combines the dense vector search with a backend-native sparse/keyword search —
 
 ### Context Formatting
 
-**SimpleRAG** formats retrieved chunks into LLM context:
+Context formatting lives in `BaseRAGTemplate` and is shared by `SimpleRAG` and `AgenticRAG`:
 
 ```python
 # Default context_template_text: "{document}\n"
@@ -453,7 +457,7 @@ answer = response.choices[0].message.content
 
 **Alternative Entry Point: `chat()`**
 
-`SimpleRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged:
+`SimpleRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged. (`AgenticRAG.chat()` runs the same agent loop as `generate()` over the full message history instead; see [AgenticRAG](rag-components.md#agenticrag).)
 
 ```python
 response = rag.chat(messages=[
