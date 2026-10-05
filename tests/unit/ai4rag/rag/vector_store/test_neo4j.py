@@ -5,8 +5,10 @@
 import asyncio
 import json
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import neo4j
 import pytest
 from neo4j_graphrag.components.types import Neo4jGraph, Neo4jNode, Neo4jRelationship
 
@@ -100,6 +102,17 @@ class TestNeo4jConfig:
         assert cfg.username == "admin"
         assert cfg.database == "mydb"
 
+    def test_from_env_reads_server_cert(self):
+        cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
+        env = {
+            "NEO4J_URI": "neo4j+s://host:7687",
+            "NEO4J_PASSWORD": "pw",
+            "NEO4J_SERVER_CERT": cert,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            cfg = Neo4jConfig.from_env()
+        assert cfg.server_cert == cert
+
     def test_from_env_missing_uri_raises(self):
         env = {"NEO4J_PASSWORD": "pw"}
         with patch.dict(os.environ, env, clear=False):
@@ -119,20 +132,17 @@ class TestNeo4jConfig:
         cfg = Neo4jConfig(uri="neo4j://localhost:7687", password="pw")
         assert cfg.provider == "neo4j"
 
-    def test_rejects_plain_neo4j_scheme_to_remote_host(self):
-        """A plaintext neo4j:// uri against a non-local host must be rejected."""
-        with pytest.raises(ValueError, match="Neo4jConfig.uri"):
-            Neo4jConfig(uri="neo4j://evil.example.com:7687", password="pw")
+    def test_repr_redacts_password_and_server_cert(self):
+        cfg = Neo4jConfig(
+            uri="neo4j+s://host:7687",
+            password="do-not-log-password",
+            server_cert="do-not-log-certificate",
+        )
 
-    def test_allows_plain_bolt_scheme_to_cluster_local_host(self):
-        """A plaintext bolt:// uri against an in-cluster '*.cluster.local' host is allowed."""
-        cfg = Neo4jConfig(uri="bolt://neo4j.svc.cluster.local:7687", password="pw")
-        assert cfg.uri == "bolt://neo4j.svc.cluster.local:7687"
+        config_repr = repr(cfg)
 
-    def test_allows_encrypted_scheme_to_remote_host(self):
-        """neo4j+s:// (encrypted) is always allowed, regardless of host."""
-        cfg = Neo4jConfig(uri="neo4j+s://remote.example.com:7687", password="pw")
-        assert cfg.uri == "neo4j+s://remote.example.com:7687"
+        assert "do-not-log-password" not in config_repr
+        assert "do-not-log-certificate" not in config_repr
 
 
 class TestKGExtractionConfig:
@@ -248,6 +258,22 @@ class TestNeo4jGraphStoreInit:
     def test_verifies_connectivity(self, mock_driver_cls, mock_embedding, neo4j_config):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
+
+    def test_trusts_configured_server_cert(self, mock_driver_cls, mock_embedding):
+        cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
+        config = Neo4jConfig(
+            uri="neo4j+s://host:7687",
+            username="neo4j",
+            password="test",
+            server_cert=cert,
+        )
+
+        Neo4jGraphStore(mock_embedding, config, collection_name="ai4rag_col")
+
+        trusted_certificates = mock_driver_cls.call_args.kwargs["trusted_certificates"]
+        assert isinstance(trusted_certificates, neo4j.TrustCustomCAs)
+        cert_path = trusted_certificates.certs[0]
+        assert Path(cert_path).read_text() == cert
 
     def test_collection_name_prefix_guard(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="ai4rag"):

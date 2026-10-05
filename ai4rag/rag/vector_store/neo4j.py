@@ -4,12 +4,16 @@
 # -----------------------------------------------------------------------------
 # pylint: disable=too-many-lines
 import asyncio
+import atexit
 import hashlib
 import json
+import tempfile
+import threading
 import uuid
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, fields
+from pathlib import Path
 from typing import Any
 
 import neo4j
@@ -46,6 +50,38 @@ from ai4rag.rag.vector_store.utils import (
 __all__ = ["Neo4jGraphRetrievalConfig", "Neo4jGraphStore"]
 
 _SCHEMA = Neo4jGraphSchema
+
+
+# ``neo4j.TrustCustomCAs`` accepts certificate paths, while our configuration
+# consistently exposes inline PEM text. Retain each materialized certificate
+# until process exit so every driver created from the same config can continue
+# to use it for the driver's lifetime.
+_CERT_CACHE: dict[str, str] = {}
+_CERT_CACHE_LOCK = threading.Lock()
+
+
+def _materialize_server_cert(cert: str) -> str:
+    """Return a process-lifetime PEM file for inline certificate *cert*."""
+    with _CERT_CACHE_LOCK:
+        path = _CERT_CACHE.get(cert)
+        if path is not None and Path(path).exists():
+            return path
+        with tempfile.NamedTemporaryFile(
+            mode="w", prefix="ai4rag-neo4j-cert-", suffix=".pem", delete=False
+        ) as cert_file:
+            cert_file.write(cert)
+            path = cert_file.name
+        _CERT_CACHE[cert] = path
+        return path
+
+
+@atexit.register
+def _cleanup_server_certs() -> None:
+    """Remove materialized Neo4j server certificates at process exit."""
+    with _CERT_CACHE_LOCK:
+        for path in _CERT_CACHE.values():
+            Path(path).unlink(missing_ok=True)
+        _CERT_CACHE.clear()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -127,10 +163,10 @@ class Neo4jGraphStore(BaseVectorStore):
         self._embedding_dimension = resolve_embedding_dimension(embedding_model)
         self._foundation_model = foundation_model
         self._kg_extraction_config = _validate_kg_extraction_config(kg_extraction_config)
-        self._driver = neo4j.GraphDatabase.driver(
-            config.uri,
-            auth=(config.username, config.password),
-        )
+        driver_kwargs: dict[str, Any] = {"auth": (config.username, config.password)}
+        if config.server_cert:
+            driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(_materialize_server_cert(config.server_cert))
+        self._driver = neo4j.GraphDatabase.driver(config.uri, **driver_kwargs)
         self._driver.verify_connectivity()
         self._ensure_kg_schema()
 
