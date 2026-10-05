@@ -1,0 +1,127 @@
+# -----------------------------------------------------------------------------
+# Copyright IBM Corp. 2026
+# SPDX-License-Identifier: Apache-2.0
+# -----------------------------------------------------------------------------
+"""Thin auth layer that wraps main:app without modifying agent code.
+
+Authenticates requests using K8s ServiceAccount tokens via TokenReview API.
+``K8S_API_URL`` and ``K8S_REVIEWER_TOKEN`` are required.
+
+Usage:
+    K8S_API_URL=https://... K8S_REVIEWER_TOKEN=... uvicorn auth_wrapper:app --host 0.0.0.0 --port 8080
+"""
+
+import logging
+from collections.abc import Awaitable, Callable
+from os import getenv
+from pathlib import Path
+from typing import Any
+
+import httpx2
+from fastapi import Request
+from fastapi.responses import JSONResponse
+from main import app  # noqa: F401 — re-exported for uvicorn
+
+type ASGIMessage = dict[str, Any]
+type Receive = Callable[[], Awaitable[ASGIMessage]]
+type Send = Callable[[ASGIMessage], Awaitable[None]]
+type ASGIApp = Callable[[ASGIMessage, Receive, Send], Awaitable[None]]
+
+log = logging.getLogger("auth_wrapper")
+
+_K8S_API_URL = getenv("K8S_API_URL", "").strip().rstrip("/")
+_K8S_REVIEWER_TOKEN = getenv("K8S_REVIEWER_TOKEN", "").strip()
+_ALLOWED_SA_USERNAME = getenv("ALLOWED_SA_USERNAME", "").strip()
+_K8S_CA_PATH = getenv("K8S_CA_PATH", "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
+_PROTECTED_PATHS = frozenset(
+    {
+        "/v1/responses",
+        "/v1/responses/",
+    }
+)
+
+_AUTH_ENABLED = bool(_K8S_API_URL and _K8S_REVIEWER_TOKEN)
+
+if not _AUTH_ENABLED:
+    raise RuntimeError("K8S_API_URL and K8S_REVIEWER_TOKEN are required for the auth wrapper")
+if not _K8S_API_URL.startswith("https://"):
+    raise RuntimeError("K8S_API_URL must use HTTPS")
+if not Path(_K8S_CA_PATH).is_file():
+    raise RuntimeError(f"K8s CA certificate not found at {_K8S_CA_PATH}")
+
+
+async def _validate_k8s_token(token: str) -> bool:
+    if not (_K8S_API_URL and _K8S_REVIEWER_TOKEN):
+        return False
+    try:
+        async with httpx2.AsyncClient(verify=_K8S_CA_PATH, timeout=10.0) as client:
+            resp = await client.post(
+                f"{_K8S_API_URL}/apis/authentication.k8s.io/v1/tokenreviews",
+                json={
+                    "apiVersion": "authentication.k8s.io/v1",
+                    "kind": "TokenReview",
+                    "spec": {"token": token},
+                },
+                headers={
+                    "Authorization": f"Bearer {_K8S_REVIEWER_TOKEN}",
+                    "Content-Type": "application/json",
+                },
+            )
+        if resp.status_code == 201:
+            status = resp.json().get("status", {})
+            if status.get("authenticated"):
+                user = status.get("user", {}).get("username", "unknown")
+                if _ALLOWED_SA_USERNAME and user != _ALLOWED_SA_USERNAME:
+                    log.warning(
+                        "K8s token authenticated but username mismatch: got %s, expected %s",
+                        user,
+                        _ALLOWED_SA_USERNAME,
+                    )
+                    return False
+                log.info("K8s token authenticated: %s", user)
+                return True
+        return False
+    except Exception as e:
+        log.exception("K8s TokenReview failed: %s", str(e))
+        return False
+
+
+class _BearerAuthMiddleware:
+    def __init__(self, wrapped_app: ASGIApp) -> None:
+        self.app = wrapped_app
+
+    async def __call__(self, scope: ASGIMessage, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
+        if request.url.path not in _PROTECTED_PATHS:
+            await self.app(scope, receive, send)
+            return
+
+        token = ""
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            token = auth[7:]
+        else:
+            token = request.headers.get("x-api-key", "")
+
+        if not token:
+            response = JSONResponse(
+                {"error": "Missing API key (use X-Api-Key)"},
+                status_code=401,
+            )
+            await response(scope, receive, send)
+            return
+
+        if await _validate_k8s_token(token):
+            await self.app(scope, receive, send)
+            return
+
+        response = JSONResponse({"error": "Invalid API key"}, status_code=401)
+        await response(scope, receive, send)
+
+
+if _AUTH_ENABLED:
+    app.add_middleware(_BearerAuthMiddleware)

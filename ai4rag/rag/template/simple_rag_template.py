@@ -5,8 +5,6 @@
 
 from typing import Any
 
-from ai4rag.rag.chunking.chunk import AI4RAGChunk
-
 from ..foundation_models.base_model import MessageTyped
 from .base_template import BaseRAGTemplate
 
@@ -24,37 +22,6 @@ class SimpleRAG(BaseRAGTemplate):
     retriever : Retriever
         Initialized retriever for document retrieval.
     """
-
-    def _build_enriched_user_message(self, question: str, **kwargs) -> tuple[list[AI4RAGChunk], str]:
-        """
-        Retrieve context for `question` and render the RAG-enriched user message.
-
-        Parameters
-        ----------
-        question : str
-            The question used as the retrieval query.
-
-        **kwargs
-            Additional parameters forwarded to the retriever (e.g. number_of_chunks).
-
-        Returns
-        -------
-        tuple[list[AI4RAGChunk], str]
-            The retrieved chunks and the rendered user message containing them.
-        """
-        reference_documents = self.retriever.retrieve(question, **kwargs)
-
-        context = "\n\n".join(
-            self.foundation_model.context_template_text.format(document=chunk.text, doc_number=doc_number)
-            for doc_number, chunk in enumerate(reference_documents, start=1)
-        )
-
-        user_message = self.foundation_model.user_message_text.format(
-            reference_documents=context,
-            question=question,
-        )
-
-        return reference_documents, user_message
 
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         """
@@ -138,16 +105,5 @@ class SimpleRAG(BaseRAGTemplate):
         list[Any]
             Chat response choices from the foundation model.
         """
-        if not messages:
-            raise ValueError("`messages` must contain at least one message.")
-
-        *history, last_message = messages
-        _, enriched_content = self._build_enriched_user_message(last_message["content"], **kwargs)
-
-        rag_messages = [
-            {"role": "system", "content": self.foundation_model.system_message_text},
-            *history,
-            {**last_message, "content": enriched_content},
-        ]
-
+        rag_messages = self._build_rag_messages(messages, **kwargs)
         return self.foundation_model.chat(messages=rag_messages, **kwargs)
