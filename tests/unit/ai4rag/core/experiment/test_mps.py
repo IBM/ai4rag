@@ -71,6 +71,8 @@ def documents() -> list[DoclingDocument]:
 @pytest.fixture
 def foundation_models(mocker):
     fm_list = [mocker.MagicMock(spec=BaseFoundationModel, model_id=f"foundation_model_{idx}") for idx in range(4)]
+    for foundation_model in fm_list:
+        foundation_model.system_message_text = "Answer from context."
     return fm_list
 
 
@@ -180,6 +182,8 @@ def _make_evaluate_metrics_result(evaluation_data, metrics):
 @pytest.fixture
 def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, foundation_models) -> ModelsPreSelector:
     _patch_temporary_store(mocker, mocker.MagicMock(spec=BaseVectorStore))
+    mocker.patch.object(AgenticRAG, "_chat_model", return_value=mocker.MagicMock())
+    mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
 
     def side_effect(**kwargs):
         questions = kwargs.pop("questions")
@@ -259,7 +263,9 @@ class TestModelsPreSelector:
         mocker.patch.object(fully_mocked_selector, "_evaluate_response", return_value={})
         mocker.patch("ai4rag.core.experiment.mps.apply_custom_metrics")
 
-        fully_mocked_selector._evaluate_single_pattern(mocker.sentinel.model, mocker.sentinel.retriever)
+        foundation_model = mocker.MagicMock(spec=BaseFoundationModel)
+        foundation_model.system_message_text = "Answer from context."
+        fully_mocked_selector._evaluate_single_pattern(foundation_model, mocker.sentinel.retriever)
 
         assert isinstance(query_rag.call_args.kwargs["rag"], AgenticRAG)
 

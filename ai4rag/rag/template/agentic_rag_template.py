@@ -3,10 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+from dataclasses import dataclass
 from threading import Lock
 from typing import Any
 
 from langchain.agents import create_agent
+from langchain.tools import ToolRuntime
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
@@ -39,12 +41,26 @@ _REWRITE_INSTRUCTIONS = (
 )
 
 
+@dataclass
+class _AgentRunContext:
+    """Mutable state scoped to one agent invocation."""
+
+    question: str
+    documents: list[AI4RAGChunk]
+    seen: set[tuple[str, str]]
+    tool_counts: dict[str, int]
+    max_retrieval_steps: int
+    retrieval_kwargs: dict[str, Any]
+    state_lock: Lock
+
+
 class AgenticRAG(BaseRAGTemplate):
     """Run a LangChain agent with query rewriting and retrieval tools.
 
     An initial retrieval supplies context for the question. The agent then
-    chooses whether to search again or answer. A per-request tool records
-    retrieved chunks for evaluation and enforces the retrieval budget.
+    chooses whether to search again or answer. Invocation-scoped context lets
+    the reusable tools collect retrieved chunks and enforce the retrieval budget
+    independently for each request.
     """
 
     def __init__(
@@ -57,6 +73,13 @@ class AgenticRAG(BaseRAGTemplate):
         super().__init__(foundation_model=foundation_model, retriever=retriever)
         self.chat_model = chat_model
         self.max_retrieval_steps = max_retrieval_steps
+        chat_model = self._chat_model()
+        self.agent = create_agent(
+            model=chat_model,
+            tools=self._create_agent_tools(chat_model),
+            system_prompt=f"{self.foundation_model.system_message_text}\n\n{_AGENT_INSTRUCTIONS}",
+            context_schema=_AgentRunContext,
+        )
 
     @property
     def max_retrieval_steps(self) -> int:
@@ -91,60 +114,71 @@ class AgenticRAG(BaseRAGTemplate):
         )
         return self.chat_model
 
-    def _run_agent(self, messages: list[MessageTyped], **kwargs) -> tuple[str, list[AI4RAGChunk]]:
-        """Retrieve initial context, then invoke the agent and collect further chunks."""
-        if not messages:
-            raise ValueError("`messages` must contain at least one message.")
-        question = messages[-1]["content"]
-        documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
-        seen: set[tuple[str, str]] = {self._chunk_key(chunk) for chunk in documents}
-        tool_counts = {"retriever": 1, "rewrite_query": 0}
-        state_lock = Lock()
-        chat_model = self._chat_model()
+    def _create_agent_tools(self, chat_model: BaseChatModel) -> list[Any]:
+        """Build tools that use invocation-scoped state from LangChain runtime context."""
 
         @tool("rewrite_query")
-        def rewrite_query(missing_information: str) -> str:
+        def rewrite_query(missing_information: str, runtime: ToolRuntime[_AgentRunContext]) -> str:
             """Write a focused search query for information still missing from the original question."""
-            with state_lock:
-                if tool_counts["rewrite_query"] >= self.max_retrieval_steps:
+            run_context = runtime.context
+            with run_context.state_lock:
+                if run_context.tool_counts["rewrite_query"] >= run_context.max_retrieval_steps:
                     return "Query rewrite limit reached. Use the current query or answer with the evidence found."
-                tool_counts["rewrite_query"] += 1
-                context = "\n\n".join(chunk.text for chunk in documents) or "No documents have been retrieved yet."
+                run_context.tool_counts["rewrite_query"] += 1
+                context = "\n\n".join(chunk.text for chunk in run_context.documents)
+                context = context or "No documents have been retrieved yet."
             response = chat_model.invoke(
                 [
                     SystemMessage(content=_REWRITE_INSTRUCTIONS),
                     HumanMessage(
                         content=(
-                            f"Original question: {question}\n"
+                            f"Original question: {run_context.question}\n"
                             f"Missing information: {missing_information}\n"
                             f"Retrieved context:\n{context}"
                         )
                     ),
                 ]
             )
-            return str(response.text).strip() or question
+            return str(response.text).strip() or run_context.question
 
         @tool("retriever")
-        def retrieve(query: str) -> str:
+        def retrieve(query: str, runtime: ToolRuntime[_AgentRunContext]) -> str:
             """Search the indexed documents for information needed to answer the user's question."""
-            with state_lock:
-                if tool_counts["retriever"] >= self.max_retrieval_steps:
+            run_context = runtime.context
+            with run_context.state_lock:
+                if run_context.tool_counts["retriever"] >= run_context.max_retrieval_steps:
                     return "Retrieval limit reached. Answer using the documents already found."
-                tool_counts["retriever"] += 1
-            retrieved = self.retriever.retrieve(query, **kwargs)
-            with state_lock:
-                new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in seen]
-                documents.extend(new_documents)
-                seen.update(self._chunk_key(chunk) for chunk in new_documents)
+                run_context.tool_counts["retriever"] += 1
+            retrieved = self.retriever.retrieve(query, **run_context.retrieval_kwargs)
+            with run_context.state_lock:
+                new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in run_context.seen]
+                run_context.documents.extend(new_documents)
+                run_context.seen.update(self._chunk_key(chunk) for chunk in new_documents)
             if not new_documents:
                 return "No new relevant documents were found for this query."
-            return self._render_enriched_user_message(question, new_documents)
+            return self._render_enriched_user_message(run_context.question, new_documents)
 
-        system_prompt = f"{self.foundation_model.system_message_text}\n\n{_AGENT_INSTRUCTIONS}"
-        agent = create_agent(model=chat_model, tools=[rewrite_query, retrieve], system_prompt=system_prompt)
-        final_message = agent.invoke(
+        return [rewrite_query, retrieve]
+
+    def _run_agent(self, messages: list[MessageTyped], **kwargs) -> tuple[str, list[AI4RAGChunk]]:
+        """Retrieve initial context, then invoke the agent and collect further chunks."""
+        if not messages:
+            raise ValueError("`messages` must contain at least one message.")
+        question = messages[-1]["content"]
+        documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
+        run_context = _AgentRunContext(
+            question=question,
+            documents=documents,
+            seen={self._chunk_key(chunk) for chunk in documents},
+            tool_counts={"retriever": 1, "rewrite_query": 0},
+            max_retrieval_steps=self.max_retrieval_steps,
+            retrieval_kwargs=kwargs,
+            state_lock=Lock(),
+        )
+        final_message = self.agent.invoke(
             {"messages": [*messages[:-1], {**messages[-1], "content": enriched_message}]},
             config={"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)},
+            context=run_context,
         )["messages"][-1]
         if not isinstance(final_message, AIMessage):
             raise ValueError("Agent did not return an assistant response")

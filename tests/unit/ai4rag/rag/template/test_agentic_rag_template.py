@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -25,17 +26,25 @@ class ToolCallingFake(FakeMessagesListChatModel):
 
 @pytest.fixture
 def rag(mocker):
+    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
     foundation_model = mocker.MagicMock()
     foundation_model.system_message_text = "Answer from context."
     foundation_model.user_message_text = "Question: {question}\nContext: {reference_documents}"
     foundation_model.context_template_text = "{document}"
     retriever = mocker.MagicMock()
     retriever.retrieve.return_value = []
-    return AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.sentinel.chat_model)
+    rag_template = AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
+    rag_template._create_agent_mock = create_agent
+    return rag_template
 
 
 def _tool(create_agent, name):
     return next(item for item in create_agent.call_args.kwargs["tools"] if item.name == name)
+
+
+def _call_tool(create_agent, name, arguments, context):
+    tool = _tool(create_agent, name)
+    return tool.func(**arguments, runtime=SimpleNamespace(context=context))
 
 
 def test_real_agent_graph_rewrites_then_retrieves(mocker):
@@ -78,7 +87,7 @@ def test_agentic_rag_uses_langchain_agent(rag, mocker):
     chunk = AI4RAGChunk(text="initial evidence", metadata={"document_id": "doc1"})
     rag.retriever.retrieve.return_value = [chunk]
     rag.foundation_model.user_message_text = "Context: {reference_documents}\nQuestion: {question}\nAnswer in English."
-    graph = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent").return_value
+    graph = rag._create_agent_mock.return_value
     graph.invoke.return_value = {"messages": [AIMessage(content="answer")]}
 
     result = rag.generate("question")
@@ -96,12 +105,12 @@ def test_agent_collects_tool_results_for_evaluation(rag, mocker):
     first = AI4RAGChunk(text="first context", metadata={"source": "first"})
     second = AI4RAGChunk(text="second context", metadata={"source": "second"})
     rag.retriever.retrieve.side_effect = [[first], [first, second]]
-    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    create_agent = rag._create_agent_mock
 
-    def run_graph(*_args, **_kwargs):
-        retrieve = _tool(create_agent, "retriever")
-        assert "second context" in retrieve.invoke({"query": "second query"})
-        assert "limit reached" in retrieve.invoke({"query": "third query"}).lower()
+    def run_graph(*_args, **kwargs):
+        context = kwargs["context"]
+        assert "second context" in _call_tool(create_agent, "retriever", {"query": "second query"}, context)
+        assert "limit reached" in _call_tool(create_agent, "retriever", {"query": "third query"}, context).lower()
         return {"messages": [AIMessage(content="grounded answer")]}
 
     create_agent.return_value.invoke.side_effect = run_graph
@@ -117,12 +126,12 @@ def test_agent_collects_tool_results_for_evaluation(rag, mocker):
 def test_empty_tool_result_can_be_followed_by_another_search(rag, mocker):
     """The agent can search again when the initial retrieval finds no documents."""
     rag.retriever.retrieve.side_effect = [[], [AI4RAGChunk(text="found", metadata={})]]
-    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    create_agent = rag._create_agent_mock
 
-    def run_graph(*_args, **_kwargs):
-        retrieve = _tool(create_agent, "retriever")
-        assert "found" in retrieve.invoke({"query": "second"})
-        assert "limit reached" in retrieve.invoke({"query": "third"}).lower()
+    def run_graph(*_args, **kwargs):
+        context = kwargs["context"]
+        assert "found" in _call_tool(create_agent, "retriever", {"query": "second"}, context)
+        assert "limit reached" in _call_tool(create_agent, "retriever", {"query": "third"}, context).lower()
         return {"messages": [AIMessage(content="answer")]}
 
     create_agent.return_value.invoke.side_effect = run_graph
@@ -132,16 +141,19 @@ def test_empty_tool_result_can_be_followed_by_another_search(rag, mocker):
 
 def test_rewrite_tool_uses_missing_information_and_retrieved_context(rag, mocker):
     """A separate bounded tool asks the model for a focused search query."""
-    rag.chat_model = mocker.MagicMock()
     rag.chat_model.invoke.return_value = AIMessage(content="focused missing fact")
     rag.retriever.retrieve.return_value = [AI4RAGChunk(text="known fact", metadata={})]
-    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    create_agent = rag._create_agent_mock
 
-    def run_graph(*_args, **_kwargs):
-        rewrite = _tool(create_agent, "rewrite_query")
-        assert rewrite.invoke({"missing_information": "missing date"}) == "focused missing fact"
-        assert rewrite.invoke({"missing_information": "missing date"}) == "focused missing fact"
-        assert "limit reached" in rewrite.invoke({"missing_information": "another fact"}).lower()
+    def run_graph(*_args, **kwargs):
+        context = kwargs["context"]
+        args = {"missing_information": "missing date"}
+        assert _call_tool(create_agent, "rewrite_query", args, context) == "focused missing fact"
+        assert _call_tool(create_agent, "rewrite_query", args, context) == "focused missing fact"
+        assert (
+            "limit reached"
+            in _call_tool(create_agent, "rewrite_query", {"missing_information": "another fact"}, context).lower()
+        )
         return {"messages": [AIMessage(content="answer")]}
 
     create_agent.return_value.invoke.side_effect = run_graph
@@ -237,11 +249,11 @@ def test_retrieval_limit_is_validated_on_assignment(rag):
 def test_initial_retrieval_counts_toward_limit(rag, mocker):
     """A one-step budget cannot issue another retrieval from the agent."""
     rag.max_retrieval_steps = 1
-    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    create_agent = rag._create_agent_mock
 
-    def run_graph(*_args, **_kwargs):
-        retrieve = _tool(create_agent, "retriever")
-        assert "limit reached" in retrieve.invoke({"query": "another query"}).lower()
+    def run_graph(*_args, **kwargs):
+        context = kwargs["context"]
+        assert "limit reached" in _call_tool(create_agent, "retriever", {"query": "another query"}, context).lower()
         return {"messages": [AIMessage(content="answer")]}
 
     create_agent.return_value.invoke.side_effect = run_graph
