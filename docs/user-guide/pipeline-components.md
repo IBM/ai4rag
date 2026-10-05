@@ -80,6 +80,13 @@ import os
 os.environ.setdefault("AWS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
 ```
 
+The MaaS client (`create_maas_client()`) honors the same pattern via `MAAS_CA_BUNDLE`
+(or an explicit `ca_bundle=` argument); it never falls back to unverified TLS:
+
+```python
+os.environ.setdefault("MAAS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
+```
+
 ## Data Components
 
 ### Document Discovery
@@ -271,7 +278,7 @@ services pipeline steps talk to, and `ai4rag.utils.docling_io` loads persisted
 | Module | Function | Purpose |
 |--------|----------|---------|
 | `ai4rag.utils.clients.s3` | `create_s3_client()` | S3 client factory with environment-based credentials and private-CA support via `AWS_CA_BUNDLE` |
-| `ai4rag.utils.clients.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with SSL self-signed cert fallback |
+| `ai4rag.utils.clients.maas_client` | `create_maas_client()` | Single MaaS client (endpoint from `MAAS_BASE_URL`, normalized to a `/v1`-suffixed URL) for listing, chat, and embeddings, with private-CA support via `MAAS_CA_BUNDLE` |
 | `ai4rag.utils.docling_io` | `load_docling_documents()` | Load DoclingDocument JSON files |
 
 `create_s3_client()` and `create_maas_client()` are also re-exported from the `ai4rag.utils.clients`

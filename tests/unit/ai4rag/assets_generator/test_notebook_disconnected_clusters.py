@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 """Test that indexing notebook includes disconnected cluster documentation."""
+
 import json
 from pathlib import Path
 
@@ -12,7 +13,9 @@ import pytest
 @pytest.fixture
 def indexing_notebook() -> dict:
     """Load the MaaS indexing template notebook."""
-    notebook_path = Path(__file__).parents[4] / "ai4rag/assets_generator/notebook_templates/maas_indexing_template.ipynb"
+    notebook_path = (
+        Path(__file__).parents[4] / "ai4rag/assets_generator/notebook_templates/maas_indexing_template.ipynb"
+    )
     with open(notebook_path) as f:
         return json.load(f)
 
@@ -28,8 +31,9 @@ class TestDisconnectedClusterDocumentation:
             if cell["cell_type"] == "markdown"
         ]
 
-        assert any("Prerequisites for Disconnected Clusters" in s for s in sources), \
-            "Notebook missing 'Prerequisites for Disconnected Clusters' section"
+        assert any(
+            "Prerequisites for Disconnected Clusters" in s for s in sources
+        ), "Notebook missing 'Prerequisites for Disconnected Clusters' section"
 
     def test_notebook_explains_model_requirements(self, indexing_notebook):
         """Notebook must explain which models are required offline."""
@@ -77,8 +81,9 @@ class TestDisconnectedClusterDocumentation:
         extract_text_calls = [s for s in code_sources if "extract_text(" in s]
         assert len(extract_text_calls) > 0, "Notebook must include an extract_text() call"
 
-        assert any("docling_artifacts_path" in call for call in extract_text_calls), \
-            "extract_text() call must include docling_artifacts_path parameter"
+        assert any(
+            "docling_artifacts_path" in call for call in extract_text_calls
+        ), "extract_text() call must include docling_artifacts_path parameter"
 
     def test_notebook_includes_appendix_with_download_instructions(self, indexing_notebook):
         """Notebook must include appendix with offline download instructions."""
