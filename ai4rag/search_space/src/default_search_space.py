@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from ai4rag.rag.vector_store.config import SUPPORTED_PROVIDERS
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.utils.constants import AI4RAGParamNames
 
@@ -13,6 +14,10 @@ __all__ = [
 _default_chunking_methods = ("recursive", "hybrid")
 _default_chunk_sizes = (512, 1024, 2048)
 _default_chunk_overlaps = (0, 128, 256)
+# Neo4j: chunk size and overlap are fixed so the optimizer focuses on chunking
+# method. Neo4j supports graph retrieval only.
+_default_neo4j_chunk_sizes = (1024,)
+_default_neo4j_chunk_overlaps = (0, 64)
 _default_retrieval_methods = ("simple",)
 _default_window_sizes = (0,)
 _default_numbers_of_chunks = (3, 5, 10)
@@ -22,25 +27,54 @@ _default_ranker_k = (0, 60)
 _default_ranker_alpha = (1, 0.5)
 
 
-def get_default_ai4rag_search_space_parameters() -> list[Parameter]:
+def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus") -> list[Parameter]:
     """Return the default search space parameters for an AI4RAG experiment.
+
+    Parameters
+    ----------
+    vector_store_type : str, default="milvus"
+        Type of vector store. Supported values are listed in
+        :data:`ai4rag.rag.vector_store.config.SUPPORTED_PROVIDERS`. Neo4j
+        supports only graph search, so its search mode is fixed to ``"graph"``
+        and chunk_size/chunk_overlap are fixed at 1024/64.
 
     Returns
     -------
     list[Parameter]
         Parameters that will be used for creating AI4RAGSearchSpace.
     """
+    if vector_store_type not in SUPPORTED_PROVIDERS:
+        raise ValueError(
+            f"Vector store type '{vector_store_type}' is not supported. "
+            f"Choose one of: {', '.join(SUPPORTED_PROVIDERS)}."
+        )
+
+    if vector_store_type == "neo4j":
+        chunk_sizes = _default_neo4j_chunk_sizes
+        chunk_overlaps = _default_neo4j_chunk_overlaps
+    else:
+        chunk_sizes = _default_chunk_sizes
+        chunk_overlaps = _default_chunk_overlaps
+
     default_search_space_parameters = [
         Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
-        Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=_default_chunk_sizes),
-        Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=_default_chunk_overlaps),
+        Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=chunk_sizes),
+        Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=chunk_overlaps),
         Parameter(name=AI4RAGParamNames.RETRIEVAL_METHOD, values=_default_retrieval_methods),
         Parameter(name=AI4RAGParamNames.WINDOW_SIZE, values=_default_window_sizes),
         Parameter(name=AI4RAGParamNames.NUMBER_OF_CHUNKS, values=_default_numbers_of_chunks),
-        Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=_default_search_modes),
-        Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, values=_default_ranker_strategies),
-        Parameter(name=AI4RAGParamNames.RANKER_K, values=_default_ranker_k),
-        Parameter(name=AI4RAGParamNames.RANKER_ALPHA, values=_default_ranker_alpha),
     ]
+
+    if vector_store_type == "neo4j":
+        default_search_space_parameters.append(Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=("graph",)))
+    else:
+        default_search_space_parameters.extend(
+            [
+                Parameter(name=AI4RAGParamNames.SEARCH_MODE, values=_default_search_modes),
+                Parameter(name=AI4RAGParamNames.RANKER_STRATEGY, values=_default_ranker_strategies),
+                Parameter(name=AI4RAGParamNames.RANKER_K, values=_default_ranker_k),
+                Parameter(name=AI4RAGParamNames.RANKER_ALPHA, values=_default_ranker_alpha),
+            ]
+        )
 
     return default_search_space_parameters

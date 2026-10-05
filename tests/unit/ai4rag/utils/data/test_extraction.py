@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import os
+import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -448,6 +450,19 @@ class TestRaiseIfThresholdExceeded:
 class TestBuildDoclingFormatOptions:
     """Tests for Docling format options including table structure and OCR."""
 
+    @pytest.mark.parametrize("device,environment_device", [("cpu", "cuda"), ("cuda", "cpu")])
+    def test_device_applies_to_document_pipelines(self, monkeypatch, device, environment_device):
+        """Explicit device reaches each document pipeline despite the environment."""
+        from docling.datamodel.base_models import InputFormat
+
+        from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
+
+        monkeypatch.setenv("DOCLING_DEVICE", environment_device)
+        options = _build_docling_format_options(config=DoclingExtractionConfig(device=device))
+
+        for fmt in (InputFormat.PDF, InputFormat.IMAGE, InputFormat.DOCX, InputFormat.PPTX):
+            assert options[fmt].pipeline_options.accelerator_options.device == device
+
     def test_default_disables_table_structure(self):
         """Default call should produce PDF options with ``do_table_structure=False``."""
         from docling.datamodel.base_models import InputFormat
@@ -625,6 +640,67 @@ class TestBuildDoclingFormatOptions:
         assert audio_option.pipeline_options.asr_model_path == "/models/whisper-tiny"
 
 
+class TestCudaOcrProvider:
+    """CUDA OCR must not silently fall back to CPU when its provider is missing."""
+
+    @pytest.mark.parametrize("device,do_ocr", [("cpu", True), ("cuda", False)])
+    def test_cpu_or_disabled_ocr_does_not_need_onnxruntime(self, monkeypatch, device, do_ocr):
+        """Other extraction modes do not depend on ONNX Runtime's CUDA provider."""
+        monkeypatch.setitem(sys.modules, "onnxruntime", None)
+        text_extraction._require_cuda_ocr_provider(
+            text_extraction.DoclingExtractionConfig(device=device, do_ocr=do_ocr)
+        )
+
+    def test_cuda_ocr_fails_before_starting_workers_without_provider(self, monkeypatch, tmp_path):
+        """A CPU-only ONNX Runtime cannot satisfy a CUDA OCR request."""
+        monkeypatch.setitem(
+            sys.modules,
+            "onnxruntime",
+            SimpleNamespace(get_available_providers=lambda: ["CPUExecutionProvider"]),
+        )
+
+        with pytest.raises(RuntimeError, match="ONNX Runtime cannot use CUDAExecutionProvider"):
+            text_extraction.extract_text(
+                documents=[{"key": "scan.pdf", "size_bytes": 1}],
+                bucket="bucket",
+                output_dir=tmp_path,
+                docling_config=text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True),
+                s3_client=object(),
+            )
+
+    def test_cuda_ocr_accepts_available_provider(self, monkeypatch):
+        """A CUDA-capable ONNX Runtime passes the preflight check."""
+        monkeypatch.setitem(
+            sys.modules,
+            "onnxruntime",
+            SimpleNamespace(
+                get_available_providers=lambda: ["CUDAExecutionProvider", "CPUExecutionProvider"],
+                get_device=lambda: "GPU",
+            ),
+        )
+        text_extraction._require_cuda_ocr_provider(text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True))
+
+    def test_cuda_ocr_rejects_cpu_only_device(self, monkeypatch):
+        """A listed CUDA provider is insufficient when ONNX Runtime reports CPU."""
+        monkeypatch.setitem(
+            sys.modules,
+            "onnxruntime",
+            SimpleNamespace(get_available_providers=lambda: ["CUDAExecutionProvider"], get_device=lambda: "CPU"),
+        )
+        with pytest.raises(RuntimeError, match="ONNX Runtime cannot use CUDAExecutionProvider"):
+            text_extraction._require_cuda_ocr_provider(
+                text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True)
+            )
+
+    def test_cuda_ocr_reports_missing_onnxruntime(self, monkeypatch):
+        """An absent ONNX Runtime produces a clear error before worker startup."""
+        monkeypatch.setitem(sys.modules, "onnxruntime", None)
+        with pytest.raises(RuntimeError, match="ONNX Runtime with CUDA support"):
+            text_extraction._require_cuda_ocr_provider(
+                text_extraction.DoclingExtractionConfig(device="cuda", do_ocr=True)
+            )
+
+
 class TestNormalizeOcrLang:
     """Tests for OCR language normalization."""
 
@@ -658,6 +734,7 @@ class TestDoclingExtractionConfig:
         assert cfg.do_ocr is False
         assert cfg.do_table_structure is False
         assert cfg.ocr_lang == ("english",)
+        assert cfg.device == "cpu"
 
     def test_ocr_lang_string_is_normalized(self):
         """A string ``ocr_lang`` is normalized to a tuple in ``__post_init__``."""

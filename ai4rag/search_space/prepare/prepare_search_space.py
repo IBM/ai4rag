@@ -91,6 +91,7 @@ def prepare_search_space_with_maas(
     payload: dict[str, Any],
     client: OpenAI,
     benchmark_data: pd.DataFrame | None = None,
+    vector_store_type: str = "milvus",
 ) -> AI4RAGSearchSpace:
     """Prepare an AI4RAGSearchSpace using OpenShift MaaS for model validation.
 
@@ -126,6 +127,10 @@ def prepare_search_space_with_maas(
     benchmark_data : pd.DataFrame | None, default=None
         Benchmark data used for language detection.
         If not given, models will use automatic language detection per session.
+
+    vector_store_type : str, default="milvus"
+        Vector-store provider used by the experiment. It selects defaults that
+        are supported by that backend; Neo4j produces graph-only retrieval.
 
     Returns
     -------
@@ -170,4 +175,5 @@ def prepare_search_space_with_maas(
 
     return AI4RAGSearchSpace(
         params=[fms_param, ems_param, *extra_params],
+        vector_store_type=vector_store_type,
     )

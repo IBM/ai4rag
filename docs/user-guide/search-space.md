@@ -251,7 +251,17 @@ Parameter(
 
 ## Default Parameters
 
-If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults. All supported vector store backends (`MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`) support dense and hybrid search (Milvus and Milvus Lite via server-side/embedded BM25, PGVector via PostgreSQL full-text search), so hybrid search parameters are always included in the default parameter set.
+If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults, selected by the
+`vector_store_type` constructor argument (default `"milvus"`; also accepted by
+`get_default_ai4rag_search_space_parameters()` and `prepare_search_space_with_maas()`). `"milvus"`,
+`"milvus_lite"`, and `"pgvector"` all support dense and hybrid search (Milvus and Milvus Lite via
+server-side/embedded BM25, PGVector via PostgreSQL full-text search), so hybrid search parameters are
+always included in their default parameter set. `"neo4j"` supports graph retrieval only, so its defaults
+differ — see [Neo4j Defaults](#neo4j-defaults) below.
+
+```python
+search_space = AI4RAGSearchSpace(params=[...], vector_store_type="milvus")  # or "milvus_lite", "pgvector", "neo4j"
+```
 
 ### Default Values
 
@@ -268,11 +278,30 @@ If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defau
 | `ranker_k` | `(0, 60)` | Categorical |
 | `ranker_alpha` | `(1, 0.5)` | Categorical |
 
-!!! note "Uniform Defaults Across Backends"
-    All three supported vector store backends (`milvus`, `milvus_lite`, and `pgvector`) support hybrid search,
-    so the default search space is identical across them: `search_mode` explores `"vector"` and `"hybrid"`, and
-    the ranker parameters (`ranker_strategy`, `ranker_k`, `ranker_alpha`) are always included. `get_vector_store_config("milvus_lite")`
+!!! note "Uniform Defaults Across Hybrid-Capable Backends"
+    `milvus`, `milvus_lite`, and `pgvector` all support hybrid search, so the default search space is
+    identical across them: `search_mode` explores `"vector"` and `"hybrid"`, and the ranker parameters
+    (`ranker_strategy`, `ranker_k`, `ranker_alpha`) are always included. `get_vector_store_config("milvus_lite")`
     returns a `MilvusLiteConfig`; see the note on Milvus Lite's hybrid-ranking fidelity in [Hybrid Search](hybrid-search.md).
+
+### Neo4j Defaults
+
+Passing `vector_store_type="neo4j"` fixes the chunking and retrieval parameters to values that suit
+graph indexing, and drops the hybrid ranker parameters entirely:
+
+| Parameter | Default (Neo4j) | Type |
+|-----------|------------------|------|
+| `chunking_method` | `("recursive", "hybrid")` | Categorical |
+| `chunk_size` | `(1024,)` | Categorical |
+| `chunk_overlap` | `(0, 64)` | Categorical |
+| `retrieval_method` | `("simple",)` | Categorical |
+| `window_size` | `(0,)` | Categorical |
+| `number_of_chunks` | `(3, 5, 10)` | Categorical |
+| `search_mode` | `("graph",)` | Categorical |
+
+`ranker_strategy`, `ranker_k`, and `ranker_alpha` are not part of the default set for Neo4j — graph
+retrieval is tuned instead through `Neo4jGraphRetrievalConfig`, passed to `AI4RAGExperiment` as
+`graph_retrieval_config`. See [Neo4j Indexing and Graph Search](../architecture/neo4j-indexing-and-search.md).
 
 ---
 

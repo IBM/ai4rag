@@ -126,7 +126,7 @@ def _rule_chunk_size_within_embedding_context_length(combination: dict) -> bool:
 def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     """Ranker parameters must only be set when search_mode is 'hybrid'.
 
-    When search_mode is 'vector', all ranker params must be sentinels
+    When search_mode is 'vector' or 'graph', all ranker params must be sentinels
     (empty string for strategy, 0 for ranker_k, 1 for ranker_alpha).
     When search_mode is 'hybrid', ranker_strategy must be a non-empty string.
 
@@ -145,7 +145,7 @@ def _rule_search_mode_ranker_consistency(combination: dict) -> bool:
     ranker_k = combination.get(AI4RAGParamNames.RANKER_K)
     ranker_alpha = combination.get(AI4RAGParamNames.RANKER_ALPHA)
 
-    if search_mode == "vector":
+    if search_mode in ("vector", "graph"):
         if ranker_strategy or ranker_k or ranker_alpha not in (1, None):
             return False
         return True
@@ -343,6 +343,10 @@ class AI4RAGSearchSpace(SearchSpace):
     params : list[Parameter]
         List of Parameter, each of which is a parameter to optimize in the ai4rag process.
 
+    vector_store_type : str, default="milvus"
+        Vector-store provider whose supported retrieval parameters should be
+        used for unspecified dimensions.
+
     rules : list[RuleFunction]
         List of functions - called "rules" - that will be applied on each combination in the search space.
     """
@@ -364,8 +368,9 @@ class AI4RAGSearchSpace(SearchSpace):
         self,
         params: list[Parameter] | None = None,
         rules: list[RuleFunction] | None = None,
+        vector_store_type: str = "milvus",
     ):
-        default_search_space_parameters = get_default_ai4rag_search_space_parameters()
+        default_search_space_parameters = get_default_ai4rag_search_space_parameters(vector_store_type)
         params = params or []
         self._validate_user_params(params)
 

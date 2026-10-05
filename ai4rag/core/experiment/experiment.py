@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import time
+from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass, replace
 from typing import Any, Sequence
 
@@ -42,6 +43,7 @@ from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
+from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
@@ -153,6 +155,16 @@ class AI4RAGExperiment:
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
+        self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
+        graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
+        if graph_retrieval_config is None:
+            self.graph_retrieval_config: Neo4jGraphRetrievalConfig | None = None
+        elif isinstance(graph_retrieval_config, Neo4jGraphRetrievalConfig):
+            self.graph_retrieval_config = graph_retrieval_config
+        elif isinstance(graph_retrieval_config, Mapping):
+            self.graph_retrieval_config = Neo4jGraphRetrievalConfig.from_mapping(graph_retrieval_config)
+        else:
+            raise TypeError("graph_retrieval_config must be a mapping or Neo4jGraphRetrievalConfig.")
 
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
@@ -413,6 +425,7 @@ class AI4RAGExperiment:
 
         foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
+        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
 
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
@@ -425,12 +438,24 @@ class AI4RAGExperiment:
             },
         }
 
+        # A Neo4j collection contains LLM-extracted entities and relationships,
+        # not only chunk embeddings.  Those graph contents vary with the model
+        # and extraction settings, so they must participate in the collection
+        # reuse key as well.
+        if self.vector_store_config.provider == "neo4j":
+            indexing_params["knowledge_graph"] = {
+                "model_id": foundation_model.model_id,
+                "model_params": {
+                    "temperature": foundation_model.params.temperature,
+                    "max_completion_tokens": foundation_model.params.max_completion_tokens,
+                },
+                "extraction_config": self.kg_extraction_config or {"mode": "constrained"},
+            }
+
         logger.info("Using indexing params: %s", indexing_params)
 
         retrieval_method = retrieval_params[AI4RAGParamNames.RETRIEVAL_METHOD]
         number_of_chunks = retrieval_params[AI4RAGParamNames.NUMBER_OF_CHUNKS]
-
-        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
 
         context_template_text = foundation_model.context_template_text
         system_message_text = foundation_model.system_message_text
@@ -448,6 +473,8 @@ class AI4RAGExperiment:
                 "language": foundation_model.language.to_dict(),
             },
         }
+        if search_mode == "graph" and self.graph_retrieval_config:
+            rag_params["retrieval"].update(self.graph_retrieval_config.to_search_kwargs())
 
         logger.info("Using retrieval and generation params: %s", rag_params)
 
@@ -491,6 +518,8 @@ class AI4RAGExperiment:
                 embedding_model=embedding_model,
                 collection_name=collection_name,
                 config=vector_store_config,
+                foundation_model=foundation_model if search_mode == "graph" else None,
+                kg_extraction_config=self.kg_extraction_config if search_mode == "graph" else None,
             )
         except Exception as exc:
             raise VectorStoreInitializationError(
@@ -556,6 +585,7 @@ class AI4RAGExperiment:
                 ranker_strategy=retrieval_params.get(AI4RAGParamNames.RANKER_STRATEGY),
                 ranker_k=retrieval_params.get(AI4RAGParamNames.RANKER_K),
                 ranker_alpha=retrieval_params.get(AI4RAGParamNames.RANKER_ALPHA),
+                search_kwargs=(self.graph_retrieval_config.to_search_kwargs() if search_mode == "graph" else None),
             )
 
             rag_pattern = SimpleRAG(
@@ -846,6 +876,10 @@ class AI4RAGExperiment:
                 retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
                     AI4RAGParamNames.RANKER_ALPHA
                 )
+        elif retrieval_payload["search_mode"] == "graph":
+            for key in Neo4jGraphRetrievalConfig.keys():
+                if key in evaluation_result.rag_params["retrieval"]:
+                    retrieval_payload[key] = evaluation_result.rag_params["retrieval"][key]
 
         vector_store_payload = {
             "provider_type": self.vector_store_config.provider,
@@ -861,6 +895,11 @@ class AI4RAGExperiment:
             },
             "embedding": evaluation_result.indexing_params.get("embedding"),
         }
+        if (
+            self.vector_store_config.provider == "neo4j"
+            and evaluation_result.indexing_params.get("knowledge_graph") is not None
+        ):
+            indexing_payload["knowledge_graph"] = evaluation_result.indexing_params["knowledge_graph"]
 
         generation_payload = evaluation_result.rag_params.get("generation")
 

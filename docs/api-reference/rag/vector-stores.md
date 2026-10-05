@@ -4,13 +4,14 @@ ai4rag talks to vector databases through **direct clients** selected by a typed
 configuration object. A [config](#configuration) carries the connection details
 for a single backend, and [`get_vector_store`](#store-selection) instantiates the
 matching store — the backend is chosen entirely from `config.provider`, so no
-separate type string is needed. Three backends are supported today:
+separate type string is needed. Four backends are supported today:
 
 | Backend | Config | Provider | Store | Hybrid search |
 |---------|--------|----------|-------|---------------|
 | Milvus (remote server only) | `MilvusConfig` | `"milvus"` | `MilvusVectorStore` | ✅ server-side dense + BM25 |
 | Milvus Lite (embedded, local file only) | `MilvusLiteConfig` | `"milvus_lite"` | `MilvusVectorStore` | ✅ embedded dense + BM25 |
 | PostgreSQL + pgvector | `PGVectorConfig` | `"pgvector"` | `PGVectorStore` | ✅ dense + full-text |
+| Neo4j (graph-only) | `Neo4jConfig` | `"neo4j"` | `Neo4jGraphStore` | ❌ graph search only (`search_mode="graph"`) |
 
 `MilvusConfig` and `MilvusLiteConfig` both construct a `MilvusVectorStore`, but they are separate,
 mutually-exclusive config classes rather than two modes of one config:
@@ -70,6 +71,18 @@ never embedded in generated artefacts.
 ## PGVector
 
 ::: ai4rag.rag.vector_store.pgvector
+    options:
+      show_root_heading: true
+      show_source: true
+
+## Neo4j
+
+Graph-only backend: indexing extracts entities and relationships via
+`SimpleKGPipeline`, and `search()` only accepts `search_mode="graph"`. See
+[Neo4j Indexing and Graph Search](../../architecture/neo4j-indexing-and-search.md)
+for the full indexing/retrieval flow.
+
+::: ai4rag.rag.vector_store.neo4j
     options:
       show_root_heading: true
       show_source: true

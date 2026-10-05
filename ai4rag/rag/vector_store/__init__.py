@@ -6,6 +6,7 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import (
     MilvusConfig,
     MilvusLiteConfig,
+    Neo4jConfig,
     PGVectorConfig,
     get_vector_store_config,
     get_vector_store_env_vars,
@@ -16,6 +17,7 @@ __all__ = [
     "BaseVectorStore",
     "MilvusConfig",
     "MilvusLiteConfig",
+    "Neo4jConfig",
     "PGVectorConfig",
     "get_vector_store",
     "get_vector_store_config",

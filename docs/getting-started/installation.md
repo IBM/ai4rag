@@ -5,14 +5,14 @@
 - **Python**: 3.12 or 3.13 (strictly required)
 - **Operating System**: macOS or Linux
 - **A model provider**: a foundation model and an embedding model reachable over any OpenAI-compatible endpoint (a hosted API, a self-managed vLLM/TGI/Ollama server, or an OpenShift MaaS deployment), accessed through the `openai` SDK — or your own `BaseFoundationModel` / `BaseEmbeddingModel` implementation
-- **A vector store**: Milvus Lite (embedded, local-file, no setup required), or a running Milvus server/PostgreSQL (pgvector) instance for server-backed retrieval — all support hybrid search
+- **A vector store**: Milvus Lite (embedded, local-file, no setup required), a running Milvus server/PostgreSQL (pgvector) instance for server-backed retrieval (both support hybrid search), or a Neo4j instance (with APOC) for graph-only retrieval
 
 
 !!! note "External models and vector store integration"
     `ai4rag` is designed to be provider-agnostic.
     It means you can use any model from any source as long as it satisfies `BaseFoundationModel` interface.
     The same rule applies to embedding model.
-    Vector stores are selected via a typed `vector_store_config` (`MilvusConfig` for a remote server, `MilvusLiteConfig` for embedded local storage, or `PGVectorConfig`) passed directly to the experiment.
+    Vector stores are selected via a typed `vector_store_config` (`MilvusConfig` for a remote server, `MilvusLiteConfig` for embedded local storage, `PGVectorConfig`, or `Neo4jConfig` for graph-only retrieval) passed directly to the experiment.
     A custom vector store can also be plugged in by delivering your own `BaseVectorStore` implementation.
 
 ---
@@ -29,8 +29,8 @@ This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
 
-Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, and `asyncpg` — are core dependencies and install automatically. There is no separate vector-store extra to install.
-No extra step is needed to use a remote Milvus server, embedded Milvus Lite, or PostgreSQL/pgvector as a vector store.
+Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, `asyncpg`, `neo4j`, and `neo4j-graphrag` — are core dependencies and install automatically. There is no separate vector-store extra to install.
+No extra step is needed to use a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j as a vector store.
 
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
@@ -103,7 +103,7 @@ self-managed server (vLLM, TGI, Ollama, …), or an
 The steps below use MaaS, the provider `ai4rag` ships helpers for; to use a different endpoint,
 point the same `openai` client at its URL (or supply your own `BaseFoundationModel` /
 `BaseEmbeddingModel` implementation). The vector store is configured independently, via direct
-clients (remote Milvus, embedded Milvus Lite, or PGVector) — see [Vector Store Setup](#vector-store-setup) below.
+clients (remote Milvus, embedded Milvus Lite, PGVector, or Neo4j) — see [Vector Store Setup](#vector-store-setup) below.
 
 ### 1. Get Access to a MaaS Deployment
 
@@ -135,9 +135,10 @@ Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_confi
 | Milvus Lite (embedded, local file) | `MilvusLiteConfig(db_path="./ai4rag.db")` | :material-check: dense + BM25 | None — zero-server, backed by a local file |
 | Milvus (server) | `MilvusConfig(uri="http(s)://host:19530")` | :material-check: dense + BM25 | Requires a reachable Milvus (or Zilliz Cloud) instance |
 | PGVector | `PGVectorConfig` | :material-check: dense + tsvector full-text | Requires a reachable PostgreSQL instance with the `pgvector` extension |
+| Neo4j (graph-only) | `Neo4jConfig` | :material-close: graph search only | Requires a reachable Neo4j instance with APOC enabled |
 
 ```python
-from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, PGVectorConfig
+from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, Neo4jConfig, PGVectorConfig
 
 # Zero-config, embedded Milvus Lite backed by a local file (great for local experimentation)
 vector_store_config = MilvusLiteConfig(db_path="./ai4rag.db")
@@ -146,6 +147,7 @@ vector_store_config = MilvusLiteConfig(db_path="./ai4rag.db")
 vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
 vector_store_config = MilvusLiteConfig.from_env()   # reads MILVUS_LITE_DB_PATH (optional; defaults to "./ai4rag_milvus_lite.db")
 vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
+vector_store_config = Neo4jConfig.from_env()        # reads NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE
 ```
 
 Each config class exposes the environment variables it reads via its `env_vars` attribute, and can be constructed explicitly instead of from the environment, e.g. `MilvusConfig(uri="https://localhost:19530")` for a remote server or `MilvusLiteConfig(db_path="./ai4rag.db")` for embedded local storage.

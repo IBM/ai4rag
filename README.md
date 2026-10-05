@@ -29,7 +29,7 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 > [!IMPORTANT]
 > `ai4rag` is **provider-agnostic**. It reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so any **OpenAI-compatible endpoint** works — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment, the integration `ai4rag` ships helpers for out of the box. You can also plug in your **own** foundation model, embedding model, or vector store by implementing the matching `Base*` interface.
-> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector) connected directly via `ai4rag.rag.vector_store`.
+> To run an experiment you'll need one foundation model and one embedding model (from any of the above), plus a vector store (remote Milvus, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j for graph-only retrieval) connected directly via `ai4rag.rag.vector_store`.
 
 ## Model providers
 
@@ -57,6 +57,7 @@ ai4RAG talks to the vector store directly through provider-specific clients — 
 - **`MilvusConfig`** — remote Milvus server or Zilliz Cloud only. `uri` must be a `http(s)://` URL (TLS and self-signed CAs via `server_cert`); anything else (a bare host, a file path, an empty string) raises `ValueError`. This is a deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly instead of silently falling back to a throwaway local database. Supports hybrid search (dense + BM25).
 - **`MilvusLiteConfig`** — the embedded, zero-server **Milvus Lite** engine, backed by a local `db_path` file (default `"./ai4rag_milvus_lite.db"`) — no setup required, ideal for local development and small-scale workloads. Also supports hybrid search (dense + BM25); rejects `http(s)://` values (use `MilvusConfig` for those).
 - **`PGVectorConfig`** — PostgreSQL with the `pgvector` extension. Hybrid search (dense + `tsvector` full-text).
+- **`Neo4jConfig`** — Neo4j (with APOC), for graph-based RAG. `add_documents()` extracts entities and relationships into a per-collection knowledge graph; `search_mode="graph"` is the only supported mode (no vector/hybrid search). See the [Neo4j Indexing and Graph Search](https://ibm.github.io/ai4rag/latest/architecture/neo4j-indexing-and-search/) architecture doc.
 
 Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI` for `MilvusConfig`, `MILVUS_LITE_DB_PATH` for `MilvusLiteConfig`, `PGVECTOR_HOST` for `PGVectorConfig`).
 
@@ -86,12 +87,12 @@ ai4rag depends on models from two sources:
 1. **On an internet-connected machine**, download the artifacts:
    ```bash
    pip install 'ai4rag[text-extraction]'
-   
+
    # Trigger Docling model download
    python -c "from docling.document_converter import DocumentConverter; \
              converter = DocumentConverter(); \
              converter.convert_document_string('/tmp/test.txt')"
-   
+
    # Pre-download HuggingFace models
    export HF_HOME=/path/to/hf_cache
    python -c "from transformers import AutoTokenizer; \
