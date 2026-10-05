@@ -129,6 +129,36 @@ class TestUnitxtEvaluatorMetricMapping:
         assert result == []
 
 
+def test_empty_retrieval_scores_zero_without_changing_evaluation_data():
+    """Unitxt must score missing context instead of failing on empty references."""
+    evaluation_data = EvaluationData(
+        question="What is Python?",
+        answer="Python is a programming language.",
+        contexts=[],
+        context_ids=[],
+        ground_truths=["Python is a programming language."],
+        ground_truths_context_ids=["doc1"],
+        question_id="q1",
+    )
+
+    retrieved_data = EvaluationData(
+        question="What is Python?",
+        answer="Python is a programming language.",
+        contexts=["Python is a programming language."],
+        context_ids=["doc1"],
+        ground_truths=["Python is a programming language."],
+        ground_truths_context_ids=["doc1"],
+        question_id="q2",
+    )
+
+    result = UnitxtEvaluator().evaluate_metrics([evaluation_data, retrieved_data], [Metrics.CONTEXT_CORRECTNESS])
+
+    assert result["metrics"][0]["scores"]["mean"] == 0.5
+    assert result["question_scores"][0]["metrics"][0]["value"] == 0
+    assert result["question_scores"][1]["metrics"][0]["value"] == 1
+    assert evaluation_data.contexts == []
+
+
 class TestBuildAggregateMetrics:
     """Test suite for _build_aggregate_metrics method."""
 
