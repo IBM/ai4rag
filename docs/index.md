@@ -128,7 +128,7 @@ graph TB
 
 - **Foundation Model**: any OpenAI-compatible chat endpoint via `OpenAIFoundationModel` — or bring your own via the `BaseFoundationModel` interface
 - **Embedding Model**: any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` — or bring your own via the `BaseEmbeddingModel` interface
-- **Vector Store**: remote Milvus, embedded Milvus Lite, or PostgreSQL/pgvector via direct clients — or bring your own via the `BaseVectorStore` interface
+- **Vector Store**: remote Milvus, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j (graph-only) via direct clients — or bring your own via the `BaseVectorStore` interface
 - **Chunking**: document splitting into smaller chunks
 - **Retrieval**: simple and window-based retrieval strategies
 - **Templates**: complete RAG implementations defined as a `RAGTemplate`
@@ -142,7 +142,7 @@ To run an optimization you need a **foundation model** (for text generation) and
 !!! tip "Bring your own models"
     Not using an OpenAI-compatible endpoint? Provide your own model classes instead: any implementation of `BaseFoundationModel` / `BaseEmbeddingModel` plugs straight into an experiment. See [Provider-Agnostic Design](user-guide/provider-agnostic.md).
 
-The vector store is independent of the model provider: connect directly to a remote Milvus server via `MilvusConfig`, embedded Milvus Lite via `MilvusLiteConfig`, or PostgreSQL/pgvector via `PGVectorConfig`.
+The vector store is independent of the model provider: connect directly to a remote Milvus server via `MilvusConfig`, embedded Milvus Lite via `MilvusLiteConfig`, PostgreSQL/pgvector via `PGVectorConfig`, or Neo4j via `Neo4jConfig` for graph-only retrieval.
 
 ---
 
