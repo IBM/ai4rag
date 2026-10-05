@@ -253,6 +253,12 @@ optimizer_settings = GAMOptSettings(
 
     All four classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
 
+!!! note "RAG template"
+    Each candidate pattern is evaluated through a `rag_template` constructor argument, defaulting to
+    `AgenticRAG` — a LangChain agent that can rewrite its query and retrieve again before answering.
+    Pass `rag_template=SimpleRAG` (from `ai4rag.rag.template`) for the previous single-pass
+    retrieve-then-generate behavior. See [RAG Templates](../architecture/rag-components.md#rag-templates).
+
 Create and run the optimization experiment:
 
 ```python

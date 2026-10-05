@@ -114,6 +114,13 @@ classDiagram
         +chat(messages) list
     }
 
+    class AgenticRAG {
+        +max_retrieval_steps: int
+        +generate(question) dict
+        +generate_stream(question) iterator
+        +chat(messages) list
+    }
+
     BaseFoundationModel <|-- OpenAIFoundationModel
     BaseEmbeddingModel <|-- OpenAIEmbeddingModel
     BaseVectorStore <|-- MilvusVectorStore
@@ -122,6 +129,7 @@ classDiagram
     BaseChunker <|-- DoclingChunker
     BaseChunker <|-- LangChainChunker
     BaseRAGTemplate <|-- SimpleRAG
+    BaseRAGTemplate <|-- AgenticRAG
 
     BaseVectorStore --> BaseEmbeddingModel : uses
     Retriever --> BaseVectorStore : uses
@@ -1132,7 +1140,11 @@ docs = retriever.retrieve("What is X?")
 RAG templates compose a retriever and a foundation model into end-to-end
 retrieval-augmented generation. Index building is a separate, upstream concern
 owned by `ai4rag.rag.vector_store` — build the index (chunk → embed → store)
-before constructing a template.
+before constructing a template. Two implementations are provided: `SimpleRAG`
+(a single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain
+agent that can rewrite its query and retrieve again before answering) — see
+[AgenticRAG](#agenticrag) below. `AgenticRAG` is the default template used by
+`AI4RAGExperiment` and `ModelsPreSelector`.
 
 ### BaseRAGTemplate
 
@@ -1163,10 +1175,28 @@ def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
     """Run a RAG-enriched chat completion over a conversation history."""
 ```
 
+**Shared Context-Building Helpers:**
+
+`BaseRAGTemplate` also implements the retrieval/formatting logic shared by
+every subclass, so `SimpleRAG` and `AgenticRAG` only need to drive it
+differently:
+
+- `_build_enriched_user_message(question, **kwargs)` — retrieves chunks via
+  `self.retriever.retrieve(question, **kwargs)` and renders the user message
+  from them; returns `(reference_documents, user_message)`
+- `_render_enriched_user_message(question, reference_documents)` — formats
+  already-retrieved chunks with `foundation_model.context_template_text` and
+  renders the final user message with `foundation_model.user_message_text`,
+  without issuing a new retrieval call (used by `AgenticRAG` to fold
+  additional tool-retrieved chunks into the running context)
+- `_build_rag_messages(messages, **kwargs)` — RAG-enriches only the last
+  (current) user turn of a conversation, prepending the template's system
+  message and forwarding prior history unchanged
+
 ### SimpleRAG
 
-RAG implementation composing a retriever and a foundation model for retrieval
-and generation:
+RAG implementation composing a retriever and a foundation model for a single
+retrieve-then-generate pass:
 
 ```python
 class SimpleRAG(BaseRAGTemplate):
@@ -1203,10 +1233,8 @@ def generate(self, question: str, **kwargs) -> dict[str, Any]:
     }
 ```
 
-`_build_enriched_user_message` (shared by `generate` and `chat`) retrieves
-chunks via `self.retriever.retrieve(question, **kwargs)`, formats each with
-`foundation_model.context_template_text`, and renders the final user message
-with `foundation_model.user_message_text`.
+`_build_enriched_user_message` is inherited from `BaseRAGTemplate` (see
+above) and shared by `generate` and `chat`.
 
 **generate_stream() Method:**
 
@@ -1226,20 +1254,11 @@ not include one:
 
 ```python
 def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
-    if not messages:
-        raise ValueError("`messages` must contain at least one message.")
-
-    *history, last_message = messages
-    _, enriched_content = self._build_enriched_user_message(last_message["content"], **kwargs)
-
-    rag_messages = [
-        {"role": "system", "content": self.foundation_model.system_message_text},
-        *history,
-        {**last_message, "content": enriched_content},
-    ]
-
+    rag_messages = self._build_rag_messages(messages, **kwargs)
     return self.foundation_model.chat(messages=rag_messages, **kwargs)
 ```
+
+`_build_rag_messages` is inherited from `BaseRAGTemplate` (see above).
 
 **Usage:**
 
@@ -1268,17 +1287,96 @@ response = rag.chat(messages=[
 
 **Within AI4RAGExperiment:**
 
-The experiment creates SimpleRAG instances automatically during evaluation,
-after indexing has already populated the vector store:
+By default the experiment evaluates each candidate pattern with `AgenticRAG`,
+not `SimpleRAG` — pass `rag_template=SimpleRAG` to `AI4RAGExperiment` (or
+`ModelsPreSelector`) for this single-pass behavior instead:
 
 ```python
-rag_pattern = SimpleRAG(
+from ai4rag.rag.template import SimpleRAG
+
+experiment = AI4RAGExperiment(
+    # ... other parameters
+    rag_template=SimpleRAG,
+)
+```
+
+Internally, the experiment instantiates the configured `rag_template` class
+the same way regardless of which one is selected:
+
+```python
+rag_pattern = self.rag_template(
     foundation_model=foundation_model,
     retriever=retriever
 )
 # Note: chunking, embedding, and vector store insertion happen separately,
 #       upstream, during the experiment's indexing phase
 ```
+
+### AgenticRAG
+
+LangChain-agent RAG implementation that can rewrite its search query and
+retrieve additional context across several tool calls before answering,
+instead of committing to a single fixed retrieval pass:
+
+```python
+class AgenticRAG(BaseRAGTemplate):
+    def __init__(
+        self,
+        foundation_model: BaseFoundationModel,
+        retriever: Retriever,
+        max_retrieval_steps: int = 2,
+        chat_model: BaseChatModel | None = None,
+    ):
+```
+
+- `max_retrieval_steps` caps how many `retriever` tool calls (and,
+  independently, how many `rewrite_query` tool calls) the agent may make for
+  one request; once a budget is exhausted, the corresponding tool returns a
+  message telling the agent to answer with what it already has.
+- `chat_model` is an optional pre-built LangChain `BaseChatModel`. When
+  omitted, one is built from the configured `foundation_model` — which must
+  then be an `OpenAIFoundationModel`, since `AgenticRAG` wraps its MaaS/OpenAI
+  client in a LangChain `ChatOpenAI` instance.
+
+**How it works:**
+
+1. An initial retrieval (via the inherited `_build_enriched_user_message`)
+   supplies context for the question, exactly as `SimpleRAG` does.
+2. A LangChain agent (`langchain.agents.create_agent`), armed with a
+   `rewrite_query` tool and a `retriever` tool, decides whether to answer
+   immediately or search again. `rewrite_query` asks the chat model for a
+   focused follow-up query given what's missing; `retriever` calls
+   `self.retriever.retrieve()` with that query and folds any newly retrieved,
+   not-yet-seen chunks into the running context via
+   `_render_enriched_user_message`.
+3. Both tools are budget-limited by `max_retrieval_steps`, tracked in a
+   per-invocation `_AgentRunContext` passed through LangChain's `ToolRuntime`
+   so concurrent requests (see `query_rag`'s `ThreadPoolExecutor`) never share
+   state.
+4. The agent's final assistant message becomes the answer; every chunk seen
+   across the initial and tool-driven retrievals is returned as
+   `reference_documents`, for evaluation against the benchmark's ground
+   truth.
+
+**Usage:**
+
+```python
+from ai4rag.rag.template import AgenticRAG
+
+rag = AgenticRAG(
+    foundation_model=foundation_model,  # must be an OpenAIFoundationModel
+    retriever=retriever,
+    max_retrieval_steps=2,
+)
+
+result = rag.generate("What is the capital of France?")
+print(result["answer"])
+print(result["reference_documents"])  # chunks from every retrieval the agent made
+```
+
+!!! note "Dependencies"
+    `AgenticRAG` requires the `langchain` and `langchain-openai` packages,
+    which are core dependencies of `ai4rag`.
 
 ---
 
