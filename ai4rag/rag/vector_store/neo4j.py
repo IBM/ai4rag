@@ -73,6 +73,7 @@ def _suppress_neo4j_graphrag_info_logs() -> Iterator[None]:
         for configured_logger, previous_level in zip(configured_loggers, previous_levels):
             configured_logger.setLevel(previous_level)
 
+
 @dataclass(frozen=True, kw_only=True)
 class Neo4jGraphRetrievalConfig:
     """Controls graph expansion during `Neo4jGraphStore` retrieval."""
