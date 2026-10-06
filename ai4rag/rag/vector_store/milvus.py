@@ -29,6 +29,7 @@ from ai4rag.rag.vector_store.utils import (
 
 __all__ = ["MilvusVectorStore"]
 
+
 class MilvusVectorStore(BaseVectorStore):
     """Vector store backed by Milvus via ``pymilvus`` (remote server or Milvus Lite).
 
