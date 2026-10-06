@@ -371,7 +371,8 @@ class Neo4jConfig(BaseVectorStoreConfig):
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
         (
             "NEO4J_URI",
-            "Bolt or neo4j URI. Use neo4j+s://host:7687 for TLS; NEO4J_CA_CERT supplies a private CA. " "(required)",
+            "Bolt or neo4j URI. Use neo4j+s://host:7687 for TLS; "
+            "NEO4J_CA_CERT supplies a private CA. (required)",
         ),
         ("NEO4J_USERNAME", "Database user (default neo4j)."),
         ("NEO4J_PASSWORD", "Database password. (required)"),

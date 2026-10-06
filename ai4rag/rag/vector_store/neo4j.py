@@ -4,16 +4,12 @@
 # -----------------------------------------------------------------------------
 # pylint: disable=too-many-lines
 import asyncio
-import atexit
 import hashlib
 import json
-import tempfile
-import threading
 import uuid
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, fields
-from pathlib import Path
 from typing import Any
 
 import neo4j
@@ -44,6 +40,7 @@ from ai4rag.rag.vector_store.neo4j_utils import (
 )
 from ai4rag.rag.vector_store.utils import (
     iter_unique_chunks,
+    materialize_ca_cert,
     resolve_embedding_dimension,
 )
 
@@ -52,38 +49,6 @@ __all__ = ["Neo4jGraphRetrievalConfig", "Neo4jGraphStore"]
 _SCHEMA = Neo4jGraphSchema
 
 _CUSTOM_CA_URI_SCHEMES = {"neo4j+s": "neo4j", "bolt+s": "bolt"}
-
-
-# ``neo4j.TrustCustomCAs`` accepts certificate paths, while our configuration
-# consistently exposes inline PEM text. Retain each materialized certificate
-# until process exit so every driver created from the same config can continue
-# to use it for the driver's lifetime.
-_CERT_CACHE: dict[str, str] = {}
-_CERT_CACHE_LOCK = threading.Lock()
-
-
-def _materialize_ca_cert(cert: str) -> str:
-    """Return a process-lifetime PEM file for inline certificate *cert*."""
-    with _CERT_CACHE_LOCK:
-        path = _CERT_CACHE.get(cert)
-        if path is not None and Path(path).exists():
-            return path
-        with tempfile.NamedTemporaryFile(
-            mode="w", prefix="ai4rag-neo4j-cert-", suffix=".pem", delete=False
-        ) as cert_file:
-            cert_file.write(cert)
-            path = cert_file.name
-        _CERT_CACHE[cert] = path
-        return path
-
-
-@atexit.register
-def _cleanup_ca_certs() -> None:
-    """Remove materialized Neo4j CA certificates at process exit."""
-    with _CERT_CACHE_LOCK:
-        for path in _CERT_CACHE.values():
-            Path(path).unlink(missing_ok=True)
-        _CERT_CACHE.clear()
 
 
 def _normalize_custom_ca_uri(uri: str) -> str:
@@ -182,7 +147,9 @@ class Neo4jGraphStore(BaseVectorStore):
             # Neo4j permits custom trust configuration only with the base
             # neo4j:// / bolt:// schemes. Encryption remains mandatory here.
             driver_kwargs["encrypted"] = True
-            driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(_materialize_ca_cert(config.ca_cert))
+            driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(
+                materialize_ca_cert(config.ca_cert, prefix="ai4rag-neo4j-cert-")
+            )
         driver_uri = _normalize_custom_ca_uri(config.uri) if config.ca_cert else config.uri
         self._driver = neo4j.GraphDatabase.driver(driver_uri, **driver_kwargs)
         self._driver.verify_connectivity()
