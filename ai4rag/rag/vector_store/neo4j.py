@@ -51,6 +51,8 @@ __all__ = ["Neo4jGraphRetrievalConfig", "Neo4jGraphStore"]
 
 _SCHEMA = Neo4jGraphSchema
 
+_CUSTOM_CA_URI_SCHEMES = {"neo4j+s": "neo4j", "bolt+s": "bolt"}
+
 
 # ``neo4j.TrustCustomCAs`` accepts certificate paths, while our configuration
 # consistently exposes inline PEM text. Retain each materialized certificate
@@ -82,6 +84,18 @@ def _cleanup_ca_certs() -> None:
         for path in _CERT_CACHE.values():
             Path(path).unlink(missing_ok=True)
         _CERT_CACHE.clear()
+
+
+def _normalize_custom_ca_uri(uri: str) -> str:
+    """Return the driver-compatible URI for a connection using a custom CA.
+
+    The Neo4j driver prohibits ``trusted_certificates`` with its ``+s`` URI
+    schemes. Replacing only the scheme preserves the endpoint and whether the
+    caller requested routing (``neo4j``) or a direct connection (``bolt``);
+    :class:`Neo4jGraphStore` then supplies explicit TLS settings.
+    """
+    scheme, separator, remainder = uri.partition(":")
+    return f"{_CUSTOM_CA_URI_SCHEMES.get(scheme.lower(), scheme)}{separator}{remainder}"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -165,8 +179,12 @@ class Neo4jGraphStore(BaseVectorStore):
         self._kg_extraction_config = _validate_kg_extraction_config(kg_extraction_config)
         driver_kwargs: dict[str, Any] = {"auth": (config.username, config.password)}
         if config.ca_cert:
+            # Neo4j permits custom trust configuration only with the base
+            # neo4j:// / bolt:// schemes. Encryption remains mandatory here.
+            driver_kwargs["encrypted"] = True
             driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(_materialize_ca_cert(config.ca_cert))
-        self._driver = neo4j.GraphDatabase.driver(config.uri, **driver_kwargs)
+        driver_uri = _normalize_custom_ca_uri(config.uri) if config.ca_cert else config.uri
+        self._driver = neo4j.GraphDatabase.driver(driver_uri, **driver_kwargs)
         self._driver.verify_connectivity()
         self._ensure_kg_schema()
 

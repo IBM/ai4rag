@@ -105,13 +105,23 @@ class TestNeo4jConfig:
     def test_from_env_reads_ca_cert(self):
         cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
         env = {
-            "NEO4J_URI": "neo4j+s://host:7687",
+            "NEO4J_URI": "neo4j://host:7687",
             "NEO4J_PASSWORD": "pw",
             "NEO4J_CA_CERT": cert,
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = Neo4jConfig.from_env()
         assert cfg.ca_cert == cert
+
+    @pytest.mark.parametrize("uri", ["neo4j+s://host:7687", "bolt+s://host:7687"])
+    def test_ca_cert_accepts_tls_uri(self, uri):
+        cfg = Neo4jConfig(uri=uri, password="pw", ca_cert="CERT")
+
+        assert cfg.uri == uri
+
+    def test_ca_cert_rejects_unverified_tls_uri(self):
+        with pytest.raises(ValueError, match=r"\+ssc"):
+            Neo4jConfig(uri="neo4j+ssc://host:7687", password="pw", ca_cert="CERT")
 
     def test_from_env_missing_uri_raises(self):
         env = {"NEO4J_PASSWORD": "pw"}
@@ -134,7 +144,7 @@ class TestNeo4jConfig:
 
     def test_repr_redacts_password_and_ca_cert(self):
         cfg = Neo4jConfig(
-            uri="neo4j+s://host:7687",
+            uri="neo4j://host:7687",
             password="do-not-log-password",
             ca_cert="do-not-log-certificate",
         )
@@ -272,6 +282,8 @@ class TestNeo4jGraphStoreInit:
 
         trusted_certificates = mock_driver_cls.call_args.kwargs["trusted_certificates"]
         assert isinstance(trusted_certificates, neo4j.TrustCustomCAs)
+        assert mock_driver_cls.call_args.kwargs["encrypted"] is True
+        assert mock_driver_cls.call_args.args[0] == "neo4j://host:7687"
         cert_path = trusted_certificates.certs[0]
         assert Path(cert_path).read_text() == cert
 
