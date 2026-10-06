@@ -2,12 +2,16 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import atexit
 import re
 import secrets
 import string
+import tempfile
+import threading
 from collections import defaultdict
 from collections.abc import Iterator, Sequence
 from datetime import datetime, timezone
+from pathlib import Path
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -30,6 +34,47 @@ _MAX_COLLECTION_NAME_LENGTH = 63
 
 _COLLECTION_NAME_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 _COLLECTION_NAME_SUFFIX_LENGTH = 8
+
+# Both the Milvus and Neo4j clients accept a certificate path, whereas their
+# configurations accept inline PEM text. Clients may reconnect in background
+# threads, so certificate files must remain available until process exit.
+_CERT_CACHE: dict[str, str] = {}
+_CERT_CACHE_LOCK = threading.Lock()
+
+
+def materialize_ca_cert(cert: str, *, prefix: str) -> str:
+    """Return a process-lifetime PEM file for inline certificate *cert*.
+
+    Parameters
+    ----------
+    cert : str
+        PEM-encoded CA certificate.
+    prefix : str
+        Prefix for a newly created temporary certificate file.
+
+    Returns
+    -------
+    str
+        Path to the materialized certificate.
+    """
+    with _CERT_CACHE_LOCK:
+        path = _CERT_CACHE.get(cert)
+        if path is not None and Path(path).exists():
+            return path
+        with tempfile.NamedTemporaryFile(mode="w", prefix=prefix, suffix=".pem", delete=False) as cert_file:
+            cert_file.write(cert)
+            path = cert_file.name
+        _CERT_CACHE[cert] = path
+        return path
+
+
+@atexit.register
+def cleanup_ca_certs() -> None:
+    """Remove materialized certificate files at interpreter exit."""
+    with _CERT_CACHE_LOCK:
+        for path in _CERT_CACHE.values():
+            Path(path).unlink(missing_ok=True)
+        _CERT_CACHE.clear()
 
 
 def sanitize_collection_name(name: str) -> str:
