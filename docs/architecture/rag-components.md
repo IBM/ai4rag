@@ -532,7 +532,7 @@ def get_vector_store(
 | `MilvusConfig` | `"milvus"` | `uri` (required, must be an `http(s)://` URL — a remote server or Zilliz Cloud; raises `ValueError` otherwise; plaintext `http://` only allowed against a local or in-cluster host), `token`, `ca_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_CA_CERT` |
 | `MilvusLiteConfig` | `"milvus_lite"` | `db_path` (a local file path, default `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given an `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | `"pgvector"` | `host`, `port`, `dbname`, `user`, `password`, `ca_cert` (PEM text for a private CA; non-local hosts always get verified TLS) | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD`, `PGVECTOR_CA_CERT` |
-| `Neo4jConfig` | `"neo4j"` | `uri` (required, Bolt/neo4j URI), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`), `ca_cert` (optional PEM CA certificate for self-signed/private-CA TLS) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE`, `NEO4J_CA_CERT` |
+| `Neo4jConfig` | `"neo4j"` | `uri` (required; use `neo4j+s://` or `bolt+s://` for TLS), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`), `ca_cert` (optional PEM CA certificate; ai4rag transparently normalizes `+s` URI schemes for the Neo4j driver) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE`, `NEO4J_CA_CERT` |
 
 !!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
     Previously, a single `MilvusConfig` selected between a remote server and embedded Milvus Lite purely from
