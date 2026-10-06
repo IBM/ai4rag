@@ -403,6 +403,24 @@ class TestAddDocuments:
 
         assert secret_text not in caplog.text
 
+    def test_kg_pipeline_logs_entity_extraction_lifecycle(self, mock_driver_cls, mock_embedding, neo4j_config, caplog):
+        """Entity extraction logs its start and successful completion without document content."""
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        chunks = self._make_chunks(2)
+
+        async def run_pipeline(*args, **kwargs):
+            return MagicMock()
+
+        with caplog.at_level(logging.INFO), patch(
+            "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+        ):
+            with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
+                pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                store._run_kg_pipeline(chunks, MagicMock(), perform_entity_resolution=False)
+
+        assert "Starting entity extraction for 2 chunks (collection=ai4rag_col)." in caplog.messages
+        assert "Finished entity extraction for 2 chunks (collection=ai4rag_col)." in caplog.messages
+
     def test_pipeline_can_skip_scoped_entity_resolution(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         session = mock_driver_cls.return_value.session.return_value.__enter__.return_value

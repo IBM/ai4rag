@@ -265,6 +265,12 @@ class Neo4jGraphStore(BaseVectorStore):
         if not chunks:
             return
 
+        logger.info(
+            "Starting entity extraction for %d chunks (collection=%s).",
+            len(chunks),
+            self._collection_name,
+        )
+
         kg_writer = _CanonicalKGWriter(self._driver, self._config.database, self._collection_name)
         pipeline = SimpleKGPipeline(
             llm=_LLMAdapter(model),
@@ -324,6 +330,12 @@ class Neo4jGraphStore(BaseVectorStore):
 
         if perform_entity_resolution:
             self._resolve_kg_entities()
+
+        logger.info(
+            "Finished entity extraction for %d chunks (collection=%s).",
+            len(chunks),
+            self._collection_name,
+        )
 
     def _resolve_kg_entities(self) -> None:
         """Merge same-type, same-name entities exclusive to this collection."""
