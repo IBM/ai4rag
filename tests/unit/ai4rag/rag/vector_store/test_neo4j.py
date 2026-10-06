@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 import asyncio
 import json
+import logging
 import os
 from unittest.mock import MagicMock, patch
 
@@ -378,6 +379,29 @@ class TestAddDocuments:
         assert result.chunks[0].text == text
         assert result.chunks[0].index == 0
         assert pipeline_cls.return_value.run_async.call_args.kwargs["text"] == text
+
+    def test_kg_pipeline_does_not_log_chunk_text(self, mock_driver_cls, mock_embedding, neo4j_config, caplog):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        secret_text = "this document text must not appear in logs"
+        chunk = AI4RAGChunk(text=secret_text, metadata={"document_id": "document.md"})
+        graphrag_logger = logging.getLogger("neo4j_graphrag.experimental.pipeline.config.runner")
+        original_level = graphrag_logger.level
+
+        async def run_pipeline(*args, **kwargs):
+            graphrag_logger.info("PIPELINE_RUNNER: run_params={'splitter': {'text': %r}}", secret_text)
+            return MagicMock()
+
+        try:
+            with caplog.at_level(logging.INFO), patch(
+                "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+            ):
+                with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
+                    pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                    store.add_documents([chunk], model=MagicMock())
+        finally:
+            assert graphrag_logger.level == original_level
+
+        assert secret_text not in caplog.text
 
     def test_pipeline_can_skip_scoped_entity_resolution(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
