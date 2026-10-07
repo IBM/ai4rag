@@ -10,6 +10,7 @@ import pytest
 
 from ai4rag.utils.data import text_extraction
 from ai4rag.utils.data.text_extraction import (
+    DoclingExtractionConfig,
     ExtractionResult,
     _build_docling_format_options,
     _download_document,

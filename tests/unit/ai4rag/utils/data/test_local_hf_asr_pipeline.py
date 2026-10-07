@@ -80,7 +80,7 @@ def test_build_document_preserves_timestamped_transcript(tmp_path):
             ]
         }
     )
-    result = SimpleNamespace(input=SimpleNamespace(file=tmp_path / "recording.mp3", document_hash="hash"))
+    result = SimpleNamespace(input=SimpleNamespace(file=tmp_path / "recording.mp3", document_hash="0" * 64))
 
     adapter._build_document(result)  # pylint: disable=protected-access
 
