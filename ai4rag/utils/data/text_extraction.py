@@ -38,6 +38,7 @@ from docling.document_converter import (
 
 from ai4rag import handler
 from ai4rag.utils.clients.s3 import create_s3_client
+
 from .constants import SUPPORTED_EXTENSIONS
 from .local_hf_asr_pipeline import LocalHuggingFaceAsrPipeline, LocalHuggingFaceAsrPipelineOptions
 
