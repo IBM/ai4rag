@@ -36,6 +36,7 @@ from ai4rag.evaluator.base_evaluator import EvaluationData
 from ai4rag.evaluator.metric import Metrics
 from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
+from ai4rag.rag.template import SimpleRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -265,6 +266,7 @@ class TestRagasEvaluatorInExperiment:
             vector_store_config=MilvusLiteConfig(db_path=str(tmp_path / "ai4rag.db")),
             optimizer_settings=RandomOptSettings(max_evals=2),
             event_handler=LocalEventHandler(),
+            rag_template=SimpleRAG,
             evaluators=[UnitxtEvaluator(), ragas_evaluator],
             metrics=(Metrics.RAGAS_FAITHFULNESS,),
             optimization_metric=Metrics.RAGAS_FAITHFULNESS,

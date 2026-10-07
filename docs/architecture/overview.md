@@ -139,6 +139,7 @@ graph TB
 - Complete RAG implementations
 - Combines all RAG components
 - Provides end-to-end RAG pipeline
+- Two implementations: `SimpleRAG` (single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again before answering — the default used by `AI4RAGExperiment` and `ModelsPreSelector`)
 
 ### 4. Evaluation Layer
 

@@ -72,11 +72,11 @@ class TestMilvusVectorStoreInit:
     def test_passes_token(self, MockClient, mock_embedding):
         client = MockClient.return_value
         client.has_collection.return_value = True
-        cfg = MilvusConfig(uri="http://host:19530", token="root:pw")
+        cfg = MilvusConfig(uri="http://localhost:19530", token="root:pw")
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
         MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
-        MockClient.assert_called_with(uri="http://host:19530", token="root:pw")
+        MockClient.assert_called_with(uri="http://localhost:19530", token="root:pw")
 
     def test_no_server_pem_path_without_cert(self, MockClient, mock_embedding, milvus_config):
         client = MockClient.return_value
@@ -88,11 +88,11 @@ class TestMilvusVectorStoreInit:
         _, kwargs = MockClient.call_args
         assert "server_pem_path" not in kwargs
 
-    def test_writes_server_cert_to_tempfile(self, MockClient, mock_embedding):
+    def test_writes_ca_cert_to_tempfile(self, MockClient, mock_embedding):
         client = MockClient.return_value
         client.has_collection.return_value = True
         cert_pem = "-----BEGIN CERTIFICATE-----\nMIICert-unique-A\n-----END CERTIFICATE-----\n"
-        cfg = MilvusConfig(uri="https://host:19530", token="root:pw", server_cert=cert_pem)
+        cfg = MilvusConfig(uri="https://host:19530", token="root:pw", ca_cert=cert_pem)
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
         store = MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
@@ -110,7 +110,7 @@ class TestMilvusVectorStoreInit:
         """The cert file must outlive close()/GC: pymilvus may reconnect and re-read it."""
         client = MockClient.return_value
         client.has_collection.return_value = True
-        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA-survive")
+        cfg = MilvusConfig(uri="https://host:19530", ca_cert="CERTDATA-survive")
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
         store = MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
@@ -128,7 +128,7 @@ class TestMilvusVectorStoreInit:
         """Two stores sharing the same PEM must share one file (no per-store accumulation)."""
         client = MockClient.return_value
         client.has_collection.return_value = True
-        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA-shared")
+        cfg = MilvusConfig(uri="https://host:19530", ca_cert="CERTDATA-shared")
         from ai4rag.rag.vector_store.milvus import MilvusVectorStore
 
         MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_a")
@@ -142,14 +142,14 @@ class TestMilvusVectorStoreInit:
         """The atexit hook must remove every materialized cert file."""
         client = MockClient.return_value
         client.has_collection.return_value = True
-        cfg = MilvusConfig(uri="https://host:19530", server_cert="CERTDATA-atexit")
+        cfg = MilvusConfig(uri="https://host:19530", ca_cert="CERTDATA-atexit")
         from ai4rag.rag.vector_store import milvus as milvus_mod
 
         milvus_mod.MilvusVectorStore(mock_embedding, cfg, collection_name="ai4rag_col")
         cert_path = Path(MockClient.call_args[1]["server_pem_path"])
         assert cert_path.exists()
 
-        milvus_mod._cleanup_server_certs()
+        milvus_mod._cleanup_ca_certs()
         assert not cert_path.exists()
 
     def test_close_without_cert_is_safe(self, MockClient, mock_embedding, milvus_config):

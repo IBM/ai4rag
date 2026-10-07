@@ -24,6 +24,7 @@ from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
+from ai4rag.rag.template import SimpleRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -115,6 +116,7 @@ def _build_search_space(foundation_models, embedding_models):
 
 
 def _make_experiment(documents, benchmark_data, foundation_models, embedding_models, vector_store_config, **kwargs):
+    kwargs.setdefault("rag_template", SimpleRAG)
     return AI4RAGExperiment(
         documents=documents,
         benchmark_data=benchmark_data,

@@ -29,10 +29,18 @@ from ai4rag.core.experiment.utils import (
     merge_evaluation_results,
     query_rag,
 )
-from ai4rag.core.hpo.base_optimizer import BaseOptimizer, OptimizationError, OptimizerSettings
+from ai4rag.core.hpo.base_optimizer import (
+    BaseOptimizer,
+    OptimizationError,
+    OptimizerSettings,
+)
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
 from ai4rag.core.hpo.random_opt import FailedIterationError
-from ai4rag.evaluator.base_evaluator import BaseEvaluator, EvaluationData, EvaluationMetricsResult
+from ai4rag.evaluator.base_evaluator import (
+    BaseEvaluator,
+    EvaluationData,
+    EvaluationMetricsResult,
+)
 from ai4rag.evaluator.custom_metrics import apply_custom_metrics
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
@@ -40,7 +48,8 @@ from ai4rag.rag.chunking import DoclingChunker, LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
@@ -116,6 +125,9 @@ class AI4RAGExperiment:
     inference_max_threads : int, default=10
         Defines the number of threads to use during generation model inference.
 
+    rag_template : type[BaseRAGTemplate], default=AgenticRAG
+        RAG template class used to evaluate each pattern.
+
     Attributes
     ----------
     results : ExperimentResults
@@ -154,6 +166,9 @@ class AI4RAGExperiment:
             "n_mps_embedding_models", PreSelectorConstants.DEFAULT_N_EMBEDDING_MODELS
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
+        self.rag_template: type[BaseRAGTemplate] = kwargs.pop("rag_template", AgenticRAG)
+        if not isinstance(self.rag_template, type) or not issubclass(self.rag_template, BaseRAGTemplate):
+            raise TypeError("rag_template must be a BaseRAGTemplate subclass.")
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
         graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
@@ -165,7 +180,6 @@ class AI4RAGExperiment:
             self.graph_retrieval_config = Neo4jGraphRetrievalConfig.from_mapping(graph_retrieval_config)
         else:
             raise TypeError("graph_retrieval_config must be a mapping or Neo4jGraphRetrievalConfig.")
-
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
         self._optimization_phase: str | None = None
@@ -381,11 +395,13 @@ class AI4RAGExperiment:
             foundation_models=foundation_models,
             embedding_models=embedding_models,
             metric=Metrics.OVERALL_SCORE,
+            rag_template=self.rag_template,
         )
         mps.evaluate_patterns()
 
         selected_models = mps.select_models(
-            n_embedding_models=self.n_mps_embedding_models, n_foundation_models=self.n_mps_foundation_models
+            n_embedding_models=self.n_mps_embedding_models,
+            n_foundation_models=self.n_mps_foundation_models,
         )
 
         logger.info(
@@ -540,7 +556,9 @@ class AI4RAGExperiment:
                     chunker = DoclingChunker(max_tokens=chunk_size)
                 else:
                     chunker = LangChainChunker(
-                        method=chunking_method, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+                        method=chunking_method,
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
                     )
                 chunked_documents = chunker.split_documents(self.documents)
 
@@ -588,7 +606,7 @@ class AI4RAGExperiment:
                 search_kwargs=(self.graph_retrieval_config.to_search_kwargs() if search_mode == "graph" else None),
             )
 
-            rag_pattern = SimpleRAG(
+            rag_pattern = self.rag_template(
                 foundation_model=foundation_model,
                 retriever=retriever,
             )
@@ -605,7 +623,9 @@ class AI4RAGExperiment:
             )
 
             inference_response = query_rag(
-                rag=rag_pattern, questions=list(self.benchmark_data.questions), max_threads=self.inference_max_threads
+                rag=rag_pattern,
+                questions=list(self.benchmark_data.questions),
+                max_threads=self.inference_max_threads,
             )
 
         result_scores, evaluation_data = self._evaluate_response(
@@ -754,10 +774,14 @@ class AI4RAGExperiment:
                 foundation_models=foundation_models, embedding_models=embedding_models
             )
             self.search_space[AI4RAGParamNames.FOUNDATION_MODEL] = Parameter(
-                name=AI4RAGParamNames.FOUNDATION_MODEL, param_type="C", values=selected_models["foundation_models"]
+                name=AI4RAGParamNames.FOUNDATION_MODEL,
+                param_type="C",
+                values=selected_models["foundation_models"],
             )
             self.search_space[AI4RAGParamNames.EMBEDDING_MODEL] = Parameter(
-                name=AI4RAGParamNames.EMBEDDING_MODEL, param_type="C", values=selected_models["embedding_models"]
+                name=AI4RAGParamNames.EMBEDDING_MODEL,
+                param_type="C",
+                values=selected_models["embedding_models"],
             )
 
         optimizer_kwargs = {}

@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.21.0](https://github.com/IBM/ai4rag/releases/tag/v0.21.0)
+
+### Added
+- **Agentic RAG** — new `AgenticRAG` RAG template (`ai4rag.rag.template.AgenticRAG`), a LangChain ReAct-style agent that can rewrite the search query and retrieve additional context across up to `max_retrieval_steps` tool calls before answering, instead of a single fixed retrieval pass
+- **Experiment** — `AI4RAGExperiment` and `ModelsPreSelector` accept a `rag_template` constructor argument (a `BaseRAGTemplate` subclass) selecting which template evaluates each candidate pattern
+- **Assets generator** — `generate_starter_kit()` (`ai4rag.assets_generator.starter_kit`) packages a published pattern's `pattern.json` into a deployable `starter_kit.zip`: a self-contained agentic-RAG microservice (LangChain agent, OpenShift/OpenShell container image, Makefile, auth wrapper, `pyproject.toml`/`uv.lock`) pre-filled with that pattern's generation, embedding, retrieval, and vector-store settings
+- **Network** — new `ai4rag.utils.network` module (`ensure_safe_url`, `is_url_scheme_safe`, `is_local_or_cluster_host`) centralizing the scheme/host trust policy enforced across MaaS, S3, Milvus, Neo4j, and pgvector
+- **MaaS client** — `create_maas_client()` gains a `ca_bundle` parameter (or `MAAS_CA_BUNDLE` env var) to verify a MaaS endpoint against a private or self-signed CA
+- **Vector store** — `PGVectorConfig` gains `ca_cert` (`PGVECTOR_CA_CERT` env var) to verify a self-signed PostgreSQL server certificate
+- **Dependencies** — `langchain` and `langchain-openai` are new core dependencies, powering `AgenticRAG`
+
+### Changed
+- **BREAKING CHANGE: Vector store** — `MilvusConfig.server_cert` is renamed to `ca_cert` (`MILVUS_SERVER_CERT` env var renamed to `MILVUS_CA_CERT`), for consistency with the new `PGVectorConfig.ca_cert`
+- **BREAKING CHANGE: Security** — MaaS, S3, and PGVectorStore client factories no longer retry with unverified TLS (`verify=False`) after a certificate-verification failure; they now raise, directing the caller to set `MAAS_CA_BUNDLE`/`AWS_CA_BUNDLE`/`ca_cert`. `MilvusConfig.uri` and `Neo4jConfig.uri` now reject a plaintext scheme (`http://`, `neo4j://`, `bolt://`) against any host that isn't local (`localhost`/`127.0.0.1`/`::1`) or in-cluster (`*.cluster.local`); `PGVectorStore` requests fully verified TLS for any non-local host. `discover_documents()` and `load_test_data()` no longer probe-and-fall-back to an unverified S3 client on an SSL error
+- **Experiment** — the default `rag_template` for `AI4RAGExperiment` and `ModelsPreSelector` is now `AgenticRAG` (previously always `SimpleRAG`); pass `rag_template=SimpleRAG` to keep single-pass retrieval behavior
+- **RAG template** — enriched-message construction (`_build_enriched_user_message`, `_render_enriched_user_message`, `_build_rag_messages`) moved from `SimpleRAG` up to `BaseRAGTemplate`, now shared with `AgenticRAG`
+- **Dependencies** — bumped transitive `tornado` dependency from 6.5.8 to 6.5.9; refreshed `uv.lock`
+
+### Fixed
+- **Evaluator** — `UnitxtEvaluator.evaluate()` no longer crashes inside unitxt's `TokenOverlap` metric when a question's retrieval returns zero chunks; an empty `contexts` list is substituted with a single blank reference before scoring, so the question scores zero instead of aborting the whole evaluation run
+
+---
+
 ## [0.20.0](https://github.com/IBM/ai4rag/releases/tag/v0.20.0)
 
 ### Added
@@ -197,7 +220,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Vector store (pgvector)** — corrected `inner_product` scoring: the `<#>` operator returns the negative inner product, so the score is now derived by negation (cosine/l2/l1 keep `1/dist`), fixing an inverted ranking
 - **Vector store (pgvector)** — guarded lazy index creation with double-checked locking (plus a `UniqueViolation` fallback) so concurrent search threads no longer race on `CREATE INDEX`
 - **Experiment** — an optimization metric that is produced but unscored (`None` mean) is now recorded as a failed — not fatal — iteration; a genuinely absent metric still raises a `RAGExperimentError` with an evaluator-qualified message
-- **Components** — added `vector_db_secret_name` to the indexing pipeline params
+- **Components** — added `db_secret_name` to the indexing pipeline params
 - **Core** — `ensure_ascii=False` when JSON-dumping documents that may reach the end user, preserving non-ASCII characters
 - **Benchmark data** — reject `BenchmarkData` records with zero correct answers, preventing a downstream unitxt `TokenOverlap` crash on `max()` of an empty iterable
 - **Experiment** — benchmark JSON is now read with an explicit UTF-8 encoding

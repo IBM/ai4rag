@@ -32,6 +32,8 @@ If you want to use specific version, please use e.g. `"@v0.1.1"`
 Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, `asyncpg`, `neo4j`, and `neo4j-graphrag` — are core dependencies and install automatically. There is no separate vector-store extra to install.
 No extra step is needed to use a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j as a vector store.
 
+`langchain` and `langchain-openai` are also core dependencies, powering the `AgenticRAG` template that `AI4RAGExperiment` uses by default (see [RAG Templates](../architecture/rag-components.md#rag-templates)).
+
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
     Scanned PDFs/images (via RapidOCR) and audio transcription (via a local Hugging Face Whisper model)
@@ -144,7 +146,7 @@ from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig, Neo4jConfig,
 vector_store_config = MilvusLiteConfig(db_path="./ai4rag.db")
 
 # Or build configs from environment variables
-vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_SERVER_CERT
+vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_CA_CERT
 vector_store_config = MilvusLiteConfig.from_env()   # reads MILVUS_LITE_DB_PATH (optional; defaults to "./ai4rag_milvus_lite.db")
 vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
 vector_store_config = Neo4jConfig.from_env()        # reads NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE

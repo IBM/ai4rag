@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import asyncio
+import ssl
 import threading
 from dataclasses import replace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -49,6 +50,31 @@ class _HighDimEmbedding:
 @pytest.fixture
 def pgvector_config():
     return PGVectorConfig(host="localhost", port=5432, dbname="testdb", user="testuser")
+
+
+#: A throwaway, self-signed CA certificate (generated with
+#: ``openssl req -x509 -newkey rsa:2048 ... -subj "/CN=ai4rag-test-ca"``), used only to
+#: exercise ``ssl.create_default_context(cadata=...)`` with syntactically valid PEM text.
+_SELF_SIGNED_CERT_PEM = """-----BEGIN CERTIFICATE-----
+MIIDEzCCAfugAwIBAgIUV8heZ3moh+9+u6KzF7OiYKjUvv8wDQYJKoZIhvcNAQEL
+BQAwGTEXMBUGA1UEAwwOYWk0cmFnLXRlc3QtY2EwHhcNMjYxMDA1MTA1MzUzWhcN
+MzYxMDAyMTA1MzUzWjAZMRcwFQYDVQQDDA5haTRyYWctdGVzdC1jYTCCASIwDQYJ
+KoZIhvcNAQEBBQADggEPADCCAQoCggEBAL4ljFqz3gj/r4ORKSfX+DqnziMdTWnL
+JuqvxRrYhjrsnblRTENipb8vLI/62NCuH6ojERGm2JikDmnGAJt/IODhX/yNrWaU
+stdjAiv3D/c4CokUIfRnH97p1OEHgcAak/AVl00T0UuEYVF5eMG/D2xjj5eRzWGQ
+MBfFsfw2e06R4FaH70Wd+T0unhlbcgqxyhZMb5HR4RFmRvUpcawti0FKmXzt9P4G
+az1n5+qXpdQhQEGOhTIVEMRZahdt7YTACX7nooKwObdDTJR3Jx9cCSvDwqXsGYgL
+4Xe8yDVb/HkK928Rt/TBoqCgrlVilO0mxdO7s5DCiAoK6ZCurkObLxECAwEAAaNT
+MFEwHQYDVR0OBBYEFIsRH69lkg887BQRtMdtplzl/bVhMB8GA1UdIwQYMBaAFIsR
+H69lkg887BQRtMdtplzl/bVhMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZIhvcNAQEL
+BQADggEBAK8dC8PF3cXkD/5CvCB8PCSFknXUaqztHWw+L2Cpf3lFH1lkTIbnUvXO
+Q9XdLUgEpofQ54ND2oxaWCyz/jJ/WFoBERPqJ+T61NekscrIXRv3Y9yt+9K6QGCq
+GFeq32kLUGByfpvZs4jI+hKQi6/o2B5JIJAkS4i+2kujW2e9UjhyYFjBsSxKmzzc
+ZLLBCwioVRGDHABaVM0P3ig33+Y/7SWa5uw2yo91lYk4O3aaSQj4tFXb3di1PBxH
+tMY3AD9F3URnEyjdqfxPUlteYTSyZhdLDF1GDyY9miO+r05w0n9g6EWlLe2+EKD8
+BkdYNr5A37AG80Aq3PF6ONC4MR6bYQg=
+-----END CERTIFICATE-----
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -203,6 +229,58 @@ class TestPGVectorStoreInit:
         store.add_documents([AI4RAGChunk(text="x", metadata={})])
         pool_kwargs = mock_create_pool.call_args.kwargs
         assert pool_kwargs["max_size"] == 25
+
+
+@patch("ai4rag.rag.vector_store.pgvector.asyncpg.create_pool", new_callable=AsyncMock)
+class TestPGVectorStoreSsl:
+    """Unit tests for the asyncpg ``ssl=`` kwarg resolved by ``PGVectorStore._resolve_ssl``."""
+
+    def test_local_host_omits_ssl_kwarg(self, mock_create_pool, mock_embedding, pgvector_config):
+        """A local host (today's default) keeps asyncpg's own opportunistic-TLS default."""
+        _conn_from(mock_create_pool)
+        store = PGVectorStore(mock_embedding, pgvector_config, collection_name="ai4rag_c")
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        assert "ssl" not in mock_create_pool.call_args.kwargs
+
+    def test_cluster_local_host_omits_ssl_kwarg(self, mock_create_pool, mock_embedding):
+        """An in-cluster '*.cluster.local' host is treated the same as localhost."""
+        cfg = PGVectorConfig(host="pgvector.ns.svc.cluster.local", dbname="d", user="u")
+        _conn_from(mock_create_pool)
+        store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        assert "ssl" not in mock_create_pool.call_args.kwargs
+
+    def test_cluster_local_host_with_port_suffix_omits_ssl_kwarg(self, mock_create_pool, mock_embedding):
+        """A cluster-local 'host' value that still carries a trailing ':port' is recognized too.
+
+        PGVectorConfig.host is a free-form string with no port-stripping of its own, so a
+        caller-supplied value like 'svc.cluster.local:5432' must not be misclassified as external.
+        """
+        cfg = PGVectorConfig(host="pgvector.ns.svc.cluster.local:5432", dbname="d", user="u")
+        _conn_from(mock_create_pool)
+        store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        assert "ssl" not in mock_create_pool.call_args.kwargs
+
+    def test_remote_host_defaults_to_verifying_ssl_context(self, mock_create_pool, mock_embedding):
+        """A non-local host defaults to hostname- and chain-verified TLS against the system trust store."""
+        cfg = PGVectorConfig(host="db.example.com", dbname="d", user="u")
+        _conn_from(mock_create_pool)
+        store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        ssl_value = mock_create_pool.call_args.kwargs["ssl"]
+        assert isinstance(ssl_value, ssl.SSLContext)
+        assert ssl_value.check_hostname is True
+        assert ssl_value.verify_mode == ssl.CERT_REQUIRED
+
+    def test_ca_cert_builds_ssl_context(self, mock_create_pool, mock_embedding, pgvector_config):
+        """A ca_cert PEM builds a verifying SSLContext even against a local host -- there is no
+        setting that can downgrade a non-local host back to unverified TLS."""
+        cfg = replace(pgvector_config, ca_cert=_SELF_SIGNED_CERT_PEM)
+        _conn_from(mock_create_pool)
+        store = PGVectorStore(mock_embedding, cfg, collection_name="ai4rag_c")
+        store.add_documents([AI4RAGChunk(text="x", metadata={})])
+        assert isinstance(mock_create_pool.call_args.kwargs["ssl"], ssl.SSLContext)
 
 
 class TestConfigureConnection:

@@ -2,8 +2,8 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import math
 import logging
+import math
 
 import pytest
 from docling_core.types.doc import DoclingDocument
