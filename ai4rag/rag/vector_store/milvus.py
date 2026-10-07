@@ -19,13 +19,10 @@ from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import MilvusConfig, MilvusLiteConfig
-from ai4rag.rag.vector_store.utils import (
-    cleanup_ca_certs as _cleanup_ca_certs,
-    iter_unique_chunks,
-    materialize_ca_cert as _materialize_ca_cert,
-    resolve_embedding_dimension,
-    validate_search_params,
-)
+from ai4rag.rag.vector_store.utils import cleanup_ca_certs as _cleanup_ca_certs
+from ai4rag.rag.vector_store.utils import iter_unique_chunks
+from ai4rag.rag.vector_store.utils import materialize_ca_cert as _materialize_ca_cert
+from ai4rag.rag.vector_store.utils import resolve_embedding_dimension, validate_search_params
 
 __all__ = ["MilvusVectorStore"]
 
