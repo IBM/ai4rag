@@ -61,6 +61,7 @@ def on_pattern_creation(
 ```python
 {
     "name": "Pattern1",
+    "template_id": "simple_rag",
     "iteration": 0,
     "max_combinations": 24,
     "duration_seconds": 134,

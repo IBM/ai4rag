@@ -52,9 +52,7 @@ def get_template_spec(template_id: str) -> RAGTemplateSpec:
     try:
         return _SPECS_BY_ID[template_id]
     except KeyError as exc:
-        raise ValueError(
-            f"Unsupported template_id {template_id!r}. Expected one of {sorted(_SPECS_BY_ID)}."
-        ) from exc
+        raise ValueError(f"Unsupported template_id {template_id!r}. Expected one of {sorted(_SPECS_BY_ID)}.") from exc
 
 
 def template_id_for_class(template_class: type[BaseRAGTemplate]) -> str:
