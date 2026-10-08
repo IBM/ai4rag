@@ -1034,9 +1034,8 @@ class AI4RAGExperiment:
     def _collection_exists(self, collection_name: str) -> bool:
         """
         This method checks if a collection with a given name already exists.
-        Existence is tracked by this run's own bookkeeping
-        (``self.results.collection_names``) rather than by querying the backend,
-        so the check is backend-agnostic and reflects only collections this
+        Existence is tracked by this run's own bookkeeping (``self.results.collection_names``) rather than by querying
+        the backend, so the check is backend-agnostic and reflects only collections this
         experiment created and can safely reuse.
 
         Parameters
@@ -1053,8 +1052,7 @@ class AI4RAGExperiment:
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method returns the name of the collection if the chosen indexing
-        params have already been used to create an index / collection.
+        Return the name of an existing collection with matching indexing parameters.
 
         Parameters
         ----------
