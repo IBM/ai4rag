@@ -117,10 +117,10 @@ def create_placeholder_mapping(
     mapping["CHUNKING_METHOD"] = ch.get("method", "")
     mapping["CHUNK_SIZE"] = ch.get("chunk_size", 512)
     mapping["CHUNK_OVERLAP"] = ch.get("chunk_overlap", 50)
-    kg = settings.get("knowledge_graph") or {}
+    graph_extraction = settings.get("graph_extraction") or {}
     indexing_parameters = output_data.get("indexing", {}).get("pipeline_spec", {}).get("parameters", {})
     mapping["KG_EXTRACTION_CONFIG"] = (
-        kg.get("extraction_config") or indexing_parameters.get("kg_extraction_config") or {"mode": "constrained"}
+        graph_extraction or indexing_parameters.get("graph_extraction_config") or {"mode": "constrained"}
     )
 
     mapping["TEST_DATA_KEY"] = test_data_key

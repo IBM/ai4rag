@@ -914,7 +914,13 @@ class AI4RAGExperiment:
             self.vector_store_config.provider == "neo4j"
             and evaluation_result.indexing_params.get("knowledge_graph") is not None
         ):
-            indexing_payload["knowledge_graph"] = evaluation_result.indexing_params["knowledge_graph"]
+            # The extraction model is already represented by ``generation``.
+            # Keep the public pattern contract limited to graph extraction policy;
+            # model details above are retained internally only for collection reuse.
+            indexing_payload["graph_extraction"] = evaluation_result.indexing_params["knowledge_graph"][
+                "extraction_config"
+            ]
+
         generation_payload = evaluation_result.rag_params.get("generation")
         n_known = len(self.known_observations) if self.known_observations else 0
 

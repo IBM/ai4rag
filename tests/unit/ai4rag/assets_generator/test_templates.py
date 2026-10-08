@@ -403,12 +403,10 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
         "chunk_size": 1024,
         "chunk_overlap": 0,
     }
-    pattern["settings"]["knowledge_graph"] = {
-        "extraction_config": {
-            "mode": "free",
-            "max_entities_per_chunk": 5,
-            "max_relationships_per_chunk": 4,
-        }
+    pattern["settings"]["graph_extraction"] = {
+        "mode": "free",
+        "max_entities_per_chunk": 5,
+        "max_relationships_per_chunk": 4,
     }
     pattern["settings"]["retrieval"].update(
         {
