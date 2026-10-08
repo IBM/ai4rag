@@ -6,9 +6,11 @@
 import asyncio
 import hashlib
 import json
+import logging
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, fields
 from typing import Any
 
@@ -46,6 +48,30 @@ from ai4rag.rag.vector_store.utils import (
 __all__ = ["Neo4jGraphRetrievalConfig", "Neo4jGraphStore"]
 
 _SCHEMA = Neo4jGraphSchema
+
+_NEO4J_GRAPHRAG_LOGGERS = (
+    "neo4j_graphrag",
+    "neo4j_graphrag.experimental.pipeline.config.runner",
+)
+
+
+@contextmanager
+def _suppress_neo4j_graphrag_info_logs() -> Iterator[None]:
+    """Prevent GraphRAG from logging document text passed to the KG pipeline.
+
+    ``SimpleKGPipeline`` logs its complete run parameters at INFO level. Those
+    parameters include every input chunk's text, so retain only warnings and
+    errors while the pipeline processes user content.
+    """
+    configured_loggers = [logging.getLogger(name) for name in _NEO4J_GRAPHRAG_LOGGERS]
+    previous_levels = [configured_logger.level for configured_logger in configured_loggers]
+    try:
+        for configured_logger in configured_loggers:
+            configured_logger.setLevel(max(configured_logger.getEffectiveLevel(), logging.WARNING))
+        yield
+    finally:
+        for configured_logger, previous_level in zip(configured_loggers, previous_levels):
+            configured_logger.setLevel(previous_level)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -240,6 +266,12 @@ class Neo4jGraphStore(BaseVectorStore):
         if not chunks:
             return
 
+        logger.info(
+            "Starting entity extraction for %d chunks (collection=%s).",
+            len(chunks),
+            self._collection_name,
+        )
+
         kg_writer = _CanonicalKGWriter(self._driver, self._config.database, self._collection_name)
         pipeline = SimpleKGPipeline(
             llm=_LLMAdapter(model),
@@ -278,7 +310,8 @@ class Neo4jGraphStore(BaseVectorStore):
             await asyncio.gather(*(_run_one(chunk) for chunk in chunks))
 
         try:
-            asyncio.run(_run_all())
+            with _suppress_neo4j_graphrag_info_logs():
+                asyncio.run(_run_all())
         except RuntimeError as exc:
             raise RuntimeError(
                 "_run_kg_pipeline cannot be called from within a running event loop. "
@@ -298,6 +331,12 @@ class Neo4jGraphStore(BaseVectorStore):
 
         if perform_entity_resolution:
             self._resolve_kg_entities()
+
+        logger.info(
+            "Finished entity extraction for %d chunks (collection=%s).",
+            len(chunks),
+            self._collection_name,
+        )
 
     def _resolve_kg_entities(self) -> None:
         """Merge same-type, same-name entities exclusive to this collection."""
