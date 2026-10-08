@@ -35,11 +35,40 @@ _MAX_COLLECTION_NAME_LENGTH = 63
 _COLLECTION_NAME_SUFFIX_ALPHABET = string.ascii_lowercase + string.digits
 _COLLECTION_NAME_SUFFIX_LENGTH = 8
 
-# Both the Milvus and Neo4j clients accept a certificate path, whereas their
-# configurations accept inline PEM text. Clients may reconnect in background
-# threads, so certificate files must remain available until process exit.
-_CERT_CACHE: dict[str, str] = {}
-_CERT_CACHE_LOCK = threading.Lock()
+
+class _MaterializedCertificateCache:
+    """Manage process-lifetime PEM files created from inline certificates.
+
+    Both the Milvus and Neo4j clients accept a certificate path, whereas their
+    configurations accept inline PEM text. Clients may reconnect in background
+    threads, so certificate files must remain available until process exit.
+    """
+
+    def __init__(self) -> None:
+        self._paths: dict[str, str] = {}
+        self._lock = threading.Lock()
+
+    def materialize(self, cert: str, *, prefix: str) -> str:
+        """Return a process-lifetime PEM file for inline certificate *cert*."""
+        with self._lock:
+            path = self._paths.get(cert)
+            if path is not None and Path(path).exists():
+                return path
+            with tempfile.NamedTemporaryFile(mode="w", prefix=prefix, suffix=".pem", delete=False) as cert_file:
+                cert_file.write(cert)
+                path = cert_file.name
+            self._paths[cert] = path
+            return path
+
+    def cleanup(self) -> None:
+        """Remove all materialized certificate files."""
+        with self._lock:
+            for path in self._paths.values():
+                Path(path).unlink(missing_ok=True)
+            self._paths.clear()
+
+
+_CA_CERT_CACHE = _MaterializedCertificateCache()
 
 
 def materialize_ca_cert(cert: str, *, prefix: str) -> str:
@@ -57,24 +86,13 @@ def materialize_ca_cert(cert: str, *, prefix: str) -> str:
     str
         Path to the materialized certificate.
     """
-    with _CERT_CACHE_LOCK:
-        path = _CERT_CACHE.get(cert)
-        if path is not None and Path(path).exists():
-            return path
-        with tempfile.NamedTemporaryFile(mode="w", prefix=prefix, suffix=".pem", delete=False) as cert_file:
-            cert_file.write(cert)
-            path = cert_file.name
-        _CERT_CACHE[cert] = path
-        return path
+    return _CA_CERT_CACHE.materialize(cert, prefix=prefix)
 
 
 @atexit.register
 def cleanup_ca_certs() -> None:
     """Remove materialized certificate files at interpreter exit."""
-    with _CERT_CACHE_LOCK:
-        for path in _CERT_CACHE.values():
-            Path(path).unlink(missing_ok=True)
-        _CERT_CACHE.clear()
+    _CA_CERT_CACHE.cleanup()
 
 
 def sanitize_collection_name(name: str) -> str:
