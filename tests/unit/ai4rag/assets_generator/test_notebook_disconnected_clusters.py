@@ -58,8 +58,8 @@ class TestDisconnectedClusterDocumentation:
 
         assert "DOCLING_ARTIFACTS_PATH" in full_code, "Notebook must include code to configure DOCLING_ARTIFACTS_PATH"
 
-    def test_notebook_requires_workbench_docling_artifacts(self, indexing_notebook):
-        """The workbench must fail rather than download Docling artifacts at runtime."""
+    def test_notebook_selects_artifacts_after_data_discovery(self, indexing_notebook):
+        """Only the models required by the discovered corpus are validated."""
         code_sources = [
             "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
             for cell in indexing_notebook["cells"]
@@ -67,7 +67,11 @@ class TestDisconnectedClusterDocumentation:
         ]
         full_code = "\n".join(code_sources)
 
-        assert "DOCLING_ARTIFACTS_PATH is required" in full_code
+        assert full_code.index("result = discover_documents") < full_code.index("needs_ocr =")
+        assert 'ocr_extensions = {{".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}}' in full_code
+        assert 'audio_extensions = {{".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}}' in full_code
+        assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in full_code
+        assert "Audio data requires HF_MODEL_DIR" in full_code
         assert "Use a workbench image with the Docling artifacts bundle" in full_code
 
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
@@ -84,6 +88,7 @@ class TestDisconnectedClusterDocumentation:
         assert any(
             "docling_artifacts_path" in call for call in extract_text_calls
         ), "extract_text() call must include docling_artifacts_path parameter"
+        assert any("docling_config=docling_config" in call for call in extract_text_calls)
 
     def test_notebook_includes_appendix_with_download_instructions(self, indexing_notebook):
         """Notebook must include appendix with offline download instructions."""
