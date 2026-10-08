@@ -269,6 +269,17 @@ class TestNeo4jGraphStoreInit:
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
 
+    def test_uses_default_ca_bundle_when_ca_cert_is_omitted(self, mock_driver_cls, mock_embedding, monkeypatch):
+        """Leave TLS trust to the driver when its default CA bundle is configured."""
+        monkeypatch.setenv("SSL_CERT_FILE", "/custom/default-ca-bundle.pem")
+        config = Neo4jConfig(uri="neo4j+s://host:7687", username="neo4j", password="test")
+
+        Neo4jGraphStore(mock_embedding, config, collection_name="ai4rag_col")
+
+        assert config.ca_cert is None
+        assert mock_driver_cls.call_args.args[0] == "neo4j+s://host:7687"
+        assert mock_driver_cls.call_args.kwargs == {"auth": ("neo4j", "test")}
+
     def test_trusts_configured_ca_cert(self, mock_driver_cls, mock_embedding):
         cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
         config = Neo4jConfig(
