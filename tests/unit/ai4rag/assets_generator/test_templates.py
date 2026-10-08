@@ -434,12 +434,15 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
     text = _read_notebook_text(output_path)
     unresolved = sorted(set(re.findall(r"(?<!\{)\{[A-Z_]+\}(?!\})", text)))
     assert unresolved == [], f"Unresolved placeholders: {unresolved}"
+    assert f"## Pattern {pattern['name']}" not in text
     assert "## Setup" in text
     assert "## Summary" in text
     if template == "mass_creating_knowledge_graph":
+        assert f"## {pattern['name']} Knowledge Graph Building Content" in text
         assert "## Process input documents" in text
         assert "Appendix: Downloading Models for Offline Use" in text
     else:
+        assert f"## {pattern['name']} Knowledge Graph Retrieve & Generation Content" in text
         assert "## Next steps" in text
         assert "### Evaluate Response" in text
 
