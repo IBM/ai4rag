@@ -456,7 +456,8 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
         assert "chunked_documents = chunker.split_documents([document])" in code
         assert "vector_store.add_documents(chunked_documents)" in code
         assert "build_knowledge_graph_from_documents" not in code
-        assert "kg_extraction_config={'mode': 'free'" in code
+        assert "kg_extraction_config = {'mode': 'free'" in code
+        assert 'kg_extraction_config["system_instruction"]' in text
     else:
         assert "from ai4rag.rag.template.agentic_rag_template import AgenticRAG" in code
         assert "rag_pattern = AgenticRAG(" in code
