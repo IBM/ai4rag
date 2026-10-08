@@ -71,23 +71,6 @@ def test_llm_adapter_accepts_base_foundation_model_message_response():
     model.chat.assert_called_once_with([{"role": "user", "content": "Extract entities."}])
 
 
-def test_llm_adapter_uses_configured_kg_system_instruction():
-    """A KG-specific instruction takes precedence over a pipeline instruction."""
-    model = MagicMock(model_id="test-model")
-    model.chat.return_value = [{"role": "assistant", "content": '{"nodes": [], "relationships": []}'}]
-
-    _LLMAdapter(model, system_instruction="Extract product concepts only.").invoke(
-        "Extract entities.", system_instruction="Pipeline instruction."
-    )
-
-    model.chat.assert_called_once_with(
-        [
-            {"role": "system", "content": "Extract product concepts only."},
-            {"role": "user", "content": "Extract entities."},
-        ]
-    )
-
-
 # ---------------------------------------------------------------------------
 # Neo4jConfig
 # ---------------------------------------------------------------------------
@@ -172,17 +155,6 @@ class TestKGExtractionConfig:
         assert "relations" not in options
         assert "at most 5 entities" in options["prompt_template"].template
         assert "at most 5 relationships" in options["prompt_template"].template
-
-    def test_system_instruction_is_preserved(self):
-        config = _validate_kg_extraction_config(
-            {"mode": "constrained", "system_instruction": "Extract domain entities only."}
-        )
-
-        assert config["system_instruction"] == "Extract domain entities only."
-
-    def test_system_instruction_must_be_a_string(self):
-        with pytest.raises(TypeError, match="system_instruction"):
-            _validate_kg_extraction_config({"system_instruction": 1})
 
 
 def test_balanced_graph_query_limits_pivots_hops_and_related_chunks():

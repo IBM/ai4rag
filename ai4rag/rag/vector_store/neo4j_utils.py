@@ -85,12 +85,8 @@ def _validate_kg_extraction_config(config: dict[str, Any] | None) -> dict[str, A
     mode = config.get("mode", "constrained")
     if mode not in {"constrained", "free"}:
         raise ValueError("kg_extraction_config.mode must be 'constrained' or 'free'.")
-    system_instruction = config.get("system_instruction")
-    if system_instruction is not None and not isinstance(system_instruction, str):
-        raise TypeError("kg_extraction_config.system_instruction must be a string or None.")
-    system_instruction_config = {"system_instruction": system_instruction} if system_instruction is not None else {}
     if mode == "constrained":
-        return {"mode": mode, **system_instruction_config}
+        return {"mode": mode}
 
     limits = {
         "max_entities_per_chunk": config.get("max_entities_per_chunk"),
@@ -99,7 +95,7 @@ def _validate_kg_extraction_config(config: dict[str, Any] | None) -> dict[str, A
     for name, value in limits.items():
         if not isinstance(value, int) or value < 1:
             raise ValueError(f"kg_extraction_config.{name} must be a positive integer for free extraction.")
-    return {"mode": mode, **limits, **system_instruction_config}
+    return {"mode": mode, **limits}
 
 
 def _kg_pipeline_extraction_options(config: dict[str, Any]) -> dict[str, Any]:
@@ -144,10 +140,9 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
     before the extractor parses the output.
     """
 
-    def __init__(self, model: BaseFoundationModel, system_instruction: str | None = None) -> None:
+    def __init__(self, model: BaseFoundationModel) -> None:
         super().__init__(model_name=model.model_id)
         self._model = model
-        self._system_instruction = system_instruction
 
     def invoke(
         self,
@@ -156,9 +151,8 @@ class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
         system_instruction: str | None = None,
     ):
         messages: list[MessageTyped] = []
-        effective_system_instruction = self._system_instruction or system_instruction
-        if effective_system_instruction:
-            messages.append({"role": "system", "content": effective_system_instruction})
+        if system_instruction:
+            messages.append({"role": "system", "content": system_instruction})
         messages.append({"role": "user", "content": input})
         response = self._model.chat(messages)[0]
         content = (response["content"] if isinstance(response, Mapping) else response.message.content) or ""

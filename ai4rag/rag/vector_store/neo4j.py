@@ -274,7 +274,7 @@ class Neo4jGraphStore(BaseVectorStore):
 
         kg_writer = _CanonicalKGWriter(self._driver, self._config.database, self._collection_name)
         pipeline = SimpleKGPipeline(
-            llm=_LLMAdapter(model, system_instruction=self._kg_extraction_config.get("system_instruction")),
+            llm=_LLMAdapter(model),
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
             from_pdf=False,

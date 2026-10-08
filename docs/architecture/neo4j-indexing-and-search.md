@@ -98,10 +98,6 @@ Each chunk is therefore one KG extraction input; an upstream chunk that is too l
 | `constrained` (default) | Uses ai4rag's fixed entity and relationship type sets. |
 | `free` | Passes `schema="FREE"`, lets the model choose types, and uses positive per-chunk entity and relationship limits. |
 
-Set `kg_extraction_config["system_instruction"]` to add a system message for entity and relationship
-extraction. This is independent from the foundation model's answer-generation prompt. When set, it takes
-precedence over a system instruction supplied by the GraphRAG pipeline.
-
 The pipeline builds a temporary lexical graph for extraction, using `__AI4RAG_KG_SOURCE_DOCUMENT__` and `__AI4RAG_KG_SOURCE_CHUNK__` labels.
 These are distinct from model-extracted entity types such as `Document` or `Chunk`.
 ai4rag's canonical graph writer stores only the extracted entities and their relationships.
