@@ -462,4 +462,4 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
         assert "rag_pattern = AgenticRAG(" in code
         assert "search_kwargs={'entity_pivot_limit': 3" in code
         assert "**{'entity_pivot_limit': 3" in code
-        assert "It does not traverse `NEXT_CHUNK`" in text
+        assert "embedding_model = OpenAIEmbeddingModel(" in code
