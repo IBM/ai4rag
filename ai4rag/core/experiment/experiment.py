@@ -50,6 +50,7 @@ from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.template.base_template import BaseRAGTemplate
+from ai4rag.rag.template.registry import template_id_for_class
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
@@ -942,6 +943,7 @@ class AI4RAGExperiment:
 
         payload = {
             "name": pattern_name or evaluation_result.pattern_name,
+            "template_id": template_id_for_class(self.rag_template),
             "max_combinations": self.search_space.max_combinations,
             "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
