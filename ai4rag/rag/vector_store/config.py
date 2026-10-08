@@ -4,9 +4,10 @@
 # -----------------------------------------------------------------------------
 import os
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import ClassVar
+from urllib.parse import urlsplit
 
 from ai4rag.utils.network import ensure_safe_url
 
@@ -340,8 +341,16 @@ class Neo4jConfig(BaseVectorStoreConfig):
     Parameters
     ----------
     uri : str
-        Bolt or neo4j URI. Use ``neo4j+s://host:7687`` for encrypted (AuraDB /
-        self-signed TLS), ``neo4j://host:7687`` for plaintext.
+        Bolt or neo4j URI. Use ``neo4j+s://host:7687`` or
+        ``bolt+s://host:7687`` for TLS. When ``ca_cert`` is supplied, the
+        store normalizes either ``+s`` URI to its base scheme internally and
+        explicitly enables encrypted, CA-verified transport because the
+        Neo4j driver does not permit custom certificate configuration with a
+        ``+s`` URI.
+    ca_cert : str | None
+        PEM-encoded CA certificate used to verify a Neo4j server using a
+        self-signed or private-CA TLS certificate. Leave ``None`` when the
+        server certificate chains to a publicly trusted CA.
     username : str, default="neo4j"
         Database user.
     password : str
@@ -360,29 +369,50 @@ class Neo4jConfig(BaseVectorStoreConfig):
     """
 
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
-        ("NEO4J_URI", "Bolt or neo4j URI. Use neo4j+s://host:7687 for TLS. (required)"),
+        (
+            "NEO4J_URI",
+            "".join(
+                (
+                    "Bolt or neo4j URI. Use neo4j+s://host:7687 for TLS; ",
+                    "NEO4J_CA_CERT supplies a private CA. (required)",
+                )
+            ),
+        ),
         ("NEO4J_USERNAME", "Database user (default neo4j)."),
         ("NEO4J_PASSWORD", "Database password. (required)"),
         ("NEO4J_DATABASE", "Neo4j database name (default neo4j)."),
+        ("NEO4J_CA_CERT", "PEM-encoded CA certificate for self-signed TLS endpoints. (optional)"),
     )
 
     uri: str
     username: str = "neo4j"
-    password: str = ""
+    password: str = field(default="", repr=False)
     database: str = "neo4j"
+    ca_cert: str | None = field(default=None, repr=False)
     provider: str = "neo4j"
 
     def __post_init__(self) -> None:
-        """Reject a plaintext ``neo4j://``/``bolt://`` URI against a non-local, non-cluster host.
+        """Validate the URI against the configured TLS verification mode.
 
-        ``+s``/``+ssc`` variants (encrypted) are always allowed; a verification-bypass
-        audit for ``+ssc`` ("encrypted but unverified") is a separate concern left for a
-        follow-up, since it is not part of this check.
+        The Neo4j driver only accepts ``trusted_certificates`` together with
+        a base ``neo4j://`` or ``bolt://`` URI. When :attr:`ca_cert` is set,
+        :class:`Neo4jGraphStore` normalizes a ``+s`` URI to its base scheme
+        for the driver and explicitly enables encrypted, CA-verified transport.
+        Without a custom CA, only ``+s`` URIs are accepted for remote hosts.
         """
+        scheme = urlsplit(self.uri).scheme.lower()
+        if self.ca_cert:
+            if scheme not in {"neo4j", "bolt", "neo4j+s", "bolt+s"}:
+                raise ValueError(
+                    "Neo4jConfig.ca_cert requires a 'neo4j://', 'bolt://', 'neo4j+s://', or 'bolt+s://' URI. "
+                    "The store enables encrypted, CA-verified transport; '+ssc' URIs disable certificate "
+                    "verification and are not supported."
+                )
+            return
         ensure_safe_url(
             self.uri,
             context="Neo4jConfig.uri",
-            secure_schemes=frozenset({"neo4j+s", "bolt+s", "neo4j+ssc", "bolt+ssc"}),
+            secure_schemes=frozenset({"neo4j+s", "bolt+s"}),
             insecure_schemes=frozenset({"neo4j", "bolt"}),
         )
 
@@ -405,6 +435,7 @@ class Neo4jConfig(BaseVectorStoreConfig):
             username=os.environ.get("NEO4J_USERNAME", "neo4j"),
             password=os.environ["NEO4J_PASSWORD"],
             database=os.environ.get("NEO4J_DATABASE", "neo4j"),
+            ca_cert=os.environ.get("NEO4J_CA_CERT"),
         )
 
 

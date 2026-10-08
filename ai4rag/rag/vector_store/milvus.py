@@ -2,10 +2,6 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-import atexit
-import tempfile
-import threading
-from pathlib import Path
 from typing import Any
 
 from pymilvus import (
@@ -23,64 +19,12 @@ from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import MilvusConfig, MilvusLiteConfig
-from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension, validate_search_params
+from ai4rag.rag.vector_store.utils import cleanup_ca_certs as _cleanup_ca_certs
+from ai4rag.rag.vector_store.utils import iter_unique_chunks
+from ai4rag.rag.vector_store.utils import materialize_ca_cert as _materialize_ca_cert
+from ai4rag.rag.vector_store.utils import resolve_embedding_dimension, validate_search_params
 
 __all__ = ["MilvusVectorStore"]
-
-# Process-lifetime cache of PEM text -> materialized file path.
-#
-# ``MilvusClient`` takes a certificate *path* (``server_pem_path``), not bytes, so
-# an inline PEM must be written to disk. Crucially, pymilvus re-reads that path
-# not only at connect time but also from a background thread when it transparently
-# reconnects an idle gRPC channel (``GrpcHandler.check_state_and_reconnect_later``
-# -> ``reconnect`` -> ``_create_grpc_channel``). That thread can outlive the store,
-# so the file must live for as long as any connection might reconnect — i.e. the
-# whole process. Deleting it on ``close()`` or garbage collection races the
-# reconnect and raises ``FileNotFoundError``. We therefore materialize each
-# distinct certificate exactly once, keep it until interpreter exit, and share it
-# across stores; an HPO run over one ``MILVUS_CA_CERT`` creates a single file
-# rather than one per evaluated pattern.
-_CERT_CACHE: dict[str, str] = {}
-_CERT_CACHE_LOCK = threading.Lock()
-
-
-def _materialize_ca_cert(cert: str) -> str:
-    """Return a filesystem path to *cert*, writing it to a process-lifetime tempfile once.
-
-    Identical certificate text reuses the same file. ``NamedTemporaryFile`` creates
-    it with owner-only permissions; :func:`_cleanup_ca_certs` removes every
-    cached file at interpreter exit.
-
-    Parameters
-    ----------
-    cert : str
-        PEM-encoded server/CA certificate text.
-
-    Returns
-    -------
-    str
-        Path to the temporary certificate file.
-    """
-    with _CERT_CACHE_LOCK:
-        path = _CERT_CACHE.get(cert)
-        if path is not None and Path(path).exists():
-            return path
-        with tempfile.NamedTemporaryFile(
-            mode="w", prefix="ai4rag-milvus-cert-", suffix=".pem", delete=False
-        ) as cert_file:
-            cert_file.write(cert)
-            path = cert_file.name
-        _CERT_CACHE[cert] = path
-        return path
-
-
-@atexit.register
-def _cleanup_ca_certs() -> None:
-    """Remove every materialized certificate file at interpreter exit."""
-    with _CERT_CACHE_LOCK:
-        for path in _CERT_CACHE.values():
-            Path(path).unlink(missing_ok=True)
-        _CERT_CACHE.clear()
 
 
 class MilvusVectorStore(BaseVectorStore):
@@ -178,7 +122,7 @@ class MilvusVectorStore(BaseVectorStore):
         if config.token:
             connect_kwargs["token"] = config.token
         if config.ca_cert:
-            connect_kwargs["server_pem_path"] = _materialize_ca_cert(config.ca_cert)
+            connect_kwargs["server_pem_path"] = _materialize_ca_cert(config.ca_cert, prefix="ai4rag-milvus-cert-")
         return connect_kwargs
 
     def _create_collection(self) -> None:
