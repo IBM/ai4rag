@@ -566,19 +566,17 @@ class TestBuildDoclingFormatOptions:
         with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
-    def test_ocr_requires_docling_artifacts_environment(self, monkeypatch):
-        """OCR must require a workbench-configured Docling artifacts directory."""
+    def test_ocr_allows_connected_model_download_without_artifacts(self, monkeypatch):
+        """Without offline artifacts, leave model paths unset for Docling download."""
         from ai4rag.utils.data import text_extraction as te
 
         monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
-        monkeypatch.setattr(
-            te,
-            "_try_resolve_wheel_rapidocr_model_paths",
-            lambda: {"det_model_path": "/models/det.onnx"},
-        )
+        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
 
-        with pytest.raises(FileNotFoundError, match="DOCLING_ARTIFACTS_PATH is not set"):
-            te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+        options = te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+
+        assert options.det_model_path is None
+        assert options.rec_model_path is None
 
     def test_missing_rapidocr_package_raises(self, monkeypatch):
         """A non-importable rapidocr on the OCR path fails fast with an actionable error."""

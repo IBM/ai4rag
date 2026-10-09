@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 """Offline Hugging Face Whisper backend for Docling audio extraction."""
 
+import json
 import mimetypes
 from pathlib import Path
 
@@ -115,7 +116,26 @@ def _validate_model_directory(raw_path: str | None) -> str:
         )
 
     model_dir = Path(raw_path).expanduser().resolve()
-    required = ("config.json", "preprocessor_config.json", "tokenizer_config.json")
+    config_path = model_dir / "config.json"
+    if not model_dir.is_dir() or not config_path.is_file():
+        raise FileNotFoundError(
+            f"HF_MODEL_DIR={model_dir} is not a local Transformers model directory containing config.json."
+        )
+
+    try:
+        with config_path.open(encoding="utf-8") as config_file:
+            model_config = json.load(config_file)
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"HF_MODEL_DIR={model_dir} has an invalid config.json.") from exc
+
+    model_type = model_config.get("model_type", "") if isinstance(model_config, dict) else ""
+    if model_type != "whisper":
+        raise ValueError(
+            "Audio extraction supports only Hugging Face Whisper models; "
+            f"HF_MODEL_DIR={model_dir} declares model_type={model_type!r}."
+        )
+
+    required = ("preprocessor_config.json", "tokenizer_config.json")
     missing = [name for name in required if not (model_dir / name).is_file()]
     has_weights = any(
         (model_dir / name).is_file()

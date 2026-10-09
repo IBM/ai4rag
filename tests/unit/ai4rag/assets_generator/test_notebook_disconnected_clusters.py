@@ -72,7 +72,33 @@ class TestDisconnectedClusterDocumentation:
         assert 'audio_extensions = {{".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}}' in full_code
         assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in full_code
         assert "Audio data requires HF_MODEL_DIR" in full_code
+        assert "model_config = json.load(config_file)" in full_code
+        assert 'model_type != "whisper"' in full_code
+        assert "Audio data supports only Hugging Face Whisper models" in full_code
         assert "Use a workbench image with the Docling artifacts bundle" in full_code
+
+    def test_offline_docling_validation_is_a_dedicated_cell(self, indexing_notebook):
+        """Connected runners can skip only offline Docling validation."""
+        cells = indexing_notebook["cells"]
+        validation_heading_index = next(
+            index
+            for index, cell in enumerate(cells)
+            if cell["cell_type"] == "markdown"
+            and "### Validate Offline Configuration" in "".join(cell["source"])
+        )
+        validation_cell = cells[validation_heading_index + 1]
+        validation_source = "".join(validation_cell["source"])
+
+        assert validation_cell["cell_type"] == "code"
+        assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in validation_source
+        assert "RapidOCR models are missing" in validation_source
+
+        shared_cell = cells[validation_heading_index - 1]
+        shared_source = "".join(shared_cell["source"])
+        assert shared_cell["cell_type"] == "code"
+        assert "needs_ocr =" in shared_source
+        assert "DoclingExtractionConfig" in shared_source
+        assert "RapidOCR models are missing" not in shared_source
 
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
         """The extract_text() call must include docling_artifacts_path parameter."""

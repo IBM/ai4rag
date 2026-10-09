@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 """Tests for the offline local Hugging Face ASR adapter."""
 
+import json
 import sys
 from types import SimpleNamespace
 from unittest import mock
@@ -20,7 +21,8 @@ from ai4rag.utils.data.local_hf_asr_pipeline import (
 def _model_directory(tmp_path):
     """Create the minimum validated local Transformers model layout."""
     for name in ("config.json", "preprocessor_config.json", "tokenizer_config.json", "model.safetensors"):
-        (tmp_path / name).write_text("{}", encoding="utf-8")
+        content = json.dumps({"model_type": "whisper"}) if name == "config.json" else "{}"
+        (tmp_path / name).write_text(content, encoding="utf-8")
     return tmp_path
 
 
@@ -39,10 +41,29 @@ def test_validate_model_directory_rejects_missing_path():
 
 def test_validate_model_directory_reports_missing_files(tmp_path):
     """An incomplete modelcar mount produces a useful error."""
-    (tmp_path / "config.json").write_text("{}", encoding="utf-8")
+    (tmp_path / "config.json").write_text('{"model_type": "whisper"}', encoding="utf-8")
 
     with pytest.raises(FileNotFoundError, match="preprocessor_config.json"):
         _validate_model_directory(str(tmp_path))
+
+
+@pytest.mark.parametrize("model_type", ["", "wav2vec2"])
+def test_validate_model_directory_rejects_non_whisper_model(tmp_path, model_type):
+    """Only local Whisper Transformers models are accepted for audio extraction."""
+    model_dir = _model_directory(tmp_path)
+    (model_dir / "config.json").write_text(json.dumps({"model_type": model_type}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="only Hugging Face Whisper models"):
+        _validate_model_directory(str(model_dir))
+
+
+def test_validate_model_directory_rejects_invalid_model_config(tmp_path):
+    """A malformed model configuration must fail before loading Transformers."""
+    model_dir = _model_directory(tmp_path)
+    (model_dir / "config.json").write_text("not json", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="invalid config.json"):
+        _validate_model_directory(str(model_dir))
 
 
 def test_load_transcriber_uses_local_files_only(monkeypatch, tmp_path):

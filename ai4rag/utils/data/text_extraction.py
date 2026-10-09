@@ -547,17 +547,17 @@ def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:
 
 
 def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
-    """Fail fast unless the configured artifacts provide RapidOCR models.
+    """Fail fast unless configured artifacts provide RapidOCR models.
 
-    This is called only after both explicit model paths and bundled RapidOCR
-    wheel models have been ruled out. Raising here prevents Docling from
-    falling back to its runtime model downloader.
+    This is called only for disconnected-style runs with a configured artifacts
+    path, after both explicit model paths and bundled RapidOCR wheel models
+    have been ruled out.
     """
     artifacts = _resolve_artifacts_path(None)
     if artifacts is None:
         raise FileNotFoundError(
             "RapidOCR model files are unavailable. Set DOCLING_ARTIFACTS_PATH to an image-baked "
-            "RapidOCR bundle or pass ocr_*_model_path explicitly. Runtime Docling model downloads are disabled."
+            "RapidOCR bundle or pass ocr_*_model_path explicitly."
         )
     ocr_root = artifacts / "RapidOcr"
     missing = [str(ocr_root / rel) for rel in _rapidocr_artifacts_rel_paths(ocr_lang) if not (ocr_root / rel).is_file()]
@@ -568,22 +568,6 @@ def _validate_rapidocr_artifacts(ocr_lang: tuple[str, ...]) -> None:
             + "\nBake them into the AutoRAG image (see tmp/Containerfile.autorag-dev) or pass "
             "ocr_*_model_path explicitly. Current PyPI rapidocr wheels no longer ship ONNX models."
         )
-
-
-def _require_docling_artifacts_path_for_ocr() -> Path:
-    """Return the configured Docling artifacts path or fail before OCR starts.
-
-    Workbenches use a baked Docling artifacts bundle. Requiring its environment
-    variable for every OCR run keeps their configuration aligned with the
-    AutoRAG container and avoids accidental downloads from worker processes.
-    """
-    artifacts = _resolve_artifacts_path(None)
-    if artifacts is None:
-        raise FileNotFoundError(
-            "OCR was requested (do_ocr=True), but DOCLING_ARTIFACTS_PATH is not set to a non-empty "
-            "Docling artifacts directory. Set it in the workbench environment to the image-baked bundle."
-        )
-    return artifacts
 
 
 def _require_cuda_ocr_provider(config: DoclingExtractionConfig) -> None:
@@ -609,15 +593,15 @@ def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
     Resolution order when custom paths are omitted:
 
     1. ONNX files shipped inside the ``rapidocr`` package (older / some local installs)
-    2. Otherwise validate the models under ``DOCLING_ARTIFACTS_PATH/RapidOcr``
-       before allowing Docling to load them. This prevents its runtime model
-       downloader from being used.
+    2. When ``DOCLING_ARTIFACTS_PATH`` is configured, validate the models under
+       ``DOCLING_ARTIFACTS_PATH/RapidOcr`` before allowing Docling to load them.
+    3. Without configured artifacts, leave model paths unset so connected
+       environments can use Docling's normal model downloader.
     """
     kwargs: dict[str, Any] = {
         "lang": list(config.ocr_lang),
         "force_full_page_ocr": False,
     }
-    _require_docling_artifacts_path_for_ocr()
     custom_paths = {
         "det_model_path": config.ocr_det_model_path,
         "cls_model_path": config.ocr_cls_model_path,
@@ -635,7 +619,8 @@ def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
         kwargs.update(wheel_paths)
         return RapidOcrOptions(**kwargs)
 
-    _validate_rapidocr_artifacts(config.ocr_lang)
+    if _resolve_artifacts_path(None) is not None:
+        _validate_rapidocr_artifacts(config.ocr_lang)
     return RapidOcrOptions(**kwargs)
 
 
