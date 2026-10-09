@@ -392,8 +392,9 @@ class TestAddDocuments:
             return MagicMock()
 
         try:
-            with caplog.at_level(logging.INFO), patch(
-                "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+            with (
+                caplog.at_level(logging.INFO),
+                patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)),
             ):
                 with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                     pipeline_cls.return_value.run_async.side_effect = run_pipeline
@@ -411,8 +412,9 @@ class TestAddDocuments:
         async def run_pipeline(*args, **kwargs):
             return MagicMock()
 
-        with caplog.at_level(logging.INFO), patch(
-            "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+        with (
+            caplog.at_level(logging.INFO),
+            patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)),
         ):
             with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
