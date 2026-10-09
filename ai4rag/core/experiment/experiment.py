@@ -50,6 +50,7 @@ from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.template.base_template import BaseRAGTemplate
+from ai4rag.rag.template.registry import template_id_for_class
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
@@ -942,6 +943,7 @@ class AI4RAGExperiment:
 
         payload = {
             "name": pattern_name or evaluation_result.pattern_name,
+            "template_id": template_id_for_class(self.rag_template),
             "max_combinations": self.search_space.max_combinations,
             "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
@@ -1032,9 +1034,8 @@ class AI4RAGExperiment:
     def _collection_exists(self, collection_name: str) -> bool:
         """
         This method checks if a collection with a given name already exists.
-        Existence is tracked by this run's own bookkeeping
-        (``self.results.collection_names``) rather than by querying the backend,
-        so the check is backend-agnostic and reflects only collections this
+        Existence is tracked by this run's own bookkeeping (``self.results.collection_names``) rather than by querying
+        the backend, so the check is backend-agnostic and reflects only collections this
         experiment created and can safely reuse.
 
         Parameters
@@ -1051,8 +1052,7 @@ class AI4RAGExperiment:
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
-        This method returns the name of the collection if the chosen indexing
-        params have already been used to create an index / collection.
+        Return the name of an existing collection with matching indexing parameters.
 
         Parameters
         ----------

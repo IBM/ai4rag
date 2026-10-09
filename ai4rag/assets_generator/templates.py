@@ -3,11 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import json
+import warnings
 from pathlib import Path
 from typing import Any
 
 from ai4rag import __version__
 from ai4rag.assets_generator.notebook import Notebook
+from ai4rag.rag.template.registry import get_template_spec
 from ai4rag.rag.vector_store import get_vector_store_env_vars
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 
@@ -67,6 +69,21 @@ def create_placeholder_mapping(
 
     mapping["AI4RAG_VERSION"] = __version__
     mapping["PATTERN_NAME"] = output_data.get("name", "")
+    template_id = output_data.get("template_id")
+    if template_id is None:
+        # Patterns written before template_id was added generated SimpleRAG
+        # notebooks. Retain that behaviour during the schema transition.
+        warnings.warn(
+            "Pattern has no template_id; generating a legacy SimpleRAG notebook. "
+            "Regenerate the pattern to persist its selected template.",
+            UserWarning,
+            stacklevel=2,
+        )
+        template_id = "simple_rag"
+    template_spec = get_template_spec(template_id)
+    mapping["TEMPLATE_ID"] = template_spec.template_id
+    mapping["RAG_TEMPLATE_IMPORT"] = f"from {template_spec.import_path} import {template_spec.template_class.__name__}"
+    mapping["RAG_TEMPLATE_CLASS"] = template_spec.template_class.__name__
     settings = output_data.get("settings", {})
     fm = settings.get("generation", {})
     mapping["FM_MODEL_ID"] = fm.get("model_id", "")
