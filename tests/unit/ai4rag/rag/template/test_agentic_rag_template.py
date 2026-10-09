@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 
 import json
+import warnings
 from types import SimpleNamespace
 
 import httpx
@@ -80,6 +81,21 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
         "question": "question",
     }
     assert [call.args[0] for call in retriever.retrieve.call_args_list] == ["question", "focused search"]
+
+
+def test_agent_initialization_does_not_emit_lock_schema_warning(mocker):
+    """The invocation lock remains opaque while LangChain creates tool schemas."""
+    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    foundation_model = mocker.MagicMock()
+    foundation_model.system_message_text = "Answer from context."
+    retriever = mocker.MagicMock()
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        warnings.simplefilter("always")
+        AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
+
+    assert create_agent.called
+    assert not any("allocate_lock" in str(warning.message) for warning in caught_warnings)
 
 
 def test_agentic_rag_uses_langchain_agent(rag, mocker):
