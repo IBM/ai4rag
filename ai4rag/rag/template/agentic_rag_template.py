@@ -51,7 +51,9 @@ class _AgentRunContext:
     tool_counts: dict[str, int]
     max_retrieval_steps: int
     retrieval_kwargs: dict[str, Any]
-    state_lock: Lock
+    # ``threading.Lock`` is a factory function in Python 3.12, not a type.
+    # The lock is invocation-scoped runtime state, not input to validate.
+    state_lock: Any
 
 
 class AgenticRAG(BaseRAGTemplate):
