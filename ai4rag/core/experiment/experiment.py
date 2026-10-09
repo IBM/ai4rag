@@ -947,6 +947,7 @@ class AI4RAGExperiment:
             evaluation_results=evaluation_results_json,
             **({"conversations": conversations} if conversations else {}),
         )
+
     @staticmethod
     def _conversations_from_response(inference_response: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Return conversation records emitted by templates that support agent trajectories."""
