@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import atexit
+import ssl
 import tempfile
 import threading
 from pathlib import Path
@@ -30,8 +31,8 @@ __all__ = ["MilvusVectorStore"]
 # Process-lifetime cache of PEM text -> materialized file path.
 #
 # ``MilvusClient`` takes a certificate *path* (``server_pem_path``), not bytes, so
-# an inline PEM must be written to disk. Crucially, pymilvus re-reads that path
-# not only at connect time but also from a background thread when it transparently
+# inline or default-context CA certificates must be written to disk. Crucially,
+# pymilvus re-reads that path not only at connect time but also from a background thread when it transparently
 # reconnects an idle gRPC channel (``GrpcHandler.check_state_and_reconnect_later``
 # -> ``reconnect`` -> ``_create_grpc_channel``). That thread can outlive the store,
 # so the file must live for as long as any connection might reconnect — i.e. the
@@ -99,9 +100,10 @@ class MilvusVectorStore(BaseVectorStore):
         Model used to embed documents and queries.
     config : MilvusConfig | MilvusLiteConfig
         Connection parameters. A :class:`MilvusConfig` connects to a remote server
-        (TLS via an ``https://`` URI; ``config.ca_cert`` supplies a self-signed
-        CA certificate, materialized to a temporary file and passed to
-        ``MilvusClient`` as ``server_pem_path``). A :class:`MilvusLiteConfig` opens
+        (TLS via an ``https://`` URI; ``config.ca_cert`` supplies an explicit
+        CA certificate, otherwise Python's default SSL context supplies the
+        loaded CAs. The PEM bundle is materialized to a temporary file and passed
+        to ``MilvusClient`` as ``server_pem_path``). A :class:`MilvusLiteConfig` opens
         the embedded engine backed by its local ``db_path``.
     distance_metric : str
         Distance metric for vector similarity (default ``"cosine"``).
@@ -124,10 +126,10 @@ class MilvusVectorStore(BaseVectorStore):
 
         The ``MilvusClient`` is built according to the config type: a
         :class:`MilvusLiteConfig` opens the embedded engine at its local
-        ``db_path``; a :class:`MilvusConfig` connects to a remote server and, when
-        ``config.ca_cert`` is set, materializes its PEM text to a temporary
-        file (see :func:`_materialize_ca_cert`) passed as ``server_pem_path``
-        for TLS verification. The target collection — with its dense, sparse/BM25,
+        ``db_path``; a :class:`MilvusConfig` connects to a remote server. TLS uses
+        explicit ``config.ca_cert`` PEM text or the CAs loaded by Python's default
+        SSL context, materialized to a temporary file (see :func:`_materialize_ca_cert`)
+        passed as ``server_pem_path``. The target collection — with its dense, sparse/BM25,
         and JSON fields — is created only when it does not already exist.
 
         Parameters
@@ -157,9 +159,11 @@ class MilvusVectorStore(BaseVectorStore):
 
         For :class:`MilvusLiteConfig` the ``uri`` is the local database file path
         (the embedded engine needs no auth or TLS). For :class:`MilvusConfig` the
-        ``uri`` is the server URL, with an optional ``token`` and, when a
-        self-signed ``ca_cert`` is supplied, a ``server_pem_path`` pointing at
-        the materialized certificate file.
+        ``uri`` is the server URL, with an optional ``token``. Explicit ``ca_cert``
+        takes precedence; HTTPS connections without it export the CAs loaded by
+        :func:`ssl.create_default_context`. The resulting PEM bundle is materialized
+        and supplied as ``server_pem_path``. OpenSSL CA directories are loaded lazily,
+        so their certificates may be absent from a fresh context's export.
 
         Parameters
         ----------
@@ -170,6 +174,14 @@ class MilvusVectorStore(BaseVectorStore):
         -------
         dict[str, Any]
             Keyword arguments to pass to ``MilvusClient``.
+
+        Raises
+        ------
+        ValueError
+            If an HTTPS connection has no explicit certificate and Python's
+            default SSL context contains no loaded CA certificates.
+        ssl.SSLError
+            If Python cannot load its default trust configuration.
         """
         if isinstance(config, MilvusLiteConfig):
             return {"uri": config.db_path}
@@ -179,6 +191,16 @@ class MilvusVectorStore(BaseVectorStore):
             connect_kwargs["token"] = config.token
         if config.ca_cert:
             connect_kwargs["server_pem_path"] = _materialize_ca_cert(config.ca_cert)
+        elif config.uri.startswith("https://"):
+            context = ssl.create_default_context()
+            certificates = context.get_ca_certs(binary_form=True)
+            if not certificates:
+                raise ValueError(
+                    "No CA certificates loaded from Python's default trust store. "
+                    "Provide MilvusConfig.ca_cert explicitly."
+                )
+            ca_bundle = "".join(ssl.DER_cert_to_PEM_cert(cert) for cert in certificates)
+            connect_kwargs["server_pem_path"] = _materialize_ca_cert(ca_bundle)
         return connect_kwargs
 
     def _create_collection(self) -> None:

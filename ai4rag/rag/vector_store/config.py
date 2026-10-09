@@ -74,8 +74,11 @@ class MilvusConfig(BaseVectorStoreConfig):
     certificate signed by a self-signed or private CA, pass the CA/server
     certificate as PEM text via ``ca_cert``;
     :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore` materializes it to
-    a temporary file for pymilvus to verify against. Endpoints with publicly
-    trusted certificates need no ``ca_cert``.
+    a temporary file for pymilvus to verify against. Without ``ca_cert``, HTTPS
+    connections use the CAs loaded by Python's default SSL context, exported to
+    a temporary PEM bundle. This includes mounted CA bundles when discoverable
+    through Python's default trust configuration. Lazily loaded OpenSSL CA
+    directory entries may be absent; pass ``ca_cert`` explicitly in that case.
 
     Parameters
     ----------
@@ -86,8 +89,9 @@ class MilvusConfig(BaseVectorStoreConfig):
         Authentication token (``"user:password"``). ``None`` for unauthenticated.
     ca_cert : str | None
         PEM-encoded server/CA certificate used to verify a TLS connection.
-        Required only for self-signed or private-CA endpoints; leave ``None``
-        when the server uses a publicly trusted certificate.
+        Takes precedence over default CA discovery. When unset, HTTPS connections
+        use the CAs loaded by Python's default SSL context. Supply PEM text if the
+        server's CA is absent from that context; this parameter is not a file path.
     provider : str, default="milvus"
         Name of the provider used in the system.
 

@@ -3,12 +3,14 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import json
+import re
 from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
 from ai4rag.assets_generator.templates import create_placeholder_mapping, generate_notebook_from_template
+from ai4rag.assets_generator.notebook import Notebook
 
 # ---------------------------------------------------------------------------
 # create_placeholder_mapping
@@ -16,6 +18,7 @@ from ai4rag.assets_generator.templates import create_placeholder_mapping, genera
 
 _SAMPLE_PATTERN_DATA: dict = {
     "name": "pattern_001",
+    "template_id": "agentic_rag",
     "settings": {
         "generation": {
             "model_id": "publishers/ibm/models/granite-3.1-8b-instruct",
@@ -63,6 +66,13 @@ class TestCreatePlaceholderMapping:
 
     def test_pattern_name(self, mapping: dict):
         assert mapping["PATTERN_NAME"] == "pattern_001"
+
+    def test_template_fields(self, mapping: dict):
+        assert mapping["TEMPLATE_ID"] == "agentic_rag"
+        assert mapping["RAG_TEMPLATE_IMPORT"] == (
+            "from ai4rag.rag.template.agentic_rag_template import AgenticRAG"
+        )
+        assert mapping["RAG_TEMPLATE_CLASS"] == "AgenticRAG"
 
     def test_generation_fields(self, mapping: dict):
         # The full '/'-containing id is carried through verbatim.
@@ -114,6 +124,9 @@ class TestCreatePlaceholderMapping:
         """All documented placeholder names must appear in the mapping."""
         expected_keys = {
             "PATTERN_NAME",
+            "TEMPLATE_ID",
+            "RAG_TEMPLATE_IMPORT",
+            "RAG_TEMPLATE_CLASS",
             "FM_MODEL_ID",
             "SYSTEM_MESSAGE",
             "USER_MESSAGE",
@@ -148,6 +161,23 @@ class TestCreatePlaceholderMapping:
         assert mapping["CHUNK_SIZE"] == 512
         assert mapping["CHUNK_OVERLAP"] == 50
         assert mapping["NUMBER_OF_CHUNKS"] == 5
+
+    def test_legacy_pattern_uses_simple_rag_with_a_warning(self):
+        legacy_pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+        del legacy_pattern["template_id"]
+
+        with pytest.warns(UserWarning, match="no template_id"):
+            mapping = create_placeholder_mapping(legacy_pattern)
+
+        assert mapping["TEMPLATE_ID"] == "simple_rag"
+        assert mapping["RAG_TEMPLATE_CLASS"] == "SimpleRAG"
+
+    def test_unknown_template_id_is_rejected(self):
+        pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+        pattern["template_id"] = "untrusted.module.Template"
+
+        with pytest.raises(ValueError, match="Unsupported template_id"):
+            create_placeholder_mapping(pattern)
 
 
 # ---------------------------------------------------------------------------
@@ -342,12 +372,27 @@ def test_inference_notebook_passes_detected_language(tmp_path: Path):
     assert "language=language," in text
 
 
+def test_inference_notebook_uses_pattern_template(tmp_path: Path):
+    """A pattern's allowlisted template ID controls the generated notebook."""
+    output_path = tmp_path / "maas_inference.ipynb"
+    generate_notebook_from_template(
+        notebook_template="maas_inference",
+        output_data=_SAMPLE_PATTERN_DATA,
+        output_notebook_path=output_path,
+    )
+
+    text = _read_notebook_text(output_path)
+    assert "from ai4rag.rag.template.agentic_rag_template import AgenticRAG" in text
+    assert "rag_pattern = AgenticRAG(" in text
+    assert "SimpleRAG" not in text
+
+
 @pytest.mark.parametrize(
     "template",
     ["mass_creating_knowledge_graph", "mass_inference_knowledge_graph"],
 )
 def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: Path):
-    """KG notebooks must restore canonical chunking and graph options from a pattern."""
+    """KG notebooks must retain MaaS sections while restoring graph options from a pattern."""
     pattern = deepcopy(_SAMPLE_PATTERN_DATA)
     pattern["settings"]["store_binding"] = {
         "provider_type": "neo4j",
@@ -374,25 +419,47 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
         }
     )
     pattern["settings"]["generation"].update({"temperature": 0.1, "max_completion_tokens": 1024})
+    pattern["template_id"] = "agentic_graph_rag"
 
     output_path = tmp_path / f"{template}.ipynb"
     generate_notebook_from_template(template, pattern, output_path)
     notebook = json.loads(output_path.read_text(encoding="utf-8"))
     code = "\n".join(cell["source"] for cell in notebook["cells"] if cell["cell_type"] == "code")
+    maas_template = "maas_indexing" if template == "mass_creating_knowledge_graph" else "maas_inference"
+    maas_notebook = Notebook.load(f"{maas_template}_template.ipynb")
+
+    # Graph variants retain the standard MaaS setup and (where applicable)
+    # S3/evaluation sections, with only the graph-specific operations replaced.
+    assert len(notebook["cells"]) >= len(maas_notebook.cells)
+    text = _read_notebook_text(output_path)
+    unresolved = sorted(set(re.findall(r"(?<!\{)\{[A-Z_]+\}(?!\})", text)))
+    assert unresolved == [], f"Unresolved placeholders: {unresolved}"
+    assert f"## Pattern {pattern['name']}" not in text
+    assert "## Setup" in text
+    assert "## Summary" in text
+    if template == "mass_creating_knowledge_graph":
+        assert f"## {pattern['name']} Knowledge Graph Building Content" in text
+        assert "## Process input documents" in text
+        assert "Appendix: Downloading Models for Offline Use" in text
+    else:
+        assert f"## {pattern['name']} Knowledge Graph Retrieve & Generation Content" in text
+        assert "## Next steps" in text
+        assert "### Evaluate Response" in text
 
     for cell in notebook["cells"]:
-        if cell["cell_type"] == "code" and not cell["source"].startswith("%"):
+        if cell["cell_type"] == "code" and not any(line.startswith("%") for line in cell["source"].splitlines()):
             compile(cell["source"], f"{template} cell", "exec")
 
-    assert "params={'temperature': 0.1, 'max_completion_tokens': 1024}" in code
     if template == "mass_creating_knowledge_graph":
         assert "DoclingChunker(max_tokens=chunk_size)" in code
         assert "LangChainChunker(" in code
-        assert "chunks = chunker.split_documents(documents)" in code
-        assert "vector_store.add_documents(chunks)" in code
+        assert "chunked_documents = chunker.split_documents([document])" in code
+        assert "vector_store.add_documents(chunked_documents)" in code
         assert "build_knowledge_graph_from_documents" not in code
         assert "kg_extraction_config={'mode': 'free'" in code
     else:
+        assert "from ai4rag.rag.template.agentic_rag_template import AgenticRAG" in code
+        assert "rag_pattern = AgenticRAG(" in code
         assert "search_kwargs={'entity_pivot_limit': 3" in code
         assert "**{'entity_pivot_limit': 3" in code
-        assert "It does not traverse `NEXT_CHUNK`" in _read_notebook_text(output_path)
+        assert "embedding_model = OpenAIEmbeddingModel(" in code

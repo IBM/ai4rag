@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dependencies** — bumped transitive `tornado` dependency from 6.5.8 to 6.5.9; refreshed `uv.lock`
 
 ### Fixed
+- **Vector store** — HTTPS Milvus connections without explicit `ca_cert` now use the CA certificates loaded by Python's default SSL context, allowing configured mounted CA bundles to be used without a hardcoded gRPC certificate path; an empty default trust store raises a clear configuration error
 - **Evaluator** — `UnitxtEvaluator.evaluate()` no longer crashes inside unitxt's `TokenOverlap` metric when a question's retrieval returns zero chunks; an empty `contexts` list is substituted with a single blank reference before scoring, so the question scores zero instead of aborting the whole evaluation run
 
 ---

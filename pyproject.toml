@@ -36,6 +36,7 @@ dependencies = [
   "neo4j-graphrag>=1.0,<2",
   "langchain-text-splitters~=1.1.0",
   "multiprocess>=0.70",
+  "nest-asyncio~=1.6.0",
   "openai~=2.53.0",
   "pandas==2.2.*",
   "asyncpg>=0.29",
