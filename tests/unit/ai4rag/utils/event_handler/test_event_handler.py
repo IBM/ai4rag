@@ -180,6 +180,17 @@ class TestLocalEventHandlerOnPatternCreationWithOutputPath:
             written = json.load(f)
         assert written == EVALUATION_RESULTS
 
+    def test_writes_conversations_json(self, tmp_path, mocker):
+        """conversations.json is written beside the evaluation records."""
+        mocker.patch("ai4rag.utils.event_handler.event_handler.logger")
+        handler = LocalEventHandler(output_path=tmp_path)
+        conversations = [{"conversation_id": "case-0000", "question": "What is RAG?"}]
+
+        handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS, conversations=conversations)
+
+        with open(tmp_path / "Pattern1" / "conversations.json", encoding="utf-8") as file:
+            assert json.load(file) == conversations
+
     def test_uses_default_pattern_name_when_missing(self, tmp_path, mocker):
         """Falls back to 'default_pattern_name' when payload has no name."""
         mocker.patch("ai4rag.utils.event_handler.event_handler.logger")

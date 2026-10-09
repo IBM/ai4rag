@@ -27,7 +27,11 @@ class LocalEventHandler(BaseEventHandler):
         logger.debug("LocalEventHandler ::: %s ::: %s ::: %s", level, step, message)
 
     def on_pattern_creation(
-        self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
+        self,
+        payload: PatternPayload,
+        evaluation_results: list[EvaluationRecord],
+        conversations: list[dict] | None = None,
+        **kwargs,
     ) -> None:
         logger.debug("LocalEventHandler ::: Pattern creation ::: %s", payload)
         pattern_name = payload.get("name", "default_pattern_name")
@@ -39,6 +43,9 @@ class LocalEventHandler(BaseEventHandler):
             evaluation_results_path = dir_path / "evaluation_results.json"
             with open(evaluation_results_path, encoding="utf-8", mode="w") as file:
                 json.dump(evaluation_results, file, ensure_ascii=False)
+
+            with open(dir_path / "conversations.json", encoding="utf-8", mode="w") as file:
+                json.dump(conversations or [], file, ensure_ascii=False)
 
             with open(dir_path / "pattern.json", encoding="utf-8", mode="w") as file2:
                 json.dump(payload, file2, ensure_ascii=False)
@@ -65,6 +72,17 @@ class KFPEventHandler(BaseEventHandler):
         self.status_changes.append({"level": level, "message": message, "step": self._last_step})
 
     def on_pattern_creation(
-        self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
+        self,
+        payload: PatternPayload,
+        evaluation_results: list[EvaluationRecord],
+        conversations: list[dict] | None = None,
+        **kwargs,
     ) -> None:
-        self.patterns.append({"payload": payload, "evaluation_results": evaluation_results, **kwargs})
+        self.patterns.append(
+            {
+                "payload": payload,
+                "evaluation_results": evaluation_results,
+                "conversations": conversations or [],
+                **kwargs,
+            }
+        )

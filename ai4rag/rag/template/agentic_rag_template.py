@@ -51,6 +51,7 @@ class _AgentRunContext:
     tool_counts: dict[str, int]
     max_retrieval_steps: int
     retrieval_kwargs: dict[str, Any]
+    tool_execution: dict[str, list[dict[str, Any]]]
     # ``threading.Lock`` is a factory function in Python 3.12, not a type.
     # The lock is invocation-scoped runtime state, not input to validate.
     state_lock: Any
@@ -100,6 +101,42 @@ class AgenticRAG(BaseRAGTemplate):
         """Identify a chunk across retrieval calls."""
         return chunk.text, repr(chunk.metadata)
 
+    @staticmethod
+    def _json_safe(value: Any) -> Any:
+        """Recursively remove non-JSON values from a trace artifact."""
+        if value is None or isinstance(value, str | int | float | bool):
+            return value
+        if isinstance(value, dict):
+            return {str(key): AgenticRAG._json_safe(item) for key, item in value.items()}
+        if isinstance(value, list | tuple):
+            return [AgenticRAG._json_safe(item) for item in value]
+        return str(value)
+
+    @staticmethod
+    def _document_payload(chunk: AI4RAGChunk) -> dict[str, Any]:
+        """Return the JSON-safe portion of a retrieved chunk."""
+        return {"text": chunk.text, "metadata": AgenticRAG._json_safe(dict(chunk.metadata))}
+
+    @staticmethod
+    def _message_payload(message: Any) -> dict[str, Any]:
+        """Convert a LangChain message to the stable artifact representation."""
+        message_type = getattr(message, "type", None)
+        payload: dict[str, Any] = {"type": message_type or "unknown"}
+        if message_type == "ai":
+            payload["content"] = AgenticRAG._json_safe(message.content)
+            payload["tool_calls"] = AgenticRAG._json_safe(getattr(message, "tool_calls", []))
+        elif message_type == "tool":
+            payload.update(
+                {
+                    "tool_call_id": message.tool_call_id,
+                    "name": message.name,
+                    "output": AgenticRAG._json_safe(message.content),
+                }
+            )
+        else:
+            payload["content"] = AgenticRAG._json_safe(getattr(message, "content", str(message)))
+        return payload
+
     def _chat_model(self) -> BaseChatModel:
         """Build the LangChain model from the configured MaaS client."""
         if self.chat_model is not None:
@@ -141,7 +178,12 @@ class AgenticRAG(BaseRAGTemplate):
                     ),
                 ]
             )
-            return str(response.text).strip() or run_context.question
+            output = str(response.text).strip() or run_context.question
+            with run_context.state_lock:
+                run_context.tool_execution["rewrite_query"].append(
+                    {"input": {"missing_information": missing_information}, "output": output}
+                )
+            return output
 
         @tool("retriever")
         def retrieve(query: str, runtime: ToolRuntime[_AgentRunContext]) -> str:
@@ -156,18 +198,30 @@ class AgenticRAG(BaseRAGTemplate):
                 new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in run_context.seen]
                 run_context.documents.extend(new_documents)
                 run_context.seen.update(self._chunk_key(chunk) for chunk in new_documents)
-            if not new_documents:
-                return "No new relevant documents were found for this query."
-            return self._render_enriched_user_message(run_context.question, new_documents)
+            output = (
+                "No new relevant documents were found for this query."
+                if not new_documents
+                else self._render_enriched_user_message(run_context.question, new_documents)
+            )
+            with run_context.state_lock:
+                run_context.tool_execution["retriever"].append(
+                    {
+                        "input": {"query": query},
+                        "output": output,
+                        "documents": [self._document_payload(chunk) for chunk in new_documents],
+                    }
+                )
+            return output
 
         return [rewrite_query, retrieve]
 
-    def _run_agent(self, messages: list[MessageTyped], **kwargs) -> tuple[str, list[AI4RAGChunk]]:
+    def _run_agent(self, messages: list[MessageTyped], **kwargs) -> tuple[str, list[AI4RAGChunk], dict[str, Any]]:
         """Retrieve initial context, then invoke the agent and collect further chunks."""
         if not messages:
             raise ValueError("`messages` must contain at least one message.")
         question = messages[-1]["content"]
         documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
+        initial_documents = list(documents)
         run_context = _AgentRunContext(
             question=question,
             documents=documents,
@@ -175,21 +229,32 @@ class AgenticRAG(BaseRAGTemplate):
             tool_counts={"retriever": 1, "rewrite_query": 0},
             max_retrieval_steps=self.max_retrieval_steps,
             retrieval_kwargs=kwargs,
+            tool_execution={"rewrite_query": [], "retriever": []},
             state_lock=Lock(),
         )
-        final_message = self.agent.invoke(
+        agent_messages = self.agent.invoke(
             {"messages": [*messages[:-1], {**messages[-1], "content": enriched_message}]},
             config={"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)},
             context=run_context,
-        )["messages"][-1]
+        )["messages"]
+        final_message = agent_messages[-1]
         if not isinstance(final_message, AIMessage):
             raise ValueError("Agent did not return an assistant response")
-        return str(final_message.text).strip(), documents
+        conversation = {
+            "question": question,
+            "initial_retrieval": {
+                "query": question,
+                "documents": [self._document_payload(chunk) for chunk in initial_documents],
+            },
+            "messages": [self._message_payload(message) for message in agent_messages],
+            "tool_execution": run_context.tool_execution,
+        }
+        return str(final_message.text).strip(), documents, conversation
 
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         """Answer a question and return retrieved chunks for evaluation."""
-        answer, documents = self._run_agent([{"role": "user", "content": question}], **kwargs)
-        return {"answer": answer, "reference_documents": documents, "question": question}
+        answer, documents, conversation = self._run_agent([{"role": "user", "content": question}], **kwargs)
+        return {"answer": answer, "reference_documents": documents, "question": question, "conversation": conversation}
 
     def generate_stream(self, question: str, **kwargs):
         """Yield the complete answer until token streaming is supported."""
@@ -197,5 +262,5 @@ class AgenticRAG(BaseRAGTemplate):
 
     def chat(self, messages: list[MessageTyped], **kwargs) -> list[Choice]:
         """Answer a conversation using the common chat-completion interface."""
-        answer, _ = self._run_agent(messages, **kwargs)
+        answer = self._run_agent(messages, **kwargs)[0]
         return [Choice(index=0, finish_reason="stop", message=ChatCompletionMessage(role="assistant", content=answer))]

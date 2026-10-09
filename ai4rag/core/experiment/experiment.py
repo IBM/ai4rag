@@ -184,6 +184,7 @@ class AI4RAGExperiment:
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
         self._optimization_phase: str | None = None
+        self._conversations_by_pattern: dict[str, list[dict[str, Any]]] = {}
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
@@ -654,6 +655,8 @@ class AI4RAGExperiment:
         evaluation_results_json = self.results.create_evaluation_results_json(
             evaluation_data=evaluation_data, evaluation_result=evaluation_result
         )
+        conversations = self._conversations_from_response(inference_response)
+        self._conversations_by_pattern[pattern_name] = conversations
 
         logger.info(
             "Evaluation scores: %s",
@@ -666,6 +669,7 @@ class AI4RAGExperiment:
                 self._stream_finished_pattern(
                     evaluation_result=evaluation_result,
                     evaluation_results_json=evaluation_results_json,
+                    conversations=conversations,
                     iteration=iteration,
                 )
             except Exception as exc:
@@ -861,6 +865,7 @@ class AI4RAGExperiment:
             evaluation_results_json=evaluation_results_json,
             pattern_name="Pattern1",
             iteration=0,
+            conversations=self._conversations_by_pattern.get(result.pattern_name, []),
         )
 
     def _stream_finished_pattern(
@@ -869,6 +874,7 @@ class AI4RAGExperiment:
         evaluation_results_json: list,
         pattern_name: str | None = None,
         iteration: int | None = None,
+        conversations: list[dict[str, Any]] | None = None,
     ) -> None:
         """
         Stream finished pattern.
@@ -955,7 +961,27 @@ class AI4RAGExperiment:
             },
             "iteration": iteration if iteration is not None else len(self.results) + n_known,
         }
-        self.event_handler.on_pattern_creation(payload=payload, evaluation_results=evaluation_results_json)
+        self.event_handler.on_pattern_creation(
+            payload=payload,
+            evaluation_results=evaluation_results_json,
+            conversations=conversations or [],
+        )
+
+    @staticmethod
+    def _conversations_from_response(inference_response: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Build one JSON-safe conversation record per evaluated question."""
+        conversations = []
+        for index, response in enumerate(inference_response):
+            conversation = response.get("conversation")
+            if not isinstance(conversation, dict):
+                conversation = {
+                    "question": response.get("question", ""),
+                    "initial_retrieval": {"query": response.get("question", ""), "documents": []},
+                    "messages": [],
+                    "tool_execution": {},
+                }
+            conversations.append({"conversation_id": f"case-{index:04d}", **conversation})
+        return conversations
 
     def _evaluate_response(
         self,
