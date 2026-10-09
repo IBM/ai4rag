@@ -44,8 +44,9 @@ class LocalEventHandler(BaseEventHandler):
             with open(evaluation_results_path, encoding="utf-8", mode="w") as file:
                 json.dump(evaluation_results, file, ensure_ascii=False)
 
-            with open(dir_path / "conversations.json", encoding="utf-8", mode="w") as file:
-                json.dump(conversations or [], file, ensure_ascii=False)
+            if conversations:
+                with open(dir_path / "conversations.json", encoding="utf-8", mode="w") as file:
+                    json.dump(conversations, file, ensure_ascii=False)
 
             with open(dir_path / "pattern.json", encoding="utf-8", mode="w") as file2:
                 json.dump(payload, file2, ensure_ascii=False)
@@ -78,11 +79,7 @@ class KFPEventHandler(BaseEventHandler):
         conversations: list[dict] | None = None,
         **kwargs,
     ) -> None:
-        self.patterns.append(
-            {
-                "payload": payload,
-                "evaluation_results": evaluation_results,
-                "conversations": conversations or [],
-                **kwargs,
-            }
-        )
+        pattern = {"payload": payload, "evaluation_results": evaluation_results, **kwargs}
+        if conversations:
+            pattern["conversations"] = conversations
+        self.patterns.append(pattern)
