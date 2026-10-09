@@ -124,48 +124,6 @@ class TestCreateMaasClient:
 
         mock_openai_cls.assert_called_once_with(base_url="https://maas.example.com/v1", api_key="test-key")
 
-    def test_falls_back_to_unverified_tls_on_ssl_error(self, mocker):
-        """An SSL verification failure triggers a retry with ``verify=False``."""
-        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
-        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
-
-        first_client = mocker.MagicMock()
-        first_client.models.list.side_effect = ssl.SSLCertVerificationError("SSL: CERTIFICATE_VERIFY_FAILED")
-        fallback_client = mocker.MagicMock()
-        mock_openai_cls.side_effect = [first_client, fallback_client]
-
-        from ai4rag.utils.clients.maas_client import create_maas_client
-
-        result = create_maas_client(base_url="https://maas.example.com", api_key="test-key")
-
-        assert result is fallback_client
-        assert mock_openai_cls.call_count == 2
-        # The fallback call should include an httpx.Client(verify=False).
-        fallback_call_kwargs = mock_openai_cls.call_args_list[1].kwargs
-        assert "http_client" in fallback_call_kwargs
-        mock_httpx_client.assert_called_once_with(verify=False)
-
-    def test_falls_back_on_chained_ssl_error(self, mocker):
-        """An ``httpx.ConnectError`` whose cause chain contains an SSL error triggers fallback."""
-        from httpx import ConnectError
-
-        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
-        mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
-
-        ssl_root = ssl.SSLCertVerificationError("SSL: CERTIFICATE_VERIFY_FAILED")
-        chained_err = ConnectError("connection failed")
-        chained_err.__cause__ = ssl_root
-
-        first_client = mocker.MagicMock()
-        first_client.models.list.side_effect = chained_err
-        fallback_client = mocker.MagicMock()
-        mock_openai_cls.side_effect = [first_client, fallback_client]
-
-        from ai4rag.utils.clients.maas_client import create_maas_client
-
-        result = create_maas_client(base_url="https://maas.example.com", api_key="key")
-        assert result is fallback_client
-
     def test_reraises_non_ssl_connection_error(self, mocker):
         """A connection error that is not SSL-related should propagate."""
         from httpx import ConnectError
@@ -181,21 +139,93 @@ class TestCreateMaasClient:
         with pytest.raises(ConnectError, match="Connection refused"):
             create_maas_client(base_url="https://maas.example.com", api_key="key")
 
-    def test_logs_warning_on_ssl_fallback(self, mocker):
-        """A warning should be logged when falling back to unverified TLS."""
+    def test_rejects_plain_http_to_external_host(self, mocker):
+        """A plaintext http:// base_url against a non-local host is rejected before any network call."""
         mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
-        mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
+
+        from ai4rag.utils.clients.maas_client import create_maas_client
+
+        with pytest.raises(ValueError, match="MaaS base_url"):
+            create_maas_client(base_url="http://maas.example.com", api_key="test-key")
+
+        mock_openai_cls.assert_not_called()
+
+    def test_allows_plain_http_to_localhost(self, mocker):
+        """A plaintext http:// base_url against localhost is allowed."""
+        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+
+        from ai4rag.utils.clients.maas_client import create_maas_client
+
+        create_maas_client(base_url="http://localhost:8080", api_key="test-key")
+
+        mock_openai_cls.assert_called_once_with(base_url="http://localhost:8080/v1", api_key="test-key")
+
+    def test_allows_plain_http_to_cluster_local_host(self, mocker):
+        """A plaintext http:// base_url against an in-cluster '*.cluster.local' host is allowed."""
+        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+
+        from ai4rag.utils.clients.maas_client import create_maas_client
+
+        create_maas_client(base_url="http://maas.svc.cluster.local:8080", api_key="test-key")
+
+        mock_openai_cls.assert_called_once()
+
+    def test_ssl_failure_propagates_without_fallback(self, mocker):
+        """An SSL verification failure re-raises the original error; no unverified retry is made."""
+        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
         mock_logger = mocker.patch("ai4rag.utils.clients.maas_client._logger")
 
-        first_client = mocker.MagicMock()
-        first_client.models.list.side_effect = ssl.SSLCertVerificationError("SSL: CERTIFICATE_VERIFY_FAILED")
-        fallback_client = mocker.MagicMock()
-        mock_openai_cls.side_effect = [first_client, fallback_client]
+        client = mocker.MagicMock()
+        ssl_error = ssl.SSLCertVerificationError("SSL: CERTIFICATE_VERIFY_FAILED")
+        client.models.list.side_effect = ssl_error
+        mock_openai_cls.return_value = client
+
+        from ai4rag.utils.clients.maas_client import create_maas_client
+
+        with pytest.raises(ssl.SSLCertVerificationError):
+            create_maas_client(base_url="https://maas.example.com", api_key="key")
+
+        mock_openai_cls.assert_called_once_with(base_url="https://maas.example.com/v1", api_key="key")
+        mock_logger.error.assert_called_once()
+        assert "MAAS_CA_BUNDLE" in mock_logger.error.call_args[0][0]
+
+    def test_uses_explicit_ca_bundle(self, mocker):
+        """An explicit ca_bundle is used to build the httpx.Client that verifies the connection."""
+        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
+
+        from ai4rag.utils.clients.maas_client import create_maas_client
+
+        create_maas_client(base_url="https://maas.example.com", api_key="key", ca_bundle="/etc/ca.pem")
+
+        mock_httpx_client.assert_called_once_with(verify="/etc/ca.pem")
+        assert mock_openai_cls.call_args.kwargs["http_client"] is mock_httpx_client.return_value
+
+    def test_uses_maas_ca_bundle_env_var(self, mocker, monkeypatch):
+        """The MAAS_CA_BUNDLE environment variable is used when no explicit ca_bundle is passed."""
+        monkeypatch.setenv("MAAS_CA_BUNDLE", "/etc/env-ca.pem")
+        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
 
         from ai4rag.utils.clients.maas_client import create_maas_client
 
         create_maas_client(base_url="https://maas.example.com", api_key="key")
 
-        mock_logger.warning.assert_called_once()
-        warning_msg = mock_logger.warning.call_args[0][0]
-        assert "SSL" in warning_msg or "verify=False" in warning_msg
+        mock_httpx_client.assert_called_once_with(verify="/etc/env-ca.pem")
+
+    def test_explicit_ca_bundle_overrides_env_var(self, mocker, monkeypatch):
+        """An explicit ca_bundle argument takes precedence over MAAS_CA_BUNDLE."""
+        monkeypatch.setenv("MAAS_CA_BUNDLE", "/etc/env-ca.pem")
+        mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
+        mock_openai_cls.return_value = mocker.MagicMock()
+        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
+
+        from ai4rag.utils.clients.maas_client import create_maas_client
+
+        create_maas_client(base_url="https://maas.example.com", api_key="key", ca_bundle="/etc/explicit-ca.pem")
+
+        mock_httpx_client.assert_called_once_with(verify="/etc/explicit-ca.pem")

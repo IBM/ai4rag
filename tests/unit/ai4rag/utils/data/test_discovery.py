@@ -788,7 +788,7 @@ class TestBenchmarkKeyValidation:
 
 
 class TestS3ClientCreation:
-    """A client is built on demand, retrying without TLS verification when needed."""
+    """A single, fully-verified client is built on demand -- no unverified-TLS retry."""
 
     CONTENTS = [_s3_object("docs/report.pdf", 100)]
 
@@ -803,22 +803,22 @@ class TestS3ClientCreation:
         result = discover_documents(bucket_name="bucket", prefixes=["docs/"], sampling_enabled=False)
 
         create.assert_called_once_with()
-        client.list_objects_v2.assert_called_once_with(Bucket="bucket", Prefix="docs/", MaxKeys=1)
         assert result.count == 1
 
-    def test_ssl_error_retries_without_verification(self, mocker):
-        """A self-signed endpoint falls back to an unverified client."""
+    def test_ssl_error_propagates(self, mocker):
+        """A TLS verification failure propagates unchanged; there is no unverified retry."""
         from botocore.exceptions import SSLError
 
         failing = mocker.MagicMock()
-        failing.list_objects_v2.side_effect = SSLError(endpoint_url="https://s3.example", error="self-signed")
-        working = _make_mock_s3_client(mocker, self.CONTENTS)
+        failing.get_paginator.return_value.paginate.side_effect = SSLError(
+            endpoint_url="https://s3.example", error="self-signed"
+        )
         create = mocker.patch(
             "ai4rag.utils.data.documents_discovery.create_s3_client",
-            side_effect=[failing, working],
+            return_value=failing,
         )
 
-        result = discover_documents(bucket_name="bucket", prefixes=["docs/"], sampling_enabled=False)
+        with pytest.raises(SSLError):
+            discover_documents(bucket_name="bucket", prefixes=["docs/"], sampling_enabled=False)
 
-        assert create.call_args_list == [mocker.call(), mocker.call(verify=False)]
-        assert result.count == 1
+        create.assert_called_once_with()

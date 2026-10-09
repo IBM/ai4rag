@@ -8,7 +8,7 @@ These tests exercise the full collection lifecycle — create, add embeddings,
 search, drop — against a real Milvus server, and are skipped unless
 ``MILVUS_URI`` is set. Connection settings are read via
 :meth:`MilvusConfig.from_env` (``MILVUS_URI``, ``MILVUS_TOKEN``,
-``MILVUS_SERVER_CERT``); see ``tests/integration/conftest.py`` for how
+``MILVUS_CA_CERT``); see ``tests/integration/conftest.py`` for how
 ``.env.local`` is loaded.
 
 :class:`MilvusVectorStore` requests ``consistency_level="Strong"`` on every

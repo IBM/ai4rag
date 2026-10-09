@@ -53,6 +53,11 @@ class UnitxtEvaluator(BaseEvaluator):
             Aggregate metrics with confidence intervals and per-question scores.
         """
         evaluation_primitives = [prim.to_dict() for prim in evaluation_data]
+        for primitive in evaluation_primitives:
+            # Unitxt's TokenOverlap calls max() over the context references.
+            # A blank reference scores zero when retrieval found no documents.
+            if primitive["contexts"] == []:
+                primitive["contexts"] = [""]
         df = pd.DataFrame(evaluation_primitives)
 
         metric_lookup = {self.METRIC_TYPE_MAP[m.name]: m for m in metrics if m.name in self.METRIC_TYPE_MAP}

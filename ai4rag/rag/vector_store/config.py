@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import ClassVar
 
+from ai4rag.utils.network import ensure_safe_url
+
 __all__ = [
     "SUPPORTED_PROVIDERS",
     "BaseVectorStoreConfig",
@@ -70,10 +72,10 @@ class MilvusConfig(BaseVectorStoreConfig):
     construction. TLS is driven by the scheme: ``https://`` opens a secure gRPC
     channel, ``http://`` stays plaintext. When a remote endpoint presents a
     certificate signed by a self-signed or private CA, pass the CA/server
-    certificate as PEM text via ``server_cert``;
+    certificate as PEM text via ``ca_cert``;
     :class:`~ai4rag.rag.vector_store.milvus.MilvusVectorStore` materializes it to
     a temporary file for pymilvus to verify against. Endpoints with publicly
-    trusted certificates need no ``server_cert``.
+    trusted certificates need no ``ca_cert``.
 
     Parameters
     ----------
@@ -82,7 +84,7 @@ class MilvusConfig(BaseVectorStoreConfig):
         ``https://`` (TLS), e.g. ``https://host:19530``.
     token : str | None
         Authentication token (``"user:password"``). ``None`` for unauthenticated.
-    server_cert : str | None
+    ca_cert : str | None
         PEM-encoded server/CA certificate used to verify a TLS connection.
         Required only for self-signed or private-CA endpoints; leave ``None``
         when the server uses a publicly trusted certificate.
@@ -98,7 +100,9 @@ class MilvusConfig(BaseVectorStoreConfig):
     Raises
     ------
     ValueError
-        If ``uri`` is not an ``http://`` or ``https://`` URL.
+        If ``uri`` is not an ``http://`` or ``https://`` URL, or if it uses
+        plaintext ``http://`` against a host that is not local or in-cluster
+        (see :func:`ai4rag.utils.network.ensure_safe_url`).
     """
 
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
@@ -108,12 +112,12 @@ class MilvusConfig(BaseVectorStoreConfig):
             "For a local embedded database, use the milvus_lite provider instead. (required)",
         ),
         ("MILVUS_TOKEN", "Authentication token in 'user:password' form. (optional)"),
-        ("MILVUS_SERVER_CERT", "PEM-encoded CA/server certificate for self-signed TLS endpoints. (optional)"),
+        ("MILVUS_CA_CERT", "PEM-encoded CA/server certificate for self-signed TLS endpoints. (optional)"),
     )
 
     uri: str
     token: str | None = None
-    server_cert: str | None = None
+    ca_cert: str | None = None
     provider: str = "milvus"
 
     def __post_init__(self) -> None:
@@ -131,13 +135,14 @@ class MilvusConfig(BaseVectorStoreConfig):
                 f"got {self.uri!r}. For a local, embedded database use MilvusLiteConfig(db_path=...) "
                 "(provider 'milvus_lite') instead."
             )
+        ensure_safe_url(self.uri, context="MilvusConfig.uri")
 
     @classmethod
     def from_env(cls) -> "MilvusConfig":
         """Build config from ``MILVUS_*`` environment variables.
 
         Reads ``MILVUS_URI`` (required), plus the optional ``MILVUS_TOKEN`` and
-        ``MILVUS_SERVER_CERT``. ``MILVUS_SERVER_CERT`` holds the PEM certificate
+        ``MILVUS_CA_CERT``. ``MILVUS_CA_CERT`` holds the PEM certificate
         text itself, not a filesystem path.
 
         Returns
@@ -155,7 +160,7 @@ class MilvusConfig(BaseVectorStoreConfig):
         return cls(
             uri=os.environ["MILVUS_URI"],
             token=os.environ.get("MILVUS_TOKEN"),
-            server_cert=os.environ.get("MILVUS_SERVER_CERT"),
+            ca_cert=os.environ.get("MILVUS_CA_CERT"),
         )
 
 
@@ -262,6 +267,14 @@ class PGVectorConfig(BaseVectorStoreConfig):
         maximum number of concurrent ``search()``/``add_documents()`` calls the
         caller will issue against this store, or those calls will queue for a
         slot and can eventually time out.
+    ca_cert : str | None, default=None
+        PEM-encoded CA certificate text used to verify a private or
+        self-signed PostgreSQL server certificate, analogous to
+        :attr:`MilvusConfig.ca_cert`. A local or in-cluster host (see
+        :func:`ai4rag.utils.network.is_local_or_cluster_host`) keeps today's
+        unverified, opportunistic-TLS default when unset; any other host
+        always gets a hostname- and chain-verified TLS connection -- there is
+        no setting to weaken that for a non-local host.
     provider : str, default="pgvector"
         Name of the provider used in the system.
 
@@ -278,6 +291,11 @@ class PGVectorConfig(BaseVectorStoreConfig):
         ("PGVECTOR_DB", "Database name (default postgres)."),
         ("PGVECTOR_USER", "Database user (default postgres)."),
         ("PGVECTOR_PASSWORD", "Database password. Unset uses trust/peer authentication."),
+        (
+            "PGVECTOR_CA_CERT",
+            "PEM-encoded CA certificate text used to verify a private/self-signed PostgreSQL "
+            "server certificate. (optional)",
+        ),
     )
 
     host: str = "localhost"
@@ -286,6 +304,7 @@ class PGVectorConfig(BaseVectorStoreConfig):
     user: str = "postgres"
     password: str | None = None
     pool_max_size: int = 10
+    ca_cert: str | None = None
     provider: str = "pgvector"
 
     @classmethod
@@ -293,9 +312,11 @@ class PGVectorConfig(BaseVectorStoreConfig):
         """Build config from ``PGVECTOR_*`` environment variables.
 
         Reads ``PGVECTOR_HOST``, ``PGVECTOR_PORT``, ``PGVECTOR_DB``,
-        ``PGVECTOR_USER`` and ``PGVECTOR_PASSWORD``. Unset variables fall back to
-        the local-PostgreSQL defaults; ``PGVECTOR_PASSWORD`` defaults to ``None``
-        for trust/peer authentication.
+        ``PGVECTOR_USER``, ``PGVECTOR_PASSWORD`` and ``PGVECTOR_CA_CERT``.
+        Unset variables fall back to the local-PostgreSQL defaults;
+        ``PGVECTOR_PASSWORD`` defaults to ``None`` for trust/peer
+        authentication, and ``PGVECTOR_CA_CERT`` defaults to ``None``
+        (host-based TLS default, see :attr:`ca_cert`).
 
         Returns
         -------
@@ -308,6 +329,7 @@ class PGVectorConfig(BaseVectorStoreConfig):
             dbname=os.environ.get("PGVECTOR_DB", "postgres"),
             user=os.environ.get("PGVECTOR_USER", "postgres"),
             password=os.environ.get("PGVECTOR_PASSWORD"),
+            ca_cert=os.environ.get("PGVECTOR_CA_CERT"),
         )
 
 
@@ -328,6 +350,13 @@ class Neo4jConfig(BaseVectorStoreConfig):
         Target Neo4j database name (``neo4j`` in Community Edition).
     provider : str, default="neo4j"
         Backend discriminator.
+
+    Raises
+    ------
+    ValueError
+        If ``uri`` uses a plaintext scheme (``neo4j://``/``bolt://``) against
+        a host that is not local or in-cluster (see
+        :func:`ai4rag.utils.network.ensure_safe_url`).
     """
 
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
@@ -342,6 +371,20 @@ class Neo4jConfig(BaseVectorStoreConfig):
     password: str = ""
     database: str = "neo4j"
     provider: str = "neo4j"
+
+    def __post_init__(self) -> None:
+        """Reject a plaintext ``neo4j://``/``bolt://`` URI against a non-local, non-cluster host.
+
+        ``+s``/``+ssc`` variants (encrypted) are always allowed; a verification-bypass
+        audit for ``+ssc`` ("encrypted but unverified") is a separate concern left for a
+        follow-up, since it is not part of this check.
+        """
+        ensure_safe_url(
+            self.uri,
+            context="Neo4jConfig.uri",
+            secure_schemes=frozenset({"neo4j+s", "bolt+s", "neo4j+ssc", "bolt+ssc"}),
+            insecure_schemes=frozenset({"neo4j", "bolt"}),
+        )
 
     @classmethod
     def from_env(cls) -> "Neo4jConfig":

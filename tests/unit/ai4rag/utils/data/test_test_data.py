@@ -270,3 +270,35 @@ class TestLoadTestDataLoaderErrors:
         """``None`` as ``bucket_name`` must raise ``TypeError``."""
         with pytest.raises(TypeError, match="non-empty string"):
             load_test_data(bucket_name=None, key="k")
+
+
+# ---------------------------------------------------------------------------
+# load_test_data -- S3 client creation
+# ---------------------------------------------------------------------------
+
+
+class TestLoadTestDataS3ClientCreation:
+    """A single, fully-verified client is built on demand -- no unverified-TLS retry."""
+
+    def test_client_is_created_when_none_supplied(self, mocker):
+        """Without an explicit client, a verified one is built via create_s3_client()."""
+        records = [_valid_record()]
+        client = _make_mock_s3_client(mocker, _make_s3_body(json.dumps(records)))
+        create = mocker.patch("ai4rag.utils.data.test_data_loader.create_s3_client", return_value=client)
+
+        load_test_data(bucket_name="bucket", key="data.json")
+
+        create.assert_called_once_with()
+
+    def test_ssl_error_raises_test_data_loader_error(self, mocker):
+        """A TLS verification failure surfaces as TestDataLoaderError; there is no unverified retry."""
+        from botocore.exceptions import SSLError
+
+        client = mocker.MagicMock()
+        client.get_object.side_effect = SSLError(endpoint_url="https://s3.example", error="self-signed")
+        create = mocker.patch("ai4rag.utils.data.test_data_loader.create_s3_client", return_value=client)
+
+        with pytest.raises(TestDataLoaderError, match="AWS_CA_BUNDLE"):
+            load_test_data(bucket_name="bucket", key="data.json")
+
+        create.assert_called_once_with()

@@ -7,6 +7,8 @@ from typing import Any
 
 import boto3
 
+from ai4rag.utils.network import ensure_safe_url
+
 _REQUIRED_ENV_KEYS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_ENDPOINT")
 
 
@@ -63,6 +65,12 @@ def create_s3_client(
     -------
     boto3.client
         A configured S3 client.
+
+    Raises
+    ------
+    ValueError
+        If the resolved endpoint uses plaintext ``http://`` against a
+        non-local, non-cluster host.
     """
     if endpoint_url is None:
         env = get_s3_credentials_from_env()
@@ -70,6 +78,8 @@ def create_s3_client(
         access_key_id = access_key_id or env["AWS_ACCESS_KEY_ID"]
         secret_access_key = secret_access_key or env["AWS_SECRET_ACCESS_KEY"]
         region_name = region_name or env.get("AWS_DEFAULT_REGION")
+
+    ensure_safe_url(endpoint_url, context="S3 endpoint_url")
 
     # boto3 honours AWS_CA_BUNDLE only when its ``verify`` argument is not
     # explicitly ``True``. Resolve it here so callers keep secure certificate

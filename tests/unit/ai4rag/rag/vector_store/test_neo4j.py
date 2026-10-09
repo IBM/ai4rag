@@ -4,6 +4,7 @@
 # -----------------------------------------------------------------------------
 import asyncio
 import json
+import logging
 import os
 from unittest.mock import MagicMock, patch
 
@@ -78,19 +79,19 @@ def test_llm_adapter_accepts_base_foundation_model_message_response():
 class TestNeo4jConfig:
     def test_from_env_reads_required_vars(self):
         env = {
-            "NEO4J_URI": "neo4j://host:7687",
+            "NEO4J_URI": "neo4j://localhost:7687",
             "NEO4J_PASSWORD": "secret",
         }
         with patch.dict(os.environ, env, clear=False):
             cfg = Neo4jConfig.from_env()
-        assert cfg.uri == "neo4j://host:7687"
+        assert cfg.uri == "neo4j://localhost:7687"
         assert cfg.password == "secret"
         assert cfg.username == "neo4j"
         assert cfg.database == "neo4j"
 
     def test_from_env_reads_optional_vars(self):
         env = {
-            "NEO4J_URI": "neo4j://host:7687",
+            "NEO4J_URI": "neo4j://localhost:7687",
             "NEO4J_PASSWORD": "pw",
             "NEO4J_USERNAME": "admin",
             "NEO4J_DATABASE": "mydb",
@@ -109,15 +110,30 @@ class TestNeo4jConfig:
                 Neo4jConfig.from_env()
 
     def test_from_env_missing_password_raises(self):
-        env = {"NEO4J_URI": "neo4j://host:7687"}
+        env = {"NEO4J_URI": "neo4j://localhost:7687"}
         with patch.dict(os.environ, env, clear=False):
             with pytest.raises(KeyError):
                 os.environ.pop("NEO4J_PASSWORD", None)
                 Neo4jConfig.from_env()
 
     def test_provider_is_neo4j(self):
-        cfg = Neo4jConfig(uri="neo4j://h:7687", password="pw")
+        cfg = Neo4jConfig(uri="neo4j://localhost:7687", password="pw")
         assert cfg.provider == "neo4j"
+
+    def test_rejects_plain_neo4j_scheme_to_remote_host(self):
+        """A plaintext neo4j:// uri against a non-local host must be rejected."""
+        with pytest.raises(ValueError, match="Neo4jConfig.uri"):
+            Neo4jConfig(uri="neo4j://evil.example.com:7687", password="pw")
+
+    def test_allows_plain_bolt_scheme_to_cluster_local_host(self):
+        """A plaintext bolt:// uri against an in-cluster '*.cluster.local' host is allowed."""
+        cfg = Neo4jConfig(uri="bolt://neo4j.svc.cluster.local:7687", password="pw")
+        assert cfg.uri == "bolt://neo4j.svc.cluster.local:7687"
+
+    def test_allows_encrypted_scheme_to_remote_host(self):
+        """neo4j+s:// (encrypted) is always allowed, regardless of host."""
+        cfg = Neo4jConfig(uri="neo4j+s://remote.example.com:7687", password="pw")
+        assert cfg.uri == "neo4j+s://remote.example.com:7687"
 
 
 class TestKGExtractionConfig:
@@ -363,6 +379,47 @@ class TestAddDocuments:
         assert result.chunks[0].text == text
         assert result.chunks[0].index == 0
         assert pipeline_cls.return_value.run_async.call_args.kwargs["text"] == text
+
+    def test_kg_pipeline_does_not_log_chunk_text(self, mock_driver_cls, mock_embedding, neo4j_config, caplog):
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        secret_text = "this document text must not appear in logs"
+        chunk = AI4RAGChunk(text=secret_text, metadata={"document_id": "document.md"})
+        graphrag_logger = logging.getLogger("neo4j_graphrag.experimental.pipeline.config.runner")
+        original_level = graphrag_logger.level
+
+        async def run_pipeline(*args, **kwargs):
+            graphrag_logger.info("PIPELINE_RUNNER: run_params={'splitter': {'text': %r}}", secret_text)
+            return MagicMock()
+
+        try:
+            with caplog.at_level(logging.INFO), patch(
+                "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+            ):
+                with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
+                    pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                    store.add_documents([chunk], model=MagicMock())
+        finally:
+            assert graphrag_logger.level == original_level
+
+        assert secret_text not in caplog.text
+
+    def test_kg_pipeline_logs_entity_extraction_lifecycle(self, mock_driver_cls, mock_embedding, neo4j_config, caplog):
+        """Entity extraction logs its start and successful completion without document content."""
+        store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
+        chunks = self._make_chunks(2)
+
+        async def run_pipeline(*args, **kwargs):
+            return MagicMock()
+
+        with caplog.at_level(logging.INFO), patch(
+            "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+        ):
+            with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
+                pipeline_cls.return_value.run_async.side_effect = run_pipeline
+                store._run_kg_pipeline(chunks, MagicMock(), perform_entity_resolution=False)
+
+        assert "Starting entity extraction for 2 chunks (collection=ai4rag_col)." in caplog.messages
+        assert "Finished entity extraction for 2 chunks (collection=ai4rag_col)." in caplog.messages
 
     def test_pipeline_can_skip_scoped_entity_resolution(self, mock_driver_cls, mock_embedding, neo4j_config):
         store = Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")

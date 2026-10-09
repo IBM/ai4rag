@@ -5,6 +5,7 @@
 import asyncio
 import heapq
 import json
+import ssl
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +21,7 @@ from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.config import PGVectorConfig
 from ai4rag.rag.vector_store.reranker import WeightedInMemoryAggregator
 from ai4rag.rag.vector_store.utils import iter_unique_chunks, resolve_embedding_dimension, validate_search_params
+from ai4rag.utils.network import is_local_or_cluster_host
 
 __all__ = ["PGVectorStore"]
 
@@ -386,6 +388,10 @@ class PGVectorStore(BaseVectorStore):
         if self._config.password:
             connect_kwargs["password"] = self._config.password
 
+        ssl_value = self._resolve_ssl()
+        if ssl_value is not None:
+            connect_kwargs["ssl"] = ssl_value
+
         return await asyncpg.create_pool(
             min_size=self._MIN_POOL_SIZE,
             max_size=self._config.pool_max_size,
@@ -393,6 +399,39 @@ class PGVectorStore(BaseVectorStore):
             init=self._configure_connection,
             **connect_kwargs,
         )
+
+    def _resolve_ssl(self) -> ssl.SSLContext | None:
+        """Resolve the asyncpg ``ssl=`` argument for this store's connections.
+
+        An explicit :attr:`PGVectorConfig.ca_cert` always wins and builds a
+        verifying :class:`ssl.SSLContext` from that PEM text (hostname and
+        chain checked against it). Absent that, the host decides: a local or
+        in-cluster host (see :func:`ai4rag.utils.network.is_local_or_cluster_host`)
+        omits the ``ssl`` kwarg entirely, preserving asyncpg's own default
+        (opportunistic, unverified TLS) so existing local/docker-compose
+        workflows are unaffected; any other host unconditionally gets a
+        context built from :func:`ssl.create_default_context`, which verifies
+        both the certificate chain and the hostname against the system's
+        trusted CA store (libpq's ``verify-full`` semantics) -- there is no
+        setting to weaken this for a non-local host. This deliberately avoids
+        asyncpg's ``"verify-full"`` *string* mode, which requires a root CA
+        resolvable from ``PGSSLROOTCERT``/``~/.postgresql/root.crt`` and does
+        not fall back to the system trust store -- it would otherwise reject a
+        managed Postgres instance with a publicly-trusted certificate out of
+        the box.
+
+        Returns
+        -------
+        ssl.SSLContext | None
+            Value to pass as asyncpg's ``ssl=`` argument, or ``None`` to omit
+            it and keep asyncpg's own default.
+        """
+        config = self._config
+        if config.ca_cert:
+            return ssl.create_default_context(cadata=config.ca_cert)
+        if is_local_or_cluster_host(config.host):
+            return None
+        return ssl.create_default_context()
 
     def _ensure_db(self) -> asyncpg.Pool:
         """Return the pool, opening it and creating the table on the first call.

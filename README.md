@@ -54,7 +54,7 @@ Vector storage is independent of MaaS: `ai4rag` connects directly to remote Milv
 
 ai4RAG talks to the vector store directly through provider-specific clients — no MaaS deployment is required for this part. Pick a provider and pass its config to `AI4RAGExperiment` as `vector_store_config`:
 
-- **`MilvusConfig`** — remote Milvus server or Zilliz Cloud only. `uri` must be a `http(s)://` URL (TLS and self-signed CAs via `server_cert`); anything else (a bare host, a file path, an empty string) raises `ValueError`. This is a deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly instead of silently falling back to a throwaway local database. Supports hybrid search (dense + BM25).
+- **`MilvusConfig`** — remote Milvus server or Zilliz Cloud only. `uri` must be a `http(s)://` URL (TLS and self-signed CAs via `ca_cert`); anything else (a bare host, a file path, an empty string) raises `ValueError`. This is a deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly instead of silently falling back to a throwaway local database. Supports hybrid search (dense + BM25).
 - **`MilvusLiteConfig`** — the embedded, zero-server **Milvus Lite** engine, backed by a local `db_path` file (default `"./ai4rag_milvus_lite.db"`) — no setup required, ideal for local development and small-scale workloads. Also supports hybrid search (dense + BM25); rejects `http(s)://` values (use `MilvusConfig` for those).
 - **`PGVectorConfig`** — PostgreSQL with the `pgvector` extension. Hybrid search (dense + `tsvector` full-text).
 - **`Neo4jConfig`** — Neo4j (with APOC), for graph-based RAG. `add_documents()` extracts entities and relationships into a per-collection knowledge graph; `search_mode="graph"` is the only supported mode (no vector/hybrid search). See the [Neo4j Indexing and Graph Search](https://ibm.github.io/ai4rag/latest/architecture/neo4j-indexing-and-search/) architecture doc.
@@ -66,7 +66,11 @@ Each config is a frozen dataclass with a `.from_env()` constructor and an `env_v
 
 ## Document processing
 
-ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
+ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, `langchain`/`langchain-openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
+
+## RAG templates
+
+Each candidate pattern is evaluated through a `rag_template` passed to `AI4RAGExperiment` — a `BaseRAGTemplate` subclass. The default, `AgenticRAG`, is a LangChain agent that can rewrite its search query and retrieve again before answering; `SimpleRAG` (a single fixed retrieve-then-generate pass) is also available via `rag_template=SimpleRAG`. See the [RAG Components](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#rag-templates) architecture doc.
 
 ## Running on Disconnected Clusters
 

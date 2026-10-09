@@ -207,6 +207,7 @@ nav:
       - Assets Generator:
           - Notebooks & Templates: api-reference/assets-generator/notebooks.md
           - Leaderboard: api-reference/assets-generator/leaderboard.md
+          - Starter Kit: api-reference/assets-generator/starter-kit.md
       - Evaluator:
           - Evaluator: api-reference/evaluator/evaluator.md
   - Development:
