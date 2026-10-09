@@ -962,11 +962,13 @@ class AI4RAGExperiment:
             },
             "iteration": iteration if iteration is not None else len(self.results) + n_known,
         }
-        self.event_handler.on_pattern_creation(
-            payload=payload,
-            evaluation_results=evaluation_results_json,
-            conversations=conversations,
-        )
+        pattern_kwargs = {
+            "payload": payload,
+            "evaluation_results": evaluation_results_json,
+        }
+        if conversations:
+            pattern_kwargs["conversations"] = conversations
+        self.event_handler.on_pattern_creation(**pattern_kwargs)
 
     @staticmethod
     def _conversations_from_response(inference_response: list[dict[str, Any]]) -> list[dict[str, Any]]:
