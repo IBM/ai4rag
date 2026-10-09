@@ -3,13 +3,15 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import gc
+import os
+import ssl
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.vector_store.config import MilvusConfig
+from ai4rag.rag.vector_store.config import MilvusConfig, MilvusLiteConfig
 
 
 class _MockEmbeddingModel:
@@ -161,6 +163,98 @@ class TestMilvusVectorStoreInit:
         store = MilvusVectorStore(mock_embedding, milvus_config, collection_name="ai4rag_col")
         store.close()
         client.close.assert_called_once()
+
+
+@patch("ai4rag.rag.vector_store.milvus.MilvusClient")
+class TestMilvusDefaultCa:
+    """Exercise default CA forwarding without real certificates or a live server."""
+
+    def test_default_ca_bundle_is_exported_and_survives_close(self, MockClient, mock_embedding):
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        # The SSL context has already parsed the CAs; this test only checks forwarding.
+        certificates = [b"test-ca-a", b"test-ca-b"]
+        config = MilvusConfig(uri="https://milvus.example.com:19530", token="root:pw")
+        MockClient.return_value.has_collection.return_value = True
+        original_environment = dict(os.environ)
+
+        with patch("ai4rag.rag.vector_store.milvus.ssl.create_default_context") as create_context:
+            create_context.return_value.get_ca_certs.return_value = certificates
+            store = MilvusVectorStore(mock_embedding, config, collection_name="ai4rag_ca")
+
+            create_context.assert_called_once_with()
+            create_context.return_value.get_ca_certs.assert_called_once_with(binary_form=True)
+            kwargs = MockClient.call_args.kwargs
+            assert kwargs["uri"] == config.uri
+            assert kwargs["token"] == config.token
+            cert_path = Path(kwargs["server_pem_path"])
+            pem_blocks = cert_path.read_text().split("-----END CERTIFICATE-----\n")
+            assert pem_blocks.pop() == ""
+            exported_certs = [ssl.PEM_cert_to_DER_cert(block + "-----END CERTIFICATE-----\n") for block in pem_blocks]
+            assert exported_certs == certificates
+
+            store.close()
+            del store
+            gc.collect()
+            assert cert_path.exists()  # pymilvus reconnects can still read it
+            MilvusVectorStore(mock_embedding, config, collection_name="ai4rag_ca_again")
+            assert MockClient.call_args.kwargs["server_pem_path"] == str(cert_path)
+        assert dict(os.environ) == original_environment
+
+    def test_explicit_ca_skips_default_discovery(self, MockClient, mock_embedding):
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        config = MilvusConfig(uri="https://milvus.example.com:19530", ca_cert="explicit-ca")
+        with patch("ai4rag.rag.vector_store.milvus.ssl.create_default_context") as create_context:
+            MilvusVectorStore(mock_embedding, config, collection_name="ai4rag_ca")
+
+        create_context.assert_not_called()
+        assert Path(MockClient.call_args.kwargs["server_pem_path"]).read_text() == "explicit-ca"
+
+    @pytest.mark.parametrize(
+        "config, expected_uri",
+        [
+            (MilvusConfig(uri="http://localhost:19530"), "http://localhost:19530"),
+            (MilvusLiteConfig(db_path="./local.db"), "./local.db"),
+        ],
+    )
+    def test_non_tls_skips_default_discovery(self, MockClient, config, expected_uri):
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        with patch("ai4rag.rag.vector_store.milvus.ssl.create_default_context") as create_context:
+            kwargs = MilvusVectorStore._build_connect_kwargs(config)
+
+        assert kwargs == {"uri": expected_uri}
+        create_context.assert_not_called()
+        MockClient.assert_not_called()
+
+    def test_empty_default_trust_store_fails_before_connect(self, MockClient, mock_embedding):
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        config = MilvusConfig(uri="https://milvus.example.com:19530")
+        with patch("ai4rag.rag.vector_store.milvus.ssl.create_default_context") as create_context:
+            create_context.return_value.get_ca_certs.return_value = []
+            with pytest.raises(ValueError, match="No CA certificates loaded.*MilvusConfig.ca_cert"):
+                MilvusVectorStore(mock_embedding, config, collection_name="ai4rag_ca")
+
+        MockClient.assert_not_called()
+
+    def test_invalid_default_trust_store_fails_before_connect(self, MockClient, mock_embedding, tmp_path, monkeypatch):
+        from ai4rag.rag.vector_store.milvus import MilvusVectorStore
+
+        bundle = tmp_path / "invalid-ca-bundle.pem"
+        bundle.write_text("-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----\n")
+        ca_directory = tmp_path / "empty-ca-directory"
+        ca_directory.mkdir()
+        monkeypatch.setenv("SSL_CERT_FILE", str(bundle))
+        monkeypatch.setenv("SSL_CERT_DIR", str(ca_directory))
+        config = MilvusConfig(uri="https://milvus.example.com:19530")
+
+        # OpenSSL's default-path loader can silently ignore malformed PEM files.
+        with pytest.raises(ValueError, match="No CA certificates loaded"):
+            MilvusVectorStore(mock_embedding, config, collection_name="ai4rag_ca")
+
+        MockClient.assert_not_called()
 
 
 @patch("ai4rag.rag.vector_store.milvus.MilvusClient")
