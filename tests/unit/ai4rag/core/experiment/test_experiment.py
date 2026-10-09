@@ -223,6 +223,48 @@ class TestGraphCollectionReuse:
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
         assert payload["template_id"] == "simple_rag"
         assert "knowledge_graph" not in payload["settings"]
+        assert "conversations" not in experiment.event_handler.on_pattern_creation.call_args.kwargs
+
+    def test_pattern_publication_supports_legacy_event_handler_without_conversations(self):
+        """Non-agentic publication does not require handlers to accept the new keyword."""
+
+        class LegacyEventHandler:
+            def on_pattern_creation(self, payload, evaluation_results):
+                self.payload = payload
+                self.evaluation_results = evaluation_results
+
+        experiment = _build_experiment(rag_template=SimpleRAG)
+        experiment.event_handler = LegacyEventHandler()
+        result = EvaluationResult(
+            pattern_name="Pattern1",
+            collection="ai4rag_test",
+            indexing_params={
+                "chunking": {
+                    "chunking_method": "recursive",
+                    "chunk_size": 1024,
+                    "chunk_overlap": 64,
+                    "include_metadata": False,
+                },
+                "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
+            },
+            rag_params={
+                "retrieval": {
+                    "retrieval_method": "simple",
+                    "number_of_chunks": 5,
+                    "search_mode": "vector",
+                    "window_size": 0,
+                },
+                "generation": {"model_id": "generator"},
+            },
+            scores={"metrics": []},
+            execution_time=1.0,
+            final_score=0.5,
+        )
+
+        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+
+        assert experiment.event_handler.payload["name"] == "Pattern1"
+        assert experiment.event_handler.evaluation_results == []
 
     def test_pattern_preserves_kg_and_graph_retrieval_settings(self):
         experiment = _build_experiment()

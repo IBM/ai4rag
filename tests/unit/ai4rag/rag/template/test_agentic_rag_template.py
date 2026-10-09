@@ -75,10 +75,52 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
 
     result = agent.generate("question")
 
-    assert result == {
-        "answer": "grounded answer",
-        "reference_documents": [initial_chunk, follow_up_chunk],
+    assert result["answer"] == "grounded answer"
+    assert result["reference_documents"] == [initial_chunk, follow_up_chunk]
+    assert result["question"] == "question"
+    assert result["conversation"] == {
         "question": "question",
+        "initial_retrieval": {"query": "question", "documents": [{"text": "initial evidence", "metadata": {}}]},
+        "messages": [
+            {"type": "human", "content": "Question: question\nContext: initial evidence"},
+            {
+                "type": "ai",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "name": "rewrite_query",
+                        "args": {"missing_information": "the answer"},
+                        "id": "call_1",
+                        "type": "tool_call",
+                    }
+                ],
+            },
+            {"type": "tool", "tool_call_id": "call_1", "name": "rewrite_query", "output": "focused search"},
+            {
+                "type": "ai",
+                "content": "",
+                "tool_calls": [
+                    {"name": "retriever", "args": {"query": "focused search"}, "id": "call_2", "type": "tool_call"}
+                ],
+            },
+            {
+                "type": "tool",
+                "tool_call_id": "call_2",
+                "name": "retriever",
+                "output": "Question: question\nContext: retrieved evidence",
+            },
+            {"type": "ai", "content": "grounded answer", "tool_calls": []},
+        ],
+        "tool_execution": {
+            "rewrite_query": [{"input": {"missing_information": "the answer"}, "output": "focused search"}],
+            "retriever": [
+                {
+                    "input": {"query": "focused search"},
+                    "output": "Question: question\nContext: retrieved evidence",
+                    "documents": [{"text": "retrieved evidence", "metadata": {}}],
+                }
+            ],
+        },
     }
     assert [call.args[0] for call in retriever.retrieve.call_args_list] == ["question", "focused search"]
 
@@ -109,7 +151,13 @@ def test_agentic_rag_uses_langchain_agent(rag, mocker):
     result = rag.generate("question")
 
     assert isinstance(rag, BaseRAGTemplate)
-    assert result == {"answer": "answer", "reference_documents": [chunk], "question": "question"}
+    assert result["answer"] == "answer"
+    assert result["reference_documents"] == [chunk]
+    assert result["question"] == "question"
+    assert result["conversation"]["initial_retrieval"] == {
+        "query": "question",
+        "documents": [{"text": "initial evidence", "metadata": {"document_id": "doc1"}}],
+    }
     rag.retriever.retrieve.assert_called_once_with("question")
     assert graph.invoke.call_args.args[0] == {
         "messages": [{"role": "user", "content": "Context: initial evidence\nQuestion: question\nAnswer in English."}]
