@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from ai4rag.utils.event_handler import LogLevel
+from ai4rag.utils.event_handler import LogLevel, PatternPayload
 from ai4rag.utils.event_handler.event_handler import KFPEventHandler, LocalEventHandler
 
 # ---------------------------------------------------------------------------
@@ -53,6 +53,11 @@ EVALUATION_RESULTS = [
         "scores": {"answer_correctness": 0.8, "faithfulness": 0.9},
     }
 ]
+
+
+def test_pattern_payload_includes_template_id():
+    """The public pattern event contract exposes the persisted template ID."""
+    assert "template_id" in PatternPayload.__required_keys__
 
 
 # ---------------------------------------------------------------------------

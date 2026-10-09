@@ -190,7 +190,7 @@ class TestGraphCollectionReuse:
         }
 
     def test_pattern_omits_knowledge_graph_settings_for_non_neo4j_store(self):
-        experiment = _build_experiment()
+        experiment = _build_experiment(rag_template=SimpleRAG)
         result = EvaluationResult(
             pattern_name="Pattern1",
             collection="ai4rag_test",
@@ -221,6 +221,7 @@ class TestGraphCollectionReuse:
         experiment._stream_finished_pattern(result, evaluation_results_json=[])
 
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
+        assert payload["template_id"] == "simple_rag"
         assert "knowledge_graph" not in payload["settings"]
 
     def test_pattern_preserves_kg_and_graph_retrieval_settings(self):
@@ -268,6 +269,7 @@ class TestGraphCollectionReuse:
         experiment._stream_finished_pattern(result, evaluation_results_json=[])
 
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
+        assert payload["template_id"] == "agentic_rag"
         assert payload["settings"]["knowledge_graph"] == kg_settings
         assert payload["settings"]["retrieval"]["entity_pivot_limit"] == 3
         assert payload["settings"]["retrieval"]["entity_relationship_hops"] == 2
