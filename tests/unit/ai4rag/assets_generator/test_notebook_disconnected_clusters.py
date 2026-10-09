@@ -23,6 +23,20 @@ def indexing_notebook() -> dict:
 class TestDisconnectedClusterDocumentation:
     """Verify disconnected cluster support is documented in indexing notebook."""
 
+    def test_notebook_installs_pinned_ocr_dependencies_after_ai4rag(self, indexing_notebook):
+        """OCR notebooks need the same RapidOCR and ONNX Runtime pins as the pipeline image."""
+        install_cell = next(
+            "".join(cell["source"])
+            for cell in indexing_notebook["cells"]
+            if cell["cell_type"] == "code" and "ai4rag[text-extraction]" in "".join(cell["source"])
+        )
+
+        assert "rapidocr==3.9.2" in install_cell
+        assert "--force-reinstall --no-deps" in install_cell
+        assert "onnxruntime==1.25.0" in install_cell
+        assert install_cell.index("ai4rag[text-extraction]") < install_cell.index("rapidocr==3.9.2")
+        assert install_cell.index("rapidocr==3.9.2") < install_cell.index("onnxruntime==1.25.0")
+
     def test_notebook_has_disconnected_cluster_prerequisites_section(self, indexing_notebook):
         """Notebook must include a 'Prerequisites for Disconnected Clusters' section."""
         sources = [
