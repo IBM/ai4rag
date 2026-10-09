@@ -23,6 +23,20 @@ def indexing_notebook() -> dict:
 class TestDisconnectedClusterDocumentation:
     """Verify disconnected cluster support is documented in indexing notebook."""
 
+    def test_notebook_installs_pinned_ocr_dependencies_after_ai4rag(self, indexing_notebook):
+        """OCR notebooks need the same RapidOCR and ONNX Runtime pins as the pipeline image."""
+        install_cell = next(
+            "".join(cell["source"])
+            for cell in indexing_notebook["cells"]
+            if cell["cell_type"] == "code" and "ai4rag[text-extraction]" in "".join(cell["source"])
+        )
+
+        assert "rapidocr==3.9.2" in install_cell
+        assert "--force-reinstall --no-deps" in install_cell
+        assert "onnxruntime==1.25.0" in install_cell
+        assert install_cell.index("ai4rag[text-extraction]") < install_cell.index("rapidocr==3.9.2")
+        assert install_cell.index("rapidocr==3.9.2") < install_cell.index("onnxruntime==1.25.0")
+
     def test_notebook_has_disconnected_cluster_prerequisites_section(self, indexing_notebook):
         """Notebook must include a 'Prerequisites for Disconnected Clusters' section."""
         sources = [
@@ -58,8 +72,8 @@ class TestDisconnectedClusterDocumentation:
 
         assert "DOCLING_ARTIFACTS_PATH" in full_code, "Notebook must include code to configure DOCLING_ARTIFACTS_PATH"
 
-    def test_notebook_requires_workbench_docling_artifacts(self, indexing_notebook):
-        """The workbench must fail rather than download Docling artifacts at runtime."""
+    def test_notebook_selects_artifacts_after_data_discovery(self, indexing_notebook):
+        """Only the models required by the discovered corpus are validated."""
         code_sources = [
             "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
             for cell in indexing_notebook["cells"]
@@ -67,8 +81,38 @@ class TestDisconnectedClusterDocumentation:
         ]
         full_code = "\n".join(code_sources)
 
-        assert "DOCLING_ARTIFACTS_PATH is required" in full_code
+        assert full_code.index("result = discover_documents") < full_code.index("needs_ocr =")
+        assert 'ocr_extensions = {{".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}}' in full_code
+        assert 'audio_extensions = {{".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}}' in full_code
+        assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in full_code
+        assert "Audio data requires HF_MODEL_DIR" in full_code
+        assert "model_config = json.load(config_file)" in full_code
+        assert 'model_type != "whisper"' in full_code
+        assert "Audio data supports only Hugging Face Whisper models" in full_code
         assert "Use a workbench image with the Docling artifacts bundle" in full_code
+
+    def test_offline_docling_validation_is_a_dedicated_cell(self, indexing_notebook):
+        """Connected runners can skip only offline Docling validation."""
+        cells = indexing_notebook["cells"]
+        validation_heading_index = next(
+            index
+            for index, cell in enumerate(cells)
+            if cell["cell_type"] == "markdown"
+            and "### Validate Offline Configuration" in "".join(cell["source"])
+        )
+        validation_cell = cells[validation_heading_index + 1]
+        validation_source = "".join(validation_cell["source"])
+
+        assert validation_cell["cell_type"] == "code"
+        assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in validation_source
+        assert "RapidOCR models are missing" in validation_source
+
+        shared_cell = cells[validation_heading_index - 1]
+        shared_source = "".join(shared_cell["source"])
+        assert shared_cell["cell_type"] == "code"
+        assert "needs_ocr =" in shared_source
+        assert "DoclingExtractionConfig" in shared_source
+        assert "RapidOCR models are missing" not in shared_source
 
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
         """The extract_text() call must include docling_artifacts_path parameter."""
@@ -84,6 +128,7 @@ class TestDisconnectedClusterDocumentation:
         assert any(
             "docling_artifacts_path" in call for call in extract_text_calls
         ), "extract_text() call must include docling_artifacts_path parameter"
+        assert any("docling_config=docling_config" in call for call in extract_text_calls)
 
     def test_notebook_includes_appendix_with_download_instructions(self, indexing_notebook):
         """Notebook must include appendix with offline download instructions."""
