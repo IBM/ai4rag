@@ -171,8 +171,10 @@ class Neo4jGraphStore(BaseVectorStore):
         self._kg_extraction_config = _validate_kg_extraction_config(kg_extraction_config)
         driver_kwargs: dict[str, Any] = {"auth": (config.username, config.password)}
         if config.ca_cert:
-            # Neo4j permits custom trust configuration only with the base
-            # neo4j:// / bolt:// schemes. Encryption remains mandatory here.
+            # The Neo4j driver rejects ``trusted_certificates`` with ``+s``
+            # URIs because those schemes select its built-in CA trust mode.
+            # Use the corresponding base scheme below, then explicitly retain
+            # TLS and verify the server against the configured private CA.
             driver_kwargs["encrypted"] = True
             driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(
                 materialize_ca_cert(config.ca_cert, prefix="ai4rag-neo4j-cert-")
