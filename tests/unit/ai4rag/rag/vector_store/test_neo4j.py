@@ -143,6 +143,23 @@ class TestNeo4jConfig:
         cfg = Neo4jConfig(uri="neo4j://localhost:7687", password="pw")
         assert cfg.provider == "neo4j"
 
+    def test_rejects_plain_neo4j_scheme_to_remote_host(self):
+        """A plaintext neo4j:// URI against a non-local host must be rejected."""
+        with pytest.raises(ValueError, match="Neo4jConfig.uri"):
+            Neo4jConfig(uri="neo4j://evil.example.com:7687", password="pw")
+
+    def test_allows_plain_bolt_scheme_to_cluster_local_host(self):
+        """A plaintext bolt:// URI against an in-cluster host is allowed."""
+        cfg = Neo4jConfig(uri="bolt://neo4j.svc.cluster.local:7687", password="pw")
+
+        assert cfg.uri == "bolt://neo4j.svc.cluster.local:7687"
+
+    def test_allows_encrypted_scheme_to_remote_host(self):
+        """neo4j+s:// uses verified TLS and is allowed for remote hosts."""
+        cfg = Neo4jConfig(uri="neo4j+s://remote.example.com:7687", password="pw")
+
+        assert cfg.uri == "neo4j+s://remote.example.com:7687"
+
     def test_repr_redacts_password_and_ca_cert(self):
         cfg = Neo4jConfig(
             uri="neo4j://host:7687",
@@ -281,10 +298,14 @@ class TestNeo4jGraphStoreInit:
         assert mock_driver_cls.call_args.args[0] == "neo4j+s://host:7687"
         assert mock_driver_cls.call_args.kwargs == {"auth": ("neo4j", "test")}
 
-    def test_trusts_configured_ca_cert(self, mock_driver_cls, mock_embedding):
+    @pytest.mark.parametrize(
+        ("configured_uri", "expected_driver_uri"),
+        [("neo4j+s://host:7687", "neo4j://host:7687"), ("bolt+s://host:7687", "bolt://host:7687")],
+    )
+    def test_trusts_configured_ca_cert(self, mock_driver_cls, mock_embedding, configured_uri, expected_driver_uri):
         cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
         config = Neo4jConfig(
-            uri="neo4j+s://host:7687",
+            uri=configured_uri,
             username="neo4j",
             password="test",
             ca_cert=cert,
@@ -295,7 +316,7 @@ class TestNeo4jGraphStoreInit:
         trusted_certificates = mock_driver_cls.call_args.kwargs["trusted_certificates"]
         assert isinstance(trusted_certificates, neo4j.TrustCustomCAs)
         assert mock_driver_cls.call_args.kwargs["encrypted"] is True
-        assert mock_driver_cls.call_args.args[0] == "neo4j://host:7687"
+        assert mock_driver_cls.call_args.args[0] == expected_driver_uri
         cert_path = trusted_certificates.certs[0]
         assert Path(cert_path).read_text() == cert
 
