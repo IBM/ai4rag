@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.22.0](https://github.com/IBM/ai4rag/releases/tag/v0.22.0)
+
+### Added
+- **Text extraction** — added a local Hugging Face Transformers Whisper backend and `DoclingExtractionConfig.asr_model_path` (falling back to `HF_MODEL_DIR`) for offline audio transcription, preserving segment timestamps in Docling documents
+- **Vector store** — `Neo4jConfig.ca_cert` (`NEO4J_CA_CERT`) accepts inline PEM CA certificates for encrypted, verified connections to private or self-signed Neo4j endpoints
+- **RAG template** — added `RAGTemplateSpec`, `get_template_spec()`, and `template_id_for_class()` to resolve supported persisted template IDs (`simple_rag`, `agentic_rag`, and `agentic_graph_rag`)
+- **Agentic RAG** — inference responses now include a `conversation` record with the question, initial retrieval, agent messages, and query-rewrite/retriever tool inputs and outputs; `LocalEventHandler` saves `conversations.json` for each published agentic pattern, including the selected warm-start pattern, and `KFPEventHandler` includes the records in its pattern output
+
+### Changed
+- **Experiment** — published patterns now include `template_id` so generated inference notebooks can reproduce the selected RAG template
+- **BREAKING CHANGE: RAG template** — pattern publication now requires a registered built-in template class; custom `BaseRAGTemplate` subclasses need registry support before they can publish patterns
+- **BREAKING CHANGE: Experiment** — Neo4j pattern payloads replace `settings.knowledge_graph` with `settings.graph_extraction`, containing the extraction policy rather than a separate extraction-model block; notebook generation reads this policy or `indexing.pipeline_spec.parameters.graph_extraction_config`
+- **BREAKING CHANGE: Text extraction** — audio extraction now requires a complete local Transformers-format Whisper model through `asr_model_path` or `HF_MODEL_DIR`; the previous Docling/openai-whisper backend and runtime ASR model downloads are no longer used
+- **BREAKING CHANGE: Vector store** — `Neo4jConfig` rejects `neo4j+ssc://` and `bolt+ssc://` URIs that bypass certificate verification; use verified `+s` transport or supply a trusted private CA
+- **Text extraction** — OCR no longer unconditionally requires `DOCLING_ARTIFACTS_PATH`: explicit OCR model paths and bundled wheel models work without it, and connected environments can use Docling's model downloader when offline artifacts are unset; configured offline artifacts are still validated
+- **Vector store** — Neo4j knowledge-graph extraction suppresses verbose GraphRAG logs containing document text, retains warnings and errors, reports extraction start/completion, and hides passwords and CA text from `Neo4jConfig` representations
+- **Notebooks** — the MaaS indexing workflow selects OCR and audio artifacts after document discovery, requires only the models needed by the selected corpus, and installs tested RapidOCR/ONNX Runtime versions
+- **Notebooks** — knowledge-graph indexing now includes S3 discovery, text extraction, offline artifact checks, and notebook event-loop setup; graph inference includes guided setup and optional benchmark evaluation examples
+- **Dependencies** — added `nest-asyncio~=1.6.0` for notebook event-loop compatibility and refreshed `uv.lock`, including `neo4j-graphrag` 1.19.0 → 1.22.0, `docling-core` 2.96.0 → 2.101.1, and `langchain-openai` 1.6.7 → 1.7.0
+
+### Fixed
+- **Notebooks** — standard and graph inference notebooks instantiate the pattern's selected template instead of always using `SimpleRAG`; legacy patterns without `template_id` retain `SimpleRAG` with a warning, and unsupported IDs raise a clear error
+- **Notebook generation** — normalized knowledge-graph notebook cell sources so generated notebooks contain complete executable cells
+- **Agentic RAG** — corrected the invocation-state lock annotation to avoid Pydantic validation warnings on Python 3.12
+- **Vector store** — HTTPS Milvus connections without an explicit `ca_cert` now use the CAs loaded by Python's default SSL context, including configured CA bundles; an empty loaded trust store raises a clear configuration error
+- **Vector store** — updated the Neo4j text splitter for the newer GraphRAG chunk-iterator interface while preserving each canonical chunk's text and index
+
+---
+
 ## [0.21.0](https://github.com/IBM/ai4rag/releases/tag/v0.21.0)
 
 ### Added

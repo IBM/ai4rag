@@ -131,8 +131,10 @@ class DoclingExtractionConfig:
         value picks which bundled model set is loaded.  Latin-script languages
         map to the English models; only Chinese switches to the Chinese models
         (see :func:`_rapidocr_artifacts_rel_paths`).  Ignored when ``do_ocr``
-        is ``False``. When OCR is enabled, the workbench must set
-        ``DOCLING_ARTIFACTS_PATH`` to a non-empty artifacts directory.
+        is ``False``. Explicit OCR model paths take precedence over bundled
+        wheel models, followed by validated ``DOCLING_ARTIFACTS_PATH``
+        artifacts. Without configured artifacts, connected environments
+        can use Docling's normal model downloader.
     ocr_det_model_path
         What/Why: optional path to a custom RapidOCR text-*detection* ONNX
         model, for disconnected clusters or specialised model sets that differ
@@ -151,7 +153,8 @@ class DoclingExtractionConfig:
         Directory containing the approved local Hugging Face Transformers
         Whisper model. When ``None``, the audio pipeline resolves
         ``HF_MODEL_DIR`` in its worker process. Audio extraction fails closed
-        when neither location provides a complete local model.
+        when neither location provides a complete local model. ASR runs on
+        CPU independently of ``device`` and never downloads model weights.
     device
         Device for Docling's PDF, image, DOCX, and PPTX pipelines. Defaults to
         ``"cpu"`` so existing extraction runs keep their device selection.

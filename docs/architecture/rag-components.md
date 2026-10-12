@@ -574,6 +574,13 @@ class MilvusVectorStore(BaseVectorStore):
 
 For `MilvusConfig`, TLS is driven entirely by the `uri` scheme: `https://` opens a secure channel, `http://` stays plaintext. For endpoints with a self-signed or private-CA certificate, pass the PEM text via `ca_cert`. `MilvusLiteConfig` has no network/TLS concerns — it only takes a local `db_path`.
 
+On HTTPS connections without an explicit `ca_cert`, ai4rag exports the CA certificates
+loaded by Python's default SSL context to a process-lifetime PEM bundle for pymilvus.
+Mounted bundles must be part of that trust configuration (for example via
+`SSL_CERT_FILE`); an empty loaded trust store raises a configuration error. Lazily
+loaded OpenSSL CA-directory entries may be absent from the export, so supply inline
+PEM through `ca_cert` when needed. Explicit certificate text takes precedence.
+
 ```python
 from ai4rag.rag.vector_store import MilvusConfig, MilvusLiteConfig
 
@@ -836,7 +843,7 @@ from ai4rag.rag.vector_store import Neo4jConfig, get_vector_store
 
 vector_store = get_vector_store(
     embedding_model=embedding_model,
-    config=Neo4jConfig.from_env(),  # reads NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE
+    config=Neo4jConfig.from_env(),  # reads NEO4J_URI, credentials, database, and optional NEO4J_CA_CERT
     foundation_model=foundation_model,  # required for entity/relationship extraction
 )
 
@@ -844,6 +851,12 @@ vector_store.add_documents(chunked_documents)
 
 results = vector_store.search(query="What is X?", k=5, search_mode="graph")
 ```
+
+Use `neo4j+s://` or `bolt+s://` for publicly trusted TLS. `Neo4jConfig.ca_cert`
+(`NEO4J_CA_CERT`) accepts inline PEM text for a private or self-signed CA; the store
+enables encrypted, verified transport with base or `+s` URI schemes. The `+ssc` schemes
+are rejected because they bypass certificate verification. See
+[Neo4j prerequisites](neo4j-indexing-and-search.md#prerequisites).
 
 ### Reranker
 
@@ -1146,6 +1159,16 @@ agent that can rewrite its query and retrieve again before answering) — see
 [AgenticRAG](#agenticrag) below. `AgenticRAG` is the default template used by
 `AI4RAGExperiment` and `ModelsPreSelector`.
 
+Published patterns carry a `template_id` resolved by `ai4rag.rag.template.registry`.
+`RAGTemplateSpec` records the ID, implementation class, and import path;
+`get_template_spec()` resolves an allowed ID, and `template_id_for_class()` resolves
+a built-in class. The IDs are `simple_rag`, `agentic_rag`, and the accepted
+`agentic_graph_rag` alias for `AgenticRAG`. Experiments publish `agentic_rag` for
+`AgenticRAG` even with Neo4j: graph retrieval is selected by the store and retriever.
+Generated inference notebooks instantiate the resolved class. Legacy patterns without
+an ID warn and use `SimpleRAG`; unsupported IDs or custom classes raise `ValueError`.
+See the [registry API](../api-reference/assets-generator/notebooks.md#rag-template-registry).
+
 ### BaseRAGTemplate
 
 Abstract interface for RAG templates:
@@ -1372,7 +1395,15 @@ rag = AgenticRAG(
 result = rag.generate("What is the capital of France?")
 print(result["answer"])
 print(result["reference_documents"])  # chunks from every retrieval the agent made
+print(result["conversation"])  # initial retrieval, messages, and tool activity
 ```
+
+`generate()` includes a JSON-safe `conversation` record with `question`,
+`initial_retrieval` (query and documents), serialized `messages`, and `tool_execution`
+records for `rewrite_query` and `retriever`. Retrieval tool records include newly
+discovered documents with text and metadata. The experiment adds a `conversation_id`
+and publishes trajectories through the event handler; `LocalEventHandler` saves them
+in `conversations.json`. See [Event Handlers](../user-guide/event-handlers.md#conversations-agent-trajectories).
 
 !!! note "Dependencies"
     `AgenticRAG` requires the `langchain` and `langchain-openai` packages,
@@ -1501,6 +1532,11 @@ class CustomVectorStore(BaseVectorStore):
 ```
 
 ### Custom RAG Template
+
+Custom templates can implement `BaseRAGTemplate` for standalone use. Experiment
+publication and generated notebooks currently accept only registered built-in classes;
+adding a subclass requires changes to the registry before it can publish patterns.
+There is no public dynamic-registration API.
 
 ```python
 class CustomRAG(BaseRAGTemplate):

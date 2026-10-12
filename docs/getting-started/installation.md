@@ -34,6 +34,10 @@ No extra step is needed to use a remote Milvus server, embedded Milvus Lite, Pos
 
 `langchain` and `langchain-openai` are also core dependencies, powering the `AgenticRAG` template that `AI4RAGExperiment` uses by default (see [RAG Templates](../architecture/rag-components.md#rag-templates)).
 
+`nest-asyncio~=1.6.0` is installed as a core dependency for notebook event-loop
+compatibility. Generated knowledge-graph indexing notebooks call `nest_asyncio.apply()`
+before graph extraction.
+
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
     Scanned PDFs/images (via RapidOCR) and audio transcription (via a local Hugging Face Whisper model)
@@ -44,8 +48,10 @@ No extra step is needed to use a remote Milvus server, embedded Milvus Lite, Pos
     pip install "ai4rag[text-extraction] @ git+https://github.com/IBM/ai4rag.git@main"
     ```
 
-    Audio extraction also requires `HF_MODEL_DIR` to point to an approved local Whisper model directory;
-    ai4rag does not download ASR weights at runtime. See
+    Audio extraction also requires `HF_MODEL_DIR` (or
+    `DoclingExtractionConfig.asr_model_path`) to point to a complete local
+    Transformers-format Whisper model directory; openai-whisper checkpoints are not
+    compatible with this backend. ai4rag does not download ASR weights at runtime. See
     [Pipeline Components](../user-guide/pipeline-components.md#text-extraction) for usage.
 
 ---
@@ -149,10 +155,24 @@ vector_store_config = MilvusLiteConfig(db_path="./ai4rag.db")
 vector_store_config = MilvusConfig.from_env()       # reads MILVUS_URI (must be http(s)://), MILVUS_TOKEN, MILVUS_CA_CERT
 vector_store_config = MilvusLiteConfig.from_env()   # reads MILVUS_LITE_DB_PATH (optional; defaults to "./ai4rag_milvus_lite.db")
 vector_store_config = PGVectorConfig.from_env()     # reads PGVECTOR_HOST, PGVECTOR_PORT, PGVECTOR_DB, PGVECTOR_USER, PGVECTOR_PASSWORD
-vector_store_config = Neo4jConfig.from_env()        # reads NEO4J_URI, NEO4J_USERNAME, NEO4J_PASSWORD, NEO4J_DATABASE
+vector_store_config = Neo4jConfig.from_env()        # also reads optional NEO4J_CA_CERT (inline PEM text)
 ```
 
 Each config class exposes the environment variables it reads via its `env_vars` attribute, and can be constructed explicitly instead of from the environment, e.g. `MilvusConfig(uri="https://localhost:19530")` for a remote server or `MilvusLiteConfig(db_path="./ai4rag.db")` for embedded local storage.
+
+!!! note "Verified TLS for Neo4j"
+    Use `neo4j+s://` or `bolt+s://` with a publicly trusted certificate. For a
+    private or self-signed CA, supply its PEM certificate text through
+    `Neo4jConfig.ca_cert` or `NEO4J_CA_CERT`; a file path is not accepted as certificate
+    content. ai4rag enables encrypted, verified transport with either a base or `+s`
+    URI when a custom CA is set. `neo4j+ssc://` and `bolt+ssc://` are rejected.
+
+!!! note "Default CA discovery for Milvus"
+    HTTPS Milvus connections without `ca_cert` use the CAs loaded by Python's default
+    SSL context. Include a mounted bundle in that trust configuration, for example via
+    `SSL_CERT_FILE`, or supply inline PEM through `MILVUS_CA_CERT`. An empty loaded
+    trust store raises a configuration error. See
+    [Vector Store Backends](../user-guide/provider-agnostic.md#vector-store-backends).
 
 !!! note "Why `MilvusConfig` and `MilvusLiteConfig` are separate"
     `MilvusConfig` (remote Milvus server / Zilliz Cloud) validates that `uri` is an `http(s)://` URL and

@@ -72,6 +72,12 @@ ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) fo
 
 Each candidate pattern is evaluated through a `rag_template` passed to `AI4RAGExperiment` — a `BaseRAGTemplate` subclass. The default, `AgenticRAG`, is a LangChain agent that can rewrite its search query and retrieve again before answering; `SimpleRAG` (a single fixed retrieve-then-generate pass) is also available via `rag_template=SimpleRAG`. See the [RAG Components](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#rag-templates) architecture doc.
 
+Published patterns persist the selected template as `template_id`, which generated
+inference notebooks use to recreate it. Pattern publication currently supports the
+built-in `AgenticRAG` and `SimpleRAG` classes; custom subclasses need registry support.
+`LocalEventHandler` writes `conversations.json` alongside each agentic pattern's
+`pattern.json` and `evaluation_results.json`, recording retrieved context and tool activity.
+
 ## Running on Disconnected Clusters
 
 If you are running ai4rag on a **disconnected cluster** (no internet access), you must pre-download the required ML models before execution.
@@ -118,7 +124,8 @@ ai4rag depends on models from two sources:
    ```
 
    `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model. AI4RAG does not
-   download audio-transcription weights at runtime.
+   download audio-transcription weights at runtime. You can override the environment
+   setting with `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
 
 ### Indexing Notebooks
 
@@ -127,7 +134,10 @@ The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disc
 - Configuration examples for custom model paths
 - Step-by-step download instructions in the appendix
 
-All indexing notebooks automatically detect and use pre-downloaded artifacts when `DOCLING_ARTIFACTS_PATH` is set.
+The MaaS indexing notebook selects model requirements after document discovery:
+PDF/image inputs require `DOCLING_ARTIFACTS_PATH`, audio inputs require `HF_MODEL_DIR`,
+and text-only corpora require neither. The knowledge-graph indexing notebook also
+includes S3 discovery and extraction, and retains its Docling artifact prerequisite.
 
 
 ## Quick start

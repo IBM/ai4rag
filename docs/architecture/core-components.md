@@ -71,6 +71,17 @@ subclass, defaulting to `AgenticRAG` (a LangChain agent that can rewrite its que
 before answering). Pass `rag_template=SimpleRAG` for the previous single-pass retrieve-then-generate
 behavior. The same parameter is accepted by `ModelsPreSelector` for the pre-selection phase below.
 
+Pattern publication resolves the selected class through the template registry and
+persists its `template_id`. Currently only the built-in `AgenticRAG` and `SimpleRAG`
+classes can be published; custom subclasses require registry support. Generated
+inference notebooks use that ID to recreate the selected template.
+
+When inference returns agent conversations, the experiment keeps them separately from
+evaluation scores and forwards them to the event handler on publication, including
+when the best warm-start candidate is renamed to `Pattern1`. Neo4j patterns publish
+their extraction policy as `settings.graph_extraction`, replacing the previous
+`settings.knowledge_graph` block. See [Event Handlers](../user-guide/event-handlers.md).
+
 ### search() Method
 
 The `search()` method is the main entry point that executes the optimization loop:

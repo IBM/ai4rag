@@ -367,9 +367,10 @@ class Neo4jConfig(BaseVectorStoreConfig):
     Raises
     ------
     ValueError
-        If ``uri`` uses a plaintext scheme (``neo4j://``/``bolt://``) against
-        a host that is not local or in-cluster (see
-        :func:`ai4rag.utils.network.ensure_safe_url`).
+        If ``uri`` uses an unsupported scheme, including ``neo4j+ssc`` or
+        ``bolt+ssc``, or uses a base scheme (``neo4j://``/``bolt://``) against
+        a non-local, non-cluster host without ``ca_cert``. With ``ca_cert``,
+        base and ``+s`` schemes use encrypted, CA-verified transport.
     """
 
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (

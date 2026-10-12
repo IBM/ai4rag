@@ -257,7 +257,10 @@ optimizer_settings = GAMOptSettings(
     Each candidate pattern is evaluated through a `rag_template` constructor argument, defaulting to
     `AgenticRAG` — a LangChain agent that can rewrite its query and retrieve again before answering.
     Pass `rag_template=SimpleRAG` (from `ai4rag.rag.template`) for the previous single-pass
-    retrieve-then-generate behavior. See [RAG Templates](../architecture/rag-components.md#rag-templates).
+    retrieve-then-generate behavior. Pattern publication currently supports these two
+    built-in classes; custom subclasses require template-registry support. The chosen
+    class is persisted as `template_id` for generated inference notebooks. See
+    [RAG Templates](../architecture/rag-components.md#rag-templates).
 
 Create and run the optimization experiment:
 
@@ -289,7 +292,13 @@ print(f"Best pattern: {best_pattern.pattern_name}, score: {best_pattern.final_sc
 
 After completion, check the `output_path` directory for:
 
-- **JSON files**: Detailed results for each evaluated configuration
+- **`<pattern_name>/pattern.json`**: Published pattern settings, selected `template_id`, and aggregate scores
+- **`<pattern_name>/evaluation_results.json`**: Per-question answers, retrieved contexts, and scores
+- **`<pattern_name>/conversations.json`**: Agent messages, retrievals, and tool activity when the template emits trajectories
+
+Only the best successful warm-start candidate is published as `Pattern1`; other
+warm-start candidates do not get output directories. See
+[Event Handlers](../user-guide/event-handlers.md) for the artifact schema.
 
 ---
 

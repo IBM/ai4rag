@@ -465,7 +465,7 @@ class MyCustomVectorStore(BaseVectorStore):
 | `MilvusConfig` | Milvus — remote server or Zilliz Cloud only (hybrid: dense + BM25) | `uri` (required, must be `http(s)://`; raises `ValueError` otherwise; plaintext `http://` only allowed against a local or in-cluster host), `token`, `ca_cert` | `MILVUS_URI` (required, must be `http(s)://`), `MILVUS_TOKEN`, `MILVUS_CA_CERT` |
 | `MilvusLiteConfig` | Milvus Lite — embedded, local file only (hybrid: dense + BM25) | `db_path` (local file path; defaults to `"./ai4rag_milvus_lite.db"`; raises `ValueError` if given a `http(s)://` value) | `MILVUS_LITE_DB_PATH` (optional) |
 | `PGVectorConfig` | PostgreSQL + pgvector (hybrid: dense + full-text) | `host`, `port`, `dbname`, `user`, `password`, `ca_cert` (PEM text for a private CA; non-local hosts always get verified TLS) | `PGVECTOR_HOST`, `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD`, `PGVECTOR_CA_CERT` |
-| `Neo4jConfig` | Neo4j — graph-only (`search_mode="graph"`, no hybrid/vector modes) | `uri` (required, Bolt/neo4j URI; plaintext `neo4j://`/`bolt://` only allowed against a local or in-cluster host), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE` |
+| `Neo4jConfig` | Neo4j — graph-only (`search_mode="graph"`, no hybrid/vector modes) | `uri` (required; `neo4j+s://` or `bolt+s://` for verified TLS), `username` (default `"neo4j"`), `password` (required), `database` (default `"neo4j"`), `ca_cert` (optional inline PEM CA text) | `NEO4J_URI` (required), `NEO4J_USERNAME`, `NEO4J_PASSWORD` (required), `NEO4J_DATABASE`, `NEO4J_CA_CERT` |
 
 Both `MilvusConfig` and `MilvusLiteConfig` are served by the same `MilvusVectorStore` implementation; they only differ in where the data lives (remote server vs. local file) and are validated to prevent mixing the two up (see the note under [Milvus Lite (Embedded, Local File)](#milvus-lite-embedded-local-file)).
 
@@ -481,6 +481,14 @@ If the default context loads no CAs, initialization raises a configuration error
 gRPC performs TLS verification using the exported CAs; Python's TLS settings and
 verification flags are not transferred to gRPC.
 
+For Neo4j, `ca_cert` (or `NEO4J_CA_CERT`) contains inline PEM text for a private or
+self-signed CA. The store normalizes a `+s` URI to its base scheme for the driver and
+explicitly enables encrypted, CA-verified transport. Base `neo4j://` or `bolt://` URIs
+also use verified TLS when a custom CA is supplied; without it, those schemes are
+allowed only for local or in-cluster hosts. `neo4j+ssc://` and `bolt+ssc://` are rejected
+because they bypass certificate verification. Passwords and CA text are excluded from
+`Neo4jConfig` representations.
+
 Each config class is a frozen, keyword-only dataclass with a `.from_env()` classmethod that builds an instance from the environment variables above:
 
 ```python
@@ -495,7 +503,7 @@ milvus_config = MilvusConfig.from_env()
 # PGVector, reading PGVECTOR_HOST / PGVECTOR_PORT / PGVECTOR_DB / PGVECTOR_USER / PGVECTOR_PASSWORD
 pgvector_config = PGVectorConfig.from_env()
 
-# Neo4j, reading NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD / NEO4J_DATABASE
+# Neo4j, reading NEO4J_URI / NEO4J_USERNAME / NEO4J_PASSWORD / NEO4J_DATABASE / NEO4J_CA_CERT
 neo4j_config = Neo4jConfig.from_env()
 ```
 

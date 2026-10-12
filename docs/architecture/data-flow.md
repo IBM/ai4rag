@@ -233,6 +233,12 @@ diagram below shows `SimpleRAG`'s single-pass flow; `AgenticRAG` (the experiment
 retrieval but then lets an agent loop through further `retriever`/`rewrite_query` tool calls,
 bounded by `max_retrieval_steps`, before generating the final answer.
 
+`AgenticRAG.generate()` also returns a JSON-safe `conversation` record containing the
+initial retrieval, agent messages, and rewrite/retrieval tool activity. The experiment
+collects these records separately from evaluation data and forwards them on pattern
+publication; the selected warm-start candidate retains its trajectories when published
+as `Pattern1`.
+
 ```mermaid
 sequenceDiagram
     participant QR as query_rag()
@@ -801,12 +807,14 @@ event_handler.on_status_change(
 
 **on_pattern_creation() calls:**
 
-After each evaluation completes:
+After each evaluated pattern is selected for publication (only the best successful
+warm-start candidate is published from that phase):
 
 ```python
 event_handler.on_pattern_creation(
     payload={
         "name": "Pattern5",
+        "template_id": "agentic_rag",
         "iteration": 4,
         "max_combinations": 24,
         "duration_seconds": 134,
@@ -815,7 +823,7 @@ event_handler.on_pattern_creation(
                 {"name": "faithfulness", "evaluator": "unitxt", "description": "...",
                  "scores": {"mean": 0.72, "ci_low": 0.61, "ci_high": 0.83}},
                 {"name": "overall_score", "evaluator": "custom", "description": "...",
-                 "scores": {"mean": 0.75, ...}, "optimization_metric": True},
+                 "scores": {"mean": 0.75, "ci_low": None, "ci_high": None}, "optimization_metric": True},
             ],
         },
         "settings": {
@@ -837,6 +845,14 @@ event_handler.on_pattern_creation(
     ],
 )
 ```
+
+When conversation records are present, the call also includes a `conversations`
+keyword containing one record per traced benchmark case, with IDs such as `case-0000`.
+`LocalEventHandler` writes `pattern.json`, `evaluation_results.json`, and optional
+`conversations.json` under the published pattern's directory. `KFPEventHandler`
+retains the same records in memory. For Neo4j patterns, `settings.graph_extraction`
+contains the extraction policy; `settings.knowledge_graph` is no longer published.
+See [Event Handlers](../user-guide/event-handlers.md) for the full schema.
 
 ---
 

@@ -194,27 +194,51 @@ resolve to the English models; only Chinese switches to the dedicated Chinese
 models. `ocr_lang` accepts a single string (`"english"`) or a sequence
 (`["english", "chinese"]`) and defaults to `["english"]` when OCR is enabled.
 
-Default RapidOCR models are **not** in current PyPI `rapidocr` wheels, and `extract_text` no longer falls back to Docling's runtime model downloader. Whenever `do_ocr=True`, `DOCLING_ARTIFACTS_PATH` must be set to a non-empty Docling artifacts directory — this is checked before anything else, **even when `ocr_*_model_path` is also set** — or `extract_text` raises `FileNotFoundError` immediately. Bake ONNX models under `$DOCLING_ARTIFACTS_PATH/RapidOcr/` at image build time (see `tmp/Containerfile.autorag-dev`); use `ocr_*_model_path` only to point at a different ONNX set once `DOCLING_ARTIFACTS_PATH` is set. Docling auto-detects pages that need OCR when `do_ocr=True`.
+OCR model resolution first uses explicit `ocr_*_model_path` values, then ONNX models
+bundled in a compatible RapidOCR wheel. If neither is available and
+`DOCLING_ARTIFACTS_PATH` is set, ai4rag validates the language-specific models under
+`$DOCLING_ARTIFACTS_PATH/RapidOcr/` before conversion. Missing offline models raise
+`FileNotFoundError`. Without configured artifacts, model paths remain unset so a
+connected environment can use Docling's normal model downloader. Explicit model paths
+and bundled wheel models do not require `DOCLING_ARTIFACTS_PATH`.
+
+For disconnected OCR runs, stage all required models before extraction. The generated
+MaaS indexing notebook selects OCR for discovered PDF/image inputs and requires the
+Docling/RapidOCR artifacts for those inputs; text-only corpora do not need them.
+Docling auto-detects pages that need OCR when `do_ocr=True`.
 
 #### Audio Transcription
 
-Audio files (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) are transcribed automatically. Set
-`HF_MODEL_DIR` to the approved local Hugging Face Transformers Whisper model directory before extraction.
-ai4rag loads that directory with `local_files_only=True` and fails with `FileNotFoundError` if it is
-missing or incomplete; it never downloads ASR weights at runtime.
+Audio files (`.wav`, `.mp3`, `.m4a`, `.aac`, `.ogg`, `.flac`) are transcribed automatically
+through `LocalHuggingFaceAsrPipeline`, a Docling ASR pipeline using a local Hugging Face
+Transformers Whisper model. Set `HF_MODEL_DIR`, or override it with
+`DoclingExtractionConfig.asr_model_path` as shown below. The model is loaded lazily on
+the first audio input with `local_files_only=True`; non-audio conversion does not
+require Whisper artifacts, and ASR weights are never downloaded at runtime.
+
+The directory must contain `config.json` with `model_type="whisper"`,
+`preprocessor_config.json`, `tokenizer_config.json`, model weights (or a sharded-weight
+index), and the processor/tokenizer files needed by Transformers. Missing or incomplete
+directories raise `FileNotFoundError`; invalid configurations or other model types
+raise `ValueError`. Existing openai-whisper checkpoints need to be replaced with a
+Transformers-format model.
 
 ```python
-from ai4rag.utils.data import extract_text
+from ai4rag.utils.data import DoclingExtractionConfig, extract_text
 
 result = extract_text(
     documents=[{"key": "recordings/call.mp3", "size_bytes": 4096}],
     bucket="my-bucket",
     output_dir="/tmp/extracted",
+    docling_config=DoclingExtractionConfig(asr_model_path="/models/whisper-tiny"),
 )
 ```
 
 For an AutoRAG product deployment, `HF_MODEL_DIR` must be supplied by the approved Whisper modelcar.
 For other deployments, mount an equivalent locally verified model directory and make it read-only.
+
+ASR currently runs on CPU in 30-second windows. `DoclingExtractionConfig.device`
+controls document/OCR pipelines and does not change the audio backend's device.
 
 When using the hybrid/Docling chunker, chunks produced from ASR transcript
 segments also carry `audio_start_seconds` and `audio_end_seconds` in their
