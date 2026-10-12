@@ -914,7 +914,9 @@ class AI4RAGExperiment:
             self.vector_store_config.provider == "neo4j"
             and evaluation_result.indexing_params.get("knowledge_graph") is not None
         ):
-            indexing_payload["knowledge_graph"] = evaluation_result.indexing_params["knowledge_graph"]
+            indexing_payload["graph_extraction"] = evaluation_result.indexing_params["knowledge_graph"][
+                "extraction_config"
+            ]
         generation_payload = evaluation_result.rag_params.get("generation")
         n_known = len(self.known_observations) if self.known_observations else 0
 
@@ -1008,12 +1010,10 @@ class AI4RAGExperiment:
         """Dispatch selected metrics to their evaluators and combine the scores."""
 
         evaluator_map: dict[str, BaseEvaluator] = {e.EVALUATOR_TYPE: e for e in self.evaluators}
-
         metrics_by_type: dict[str, list[RAGMetric]] = {}
         for m in metrics:
             if m.evaluator != "custom":
                 metrics_by_type.setdefault(m.evaluator, []).append(m)
-
         partial_results: list[EvaluationMetricsResult] = []
         for eval_type, type_metrics in metrics_by_type.items():
             evaluator = evaluator_map.get(eval_type)
@@ -1028,7 +1028,6 @@ class AI4RAGExperiment:
 
         result = merge_evaluation_results(partial_results)
         apply_custom_metrics(scores=result, metrics=metrics)
-
         return result
 
     def _collection_exists(self, collection_name: str) -> bool:
@@ -1072,7 +1071,6 @@ class AI4RAGExperiment:
             collection_name = collection
             logger.info("Reusing existing collection: '%s'", collection_name)
             return collection_name
-
         return None
 
     def _create_pattern_name(self) -> str:
