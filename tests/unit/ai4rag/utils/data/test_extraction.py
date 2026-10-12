@@ -10,6 +10,7 @@ import pytest
 
 from ai4rag.utils.data import text_extraction
 from ai4rag.utils.data.text_extraction import (
+    DoclingExtractionConfig,
     ExtractionResult,
     _build_docling_format_options,
     _download_document,
@@ -565,19 +566,17 @@ class TestBuildDoclingFormatOptions:
         with pytest.raises(FileNotFoundError, match="Bake them into the AutoRAG image"):
             te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
 
-    def test_ocr_requires_docling_artifacts_environment(self, monkeypatch):
-        """OCR must require a workbench-configured Docling artifacts directory."""
+    def test_ocr_allows_connected_model_download_without_artifacts(self, monkeypatch):
+        """Without offline artifacts, leave model paths unset for Docling download."""
         from ai4rag.utils.data import text_extraction as te
 
         monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
-        monkeypatch.setattr(
-            te,
-            "_try_resolve_wheel_rapidocr_model_paths",
-            lambda: {"det_model_path": "/models/det.onnx"},
-        )
+        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
 
-        with pytest.raises(FileNotFoundError, match="DOCLING_ARTIFACTS_PATH is not set"):
-            te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+        options = te._build_rapidocr_options(te.DoclingExtractionConfig(do_ocr=True))
+
+        assert options.det_model_path is None
+        assert options.rec_model_path is None
 
     def test_missing_rapidocr_package_raises(self, monkeypatch):
         """A non-importable rapidocr on the OCR path fails fast with an actionable error."""
@@ -619,22 +618,25 @@ class TestBuildDoclingFormatOptions:
         options = _build_docling_format_options()
         assert InputFormat.IMAGE in options
 
-    def test_audio_format_uses_asr_pipeline(self):
-        """Audio format option must use the AsrPipeline class."""
+    def test_audio_format_uses_local_huggingface_asr_pipeline(self):
+        """Audio format option must use the offline local Hugging Face backend."""
         from docling.datamodel.base_models import InputFormat
-        from docling.pipeline.asr_pipeline import AsrPipeline
+
+        from ai4rag.utils.data.local_hf_asr_pipeline import LocalHuggingFaceAsrPipeline
 
         options = _build_docling_format_options()
         audio_option = options[InputFormat.AUDIO]
-        assert audio_option.pipeline_cls is AsrPipeline
+        assert audio_option.pipeline_cls is LocalHuggingFaceAsrPipeline
 
-    def test_audio_format_language_is_auto_detect(self):
-        """Audio ASR options must use language=None for auto-detection."""
+    def test_audio_format_forwards_configured_model_path(self):
+        """Audio ASR options must carry the approved local model path."""
         from docling.datamodel.base_models import InputFormat
 
-        options = _build_docling_format_options()
+        options = _build_docling_format_options(
+            config=DoclingExtractionConfig(asr_model_path="/models/whisper-tiny"),
+        )
         audio_option = options[InputFormat.AUDIO]
-        assert audio_option.pipeline_options.asr_options.language is None
+        assert audio_option.pipeline_options.asr_model_path == "/models/whisper-tiny"
 
 
 class TestCudaOcrProvider:
