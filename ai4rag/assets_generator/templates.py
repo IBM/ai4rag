@@ -166,6 +166,10 @@ def generate_notebook_from_template(
         notebook_name=f"{notebook_template}_template.ipynb",
     )
     filled_cells = [cell.format_source(placeholder_mapping) for cell in notebook.cells]
+    if notebook_template.startswith("mass_"):
+        for cell in filled_cells:
+            if isinstance(cell.source, list):
+                cell.source = "".join(cell.source)
 
     notebook = Notebook(cells=filled_cells)
     notebook.save(Path(output_notebook_path))

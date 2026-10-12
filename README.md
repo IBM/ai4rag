@@ -57,7 +57,7 @@ ai4RAG talks to the vector store directly through provider-specific clients — 
 - **`MilvusConfig`** — remote Milvus server or Zilliz Cloud only. `uri` must be a `http(s)://` URL (TLS and self-signed CAs via `ca_cert`); anything else (a bare host, a file path, an empty string) raises `ValueError`. This is a deliberate safety check: a mistyped or unreachable `MILVUS_URI` now fails loudly instead of silently falling back to a throwaway local database. Supports hybrid search (dense + BM25).
 - **`MilvusLiteConfig`** — the embedded, zero-server **Milvus Lite** engine, backed by a local `db_path` file (default `"./ai4rag_milvus_lite.db"`) — no setup required, ideal for local development and small-scale workloads. Also supports hybrid search (dense + BM25); rejects `http(s)://` values (use `MilvusConfig` for those).
 - **`PGVectorConfig`** — PostgreSQL with the `pgvector` extension. Hybrid search (dense + `tsvector` full-text).
-- **`Neo4jConfig`** — Neo4j (with APOC), for graph-based RAG. `add_documents()` extracts entities and relationships into a per-collection knowledge graph; `search_mode="graph"` is the only supported mode (no vector/hybrid search). See the [Neo4j Indexing and Graph Search](https://ibm.github.io/ai4rag/latest/architecture/neo4j-indexing-and-search/) architecture doc.
+- **`Neo4jConfig`** — Neo4j (with APOC), for graph-based RAG. For a server certificate issued by a publicly trusted CA, use a `neo4j+s://` or `bolt+s://` URI. For a private or self-signed CA, supply `ca_cert`; ai4rag automatically configures encrypted, CA-verified transport. `add_documents()` extracts entities and relationships into a per-collection knowledge graph; `search_mode="graph"` is the only supported mode (no vector/hybrid search). See the [Neo4j Indexing and Graph Search](https://ibm.github.io/ai4rag/latest/architecture/neo4j-indexing-and-search/) architecture doc.
 
 Each config is a frozen dataclass with a `.from_env()` constructor and an `env_vars` attribute listing the environment variables it reads (e.g. `MILVUS_URI` for `MilvusConfig`, `MILVUS_LITE_DB_PATH` for `MilvusLiteConfig`, `PGVECTOR_HOST` for `PGVectorConfig`).
 
@@ -83,6 +83,7 @@ ai4rag depends on models from two sources:
 | Component | Size | Purpose | Environment Variable |
 |-----------|------|---------|----------------------|
 | **Docling artifacts** | ~300-400 MB | Document text extraction and optional OCR | `DOCLING_ARTIFACTS_PATH` |
+| **Whisper ASR model** | ~150 MB | Offline audio transcription | `HF_MODEL_DIR` |
 | **HuggingFace models** | Variable | Embeddings and foundation models | `HF_HOME` |
 
 ### Setup Instructions
@@ -111,9 +112,13 @@ ai4rag depends on models from two sources:
 3. **On the disconnected cluster, set environment variables:**
    ```bash
    export DOCLING_ARTIFACTS_PATH=/offline/docling
+   export HF_MODEL_DIR=/offline/models/whisper-tiny
    export HF_HOME=/offline/hf_cache
    export HF_HUB_OFFLINE=1  # Enforce offline mode
    ```
+
+   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model. AI4RAG does not
+   download audio-transcription weights at runtime.
 
 ### Indexing Notebooks
 

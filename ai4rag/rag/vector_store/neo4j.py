@@ -42,6 +42,7 @@ from ai4rag.rag.vector_store.neo4j_utils import (
 )
 from ai4rag.rag.vector_store.utils import (
     iter_unique_chunks,
+    materialize_ca_cert,
     resolve_embedding_dimension,
 )
 
@@ -72,6 +73,21 @@ def _suppress_neo4j_graphrag_info_logs() -> Iterator[None]:
     finally:
         for configured_logger, previous_level in zip(configured_loggers, previous_levels):
             configured_logger.setLevel(previous_level)
+
+
+_CUSTOM_CA_URI_SCHEMES = {"neo4j+s": "neo4j", "bolt+s": "bolt"}
+
+
+def _normalize_custom_ca_uri(uri: str) -> str:
+    """Return the driver-compatible URI for a connection using a custom CA.
+
+    The Neo4j driver prohibits ``trusted_certificates`` with its ``+s`` URI
+    schemes. Replacing only the scheme preserves the endpoint and whether the
+    caller requested routing (``neo4j``) or a direct connection (``bolt``);
+    :class:`Neo4jGraphStore` then supplies explicit TLS settings.
+    """
+    scheme, separator, remainder = uri.partition(":")
+    return f"{_CUSTOM_CA_URI_SCHEMES.get(scheme.lower(), scheme)}{separator}{remainder}"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -153,10 +169,18 @@ class Neo4jGraphStore(BaseVectorStore):
         self._embedding_dimension = resolve_embedding_dimension(embedding_model)
         self._foundation_model = foundation_model
         self._kg_extraction_config = _validate_kg_extraction_config(kg_extraction_config)
-        self._driver = neo4j.GraphDatabase.driver(
-            config.uri,
-            auth=(config.username, config.password),
-        )
+        driver_kwargs: dict[str, Any] = {"auth": (config.username, config.password)}
+        if config.ca_cert:
+            # The Neo4j driver rejects ``trusted_certificates`` with ``+s``
+            # URIs because those schemes select its built-in CA trust mode.
+            # Use the corresponding base scheme below, then explicitly retain
+            # TLS and verify the server against the configured private CA.
+            driver_kwargs["encrypted"] = True
+            driver_kwargs["trusted_certificates"] = neo4j.TrustCustomCAs(
+                materialize_ca_cert(config.ca_cert, prefix="ai4rag-neo4j-cert-")
+            )
+        driver_uri = _normalize_custom_ca_uri(config.uri) if config.ca_cert else config.uri
+        self._driver = neo4j.GraphDatabase.driver(driver_uri, **driver_kwargs)
         self._driver.verify_connectivity()
         self._ensure_kg_schema()
 
