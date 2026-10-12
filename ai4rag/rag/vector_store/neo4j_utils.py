@@ -134,6 +134,9 @@ class _EmbedderAdapter(_NeoEmbedder):  # type: ignore[misc]
         return self._model.embed_query(text)
 
 
+# GraphRAG's tool-call defaults intentionally raise NotImplementedError.
+# This KG adapter uses ainvoke and does not support tool calling.
+# pylint: disable-next=abstract-method
 class _LLMAdapter(_NeoLLMInterface):  # type: ignore[misc]
     """Wraps :class:`BaseFoundationModel` to satisfy ``neo4j_graphrag``'s LLM interface.
 
