@@ -173,7 +173,11 @@ class BaseEventHandler(ABC):
 
     @abstractmethod
     def on_pattern_creation(
-        self, payload: PatternPayload, evaluation_results: list[EvaluationRecord], **kwargs
+        self,
+        payload: PatternPayload,
+        evaluation_results: list[EvaluationRecord],
+        conversations: list[dict] | None = None,
+        **kwargs,
     ) -> None:
         """
         Method called when single RAG pattern's evaluation is completed.

@@ -184,6 +184,7 @@ class AI4RAGExperiment:
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
         self._optimization_phase: str | None = None
+        self._conversations_by_pattern: dict[str, list[dict[str, Any]]] = {}
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
@@ -654,6 +655,8 @@ class AI4RAGExperiment:
         evaluation_results_json = self.results.create_evaluation_results_json(
             evaluation_data=evaluation_data, evaluation_result=evaluation_result
         )
+        if conversations := self._conversations_from_response(inference_response):
+            self._conversations_by_pattern[pattern_name] = conversations
 
         logger.info(
             "Evaluation scores: %s",
@@ -666,6 +669,7 @@ class AI4RAGExperiment:
                 self._stream_finished_pattern(
                     evaluation_result=evaluation_result,
                     evaluation_results_json=evaluation_results_json,
+                    conversations=conversations,
                     iteration=iteration,
                 )
             except Exception as exc:
@@ -861,6 +865,7 @@ class AI4RAGExperiment:
             evaluation_results_json=evaluation_results_json,
             pattern_name="Pattern1",
             iteration=0,
+            conversations=self._conversations_by_pattern.get(result.pattern_name),
         )
 
     def _stream_finished_pattern(
@@ -869,34 +874,21 @@ class AI4RAGExperiment:
         evaluation_results_json: list,
         pattern_name: str | None = None,
         iteration: int | None = None,
+        conversations: list[dict[str, Any]] | None = None,
     ) -> None:
-        """
-        Stream finished pattern.
-
-        Parameters
-        ----------
-        evaluation_result : EvaluationResult
-            Data made of evaluation results.
-
-        evaluation_results_json : list
-            Prepared partial payload for the streamed content.
-        """
+        """Stream a finished pattern to the configured event handler."""
         retrieval_payload = {
             "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
             "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
             "search_mode": evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.SEARCH_MODE, "vector"),
         }
-
         if evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]:
             retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
-
         if retrieval_payload["search_mode"] == "hybrid":
             ranker_strategy = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_STRATEGY)
             retrieval_payload["ranker_strategy"] = ranker_strategy
-
             if ranker_strategy == "rrf":
                 retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
-
             if ranker_strategy == "weighted":
                 retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
                     AI4RAGParamNames.RANKER_ALPHA
@@ -905,12 +897,10 @@ class AI4RAGExperiment:
             for key in Neo4jGraphRetrievalConfig.keys():
                 if key in evaluation_result.rag_params["retrieval"]:
                     retrieval_payload[key] = evaluation_result.rag_params["retrieval"][key]
-
         vector_store_payload = {
             "provider_type": self.vector_store_config.provider,
             "collection_name": evaluation_result.collection,
         }
-
         indexing_payload = {
             "chunking": {
                 "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
@@ -925,9 +915,7 @@ class AI4RAGExperiment:
             and evaluation_result.indexing_params.get("knowledge_graph") is not None
         ):
             indexing_payload["knowledge_graph"] = evaluation_result.indexing_params["knowledge_graph"]
-
         generation_payload = evaluation_result.rag_params.get("generation")
-
         n_known = len(self.known_observations) if self.known_observations else 0
 
         # Match on name and evaluator so a colliding metric name (e.g. unitxt vs
@@ -940,7 +928,6 @@ class AI4RAGExperiment:
             )
             for m in evaluation_result.scores["metrics"]
         ]
-
         payload = {
             "name": pattern_name or evaluation_result.pattern_name,
             "template_id": template_id_for_class(self.rag_template),
@@ -955,7 +942,20 @@ class AI4RAGExperiment:
             },
             "iteration": iteration if iteration is not None else len(self.results) + n_known,
         }
-        self.event_handler.on_pattern_creation(payload=payload, evaluation_results=evaluation_results_json)
+        self.event_handler.on_pattern_creation(
+            payload=payload,
+            evaluation_results=evaluation_results_json,
+            **({"conversations": conversations} if conversations else {}),
+        )
+
+    @staticmethod
+    def _conversations_from_response(inference_response: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Return conversation records emitted by templates that support agent trajectories."""
+        return [
+            {"conversation_id": f"case-{index:04d}", **conversation}
+            for index, response in enumerate(inference_response)
+            if isinstance(conversation := response.get("conversation"), dict)
+        ]
 
     def _evaluate_response(
         self,

@@ -180,6 +180,26 @@ class TestLocalEventHandlerOnPatternCreationWithOutputPath:
             written = json.load(f)
         assert written == EVALUATION_RESULTS
 
+    def test_writes_conversations_json(self, tmp_path, mocker):
+        """conversations.json is written beside the evaluation records."""
+        mocker.patch("ai4rag.utils.event_handler.event_handler.logger")
+        handler = LocalEventHandler(output_path=tmp_path)
+        conversations = [{"conversation_id": "case-0000", "question": "What is RAG?"}]
+
+        handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS, conversations=conversations)
+
+        with open(tmp_path / "Pattern1" / "conversations.json", encoding="utf-8") as file:
+            assert json.load(file) == conversations
+
+    def test_does_not_write_conversations_json_without_agent_trajectory(self, tmp_path, mocker):
+        """Non-agentic patterns do not produce an empty conversations artifact."""
+        mocker.patch("ai4rag.utils.event_handler.event_handler.logger")
+        handler = LocalEventHandler(output_path=tmp_path)
+
+        handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS)
+
+        assert not (tmp_path / "Pattern1" / "conversations.json").exists()
+
     def test_uses_default_pattern_name_when_missing(self, tmp_path, mocker):
         """Falls back to 'default_pattern_name' when payload has no name."""
         mocker.patch("ai4rag.utils.event_handler.event_handler.logger")
@@ -327,6 +347,17 @@ class TestKFPEventHandlerOnPatternCreation:
         handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS)
 
         assert handler.patterns[0]["evaluation_results"] is EVALUATION_RESULTS
+
+    def test_stored_pattern_includes_conversations_only_when_present(self):
+        """Only agentic patterns retain their conversation trajectories."""
+        handler = KFPEventHandler()
+        conversations = [{"conversation_id": "case-0000"}]
+
+        handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS)
+        handler.on_pattern_creation(payload=PAYLOAD, evaluation_results=EVALUATION_RESULTS, conversations=conversations)
+
+        assert "conversations" not in handler.patterns[0]
+        assert handler.patterns[1]["conversations"] is conversations
 
     def test_multiple_patterns_accumulate(self):
         """All on_pattern_creation calls are kept in insertion order."""
