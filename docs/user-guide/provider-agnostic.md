@@ -469,6 +469,18 @@ class MyCustomVectorStore(BaseVectorStore):
 
 Both `MilvusConfig` and `MilvusLiteConfig` are served by the same `MilvusVectorStore` implementation; they only differ in where the data lives (remote server vs. local file) and are validated to prevent mixing the two up (see the note under [Milvus Lite (Embedded, Local File)](#milvus-lite-embedded-local-file)).
 
+For HTTPS Milvus connections, `ca_cert` (or `MILVUS_CA_CERT`) takes precedence and
+must contain PEM certificate text. When unset, ai4rag exports the CAs loaded by
+Python's default SSL context to a process-lifetime PEM file for pymilvus. This
+uses Python/OpenSSL's default trust configuration, including `SSL_CERT_FILE`,
+without hardcoding a CA path or changing the process environment. A mounted
+bundle must be included in that configuration; arbitrary mounts are not scanned.
+OpenSSL loads CA-directory (`capath`) entries lazily, so they may be absent from
+the exported bundle. Supply `ca_cert` explicitly if the required CA is missing.
+If the default context loads no CAs, initialization raises a configuration error.
+gRPC performs TLS verification using the exported CAs; Python's TLS settings and
+verification flags are not transferred to gRPC.
+
 Each config class is a frozen, keyword-only dataclass with a `.from_env()` classmethod that builds an instance from the environment variables above:
 
 ```python

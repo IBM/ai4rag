@@ -6,8 +6,10 @@ import asyncio
 import json
 import logging
 import os
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import neo4j
 import pytest
 from neo4j_graphrag.components.types import Neo4jGraph, Neo4jNode, Neo4jRelationship
 
@@ -101,6 +103,27 @@ class TestNeo4jConfig:
         assert cfg.username == "admin"
         assert cfg.database == "mydb"
 
+    def test_from_env_reads_ca_cert(self):
+        cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
+        env = {
+            "NEO4J_URI": "neo4j://host:7687",
+            "NEO4J_PASSWORD": "pw",
+            "NEO4J_CA_CERT": cert,
+        }
+        with patch.dict(os.environ, env, clear=False):
+            cfg = Neo4jConfig.from_env()
+        assert cfg.ca_cert == cert
+
+    @pytest.mark.parametrize("uri", ["neo4j+s://host:7687", "bolt+s://host:7687"])
+    def test_ca_cert_accepts_tls_uri(self, uri):
+        cfg = Neo4jConfig(uri=uri, password="pw", ca_cert="CERT")
+
+        assert cfg.uri == uri
+
+    def test_ca_cert_rejects_unverified_tls_uri(self):
+        with pytest.raises(ValueError, match=r"\+ssc"):
+            Neo4jConfig(uri="neo4j+ssc://host:7687", password="pw", ca_cert="CERT")
+
     def test_from_env_missing_uri_raises(self):
         env = {"NEO4J_PASSWORD": "pw"}
         with patch.dict(os.environ, env, clear=False):
@@ -121,19 +144,33 @@ class TestNeo4jConfig:
         assert cfg.provider == "neo4j"
 
     def test_rejects_plain_neo4j_scheme_to_remote_host(self):
-        """A plaintext neo4j:// uri against a non-local host must be rejected."""
+        """A plaintext neo4j:// URI against a non-local host must be rejected."""
         with pytest.raises(ValueError, match="Neo4jConfig.uri"):
             Neo4jConfig(uri="neo4j://evil.example.com:7687", password="pw")
 
     def test_allows_plain_bolt_scheme_to_cluster_local_host(self):
-        """A plaintext bolt:// uri against an in-cluster '*.cluster.local' host is allowed."""
+        """A plaintext bolt:// URI against an in-cluster host is allowed."""
         cfg = Neo4jConfig(uri="bolt://neo4j.svc.cluster.local:7687", password="pw")
+
         assert cfg.uri == "bolt://neo4j.svc.cluster.local:7687"
 
     def test_allows_encrypted_scheme_to_remote_host(self):
-        """neo4j+s:// (encrypted) is always allowed, regardless of host."""
+        """neo4j+s:// uses verified TLS and is allowed for remote hosts."""
         cfg = Neo4jConfig(uri="neo4j+s://remote.example.com:7687", password="pw")
+
         assert cfg.uri == "neo4j+s://remote.example.com:7687"
+
+    def test_repr_redacts_password_and_ca_cert(self):
+        cfg = Neo4jConfig(
+            uri="neo4j://host:7687",
+            password="do-not-log-password",
+            ca_cert="do-not-log-certificate",
+        )
+
+        config_repr = repr(cfg)
+
+        assert "do-not-log-password" not in config_repr
+        assert "do-not-log-certificate" not in config_repr
 
 
 class TestKGExtractionConfig:
@@ -249,6 +286,39 @@ class TestNeo4jGraphStoreInit:
     def test_verifies_connectivity(self, mock_driver_cls, mock_embedding, neo4j_config):
         Neo4jGraphStore(mock_embedding, neo4j_config, collection_name="ai4rag_col")
         mock_driver_cls.return_value.verify_connectivity.assert_called_once()
+
+    def test_uses_default_ca_bundle_when_ca_cert_is_omitted(self, mock_driver_cls, mock_embedding, monkeypatch):
+        """Leave TLS trust to the driver when its default CA bundle is configured."""
+        monkeypatch.setenv("SSL_CERT_FILE", "/custom/default-ca-bundle.pem")
+        config = Neo4jConfig(uri="neo4j+s://host:7687", username="neo4j", password="test")
+
+        Neo4jGraphStore(mock_embedding, config, collection_name="ai4rag_col")
+
+        assert config.ca_cert is None
+        assert mock_driver_cls.call_args.args[0] == "neo4j+s://host:7687"
+        assert mock_driver_cls.call_args.kwargs == {"auth": ("neo4j", "test")}
+
+    @pytest.mark.parametrize(
+        ("configured_uri", "expected_driver_uri"),
+        [("neo4j+s://host:7687", "neo4j://host:7687"), ("bolt+s://host:7687", "bolt://host:7687")],
+    )
+    def test_trusts_configured_ca_cert(self, mock_driver_cls, mock_embedding, configured_uri, expected_driver_uri):
+        cert = "-----BEGIN CERTIFICATE-----\ncertificate\n-----END CERTIFICATE-----"
+        config = Neo4jConfig(
+            uri=configured_uri,
+            username="neo4j",
+            password="test",
+            ca_cert=cert,
+        )
+
+        Neo4jGraphStore(mock_embedding, config, collection_name="ai4rag_col")
+
+        trusted_certificates = mock_driver_cls.call_args.kwargs["trusted_certificates"]
+        assert isinstance(trusted_certificates, neo4j.TrustCustomCAs)
+        assert mock_driver_cls.call_args.kwargs["encrypted"] is True
+        assert mock_driver_cls.call_args.args[0] == expected_driver_uri
+        cert_path = trusted_certificates.certs[0]
+        assert Path(cert_path).read_text() == cert
 
     def test_collection_name_prefix_guard(self, mock_driver_cls, mock_embedding, neo4j_config):
         with pytest.raises(ValueError, match="ai4rag"):
@@ -374,10 +444,10 @@ class TestAddDocuments:
                 store.add_documents([chunk], model=MagicMock())
 
         splitter = pipeline_cls.call_args.kwargs["text_splitter"]
-        result = asyncio.run(splitter.run(text))
-        assert len(result.chunks) == 1
-        assert result.chunks[0].text == text
-        assert result.chunks[0].index == 0
+        for chunks in (list(splitter.iter_chunks(text)), asyncio.run(splitter.run(text)).chunks):
+            assert len(chunks) == 1
+            assert chunks[0].text == text
+            assert chunks[0].index == 0
         assert pipeline_cls.return_value.run_async.call_args.kwargs["text"] == text
 
     def test_kg_pipeline_does_not_log_chunk_text(self, mock_driver_cls, mock_embedding, neo4j_config, caplog):
@@ -392,8 +462,9 @@ class TestAddDocuments:
             return MagicMock()
 
         try:
-            with caplog.at_level(logging.INFO), patch(
-                "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+            with (
+                caplog.at_level(logging.INFO),
+                patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)),
             ):
                 with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                     pipeline_cls.return_value.run_async.side_effect = run_pipeline
@@ -411,8 +482,9 @@ class TestAddDocuments:
         async def run_pipeline(*args, **kwargs):
             return MagicMock()
 
-        with caplog.at_level(logging.INFO), patch(
-            "neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)
+        with (
+            caplog.at_level(logging.INFO),
+            patch("neo4j_graphrag.components.kg_writer.get_version", return_value=((5, 26, 0), False, False)),
         ):
             with patch("ai4rag.rag.vector_store.neo4j.SimpleKGPipeline") as pipeline_cls:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
