@@ -444,10 +444,10 @@ class TestAddDocuments:
                 store.add_documents([chunk], model=MagicMock())
 
         splitter = pipeline_cls.call_args.kwargs["text_splitter"]
-        result = asyncio.run(splitter.run(text))
-        assert len(result.chunks) == 1
-        assert result.chunks[0].text == text
-        assert result.chunks[0].index == 0
+        for chunks in (list(splitter.iter_chunks(text)), asyncio.run(splitter.run(text)).chunks):
+            assert len(chunks) == 1
+            assert chunks[0].text == text
+            assert chunks[0].index == 0
         assert pipeline_cls.return_value.run_async.call_args.kwargs["text"] == text
 
     def test_kg_pipeline_does_not_log_chunk_text(self, mock_driver_cls, mock_embedding, neo4j_config, caplog):

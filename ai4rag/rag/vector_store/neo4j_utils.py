@@ -66,6 +66,10 @@ _KG_LEXICAL_GRAPH_CONFIG = LexicalGraphConfig(
 class _PreChunkedTextSplitter(TextSplitter):
     """Preserve the canonical chunk passed to the KG pipeline as one text chunk."""
 
+    def iter_chunks(self, text: str) -> Iterator[TextChunk]:
+        """Yield the canonical text unchanged as one chunk."""
+        yield TextChunk(text=text, index=0)
+
     async def run(self, text: str) -> TextChunks:
         return TextChunks(chunks=[TextChunk(text=text, index=0)])
 
