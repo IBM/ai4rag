@@ -7,7 +7,16 @@ That mode still uses vector search internally: one route returns vector matches 
 ## Prerequisites
 
 `Neo4jConfig` provides the URI, credentials, and database.
-It can also read `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, and `NEO4J_DATABASE`.
+It can also read `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`, `NEO4J_DATABASE`, and
+the optional `NEO4J_CA_CERT`.
+
+Use `neo4j+s://` or `bolt+s://` when the server certificate chains to a publicly
+trusted CA. For a private or self-signed CA, set `Neo4jConfig.ca_cert` or
+`NEO4J_CA_CERT` to inline PEM certificate text. With a custom CA, ai4rag accepts base
+or `+s` URI schemes and configures encrypted, CA-verified transport explicitly. The
+`+ssc` schemes are rejected. Without a custom CA, plaintext base schemes are allowed
+only for local or in-cluster hosts. Passwords and CA text are hidden from config
+representations.
 
 Indexing needs an embedding model; search uses it to embed queries.
 Knowledge graph extraction also needs a foundation model.
@@ -89,6 +98,10 @@ Callers can override `chunking_methods`, `chunk_sizes`, and `chunk_overlaps` whe
 Without a model, it stores only canonical chunks.
 The pipeline uses ai4rag model adapters and a pass-through `_PreChunkedTextSplitter` that returns each existing `AI4RAGChunk` as one unchanged GraphRAG text chunk.
 It does not split recursive or hybrid chunks again.
+Both its async `run()` and GraphRAG chunk-iterator interface preserve the canonical
+text and chunk index. During extraction, ai4rag suppresses GraphRAG's verbose logs
+that include document text, retains warnings/errors, and logs extraction start and
+completion with chunk counts.
 The pipeline uses `on_error="IGNORE"` and processes up to eight chunks concurrently.
 ai4rag disables GraphRAG's database-wide resolver and optionally resolves entities for this collection after all chunk extraction finishes (enabled by default).
 Each chunk is therefore one KG extraction input; an upstream chunk that is too large for the foundation model can exceed its context limit.
@@ -117,6 +130,14 @@ The public indexing paths are:
 
 `build_knowledge_graph_from_documents()` uses its `chunk_size` and `chunk_overlap` as character counts for `FixedSizeSplitter`; the experiment's `recursive` chunker uses token estimates instead.
 Calling both on the same documents with different chunking settings can therefore add distinct chunks to the same Document node.
+
+Published experiment patterns store the extraction policy in
+`settings.graph_extraction`, replacing `settings.knowledge_graph`. The policy contains
+the mode and any per-chunk limits; the published payload no longer carries a separate
+extraction-model ID/parameters block. The indexing notebook uses the published
+generation model and this extraction policy. Graph retrieval controls remain in
+`settings.retrieval`. Regenerate older patterns or migrate their `extraction_config`
+before generating new graph indexing notebooks.
 
 ## Graph retrieval
 

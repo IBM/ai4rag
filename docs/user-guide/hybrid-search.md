@@ -40,7 +40,7 @@ Consider enabling hybrid search when:
 ## Prerequisites
 
 !!! note "Vector Store Requirement"
-    Hybrid search is supported by **all** built-in backends: **Milvus** (`MilvusConfig` — remote server only),
+    Hybrid search is supported by **Milvus** (`MilvusConfig` — remote server only),
     **Milvus Lite** (`MilvusLiteConfig` — embedded, local file only), and **PGVector** (`PGVectorConfig`).
 
 Ensure your experiment is configured with one of these backends:

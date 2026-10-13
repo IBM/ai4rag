@@ -140,6 +140,8 @@ graph TB
 - Combines all RAG components
 - Provides end-to-end RAG pipeline
 - Two implementations: `SimpleRAG` (single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again before answering — the default used by `AI4RAGExperiment` and `ModelsPreSelector`)
+- `ai4rag.rag.template.registry` maps persisted template IDs to allowed classes and import paths; generated inference notebooks use the selected template
+- `AgenticRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
 
 ### 4. Evaluation Layer
 
@@ -160,6 +162,7 @@ graph TB
 - Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
 - Provider-agnostic — accepts injected S3 clients and OpenAI-compatible model clients
+- `LocalHuggingFaceAsrPipeline` extends Docling's ASR pipeline for local Transformers-format Whisper models, preserving segment timestamps without runtime model downloads
 
 **RAG Optimization Orchestration** (`pipelines-components` repo)
 
@@ -182,6 +185,7 @@ graph TB
 - Provides hooks for experiment events
 - Allows custom tracking and monitoring
 - Useful for production integrations
+- Publishes optional agent trajectories separately from scores; `LocalEventHandler` writes them to each pattern's `conversations.json`
 
 **Validators** (`ai4rag/utils/`)
 

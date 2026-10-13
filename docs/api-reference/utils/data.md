@@ -21,6 +21,19 @@ Data processing functions for the AutoRAG pipeline.
         - DoclingExtractionConfig
         - ExtractionResult
 
+## Local Whisper ASR
+
+Audio extraction uses a local Transformers-format Whisper model configured through
+`DoclingExtractionConfig.asr_model_path` or `HF_MODEL_DIR`. See
+[Audio Transcription](../../user-guide/pipeline-components.md#audio-transcription)
+for the required artifacts and migration from openai-whisper checkpoints.
+
+::: ai4rag.utils.data.local_hf_asr_pipeline
+    options:
+      members:
+        - LocalHuggingFaceAsrPipelineOptions
+        - LocalHuggingFaceAsrPipeline
+
 ## Test Data Loading
 
 ::: ai4rag.utils.data.test_data_loader

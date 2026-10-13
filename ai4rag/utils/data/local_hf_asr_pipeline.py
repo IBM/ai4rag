@@ -19,9 +19,9 @@ from pydantic import ConfigDict
 class LocalHuggingFaceAsrPipelineOptions(AsrPipelineOptions):
     """Options for :class:`LocalHuggingFaceAsrPipeline`.
 
-    Parameters
+    Attributes
     ----------
-    asr_model_path
+    asr_model_path : str | None
         Directory containing an approved Hugging Face Transformers Whisper
         model. ``None`` is permitted while constructing a converter so
         non-audio runs do not require audio model artifacts; audio conversion
