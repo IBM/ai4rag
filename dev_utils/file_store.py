@@ -67,6 +67,8 @@ class FileStore:
         path: str | Path | Sequence[str] | Sequence[Path],
         save_dir: str | Path | None = None,
         cache_dir: str | Path | None = _DEFAULT_CACHE_DIR,
+        *,
+        device: str = "cpu",
     ):
         """
         Parameters
@@ -78,6 +80,10 @@ class FileStore:
         cache_dir : str | Path | None
             Directory for caching DoclingDocument JSON files. Set to None to disable caching.
             Defaults to ``dev_utils/local/docling_cache``.
+        device : str, default="cpu"
+            Device for PDF model inference. CPU avoids native PyTorch MPS crashes
+            during concurrent document conversion on macOS. Set to ``"auto"``
+            or a specific accelerator explicitly to enable GPU inference.
         """
         self.path = Path(path)
         self.is_dir = self.path.is_dir()
@@ -88,7 +94,7 @@ class FileStore:
         pdf_options = PdfPipelineOptions()
         pdf_options.do_ocr = False
         pdf_options.do_table_structure = True
-        pdf_options.accelerator_options = AcceleratorOptions(device="auto")
+        pdf_options.accelerator_options = AcceleratorOptions(device=device)
 
         asr_options = AsrPipelineOptions()
         asr_options.asr_options = asr_model_specs.WHISPER_TINY
