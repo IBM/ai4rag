@@ -19,7 +19,8 @@ The agent can call `rewrite_query` to refine a search, call `retriever` to fetch
 - The `openshell` CLI and Helm 3 installed locally.
 - `uv` installed locally to update the dependency lockfile.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together with credentials for accessing it. The chat model must support tool calling so the agent can invoke the retriever.
-- A reachable Milvus or PostgreSQL/pgvector instance and credentials for accessing it, provided through the Kubernetes secrets referenced by `values.yaml` (`maas_secret_name` and `db_secret_name`). For Milvus, provide `MILVUS_URI` and optionally `MILVUS_TOKEN` and `MILVUS_SERVER_CERT` for TLS. For pgvector, provide `PGVECTOR_HOST` and optionally `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, and `PGVECTOR_PASSWORD`.
+- A reachable Milvus, PostgreSQL/pgvector, or Neo4j instance and credentials for accessing it, provided through the Kubernetes secrets referenced by `values.yaml` (`maas_secret_name` and `db_secret_name`). For Milvus, provide `MILVUS_URI` and optionally `MILVUS_TOKEN` and `MILVUS_CA_CERT` for TLS. For pgvector, provide `PGVECTOR_HOST` and optionally `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD`, and `PGVECTOR_CA_CERT` (PEM text for a private or self-signed CA). For Neo4j, provide `NEO4J_URI` (for example `neo4j+s://host:7687`) and `NEO4J_PASSWORD`; `NEO4J_USERNAME` and `NEO4J_DATABASE` default to `neo4j`. If the server uses a private or self-signed CA, provide `NEO4J_CA_CERT` as PEM text.
+- Neo4j patterns use graph search and require a collection that has already been indexed in Neo4j. The starter kit serves retrieval from that collection; it does not index documents.
 - The Red Hat build of the Agent Sandbox operator installed in the cluster.
 
 ### Commands
@@ -27,7 +28,9 @@ The agent can call `rewrite_query` to refine a search, call `retriever` to fetch
 Run the following commands from the starter-kit root directory:
 
 ```bash
-# Update the lockfile to the latest ai4rag release before building.
+# Regenerate the dependency lockfile for this starter kit's ai4rag version.
+# This adds the versions and transitive dependencies (including Neo4j support)
+# that the image build installs from uv.lock.
 uv lock --upgrade-package ai4rag
 
 # Run once per cluster.

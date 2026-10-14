@@ -138,7 +138,7 @@ Create a `benchmark_data.json` file with questions and ground truth answers. Eac
   {
     "question": "Which vector databases are supported?",
     "correct_answers": [
-      "Milvus and PostgreSQL/pgvector are supported."
+      "Milvus, PostgreSQL/pgvector, and Neo4j are supported. Neo4j uses graph retrieval."
     ],
     "correct_answer_document_keys": ["overview.md", "reference/stores.md"]
   }
