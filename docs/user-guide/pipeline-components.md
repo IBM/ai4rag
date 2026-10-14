@@ -165,6 +165,10 @@ result = extract_text(
 
 Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email (`.eml`, `.msg`), Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
+PDFs are parsed with Docling's PDFium backend to recover text that the native parser
+can emit as NUL characters. This applies to `extract_text()`; the development-only
+`FileStore` helper also uses PDFium for local files.
+
 OCR is **off by default**. Conversion behaviour (table structure and OCR) is
 controlled through a single `DoclingExtractionConfig` instance. To enable
 RapidOCR (for scanned PDFs / images):

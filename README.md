@@ -72,6 +72,12 @@ For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra inclu
 `rapidocr~=3.9.2` and `onnxruntime~=1.25.0` along with Docling's conversion and audio
 dependencies. Generated MaaS indexing notebooks install OCR packages through this extra.
 
+`extract_text()` and the repository's development-only `FileStore` helper parse PDFs
+with PDFium to recover text that the native parser can emit as NUL characters.
+`FileStore` defaults PDF model inference to CPU; pass `device="auto"` or a specific
+accelerator to enable GPU inference. It automatically rebuilds legacy PDF caches
+using the `.pdfium.json` suffix.
+
 ## RAG templates
 
 Each candidate pattern is evaluated through a `rag_template` passed to `AI4RAGExperiment` — a `BaseRAGTemplate` subclass. The default, `AgenticRAG`, is a LangChain agent that can rewrite its search query and retrieve again before answering; `SimpleRAG` (a single fixed retrieve-then-generate pass) is also available via `rag_template=SimpleRAG`. See the [RAG Components](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#rag-templates) architecture doc.

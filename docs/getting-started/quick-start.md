@@ -119,6 +119,11 @@ documents = load_docling_documents(extracted_dir)
     it is excluded from the installed package and it names documents by bare file name, so it is not suitable
     for a corpus with nested folders.
 
+    PDF parsing uses PDFium, and PDF model inference defaults to CPU to avoid native
+    PyTorch MPS crashes during concurrent conversion on macOS. Pass `device="auto"`
+    or a specific accelerator to `FileStore` to enable GPU inference. PDF caches use
+    `.pdfium.json`; older `.json` PDF caches are bypassed and regenerated automatically.
+
 ---
 
 ### 3. Prepare Benchmark Data

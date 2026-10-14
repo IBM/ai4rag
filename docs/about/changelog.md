@@ -13,16 +13,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Experiment** — `EvaluationResult.conversations` retains agent conversation records with each evaluated pattern, making them accessible through experiment results and `to_dict()`
 - **Experiment** — evaluation JSON records include `conversation_id` links to full agent conversations when conversation and evaluation counts match; mismatched counts produce a warning and omit the links
+- **Vector store** — Neo4j `kg_extraction_config.max_completion_tokens` accepts a positive integer to control entity-extraction output independently of answer generation, defaulting to 1024
 
 ### Changed
 
 - **Dependencies** — the `text-extraction` extra now includes `rapidocr~=3.9.2` and `onnxruntime~=1.25.0`, providing OCR dependencies through the standard installation
 - **Dependencies** — refreshed `uv.lock` with Transformers 5.8.1 → 5.10.1 and platform-specific Docling IBM Models versions (3.13.2 on macOS, 3.15.0 elsewhere)
 - **Notebooks** — the MaaS indexing notebook installs OCR dependencies through `ai4rag[text-extraction]`, replacing separate RapidOCR and ONNX Runtime installation commands
+- **Development utilities** — `FileStore` defaults PDF model inference to CPU and accepts a keyword-only `device` override; PDF caches use `.pdfium.json` so legacy cached extractions are regenerated
 
 ### Fixed
 
 - **Experiment** — pattern publication, including the selected warm-start pattern, reads conversations from its `EvaluationResult`, keeping conversation artifacts attached to the result being published
+- **Text extraction** — production PDF extraction and the local `FileStore` helper use Docling's PDFium backend to recover text that the native parser emitted as NUL characters
+- **Vector store** — Neo4j entity extraction reduces default chunk concurrency from eight to two and uses a dedicated completion-token limit; collection reuse tracks that extraction limit rather than the answer-generation limit
 
 ---
 
