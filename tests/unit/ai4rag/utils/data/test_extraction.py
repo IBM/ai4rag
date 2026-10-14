@@ -466,11 +466,13 @@ class TestBuildDoclingFormatOptions:
 
     def test_default_disables_table_structure(self):
         """Default call should produce PDF options with ``do_table_structure=False``."""
+        from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
         from docling.datamodel.base_models import InputFormat
 
         options = _build_docling_format_options()
 
         pdf_option = options[InputFormat.PDF]
+        assert pdf_option.backend is PyPdfiumDocumentBackend
         assert pdf_option.pipeline_options.do_table_structure is False
         assert pdf_option.pipeline_options.do_ocr is False
 
