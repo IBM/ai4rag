@@ -5,7 +5,9 @@
 """Test that indexing notebook includes disconnected cluster documentation."""
 
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -89,7 +91,11 @@ class TestDisconnectedClusterDocumentation:
         assert "model_config = json.load(config_file)" in full_code
         assert 'model_type != "whisper"' in full_code
         assert "Audio data supports only Hugging Face Whisper models" in full_code
-        assert "Use a workbench image with the Docling artifacts bundle" in full_code
+        assert "matching PP-OCRv4 Docling artifacts bundle" in full_code
+        assert "rapidocr_model_paths" in full_code
+        assert "ocr_rec_keys_path" in full_code
+        assert "do_ocr=needs_ocr" in full_code
+        assert "ocr_lang=ocr_language" in full_code
 
     def test_offline_docling_validation_is_a_dedicated_cell(self, indexing_notebook):
         """Connected runners can skip only offline Docling validation."""
@@ -97,22 +103,22 @@ class TestDisconnectedClusterDocumentation:
         validation_heading_index = next(
             index
             for index, cell in enumerate(cells)
-            if cell["cell_type"] == "markdown"
-            and "### Validate Offline Configuration" in "".join(cell["source"])
+            if cell["cell_type"] == "markdown" and "### Validate Offline Configuration" in "".join(cell["source"])
         )
         validation_cell = cells[validation_heading_index + 1]
         validation_source = "".join(validation_cell["source"])
 
         assert validation_cell["cell_type"] == "code"
         assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in validation_source
-        assert "RapidOCR models are missing" in validation_source
+        assert "RapidOCR {{ocr_language}} models are missing" in validation_source
 
         shared_cell = cells[validation_heading_index - 1]
         shared_source = "".join(shared_cell["source"])
         assert shared_cell["cell_type"] == "code"
         assert "needs_ocr =" in shared_source
-        assert "DoclingExtractionConfig" in shared_source
+        assert "generation_language = {LANGUAGE}" in shared_source
         assert "RapidOCR models are missing" not in shared_source
+        assert "DoclingExtractionConfig" in validation_source
 
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
         """The extract_text() call must include docling_artifacts_path parameter."""
@@ -129,6 +135,94 @@ class TestDisconnectedClusterDocumentation:
             "docling_artifacts_path" in call for call in extract_text_calls
         ), "extract_text() call must include docling_artifacts_path parameter"
         assert any("docling_config=docling_config" in call for call in extract_text_calls)
+
+    def test_generated_notebook_uses_conditional_ocr_and_pipeline_model_paths(self, tmp_path, monkeypatch):
+        """Text-only input skips artifacts; OCR input pins the selected pipeline PP-OCRv4 bundle."""
+        from ai4rag.assets_generator.notebook import Notebook
+        from ai4rag.assets_generator.templates import create_placeholder_mapping
+
+        artifacts = tmp_path / "docling"
+        model_paths = {
+            "english": {
+                "ocr_det_model_path": "onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx",
+                "ocr_cls_model_path": "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+                "ocr_rec_model_path": "onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx",
+                "ocr_rec_keys_path": "paddle/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile/en_dict.txt",
+            },
+            "chinese": {
+                "ocr_det_model_path": "onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
+                "ocr_cls_model_path": "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+                "ocr_rec_model_path": "onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
+                "ocr_rec_keys_path": "paddle/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile/ppocr_keys_v1.txt",
+            },
+        }
+
+        def formatted_cells(language: dict) -> list[dict]:
+            notebook = Notebook.load("maas_indexing_template.ipynb")
+            mapping = create_placeholder_mapping(
+                {"template_id": "simple_rag", "settings": {"generation": {"language": language}}}
+            )
+            for cell in notebook.cells:
+                cell.format_source(mapping)
+            return [cell.to_dict() for cell in notebook.cells]
+
+        def execute_discovery(cells: list[dict], documents: list[dict]) -> dict:
+            source = "".join(cells[18]["source"])
+            namespace = {
+                "Path": Path,
+                "os": os,
+                "json": json,
+                "result": SimpleNamespace(to_dict=lambda: {"documents": documents}),
+            }
+            exec(source, namespace)  # noqa: S102 - execute the generated notebook cell under test
+            return namespace
+
+        english_cells = formatted_cells({"code": "en", "name": "English"})
+        monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
+        text_only = execute_discovery(english_cells, [{"key": "docs/readme.txt"}])
+        assert text_only["needs_ocr"] is False
+        assert text_only["docling_artifacts_path"] is None
+        assert text_only["ocr_language"] == "english"
+
+        text_only["DoclingExtractionConfig"] = lambda **kwargs: kwargs
+        exec("".join(english_cells[20]["source"]), text_only)  # noqa: S102 - execute generated config cell
+        assert text_only["docling_config"]["do_ocr"] is False
+        assert text_only["rapidocr_model_paths"] == {}
+
+        default_language_cells = formatted_cells({})
+        default_language = execute_discovery(default_language_cells, [{"key": "docs/readme.txt"}])
+        assert default_language["ocr_language"] == "english"
+
+        for bundle in model_paths.values():
+            for relative_path in bundle.values():
+                path = artifacts / "RapidOcr" / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.touch()
+        monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
+        chinese_cells = formatted_cells({"code": "zh", "name": "Chinese"})
+        pdf = execute_discovery(chinese_cells, [{"key": "docs/scan.pdf"}])
+        assert pdf["needs_ocr"] is True
+        assert pdf["ocr_language"] == "chinese"
+        pdf["DoclingExtractionConfig"] = lambda **kwargs: kwargs
+        exec("".join(chinese_cells[20]["source"]), pdf)  # noqa: S102 - execute generated config cell
+
+        config = pdf["docling_config"]
+        assert config["do_ocr"] is True
+        assert config["ocr_lang"] == "chinese"
+        assert {
+            key: str(artifacts / "RapidOcr" / relative_path) for key, relative_path in model_paths["chinese"].items()
+        } == pdf["rapidocr_model_paths"]
+        assert config["ocr_rec_keys_path"] == str(artifacts / "RapidOcr" / model_paths["chinese"]["ocr_rec_keys_path"])
+
+        image = execute_discovery(english_cells, [{"key": "docs/photo.tiff"}])
+        assert image["needs_ocr"] is True
+        image["DoclingExtractionConfig"] = lambda **kwargs: kwargs
+        exec("".join(english_cells[20]["source"]), image)  # noqa: S102 - execute generated config cell
+        assert image["docling_config"]["do_ocr"] is True
+        assert image["docling_config"]["ocr_lang"] == "english"
+        assert {
+            key: str(artifacts / "RapidOcr" / relative_path) for key, relative_path in model_paths["english"].items()
+        } == image["rapidocr_model_paths"]
 
     def test_notebook_includes_appendix_with_download_instructions(self, indexing_notebook):
         """Notebook must include appendix with offline download instructions."""
