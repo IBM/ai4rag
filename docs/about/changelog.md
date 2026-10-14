@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.23.0](https://github.com/IBM/ai4rag/releases/tag/v0.23.0)
+
+### Added
+
+- **Experiment** — `EvaluationResult.conversations` retains agent conversation records with each evaluated pattern, making them accessible through experiment results and `to_dict()`
+- **Experiment** — evaluation JSON records include `conversation_id` links to full agent conversations when conversation and evaluation counts match; mismatched counts produce a warning and omit the links
+
+### Changed
+
+- **Dependencies** — the `text-extraction` extra now includes `rapidocr~=3.9.2` and `onnxruntime~=1.25.0`, providing OCR dependencies through the standard installation
+- **Dependencies** — refreshed `uv.lock` with Transformers 5.8.1 → 5.10.1 and platform-specific Docling IBM Models versions (3.13.2 on macOS, 3.15.0 elsewhere)
+- **Notebooks** — the MaaS indexing notebook installs OCR dependencies through `ai4rag[text-extraction]`, replacing separate RapidOCR and ONNX Runtime installation commands
+
+### Fixed
+
+- **Experiment** — pattern publication, including the selected warm-start pattern, reads conversations from its `EvaluationResult`, keeping conversation artifacts attached to the result being published
+
+---
+
 ## [0.22.0](https://github.com/IBM/ai4rag/releases/tag/v0.22.0)
 
 ### Added

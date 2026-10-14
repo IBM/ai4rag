@@ -12,6 +12,10 @@ Programmatic notebook generation from RAG pattern definitions.
 
 ## Template Rendering
 
+The MaaS indexing template installs `ai4rag[text-extraction]` for the generated
+notebook's ai4rag version. That extra supplies `rapidocr~=3.9.2` and
+`onnxruntime~=1.25.0`, replacing separate OCR package installation commands.
+
 `create_placeholder_mapping()` reads the pattern's `template_id` and resolves it
 through the template registry. Standard and graph inference notebooks instantiate
 that template. Patterns without an ID emit a `UserWarning` and use `SimpleRAG`;

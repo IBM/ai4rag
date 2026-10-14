@@ -68,6 +68,10 @@ Each config is a frozen dataclass with a `.from_env()` constructor and an `env_v
 
 ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, `langchain`/`langchain-openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
 
+For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra includes
+`rapidocr~=3.9.2` and `onnxruntime~=1.25.0` along with Docling's conversion and audio
+dependencies. Generated MaaS indexing notebooks install OCR packages through this extra.
+
 ## RAG templates
 
 Each candidate pattern is evaluated through a `rag_template` passed to `AI4RAGExperiment` — a `BaseRAGTemplate` subclass. The default, `AgenticRAG`, is a LangChain agent that can rewrite its search query and retrieve again before answering; `SimpleRAG` (a single fixed retrieve-then-generate pass) is also available via `rag_template=SimpleRAG`. See the [RAG Components](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#rag-templates) architecture doc.
@@ -77,6 +81,12 @@ inference notebooks use to recreate it. Pattern publication currently supports t
 built-in `AgenticRAG` and `SimpleRAG` classes; custom subclasses need registry support.
 `LocalEventHandler` writes `conversations.json` alongside each agentic pattern's
 `pattern.json` and `evaluation_results.json`, recording retrieved context and tool activity.
+
+Conversations are also available as `EvaluationResult.conversations` through
+`experiment.results` and included by `to_dict()`; the field is `None` when no
+conversations are emitted. Per-question evaluation JSON records include an optional
+`conversation_id` linking to `conversations.json` when conversation and evaluation
+counts match.
 
 ## Running on Disconnected Clusters
 

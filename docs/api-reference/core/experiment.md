@@ -5,3 +5,11 @@
       show_root_heading: true
       show_source: true
       members_order: source
+
+## Experiment Results
+
+::: ai4rag.core.experiment.results
+    options:
+      members:
+        - EvaluationResult
+        - ExperimentResults
