@@ -8,6 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
 
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel import asr_model_specs
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
@@ -67,6 +68,8 @@ class FileStore:
         path: str | Path | Sequence[str] | Sequence[Path],
         save_dir: str | Path | None = None,
         cache_dir: str | Path | None = _DEFAULT_CACHE_DIR,
+        *,
+        device: str = "cpu",
     ):
         """
         Parameters
@@ -78,6 +81,10 @@ class FileStore:
         cache_dir : str | Path | None
             Directory for caching DoclingDocument JSON files. Set to None to disable caching.
             Defaults to ``dev_utils/local/docling_cache``.
+        device : str, default="cpu"
+            Device for PDF model inference. CPU avoids native PyTorch MPS crashes
+            during concurrent document conversion on macOS. Set to ``"auto"``
+            or a specific accelerator explicitly to enable GPU inference.
         """
         self.path = Path(path)
         self.is_dir = self.path.is_dir()
@@ -88,7 +95,7 @@ class FileStore:
         pdf_options = PdfPipelineOptions()
         pdf_options.do_ocr = False
         pdf_options.do_table_structure = True
-        pdf_options.accelerator_options = AcceleratorOptions(device="auto")
+        pdf_options.accelerator_options = AcceleratorOptions(device=device)
 
         asr_options = AsrPipelineOptions()
         asr_options.asr_options = asr_model_specs.WHISPER_TINY
@@ -100,7 +107,10 @@ class FileStore:
 
         self._converter = DocumentConverter(
             format_options={
-                InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_options),
+                InputFormat.PDF: PdfFormatOption(
+                    pipeline_options=pdf_options,
+                    backend=PyPdfiumDocumentBackend,
+                ),
                 InputFormat.AUDIO: AudioFormatOption(pipeline_cls=AsrPipeline, pipeline_options=asr_options),
             }
         )
@@ -136,10 +146,11 @@ class FileStore:
         return self._convert_batch_as_docling([self.path])
 
     def _cache_path_for(self, filepath: Path) -> Path | None:
-        """Return the JSON cache path for a source file, or None if caching is disabled."""
+        """Return a cache path, keeping PDFium results separate from legacy PDF extractions."""
         if self.cache_dir is None:
             return None
-        return self.cache_dir / f"{filepath.name}.json"
+        suffix = ".pdfium.json" if filepath.suffix.lower() == ".pdf" else ".json"
+        return self.cache_dir / f"{filepath.name}{suffix}"
 
     def _load_from_cache(self, filepath: Path) -> DoclingDocument | None:
         """Load a ``DoclingDocument`` from the JSON cache if it exists."""
