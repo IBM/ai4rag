@@ -267,6 +267,40 @@ class TestGraphCollectionReuse:
         assert experiment.event_handler.payload["name"] == "Pattern1"
         assert experiment.event_handler.evaluation_results == []
 
+    def test_pattern_publication_reads_conversations_from_evaluation_result(self):
+        """Agent trajectories are published from the result object, not experiment state."""
+        experiment = _build_experiment()
+        result = EvaluationResult(
+            pattern_name="Pattern1",
+            collection="ai4rag_test",
+            indexing_params={
+                "chunking": {
+                    "chunking_method": "recursive",
+                    "chunk_size": 1024,
+                    "chunk_overlap": 64,
+                    "include_metadata": False,
+                },
+                "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
+            },
+            rag_params={
+                "retrieval": {
+                    "retrieval_method": "simple",
+                    "number_of_chunks": 5,
+                    "search_mode": "vector",
+                    "window_size": 0,
+                },
+                "generation": {"model_id": "generator"},
+            },
+            scores={"metrics": []},
+            execution_time=1.0,
+            final_score=0.5,
+            conversations=[{"conversation_id": "case-0000", "messages": []}],
+        )
+
+        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+
+        assert experiment.event_handler.on_pattern_creation.call_args.kwargs["conversations"] == result.conversations
+
     def test_pattern_emits_graph_extraction_policy_and_graph_retrieval_settings(self):
         experiment = _build_experiment()
         experiment.vector_store_config = MagicMock(provider="neo4j")
