@@ -184,7 +184,6 @@ class AI4RAGExperiment:
         self.results: ExperimentResults = ExperimentResults()
         self._exception_handler = ExperimentExceptionHandler(self.event_handler)
         self._optimization_phase: str | None = None
-        self._conversations_by_pattern: dict[str, list[dict[str, Any]]] = {}
 
         if kwargs:
             logger.warning("Unknown parameters: %s", kwargs)
@@ -630,6 +629,7 @@ class AI4RAGExperiment:
                 max_threads=self.inference_max_threads,
             )
 
+        conversations = self._conversations_from_response(inference_response)
         result_scores, evaluation_data = self._evaluate_response(
             inference_response=inference_response,
             pattern_name=pattern_name,
@@ -650,13 +650,13 @@ class AI4RAGExperiment:
             scores=result_scores,
             execution_time=execution_time,
             final_score=final_score,
+            conversations=conversations or None,
         )
 
         evaluation_results_json = self.results.create_evaluation_results_json(
-            evaluation_data=evaluation_data, evaluation_result=evaluation_result
+            evaluation_data=evaluation_data,
+            evaluation_result=evaluation_result,
         )
-        if conversations := self._conversations_from_response(inference_response):
-            self._conversations_by_pattern[pattern_name] = conversations
 
         logger.info(
             "Evaluation scores: %s",
@@ -669,7 +669,6 @@ class AI4RAGExperiment:
                 self._stream_finished_pattern(
                     evaluation_result=evaluation_result,
                     evaluation_results_json=evaluation_results_json,
-                    conversations=conversations,
                     iteration=iteration,
                 )
             except Exception as exc:
@@ -865,7 +864,6 @@ class AI4RAGExperiment:
             evaluation_results_json=evaluation_results_json,
             pattern_name="Pattern1",
             iteration=0,
-            conversations=self._conversations_by_pattern.get(result.pattern_name),
         )
 
     def _stream_finished_pattern(
@@ -874,7 +872,6 @@ class AI4RAGExperiment:
         evaluation_results_json: list,
         pattern_name: str | None = None,
         iteration: int | None = None,
-        conversations: list[dict[str, Any]] | None = None,
     ) -> None:
         """Stream a finished pattern to the configured event handler."""
         retrieval_payload = {
@@ -947,7 +944,7 @@ class AI4RAGExperiment:
         self.event_handler.on_pattern_creation(
             payload=payload,
             evaluation_results=evaluation_results_json,
-            **({"conversations": conversations} if conversations else {}),
+            **({"conversations": evaluation_result.conversations} if evaluation_result.conversations else {}),
         )
 
     @staticmethod

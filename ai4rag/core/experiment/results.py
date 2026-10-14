@@ -40,6 +40,11 @@ class EvaluationResult:
 
     final_score : float
         Single score calculated for optimization process as the value to be minimized or maximized.
+
+    conversations : list[dict[str, Any]] | None, default=None
+        Agent trajectories for the evaluated cases. Full trajectories are kept
+        once per pattern and are written to a dedicated artifact rather than
+        embedded in every evaluation record.
     """
 
     pattern_name: str
@@ -49,6 +54,7 @@ class EvaluationResult:
     scores: EvaluationMetricsResult
     execution_time: float
     final_score: float
+    conversations: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Cast instance to dict"""
@@ -196,7 +202,8 @@ class ExperimentResults:
 
     @staticmethod
     def create_evaluation_results_json(
-        evaluation_data: list[EvaluationData], evaluation_result: EvaluationResult
+        evaluation_data: list[EvaluationData],
+        evaluation_result: EvaluationResult,
     ) -> list[dict[str, Any]]:
         """
         Create json made of evaluation results with proper data.
@@ -232,21 +239,35 @@ class ExperimentResults:
         """
         scores_by_qid = {q["question_id"]: q["metrics"] for q in evaluation_result.scores["question_scores"]}
 
-        data = []
-        for ev in evaluation_data:
-            data.append(
-                {
-                    "question": ev.question,
-                    "correct_answers": ev.ground_truths,
-                    "answer": ev.answer,
-                    "answer_contexts": [
-                        {"text": text, "document_key": doc_id} for text, doc_id in zip(ev.contexts, ev.context_ids)
-                    ],
-                    "metrics": [
-                        {"name": m["name"], "evaluator": m["evaluator"], "score": m["value"]}
-                        for m in scores_by_qid.get(ev.question_id, [])
-                    ],
-                }
+        conversations = evaluation_result.conversations
+        conversation_ids: list[str | None] = (
+            [conversation.get("conversation_id") for conversation in conversations]
+            if conversations is not None and len(conversations) == len(evaluation_data)
+            else []
+        )
+        if conversations is not None and not conversation_ids:
+            logger.warning(
+                "Conversation count (%s) does not match evaluation data count (%s); omitting conversation IDs.",
+                len(conversations),
+                len(evaluation_data),
             )
+
+        data = []
+        for index, ev in enumerate(evaluation_data):
+            record = {
+                "question": ev.question,
+                "correct_answers": ev.ground_truths,
+                "answer": ev.answer,
+                "answer_contexts": [
+                    {"text": text, "document_key": doc_id} for text, doc_id in zip(ev.contexts, ev.context_ids)
+                ],
+                "metrics": [
+                    {"name": m["name"], "evaluator": m["evaluator"], "score": m["value"]}
+                    for m in scores_by_qid.get(ev.question_id, [])
+                ],
+            }
+            if conversation_ids and conversation_ids[index] is not None:
+                record["conversation_id"] = conversation_ids[index]
+            data.append(record)
 
         return data
