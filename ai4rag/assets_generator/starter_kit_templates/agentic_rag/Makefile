@@ -238,13 +238,11 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c "pkill -f '[/]usr/bin/python3.12 -m uvicorn auth_wrapper:app'" 2>/dev/null || true && \
 	  sleep 5 && \
 	  PGVECTOR_PASSWORD_B64=$$(printf '%s' "$$PGVECTOR_PASSWORD" | base64 | tr -d '\n') && \
-	  MILVUS_CA_CERT_B64=$$(printf '%s' "$$MILVUS_CA_CERT" | base64 | tr -d '\n') && \
-	  PGVECTOR_CA_CERT_B64=$$(printf '%s' "$$PGVECTOR_CA_CERT" | base64 | tr -d '\n') && \
-	  NEO4J_URI_B64=$$(printf '%s' "$$NEO4J_URI" | base64 | tr -d '\n') && \
-	  NEO4J_USERNAME_B64=$$(printf '%s' "$$NEO4J_USERNAME" | base64 | tr -d '\n') && \
-	  NEO4J_PASSWORD_B64=$$(printf '%s' "$$NEO4J_PASSWORD" | base64 | tr -d '\n') && \
-	  NEO4J_DATABASE_B64=$$(printf '%s' "$$NEO4J_DATABASE" | base64 | tr -d '\n') && \
-	  NEO4J_CA_CERT_B64=$$(printf '%s' "$$NEO4J_CA_CERT" | base64 | tr -d '\n') && \
+	  NEO4J_URI_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_URI") && \
+	  NEO4J_USERNAME_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_USERNAME") && \
+	  NEO4J_PASSWORD_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_PASSWORD") && \
+	  NEO4J_DATABASE_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_DATABASE") && \
+	  NEO4J_CA_CERT_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_CA_CERT") && \
 	  echo "==> Starting agent (auth: enabled)..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c '\
 	    printf %s "'"$$K8S_CA_B64"'" | base64 -d > /sandbox/k8s-ca.crt && \
@@ -253,18 +251,18 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export AGENT_CONFIG_B64="'"$$AGENT_CONFIG_B64"'" && \
 	    export MILVUS_URI="'"$$MILVUS_URI"'" && \
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
-	    export MILVUS_CA_CERT=$$(printf %s "'"$$MILVUS_CA_CERT_B64"'" | base64 -d) && \
+	    export MILVUS_CA_CERT="'"$$MILVUS_CA_CERT"'" && \
 	    export PGVECTOR_HOST="'"$$PGVECTOR_HOST"'" && \
 	    export PGVECTOR_PORT="'"$$PGVECTOR_PORT"'" && \
 	    export PGVECTOR_DB="'"$$PGVECTOR_DB"'" && \
 	    export PGVECTOR_USER="'"$$PGVECTOR_USER"'" && \
 	    export PGVECTOR_PASSWORD=$$(printf %s "'"$$PGVECTOR_PASSWORD_B64"'" | base64 -d) && \
-	    export PGVECTOR_CA_CERT=$$(printf %s "'"$$PGVECTOR_CA_CERT_B64"'" | base64 -d) && \
-	    export NEO4J_URI=$$(printf %s "'"$$NEO4J_URI_B64"'" | base64 -d) && \
-	    export NEO4J_USERNAME=$$(printf %s "'"$$NEO4J_USERNAME_B64"'" | base64 -d) && \
-	    export NEO4J_PASSWORD=$$(printf %s "'"$$NEO4J_PASSWORD_B64"'" | base64 -d) && \
-	    export NEO4J_DATABASE=$$(printf %s "'"$$NEO4J_DATABASE_B64"'" | base64 -d) && \
-	    export NEO4J_CA_CERT=$$(printf %s "'"$$NEO4J_CA_CERT_B64"'" | base64 -d) && \
+	    export PGVECTOR_CA_CERT="'"$$PGVECTOR_CA_CERT"'" && \
+	    export NEO4J_URI='"$$NEO4J_URI_QUOTED"' && \
+	    export NEO4J_USERNAME='"$$NEO4J_USERNAME_QUOTED"' && \
+	    export NEO4J_PASSWORD='"$$NEO4J_PASSWORD_QUOTED"' && \
+	    export NEO4J_DATABASE='"$$NEO4J_DATABASE_QUOTED"' && \
+	    export NEO4J_CA_CERT='"$$NEO4J_CA_CERT_QUOTED"' && \
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
 	    export K8S_REVIEWER_TOKEN="'"$$K8S_REVIEWER_TOKEN"'" && \
 	    export K8S_CA_PATH=/sandbox/k8s-ca.crt && \
