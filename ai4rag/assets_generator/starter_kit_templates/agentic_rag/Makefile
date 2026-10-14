@@ -116,7 +116,7 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_API_KEY); [ -z "$$value" ] || MAAS_API_KEY="$$value"; \
 	fi && \
 	if [ -n "$$DB_SECRET_NAME" ] && [ "$$DB_SECRET_NAME" != "__DB_SECRET_NAME__" ]; then \
-	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD; do \
+	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT; do \
 	    value=$$(secret_value "$$DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
 	  done; \
 	fi && \
@@ -125,8 +125,13 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	  PGVECTOR_PORT=$${PGVECTOR_PORT:-5432}; \
 	  PGVECTOR_DB=$${PGVECTOR_DB:-postgres}; \
 	  PGVECTOR_USER=$${PGVECTOR_USER:-postgres}; \
+	elif [ "$$VECTOR_STORE_PROVIDER" = "neo4j" ]; then \
+	  [ -n "$$NEO4J_URI" ] || { echo "ERROR: NEO4J_URI is required for Neo4j deployment."; exit 1; }; \
+	  [ -n "$$NEO4J_PASSWORD" ] || { echo "ERROR: NEO4J_PASSWORD is required for Neo4j deployment."; exit 1; }; \
+	  NEO4J_USERNAME=$${NEO4J_USERNAME:-neo4j}; \
+	  NEO4J_DATABASE=$${NEO4J_DATABASE:-neo4j}; \
 	fi && \
-	export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_SERVER_CERT MILVUS_SERVER_NAME PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD
+	export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT
 
 build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	@oc new-build --strategy=docker --binary \
@@ -157,11 +162,18 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	    --env "AGENT_CONFIG_B64=$$AGENT_CONFIG_B64" \
 	    --env "MILVUS_URI=$$MILVUS_URI" \
 	    --env "MILVUS_TOKEN=$$MILVUS_TOKEN" \
+	    --env "MILVUS_CA_CERT=$$MILVUS_CA_CERT" \
 	    --env "PGVECTOR_HOST=$$PGVECTOR_HOST" \
 	    --env "PGVECTOR_PORT=$$PGVECTOR_PORT" \
 	    --env "PGVECTOR_DB=$$PGVECTOR_DB" \
 	    --env "PGVECTOR_USER=$$PGVECTOR_USER" \
 	    --env "PGVECTOR_PASSWORD=$$PGVECTOR_PASSWORD" \
+	    --env "PGVECTOR_CA_CERT=$$PGVECTOR_CA_CERT" \
+	    --env "NEO4J_URI=$$NEO4J_URI" \
+	    --env "NEO4J_USERNAME=$$NEO4J_USERNAME" \
+	    --env "NEO4J_PASSWORD=$$NEO4J_PASSWORD" \
+	    --env "NEO4J_DATABASE=$$NEO4J_DATABASE" \
+	    --env "NEO4J_CA_CERT=$$NEO4J_CA_CERT" \
 	    --env "PORT=8080" </dev/null & \
 	  CPID=$$!; ( sleep 80 && kill $$CPID 2>/dev/null ) & TPID=$$!; \
 	  wait $$CPID 2>/dev/null; RC=$$?; kill $$TPID 2>/dev/null; wait $$TPID 2>/dev/null; \
@@ -193,6 +205,10 @@ setup-egress: ## Add MaaS + vector database egress policies for agent Python bin
 	    MILVUS_HOSTPORT=$$(echo "$$MILVUS_URI" | sed -E 's|^https?://||;s|/.*||'); \
 	    DB_HOST=$$(echo "$$MILVUS_HOSTPORT" | cut -d: -f1); \
 	    DB_PORT=$$(echo "$$MILVUS_HOSTPORT" | cut -d: -f2); \
+	  elif [ "$$VECTOR_STORE_PROVIDER" = "neo4j" ]; then \
+	    NEO4J_ENDPOINT=$$(python3 -c 'import sys; from urllib.parse import urlsplit; endpoint=urlsplit(sys.argv[1]); print(endpoint.hostname or ""); print(endpoint.port or 7687)' "$$NEO4J_URI") && \
+	    DB_HOST=$$(printf '%s\n' "$$NEO4J_ENDPOINT" | sed -n '1p') && \
+	    DB_PORT=$$(printf '%s\n' "$$NEO4J_ENDPOINT" | sed -n '2p'); \
 	  else \
 	    echo "ERROR: Unsupported deployment provider $$VECTOR_STORE_PROVIDER"; exit 1; \
 	  fi && \
@@ -222,6 +238,11 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c "pkill -f '[/]usr/bin/python3.12 -m uvicorn auth_wrapper:app'" 2>/dev/null || true && \
 	  sleep 5 && \
 	  PGVECTOR_PASSWORD_B64=$$(printf '%s' "$$PGVECTOR_PASSWORD" | base64 | tr -d '\n') && \
+	  NEO4J_URI_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_URI") && \
+	  NEO4J_USERNAME_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_USERNAME") && \
+	  NEO4J_PASSWORD_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_PASSWORD") && \
+	  NEO4J_DATABASE_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_DATABASE") && \
+	  NEO4J_CA_CERT_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_CA_CERT") && \
 	  echo "==> Starting agent (auth: enabled)..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c '\
 	    printf %s "'"$$K8S_CA_B64"'" | base64 -d > /sandbox/k8s-ca.crt && \
@@ -230,13 +251,18 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export AGENT_CONFIG_B64="'"$$AGENT_CONFIG_B64"'" && \
 	    export MILVUS_URI="'"$$MILVUS_URI"'" && \
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
-	    export MILVUS_SERVER_CERT="'"$$MILVUS_SERVER_CERT"'" && \
-	    export MILVUS_SERVER_NAME="'"$$MILVUS_SERVER_NAME"'" && \
+	    export MILVUS_CA_CERT="'"$$MILVUS_CA_CERT"'" && \
 	    export PGVECTOR_HOST="'"$$PGVECTOR_HOST"'" && \
 	    export PGVECTOR_PORT="'"$$PGVECTOR_PORT"'" && \
 	    export PGVECTOR_DB="'"$$PGVECTOR_DB"'" && \
 	    export PGVECTOR_USER="'"$$PGVECTOR_USER"'" && \
 	    export PGVECTOR_PASSWORD=$$(printf %s "'"$$PGVECTOR_PASSWORD_B64"'" | base64 -d) && \
+	    export PGVECTOR_CA_CERT="'"$$PGVECTOR_CA_CERT"'" && \
+	    export NEO4J_URI='"$$NEO4J_URI_QUOTED"' && \
+	    export NEO4J_USERNAME='"$$NEO4J_USERNAME_QUOTED"' && \
+	    export NEO4J_PASSWORD='"$$NEO4J_PASSWORD_QUOTED"' && \
+	    export NEO4J_DATABASE='"$$NEO4J_DATABASE_QUOTED"' && \
+	    export NEO4J_CA_CERT='"$$NEO4J_CA_CERT_QUOTED"' && \
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
 	    export K8S_REVIEWER_TOKEN="'"$$K8S_REVIEWER_TOKEN"'" && \
 	    export K8S_CA_PATH=/sandbox/k8s-ca.crt && \
