@@ -54,6 +54,7 @@ from ai4rag.rag.template.registry import template_id_for_class
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
+from ai4rag.rag.vector_store.neo4j_utils import DEFAULT_KG_EXTRACTION_MAX_COMPLETION_TOKENS
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames, ExperimentStep, PreSelectorConstants
@@ -460,13 +461,16 @@ class AI4RAGExperiment:
         # and extraction settings, so they must participate in the collection
         # reuse key as well.
         if self.vector_store_config.provider == "neo4j":
+            kg_extraction_config = self.kg_extraction_config or {"mode": "constrained"}
             indexing_params["knowledge_graph"] = {
                 "model_id": foundation_model.model_id,
                 "model_params": {
                     "temperature": foundation_model.params.temperature,
-                    "max_completion_tokens": foundation_model.params.max_completion_tokens,
+                    "max_completion_tokens": kg_extraction_config.get(
+                        "max_completion_tokens", DEFAULT_KG_EXTRACTION_MAX_COMPLETION_TOKENS
+                    ),
                 },
-                "extraction_config": self.kg_extraction_config or {"mode": "constrained"},
+                "extraction_config": kg_extraction_config,
             }
 
         logger.info("Using indexing params: %s", indexing_params)
