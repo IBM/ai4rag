@@ -26,8 +26,8 @@ def indexing_notebook() -> dict:
 class TestDisconnectedClusterDocumentation:
     """Verify disconnected cluster support is documented in indexing notebook."""
 
-    def test_notebook_installs_pinned_text_extraction_dependencies(self, indexing_notebook):
-        """The text-extraction extra carries the OCR dependency pins used by the notebook."""
+    def test_notebook_installs_compatible_text_extraction_dependencies(self, indexing_notebook):
+        """The text-extraction extra carries compatible OCR dependency constraints for the notebook."""
         install_cell = next(
             "".join(cell["source"])
             for cell in indexing_notebook["cells"]
@@ -39,8 +39,8 @@ class TestDisconnectedClusterDocumentation:
         pyproject_path = Path(__file__).parents[4] / "pyproject.toml"
         project_config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
         text_extraction_dependencies = project_config["project"]["optional-dependencies"]["text-extraction"]
-        assert "rapidocr==3.9.2" in text_extraction_dependencies
-        assert "onnxruntime==1.25.0" in text_extraction_dependencies
+        assert "rapidocr~=3.9.2" in text_extraction_dependencies
+        assert "onnxruntime~=1.25.0" in text_extraction_dependencies
 
     def test_notebook_has_disconnected_cluster_prerequisites_section(self, indexing_notebook):
         """Notebook must include a 'Prerequisites for Disconnected Clusters' section."""
