@@ -175,6 +175,16 @@ evaluation_data = EvaluationData(
 
 Evaluation results are returned as an `EvaluationMetricsResult` TypedDict with two sections: aggregate metrics and per-question breakdowns.
 
+For each evaluated pattern, `experiment.results` retains an `EvaluationResult` whose
+`scores` field contains these metrics. Its optional `conversations` field holds full
+agent conversation records and defaults to `None` when inference emits none;
+`to_dict()` includes the field. Published evaluation JSON records include an optional
+`conversation_id` linking to the full conversation when conversation and evaluation
+counts match and the conversation has an ID. Full conversations are saved separately
+by `LocalEventHandler` in `conversations.json`. See
+[Event Handlers](event-handlers.md#evaluation_results-per-question-breakdown) for the
+linking rules and output schema.
+
 ### Aggregate Metrics
 
 For each metric, you get:

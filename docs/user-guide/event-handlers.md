@@ -120,10 +120,19 @@ separate extraction-model block. Retrieval controls remain in `settings.retrieva
 
 ### `evaluation_results` — per-question breakdown
 
+Agentic evaluation records can include an optional `conversation_id`, as in the
+example below. It links to the record with the same ID in `conversations.json` or
+the handler's `conversations` argument. Links are added by benchmark position only
+when conversation and evaluation counts match and the conversation has an ID.
+If the counts differ, a warning is logged and all links are omitted. Full
+conversation records are passed separately rather than embedded in each evaluation
+record.
+
 ```python
 [
     {
         "question": "What is ...?",
+        "conversation_id": "case-0000",
         "answer": "According to the document ...",
         "correct_answers": ["The correct answer is ..."],
         "answer_contexts": [
@@ -141,8 +150,11 @@ separate extraction-model block. Retrieval controls remain in `settings.retrieva
 
 ### `conversations` — agent trajectories
 
-When inference returns conversation records, the experiment passes them separately from
-the pattern payload and evaluation results. Each record contains:
+When inference returns conversation records, the experiment stores them on
+`EvaluationResult.conversations` and passes them separately from the pattern payload
+and evaluation results on publication. They are also accessible through
+`experiment.results` and included in `EvaluationResult.to_dict()`. The field is
+`None` when no conversations are emitted. Each record contains:
 
 | Field | Content |
 |---|---|

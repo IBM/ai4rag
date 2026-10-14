@@ -119,6 +119,11 @@ documents = load_docling_documents(extracted_dir)
     it is excluded from the installed package and it names documents by bare file name, so it is not suitable
     for a corpus with nested folders.
 
+    PDF parsing uses PDFium, and PDF model inference defaults to CPU to avoid native
+    PyTorch MPS crashes during concurrent conversion on macOS. Pass `device="auto"`
+    or a specific accelerator to `FileStore` to enable GPU inference. PDF caches use
+    `.pdfium.json`; older `.json` PDF caches are bypassed and regenerated automatically.
+
 ---
 
 ### 3. Prepare Benchmark Data
@@ -293,12 +298,23 @@ print(f"Best pattern: {best_pattern.pattern_name}, score: {best_pattern.final_sc
 After completion, check the `output_path` directory for:
 
 - **`<pattern_name>/pattern.json`**: Published pattern settings, selected `template_id`, and aggregate scores
-- **`<pattern_name>/evaluation_results.json`**: Per-question answers, retrieved contexts, and scores
+- **`<pattern_name>/evaluation_results.json`**: Per-question answers, retrieved contexts, scores, and optional `conversation_id` links to full conversations
 - **`<pattern_name>/conversations.json`**: Agent messages, retrievals, and tool activity when the template emits trajectories
 
 Only the best successful warm-start candidate is published as `Pattern1`; other
 warm-start candidates do not get output directories. See
 [Event Handlers](../user-guide/event-handlers.md) for the artifact schema.
+
+Access conversations directly from an evaluated pattern:
+
+```python
+best_pattern = experiment.results.get_best_evaluations(k=1)[0]
+for conversation in best_pattern.conversations or []:
+    print(conversation["conversation_id"], conversation["question"])
+```
+
+`conversations` is `None` when inference emits no conversation records. Each result's
+`to_dict()` also includes this field.
 
 ---
 

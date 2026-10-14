@@ -14,6 +14,10 @@ Data processing functions for the AutoRAG pipeline.
 
 ## Text Extraction
 
+PDF extraction uses Docling's `PyPdfiumDocumentBackend` to preserve text that the
+native parser can emit as NUL characters. OCR and table processing remain controlled
+by `DoclingExtractionConfig`.
+
 ::: ai4rag.utils.data.text_extraction
     options:
       members:

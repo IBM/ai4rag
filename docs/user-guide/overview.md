@@ -30,6 +30,11 @@ each published pattern has `pattern.json` and `evaluation_results.json`; agentic
 patterns also include `conversations.json` with retrieval and tool activity. See
 [Event Handlers](event-handlers.md) for the output schema.
 
+Each evaluated pattern also retains its conversations in
+`EvaluationResult.conversations`, accessible through `experiment.results`. The field
+is `None` when inference emits no conversations. Evaluation JSON records can link to
+the full conversations through an optional `conversation_id`.
+
 ### Search Space
 
 The **search space** defines all possible parameter combinations:

@@ -76,8 +76,10 @@ persists its `template_id`. Currently only the built-in `AgenticRAG` and `Simple
 classes can be published; custom subclasses require registry support. Generated
 inference notebooks use that ID to recreate the selected template.
 
-When inference returns agent conversations, the experiment keeps them separately from
-evaluation scores and forwards them to the event handler on publication, including
+When inference returns agent conversations, each `EvaluationResult` retains them in
+its optional `conversations` field alongside evaluation scores. They are available
+through `experiment.results` and `EvaluationResult.to_dict()`. Pattern publication
+reads them from that result and forwards them to the event handler, including
 when the best warm-start candidate is renamed to `Pattern1`. Neo4j patterns publish
 their extraction policy as `settings.graph_extraction`, replacing the previous
 `settings.knowledge_graph` block. See [Event Handlers](../user-guide/event-handlers.md).

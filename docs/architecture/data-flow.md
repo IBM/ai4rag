@@ -846,8 +846,13 @@ event_handler.on_pattern_creation(
 )
 ```
 
-When conversation records are present, the call also includes a `conversations`
-keyword containing one record per traced benchmark case, with IDs such as `case-0000`.
+When conversation records are present, they are stored on
+`EvaluationResult.conversations`. Publication reads this field and includes a
+`conversations` keyword containing one record per traced benchmark case, with IDs
+such as `case-0000`. Evaluation JSON records receive matching `conversation_id`
+links by position when conversation and evaluation counts match and an ID is present;
+mismatched counts log a warning and omit all links. Full conversations remain
+separate from the per-question evaluation JSON records.
 `LocalEventHandler` writes `pattern.json`, `evaluation_results.json`, and optional
 `conversations.json` under the published pattern's directory. `KFPEventHandler`
 retains the same records in memory. For Neo4j patterns, `settings.graph_extraction`
