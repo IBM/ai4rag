@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
 from docling.datamodel.pipeline_options import (
@@ -669,7 +670,10 @@ def _build_docling_format_options(
     )
 
     format_options: dict = {
-        InputFormat.PDF: PdfFormatOption(pipeline_options=pdf_pipeline_options),
+        InputFormat.PDF: PdfFormatOption(
+            pipeline_options=pdf_pipeline_options,
+            backend=PyPdfiumDocumentBackend,
+        ),
         InputFormat.DOCX: WordFormatOption(pipeline_options=paginated_pipeline_options),
         InputFormat.PPTX: PowerpointFormatOption(pipeline_options=paginated_pipeline_options),
         InputFormat.HTML: HTMLFormatOption(),

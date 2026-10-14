@@ -73,6 +73,16 @@ def test_llm_adapter_accepts_base_foundation_model_message_response():
     model.chat.assert_called_once_with([{"role": "user", "content": "Extract entities."}])
 
 
+def test_llm_adapter_can_override_the_completion_limit_for_entity_extraction():
+    """The KG-specific token cap must not mutate the model's general parameters."""
+    model = MagicMock(model_id="test-model")
+    model.chat.return_value = [{"role": "assistant", "content": '{"nodes": [], "relationships": []}'}]
+
+    _LLMAdapter(model, max_completion_tokens=1024).invoke("Extract entities.")
+
+    model.chat.assert_called_once_with([{"role": "user", "content": "Extract entities."}], max_completion_tokens=1024)
+
+
 # ---------------------------------------------------------------------------
 # Neo4jConfig
 # ---------------------------------------------------------------------------
@@ -174,6 +184,13 @@ class TestNeo4jConfig:
 
 
 class TestKGExtractionConfig:
+    def test_default_completion_limit_is_1024(self):
+        assert _validate_kg_extraction_config(None)["max_completion_tokens"] == 1024
+
+    def test_rejects_boolean_completion_limit(self):
+        with pytest.raises(ValueError, match="max_completion_tokens must be a positive integer"):
+            _validate_kg_extraction_config({"max_completion_tokens": True})
+
     def test_constrained_mode_uses_the_fixed_schema(self):
         options = _kg_pipeline_extraction_options(_validate_kg_extraction_config({"mode": "constrained"}))
 
@@ -490,7 +507,7 @@ class TestAddDocuments:
                 pipeline_cls.return_value.run_async.side_effect = run_pipeline
                 store._run_kg_pipeline(chunks, MagicMock(), perform_entity_resolution=False)
 
-        assert "Starting entity extraction for 2 chunks (collection=ai4rag_col)." in caplog.messages
+        assert "Starting entity extraction for 2 chunks (max_concurrent=2, collection=ai4rag_col)." in caplog.messages
         assert "Finished entity extraction for 2 chunks (collection=ai4rag_col)." in caplog.messages
 
     def test_pipeline_can_skip_scoped_entity_resolution(self, mock_driver_cls, mock_embedding, neo4j_config):

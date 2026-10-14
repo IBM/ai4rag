@@ -185,7 +185,7 @@ class TestGraphCollectionReuse:
 
         assert captured["knowledge_graph"] == {
             "model_id": "kg-extractor",
-            "model_params": {"temperature": 0.2, "max_completion_tokens": 512},
+            "model_params": {"temperature": 0.2, "max_completion_tokens": 1024},
             "extraction_config": experiment.kg_extraction_config,
         }
 

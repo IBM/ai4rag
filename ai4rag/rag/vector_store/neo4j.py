@@ -155,6 +155,7 @@ class Neo4jGraphStore(BaseVectorStore):
     """
 
     _BATCH_SIZE = 512
+    _DEFAULT_KG_EXTRACTION_CONCURRENCY = 2
 
     def __init__(
         self,
@@ -271,7 +272,7 @@ class Neo4jGraphStore(BaseVectorStore):
         self,
         chunks: list[AI4RAGChunk],
         model: Any,
-        max_concurrent: int = 8,
+        max_concurrent: int = _DEFAULT_KG_EXTRACTION_CONCURRENCY,
         on_error: str = "IGNORE",
         perform_entity_resolution: bool = True,
     ) -> None:
@@ -283,22 +284,23 @@ class Neo4jGraphStore(BaseVectorStore):
         LLM call and can exceed context limits for large corpora.
 
         Chunks are processed concurrently (bounded by ``max_concurrent``) inside
-        a single asyncio event loop, giving near-linear speedup over the
-        sequential approach since LLM calls are I/O-bound.
+        a single asyncio event loop. The default of two balances throughput
+        with pressure on the foundation-model endpoint.
         """
         chunks = [chunk for chunk in chunks if chunk.text.strip()]
         if not chunks:
             return
 
         logger.info(
-            "Starting entity extraction for %d chunks (collection=%s).",
+            "Starting entity extraction for %d chunks (max_concurrent=%d, collection=%s).",
             len(chunks),
+            max_concurrent,
             self._collection_name,
         )
 
         kg_writer = _CanonicalKGWriter(self._driver, self._config.database, self._collection_name)
         pipeline = SimpleKGPipeline(
-            llm=_LLMAdapter(model),
+            llm=_LLMAdapter(model, max_completion_tokens=self._kg_extraction_config["max_completion_tokens"]),
             driver=self._driver,
             embedder=_EmbedderAdapter(self.embedding_model),
             from_pdf=False,
