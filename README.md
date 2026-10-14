@@ -94,6 +94,11 @@ conversations are emitted. Per-question evaluation JSON records include an optio
 `conversation_id` linking to `conversations.json` when conversation and evaluation
 counts match.
 
+`generate_starter_kit()` packages a published pattern into an agentic microservice
+with OpenShell deployment for Milvus, PostgreSQL/pgvector, or Neo4j. Deployment
+forwards database CA certificates and serves retrieval from an already indexed
+collection. See the [Starter Kit guide](https://ibm.github.io/ai4rag/latest/api-reference/assets-generator/starter-kit/).
+
 ## Running on Disconnected Clusters
 
 If you are running ai4rag on a **disconnected cluster** (no internet access), you must pre-download the required ML models before execution.

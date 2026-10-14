@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experiment** — `EvaluationResult.conversations` retains agent conversation records with each evaluated pattern, making them accessible through experiment results and `to_dict()`
 - **Experiment** — evaluation JSON records include `conversation_id` links to full agent conversations when conversation and evaluation counts match; mismatched counts produce a warning and omit the links
 - **Vector store** — Neo4j `kg_extraction_config.max_completion_tokens` accepts a positive integer to control entity-extraction output independently of answer generation, defaulting to 1024
+- **Assets generator** — generated starter kits support Neo4j OpenShell deployment, loading database credentials, validating required settings, and configuring egress from the Neo4j URI (default port 7687)
 
 ### Changed
 
@@ -27,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Experiment** — pattern publication, including the selected warm-start pattern, reads conversations from its `EvaluationResult`, keeping conversation artifacts attached to the result being published
 - **Text extraction** — production PDF extraction and the local `FileStore` helper use Docling's PDFium backend to recover text that the native parser emitted as NUL characters
 - **Vector store** — Neo4j entity extraction reduces default chunk concurrency from eight to two and uses a dedicated completion-token limit; collection reuse tracks that extraction limit rather than the answer-generation limit
+- **Assets generator** — starter-kit deployment forwards `MILVUS_CA_CERT`, `PGVECTOR_CA_CERT`, and `NEO4J_CA_CERT` to the sandbox and agent; Milvus deployment uses `MILVUS_CA_CERT` instead of the obsolete `MILVUS_SERVER_CERT` key
 
 ---
 
