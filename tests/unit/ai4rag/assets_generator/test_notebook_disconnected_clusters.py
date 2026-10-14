@@ -5,6 +5,7 @@
 """Test that indexing notebook includes disconnected cluster documentation."""
 
 import json
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -23,19 +24,21 @@ def indexing_notebook() -> dict:
 class TestDisconnectedClusterDocumentation:
     """Verify disconnected cluster support is documented in indexing notebook."""
 
-    def test_notebook_installs_pinned_ocr_dependencies_after_ai4rag(self, indexing_notebook):
-        """OCR notebooks need the same RapidOCR and ONNX Runtime pins as the pipeline image."""
+    def test_notebook_installs_compatible_text_extraction_dependencies(self, indexing_notebook):
+        """The text-extraction extra carries compatible OCR dependency constraints for the notebook."""
         install_cell = next(
             "".join(cell["source"])
             for cell in indexing_notebook["cells"]
             if cell["cell_type"] == "code" and "ai4rag[text-extraction]" in "".join(cell["source"])
         )
 
-        assert "rapidocr==3.9.2" in install_cell
-        assert "--force-reinstall --no-deps" in install_cell
-        assert "onnxruntime==1.25.0" in install_cell
-        assert install_cell.index("ai4rag[text-extraction]") < install_cell.index("rapidocr==3.9.2")
-        assert install_cell.index("rapidocr==3.9.2") < install_cell.index("onnxruntime==1.25.0")
+        assert "ai4rag[text-extraction]" in install_cell
+
+        pyproject_path = Path(__file__).parents[4] / "pyproject.toml"
+        project_config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
+        text_extraction_dependencies = project_config["project"]["optional-dependencies"]["text-extraction"]
+        assert "rapidocr~=3.9.2" in text_extraction_dependencies
+        assert "onnxruntime~=1.25.0" in text_extraction_dependencies
 
     def test_notebook_has_disconnected_cluster_prerequisites_section(self, indexing_notebook):
         """Notebook must include a 'Prerequisites for Disconnected Clusters' section."""
@@ -97,8 +100,7 @@ class TestDisconnectedClusterDocumentation:
         validation_heading_index = next(
             index
             for index, cell in enumerate(cells)
-            if cell["cell_type"] == "markdown"
-            and "### Validate Offline Configuration" in "".join(cell["source"])
+            if cell["cell_type"] == "markdown" and "### Validate Offline Configuration" in "".join(cell["source"])
         )
         validation_cell = cells[validation_heading_index + 1]
         validation_source = "".join(validation_cell["source"])

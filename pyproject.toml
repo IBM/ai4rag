@@ -81,6 +81,8 @@ code_check = ["pylint", "black", "isort"]
 
 text-extraction = [
   "docling-slim[standard,format-opendocument,format-audio]~=2.121.0",
+  "rapidocr~=3.9.2",
+  "onnxruntime~=1.25.0"
 ]
 
 docs = [
