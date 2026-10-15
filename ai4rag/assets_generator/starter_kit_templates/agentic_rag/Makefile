@@ -260,7 +260,8 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export PGVECTOR_DB="'"$$PGVECTOR_DB"'" && \
 	    export PGVECTOR_USER="'"$$PGVECTOR_USER"'" && \
 	    export PGVECTOR_PASSWORD=$$(printf %s "'"$$PGVECTOR_PASSWORD_B64"'" | base64 -d) && \
-	    export PGVECTOR_CA_CERT="$$(printf %s '"'"$$PGVECTOR_CA_CERT"'"' | base64 -d)" && \
+	    case "$$PGVECTOR_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) ;; *) PGVECTOR_CA_CERT=$$(printf %s "$$PGVECTOR_CA_CERT" | base64 -d);; esac && \
+	    export PGVECTOR_CA_CERT && \
 	    export NEO4J_URI='"$$NEO4J_URI_QUOTED"' && \
 	    export NEO4J_USERNAME='"$$NEO4J_USERNAME_QUOTED"' && \
 	    export NEO4J_PASSWORD='"$$NEO4J_PASSWORD_QUOTED"' && \
