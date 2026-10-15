@@ -71,15 +71,15 @@ def create_placeholder_mapping(
     mapping["PATTERN_NAME"] = output_data.get("name", "")
     template_id = output_data.get("template_id")
     if template_id is None:
-        # Patterns written before template_id was added generated SimpleRAG
+        # Patterns written before template_id was added generated SequentialRAG
         # notebooks. Retain that behaviour during the schema transition.
         warnings.warn(
-            "Pattern has no template_id; generating a legacy SimpleRAG notebook. "
+            "Pattern has no template_id; generating a legacy SequentialRAG notebook. "
             "Regenerate the pattern to persist its selected template.",
             UserWarning,
             stacklevel=2,
         )
-        template_id = "simple_rag"
+        template_id = "sequential_rag"
     template_spec = get_template_spec(template_id)
     mapping["TEMPLATE_ID"] = template_spec.template_id
     mapping["RAG_TEMPLATE_IMPORT"] = f"from {template_spec.import_path} import {template_spec.template_class.__name__}"

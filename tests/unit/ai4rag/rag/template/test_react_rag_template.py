@@ -14,8 +14,8 @@ from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.template.base_template import BaseRAGTemplate
+from ai4rag.rag.template.react_rag_template import ReActRAG
 
 
 class ToolCallingFake(FakeMessagesListChatModel):
@@ -27,14 +27,14 @@ class ToolCallingFake(FakeMessagesListChatModel):
 
 @pytest.fixture
 def rag(mocker):
-    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    create_agent = mocker.patch("ai4rag.rag.template.react_rag_template.create_agent")
     foundation_model = mocker.MagicMock()
     foundation_model.system_message_text = "Answer from context."
     foundation_model.user_message_text = "Question: {question}\nContext: {reference_documents}"
     foundation_model.context_template_text = "{document}"
     retriever = mocker.MagicMock()
     retriever.retrieve.return_value = []
-    rag_template = AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
+    rag_template = ReActRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
     rag_template._create_agent_mock = create_agent
     return rag_template
 
@@ -71,7 +71,7 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
             AIMessage(content="grounded answer"),
         ]
     )
-    agent = AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=model)
+    agent = ReActRAG(foundation_model=foundation_model, retriever=retriever, chat_model=model)
 
     result = agent.generate("question")
 
@@ -127,14 +127,14 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
 
 def test_agent_initialization_does_not_emit_lock_schema_warning(mocker):
     """The invocation lock remains opaque while LangChain creates tool schemas."""
-    create_agent = mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    create_agent = mocker.patch("ai4rag.rag.template.react_rag_template.create_agent")
     foundation_model = mocker.MagicMock()
     foundation_model.system_message_text = "Answer from context."
     retriever = mocker.MagicMock()
 
     with warnings.catch_warnings(record=True) as caught_warnings:
         warnings.simplefilter("always")
-        AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
+        ReActRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
 
     assert create_agent.called
     assert not any("allocate_lock" in str(warning.message) for warning in caught_warnings)
@@ -291,7 +291,7 @@ def test_chat_completions_executes_retriever_tool(mocker):
     follow_up = AI4RAGChunk(text="follow-up evidence", metadata={})
     retriever.retrieve.side_effect = [[initial], [follow_up]]
 
-    result = AgenticRAG(foundation_model, retriever, chat_model=chat_model).generate("question")
+    result = ReActRAG(foundation_model, retriever, chat_model=chat_model).generate("question")
 
     assert result["answer"] == "grounded answer"
     assert result["reference_documents"] == [initial, follow_up]

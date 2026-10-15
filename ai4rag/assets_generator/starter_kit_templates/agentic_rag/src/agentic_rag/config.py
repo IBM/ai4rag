@@ -5,7 +5,7 @@
 import base64
 import binascii
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from os import getenv
 from pathlib import Path
 from typing import TypedDict, cast
@@ -57,6 +57,7 @@ class VectorStoreConfig(TypedDict):
 class AgentConfigData(TypedDict):
     """Expected structure of the generated agent_config.json."""
 
+    template_id: str
     generation: GenerationConfig
     prompts: PromptConfig
     embedding: EmbeddingConfig
@@ -119,6 +120,9 @@ class AgentConfig:
     ranker_k: int | None
     ranker_alpha: float | None
 
+    template_id: str = "react_rag"
+    graph_retrieval: dict[str, int | bool] = field(default_factory=dict)
+
     @classmethod
     def from_env(cls) -> "AgentConfig":
         """Load generated RAG settings."""
@@ -129,7 +133,19 @@ class AgentConfig:
             embedding = file_config["embedding"]
             retrieval = file_config["retrieval"]
             vector_store = file_config["vector_store"]
+            from ai4rag.rag.template.registry import get_template_spec
+            from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
+
+            template_id = get_template_spec(file_config["template_id"]).template_id
             config = cls(
+                template_id=template_id,
+                graph_retrieval=(
+                    Neo4jGraphRetrievalConfig.from_mapping(
+                        {k: v for k, v in retrieval.items() if k in Neo4jGraphRetrievalConfig.keys()}
+                    ).to_search_kwargs()
+                    if retrieval["search_mode"] == "graph"
+                    else {}
+                ),
                 model_id=generation["model_id"],
                 temperature=float(generation["temperature"]),
                 max_completion_tokens=int(generation["max_completion_tokens"]),

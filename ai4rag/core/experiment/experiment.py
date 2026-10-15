@@ -48,9 +48,7 @@ from ai4rag.rag.chunking import DoclingChunker, LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
-from ai4rag.rag.template.base_template import BaseRAGTemplate
-from ai4rag.rag.template.registry import template_id_for_class
+from ai4rag.rag.template.registry import get_template_spec
 from ai4rag.rag.vector_store.config import BaseVectorStoreConfig, PGVectorConfig
 from ai4rag.rag.vector_store.get_vector_store import get_vector_store
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
@@ -74,6 +72,8 @@ class AI4RAGExperiment:
 
     AI4RAG uses 'BaseRAGTemplate' inheriting classes as definitions on how
     to build and utilize RAG Pattern with the given search space nodes.
+
+    Template selection uses the categorical ``template_id`` search parameter.
 
     Parameters
     ----------
@@ -127,9 +127,6 @@ class AI4RAGExperiment:
     inference_max_threads : int, default=10
         Defines the number of threads to use during generation model inference.
 
-    rag_template : type[BaseRAGTemplate], default=AgenticRAG
-        RAG template class used to evaluate each pattern.
-
     Attributes
     ----------
     results : ExperimentResults
@@ -168,14 +165,17 @@ class AI4RAGExperiment:
             "n_mps_embedding_models", PreSelectorConstants.DEFAULT_N_EMBEDDING_MODELS
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
-        self.rag_template: type[BaseRAGTemplate] = kwargs.pop("rag_template", AgenticRAG)
-        if not isinstance(self.rag_template, type) or not issubclass(self.rag_template, BaseRAGTemplate):
-            raise TypeError("rag_template must be a BaseRAGTemplate subclass.")
+        if "rag_template" in kwargs:
+            raise TypeError(
+                "rag_template was removed. Use Parameter(name='template_id', values=('sequential_rag',)) "
+                "in the search space instead."
+            )
+        self.search_space.validate_compatibility(self.vector_store_config.provider)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
         graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
         if graph_retrieval_config is None:
-            self.graph_retrieval_config: Neo4jGraphRetrievalConfig | None = None
+            self.graph_retrieval_config = Neo4jGraphRetrievalConfig()
         elif isinstance(graph_retrieval_config, Neo4jGraphRetrievalConfig):
             self.graph_retrieval_config = graph_retrieval_config
         elif isinstance(graph_retrieval_config, Mapping):
@@ -397,7 +397,6 @@ class AI4RAGExperiment:
             foundation_models=foundation_models,
             embedding_models=embedding_models,
             metric=Metrics.OVERALL_SCORE,
-            rag_template=self.rag_template,
         )
         mps.evaluate_patterns()
 
@@ -434,6 +433,11 @@ class AI4RAGExperiment:
         float
             A single evaluation score obtained by the executed rag pattern.
         """
+        self.search_space.validate_compatibility(self.vector_store_config.provider)
+        template_id = rag_params[AI4RAGParamNames.TEMPLATE_ID]
+        template_spec = get_template_spec(template_id)
+        if template_id not in self.search_space[AI4RAGParamNames.TEMPLATE_ID].values:
+            raise ValueError(f"Candidate template_id {template_id!r} is outside the search space.")
         start_time = time.time()
 
         chunking_params = get_chunking_params(rag_params)
@@ -444,6 +448,8 @@ class AI4RAGExperiment:
         foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
+        if search_mode not in self.search_space[AI4RAGParamNames.SEARCH_MODE].all_values():
+            raise ValueError(f"Candidate search_mode {search_mode!r} is outside the search space.")
 
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
@@ -483,6 +489,7 @@ class AI4RAGExperiment:
         user_message_text = foundation_model.user_message_text
 
         rag_params = {
+            "template_id": template_id,
             "retrieval": retrieval_params,
             "generation": {
                 "model_id": foundation_model.model_id,
@@ -611,7 +618,7 @@ class AI4RAGExperiment:
                 search_kwargs=(self.graph_retrieval_config.to_search_kwargs() if search_mode == "graph" else None),
             )
 
-            rag_pattern = self.rag_template(
+            rag_pattern = template_spec.template_class(
                 foundation_model=foundation_model,
                 retriever=retriever,
             )
@@ -769,6 +776,18 @@ class AI4RAGExperiment:
                 raise FailedIterationError(msg) from err
             finally:
                 self._optimization_phase = None
+
+        self.search_space.validate_compatibility(self.vector_store_config.provider)
+        for observation in self.known_observations or []:
+            if "template_id" not in observation:
+                raise ValueError("Known observations require an explicit template_id; regenerate template-less scores.")
+            template_id = observation["template_id"]
+            get_template_spec(template_id)
+            if template_id not in self.search_space[AI4RAGParamNames.TEMPLATE_ID].values:
+                raise ValueError("Known observation template_id must belong to the search space.")
+            mode = observation.get("search_mode", "graph" if self.vector_store_config.provider == "neo4j" else "vector")
+            if mode not in self.search_space[AI4RAGParamNames.SEARCH_MODE].all_values():
+                raise ValueError("Known observation search_mode is incompatible with the search space.")
 
         # MPS - models pre-selection based on sample evaluation.
         # Run if there are more than 3 foundation models or more than 2 embedding models.
@@ -933,7 +952,7 @@ class AI4RAGExperiment:
         ]
         payload = {
             "name": pattern_name or evaluation_result.pattern_name,
-            "template_id": template_id_for_class(self.rag_template),
+            "template_id": evaluation_result.rag_params["template_id"],
             "max_combinations": self.search_space.max_combinations,
             "evaluation": {"metrics": metrics_payload},
             "duration_seconds": int(evaluation_result.execution_time),
@@ -1032,22 +1051,7 @@ class AI4RAGExperiment:
         return result
 
     def _collection_exists(self, collection_name: str) -> bool:
-        """
-        This method checks if a collection with a given name already exists.
-        Existence is tracked by this run's own bookkeeping (``self.results.collection_names``) rather than by querying
-        the backend, so the check is backend-agnostic and reflects only collections this
-        experiment created and can safely reuse.
-
-        Parameters
-        ----------
-        collection_name : str
-            Name of the collection to check if exists.
-
-        Returns
-        -------
-        bool
-            True if collection exist, otherwise False.
-        """
+        """Check this run's collection bookkeeping for a reusable collection."""
         return collection_name in self.results.collection_names
 
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
@@ -1057,15 +1061,12 @@ class AI4RAGExperiment:
         Parameters
         ----------
         indexing_params : dict[str, Any]
-            Dictionary containing keys and values that are compared with
-            previously used ones, to establish if the newly created collection
-            would be exactly the same.
+            Indexing settings compared against previously created collections.
 
         Returns
         -------
         str | None
-            Collection name that is new or one of the previously created.
-            None if there is no collection to reuse.
+            Matching collection name, or None when no collection can be reused.
         """
         collection = self.results.get_existing_collection(indexing_params=indexing_params)
         if collection is not None:
@@ -1082,8 +1083,7 @@ class AI4RAGExperiment:
         Returns
         -------
         str
-            Pattern name.
-            Example: "Pattern7" or "Pattern7-warm-start".
+            Pattern name, for example "Pattern7" or "Pattern7-warm-start".
         """
         if self._optimization_phase == "warm_start":
             warm_start_count = sum(result.pattern_name.endswith("-warm-start") for result in self.results)

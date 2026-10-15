@@ -18,7 +18,7 @@ notebook's ai4rag version. That extra supplies `rapidocr~=3.9.2` and
 
 `create_placeholder_mapping()` reads the pattern's `template_id` and resolves it
 through the template registry. Standard and graph inference notebooks instantiate
-that template. Patterns without an ID emit a `UserWarning` and use `SimpleRAG`;
+that template. Patterns without an ID emit a `UserWarning` and use `SequentialRAG`;
 unsupported IDs raise `ValueError`. Regenerate older patterns to persist the selected
 template before generating new notebooks.
 
@@ -45,13 +45,11 @@ The registry maps stable IDs to allowed template classes and import paths:
 
 | ID | Class | Use |
 |---|---|---|
-| `simple_rag` | `SimpleRAG` | Single-pass retrieval and generation |
-| `agentic_rag` | `AgenticRAG` | Agent-driven retrieval and query rewriting |
-| `agentic_graph_rag` | `AgenticRAG` | Accepted alias for agentic graph patterns |
+| `sequential_rag` | `SequentialRAG` | Single-pass retrieval and generation |
+| `react_rag` | `ReActRAG` | Agent-driven retrieval and query rewriting |
+| `react_graph_rag` | `ReActRAG` | Neo4j graph retrieval |
 
-`template_id_for_class()` publishes `agentic_rag` for `AgenticRAG`, including with
-Neo4j retrieval. Custom subclasses are rejected unless registry support is added;
-there is no public dynamic-registration function.
+Experiments publish the candidate’s selected ID, including `react_graph_rag` for Neo4j.
 
 ::: ai4rag.rag.template.registry
     options:

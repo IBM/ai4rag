@@ -57,6 +57,10 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus"
         chunk_overlaps = _default_chunk_overlaps
 
     default_search_space_parameters = [
+        Parameter(
+            name=AI4RAGParamNames.TEMPLATE_ID,
+            values=("react_graph_rag" if vector_store_type == "neo4j" else "react_rag",),
+        ),
         Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
         Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=chunk_sizes),
         Parameter(name=AI4RAGParamNames.CHUNK_OVERLAP, values=chunk_overlaps),

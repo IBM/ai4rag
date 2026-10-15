@@ -370,6 +370,7 @@ class AI4RAGSearchSpace(SearchSpace):
         rules: list[RuleFunction] | None = None,
         vector_store_type: str = "milvus",
     ):
+        self.vector_store_type = vector_store_type
         default_search_space_parameters = get_default_ai4rag_search_space_parameters(vector_store_type)
         params = params or []
         self._validate_user_params(params)
@@ -381,6 +382,32 @@ class AI4RAGSearchSpace(SearchSpace):
         builtin_rules = self._base_rules + self._hybrid_rules
         _summed_rules = builtin_rules + rules if rules else builtin_rules
         super().__init__(params, _summed_rules)
+        self.validate_compatibility(vector_store_type)
+
+    def validate_compatibility(self, provider: str) -> None:
+        """Validate templates and retrieval modes against the connection provider.
+
+        Parameters
+        ----------
+        provider : str
+            Provider of the actual store connection used by the experiment.
+        """
+        from ai4rag.rag.template.registry import get_template_spec
+
+        if (provider == "neo4j") != (self.vector_store_type == "neo4j"):
+            raise SearchSpaceValueError("Search-space provider must match the experiment connection provider.")
+        templates = self[AI4RAGParamNames.TEMPLATE_ID]
+        if templates.param_type != "C" or isinstance(templates.values, (str, bytes)):
+            raise SearchSpaceValueError("template_id must be a categorical parameter containing template IDs.")
+        allowed = {"react_graph_rag"} if provider == "neo4j" else {"react_rag", "sequential_rag"}
+        for template_id in templates.values:
+            get_template_spec(template_id)
+            if template_id not in allowed:
+                raise SearchSpaceValueError(f"Template {template_id!r} is incompatible with backend {provider!r}.")
+        modes = self[AI4RAGParamNames.SEARCH_MODE].all_values()
+        allowed_modes = {"graph"} if provider == "neo4j" else {"vector", "hybrid"}
+        if not set(modes) <= allowed_modes:
+            raise SearchSpaceValueError(f"Backend {provider!r} requires search modes {sorted(allowed_modes)}.")
 
     @staticmethod
     def _validate_user_params(params: list[Parameter]) -> None:

@@ -68,7 +68,7 @@ def on_pattern_creation(
 ```python
 {
     "name": "Pattern1",
-    "template_id": "simple_rag",
+    "template_id": "sequential_rag",
     "iteration": 0,
     "max_combinations": 24,
     "duration_seconds": 134,
@@ -105,9 +105,11 @@ def on_pattern_creation(
 }
 ```
 
-`template_id` identifies the selected template: experiments publish `agentic_rag` for
-`AgenticRAG` and `simple_rag` for `SimpleRAG`, including when retrieval uses Neo4j.
-Notebook rendering also accepts `agentic_graph_rag` as an alias for `AgenticRAG`.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
+`sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
+use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
 For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, for example:
 

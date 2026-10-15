@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from ai4rag.core.experiment.exception_handler import EvaluationError
+from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.results import EvaluationResult
 from ai4rag.core.experiment.utils import merge_evaluation_results
 from ai4rag.core.hpo.gam_opt import GAMOptSettings
@@ -22,8 +23,6 @@ from ai4rag.evaluator.base_evaluator import (
 from ai4rag.evaluator.llmaj_evaluator import LLMaJEvaluator
 from ai4rag.evaluator.metric import Metrics, RAGMetric
 from ai4rag.evaluator.unitxt_evaluator import UnitxtEvaluator
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -68,17 +67,13 @@ def _make_result(
     )
 
 
-def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None, rag_template=None):
+def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None):
     """Construct an AI4RAGExperiment with all heavy deps mocked out."""
-    from ai4rag.core.experiment.experiment import AI4RAGExperiment
-
     kwargs = {}
     if evaluators is not None:
         kwargs["evaluators"] = evaluators
     if metrics is not None:
         kwargs["metrics"] = metrics
-    if rag_template is not None:
-        kwargs["rag_template"] = rag_template
     return AI4RAGExperiment(
         documents=[],
         benchmark_data=_BENCHMARK_DF,
@@ -120,25 +115,33 @@ class TestEvaluatorType:
 
 class TestRAGTemplateSelection:
     def test_agentic_rag_is_the_default(self):
-        assert _build_experiment().rag_template is AgenticRAG
+        assert _build_experiment().graph_retrieval_config is not None
 
     def test_accepts_another_rag_template(self):
-        assert _build_experiment(rag_template=SimpleRAG).rag_template is SimpleRAG
+        assert not hasattr(_build_experiment(), "rag_template")
 
     def test_preselection_receives_selected_rag_template(self, mocker):
-        experiment = _build_experiment(rag_template=SimpleRAG)
+        experiment = _build_experiment()
         selector_class = mocker.patch("ai4rag.core.experiment.mps.ModelsPreSelector")
         selector = selector_class.return_value
         selector.select_models.return_value = {"foundation_models": [], "embedding_models": []}
 
         experiment.run_pre_selection(foundation_models=[], embedding_models=[])
 
-        assert selector_class.call_args.kwargs["rag_template"] is SimpleRAG
+        assert "rag_template" not in selector_class.call_args.kwargs
 
-    @pytest.mark.parametrize("invalid_template", ["SimpleRAG", object])
+    @pytest.mark.parametrize("invalid_template", ["SequentialRAG", object])
     def test_rejects_non_template_classes(self, invalid_template):
-        with pytest.raises(TypeError, match="rag_template must be a BaseRAGTemplate subclass"):
-            _build_experiment(rag_template=invalid_template)
+        with pytest.raises(TypeError, match="rag_template was removed"):
+            AI4RAGExperiment(
+                documents=[],
+                benchmark_data=_BENCHMARK_DF,
+                search_space=MagicMock(),
+                optimizer_settings=MagicMock(),
+                event_handler=MagicMock(),
+                vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),
+                rag_template=invalid_template,
+            )
 
 
 class TestGraphCollectionReuse:
@@ -165,7 +168,10 @@ class TestGraphCollectionReuse:
             raise _StopBeforeIndexing
 
         experiment._get_reusable_collection_name = stop_before_indexing
+        experiment.search_space["template_id"].values = ("react_graph_rag",)
+        experiment.search_space["search_mode"].all_values.return_value = ("graph",)
         params = {
+            "template_id": "react_graph_rag",
             AI4RAGParamNames.FOUNDATION_MODEL: foundation_model,
             AI4RAGParamNames.EMBEDDING_MODEL: embedding_model,
             AI4RAGParamNames.CHUNKING_METHOD: "recursive",
@@ -190,7 +196,7 @@ class TestGraphCollectionReuse:
         }
 
     def test_pattern_omits_graph_extraction_settings_for_non_neo4j_store(self):
-        experiment = _build_experiment(rag_template=SimpleRAG)
+        experiment = _build_experiment()
         result = EvaluationResult(
             pattern_name="Pattern1",
             collection="ai4rag_test",
@@ -205,6 +211,7 @@ class TestGraphCollectionReuse:
                 "knowledge_graph": {"extraction_config": {"mode": "constrained"}},
             },
             rag_params={
+                "template_id": "sequential_rag",
                 "retrieval": {
                     "retrieval_method": "simple",
                     "number_of_chunks": 5,
@@ -221,7 +228,7 @@ class TestGraphCollectionReuse:
         experiment._stream_finished_pattern(result, evaluation_results_json=[])
 
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
-        assert payload["template_id"] == "simple_rag"
+        assert payload["template_id"] == "sequential_rag"
         assert "graph_extraction" not in payload["settings"]
         assert "knowledge_graph" not in payload["settings"]
         assert "conversations" not in experiment.event_handler.on_pattern_creation.call_args.kwargs
@@ -234,7 +241,7 @@ class TestGraphCollectionReuse:
                 self.payload = payload
                 self.evaluation_results = evaluation_results
 
-        experiment = _build_experiment(rag_template=SimpleRAG)
+        experiment = _build_experiment()
         experiment.event_handler = LegacyEventHandler()
         result = EvaluationResult(
             pattern_name="Pattern1",
@@ -249,6 +256,7 @@ class TestGraphCollectionReuse:
                 "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
             },
             rag_params={
+                "template_id": "sequential_rag",
                 "retrieval": {
                     "retrieval_method": "simple",
                     "number_of_chunks": 5,
@@ -283,6 +291,7 @@ class TestGraphCollectionReuse:
                 "embedding": {"model_id": "embedding", "embedding_params": {"embedding_dimension": 384}},
             },
             rag_params={
+                "template_id": "sequential_rag",
                 "retrieval": {
                     "retrieval_method": "simple",
                     "number_of_chunks": 5,
@@ -327,6 +336,7 @@ class TestGraphCollectionReuse:
                 },
             },
             rag_params={
+                "template_id": "sequential_rag",
                 "retrieval": {
                     "retrieval_method": "simple",
                     "number_of_chunks": 5,
@@ -346,7 +356,7 @@ class TestGraphCollectionReuse:
         experiment._stream_finished_pattern(result, evaluation_results_json=[])
 
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
-        assert payload["template_id"] == "agentic_rag"
+        assert payload["template_id"] == "sequential_rag"
         assert payload["settings"]["graph_extraction"] == graph_extraction
         assert "knowledge_graph" not in payload["settings"]
         assert payload["settings"]["retrieval"]["entity_pivot_limit"] == 3
@@ -534,7 +544,6 @@ class TestMultiModelGAMExperiment:
     def test_runs_with_three_embedding_models_and_two_foundation_models(self, mocker):
         """A failed model does not prevent balanced warm-start coverage of responding models."""
         from ai4rag.core.experiment.exception_handler import GenerationError
-        from ai4rag.core.experiment.experiment import AI4RAGExperiment
 
         foundation_models = [MagicMock(model_id=f"llm-{index}") for index in range(2)]
         embedding_models = [MagicMock(model_id=f"embedding-{index}", params={}) for index in range(3)]

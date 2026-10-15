@@ -259,13 +259,11 @@ optimizer_settings = GAMOptSettings(
     All four classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
 
 !!! note "RAG template"
-    Each candidate pattern is evaluated through a `rag_template` constructor argument, defaulting to
-    `AgenticRAG` — a LangChain agent that can rewrite its query and retrieve again before answering.
-    Pass `rag_template=SimpleRAG` (from `ai4rag.rag.template`) for the previous single-pass
-    retrieve-then-generate behavior. Pattern publication currently supports these two
-    built-in classes; custom subclasses require template-registry support. The chosen
-    class is persisted as `template_id` for generated inference notebooks. See
-    [RAG Templates](../architecture/rag-components.md#rag-templates).
+    Each candidate selects its template through the categorical `template_id` search parameter.
+    Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
+    `sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
+    use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+    results, streamed patterns, inference notebooks, and starter kits.
 
 Create and run the optimization experiment:
 
@@ -408,3 +406,26 @@ print(f"Optimization complete! Best pattern: {best_pattern}")
 - [Custom event handlers](../user-guide/event-handlers.md) - Track experiments in production
 
 ---
+
+
+### Template migration and pre-selection
+
+The former `rag_template` experiment argument has been removed. Use
+`Parameter(name="template_id", values=("sequential_rag",))` in the search space,
+or pass `template_ids=["sequential_rag"]` in MaaS constraints. Omitting
+`template_ids` or passing `None` selects the backend default; an empty list is invalid.
+Replace `AgenticRAG` / `agentic_rag_template` with `ReActRAG` /
+`react_rag_template`, and `SimpleRAG` / `simple_rag_template` with
+`SequentialRAG` / `sequential_rag_template`. Replace persisted IDs `agentic_rag`,
+`agentic_graph_rag`, and `simple_rag` with `react_rag`, `react_graph_rag`, and
+`sequential_rag`, respectively. Explicit old IDs are rejected. Known observations
+must include the actual compatible `template_id`; historical scores without an ID
+cannot safely be attributed to a template.
+
+Automatic model pre-selection always uses temporary Milvus Lite and `ReActRAG`,
+including sequential-only, graph, and multiple-template searches. This vector proxy
+can prune models that would perform better with sequential or graph execution.
+It ranks by `OVERALL_SCORE`, independently of the experiment’s optimization metric.
+Existing model-count thresholds and `search(skip_mps=True)` still apply. Graph RAG
+extension enablement belongs to the calling product; the library adds no feature flag.
+The starter-kit application/package remains named `agentic_rag`.

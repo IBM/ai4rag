@@ -127,3 +127,36 @@ class TestGenerateStarterKit:
         out = tmp_path / "nested" / "dir"
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, out)
         assert zip_path.exists()
+
+
+def test_all_templates_and_graph_settings_are_preserved(tmp_path):
+    from copy import deepcopy
+
+    from ai4rag.assets_generator.templates import create_placeholder_mapping
+    from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
+
+    for template_id, class_name in [
+        ("react_rag", "ReActRAG"),
+        ("sequential_rag", "SequentialRAG"),
+        ("react_graph_rag", "ReActRAG"),
+    ]:
+        data = deepcopy(_SAMPLE_PATTERN_DATA)
+        data["template_id"] = template_id
+        if template_id == "react_graph_rag":
+            data["settings"]["store_binding"]["provider_type"] = "neo4j"
+            data["settings"]["retrieval"] = {
+                "method": "simple",
+                "number_of_chunks": 3,
+                "search_mode": "graph",
+                "route_k": 5,
+                "include_entity_neighbors": False,
+            }
+        assert create_placeholder_mapping(data)["RAG_TEMPLATE_CLASS"] == class_name
+        with zipfile.ZipFile(generate_starter_kit(data, tmp_path)) as archive:
+            config = json.loads(archive.read("starter_kit/agent_config.json"))
+            assert config["template_id"] == template_id
+            code = archive.read("starter_kit/src/agentic_rag/agent.py").decode()
+            assert "get_template_spec(config.template_id).template_class(" in code
+            if template_id == "react_graph_rag":
+                expected = Neo4jGraphRetrievalConfig(route_k=5, include_entity_neighbors=False).to_search_kwargs()
+                assert all(config["retrieval"][key] == value for key, value in expected.items())

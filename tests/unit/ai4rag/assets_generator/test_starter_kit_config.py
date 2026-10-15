@@ -23,6 +23,7 @@ def config_module(monkeypatch):
 def generated_config():
     """A complete generated agent configuration."""
     return {
+        "template_id": "react_rag",
         "generation": {
             "model_id": "chat-model",
             "temperature": 0.2,

@@ -20,8 +20,7 @@ from ai4rag.core.experiment.mps import (
     PreSelectorError,
 )
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.react_rag_template import ReActRAG
 
 
 def _patch_temporary_store(mocker, store):
@@ -182,8 +181,8 @@ def _make_evaluate_metrics_result(evaluation_data, metrics):
 @pytest.fixture
 def fully_mocked_selector(mocker, documents, benchmark_data, embedding_models, foundation_models) -> ModelsPreSelector:
     _patch_temporary_store(mocker, mocker.MagicMock(spec=BaseVectorStore))
-    mocker.patch.object(AgenticRAG, "_chat_model", return_value=mocker.MagicMock())
-    mocker.patch("ai4rag.rag.template.agentic_rag_template.create_agent")
+    mocker.patch.object(ReActRAG, "_chat_model", return_value=mocker.MagicMock())
+    mocker.patch("ai4rag.rag.template.react_rag_template.create_agent")
 
     def side_effect(**kwargs):
         questions = kwargs.pop("questions")
@@ -267,17 +266,17 @@ class TestModelsPreSelector:
         foundation_model.system_message_text = "Answer from context."
         fully_mocked_selector._evaluate_single_pattern(foundation_model, mocker.sentinel.retriever)
 
-        assert isinstance(query_rag.call_args.kwargs["rag"], AgenticRAG)
+        assert isinstance(query_rag.call_args.kwargs["rag"], ReActRAG)
 
-    def test_preselection_uses_configured_template(self, mocker, fully_mocked_selector):
-        fully_mocked_selector.rag_template = SimpleRAG
+    def test_preselection_always_uses_react(self, mocker, fully_mocked_selector):
+        # Pre-selection always uses ReAct, independent of optimization templates.
         query_rag = mocker.patch("ai4rag.core.experiment.mps.query_rag", return_value=[])
         mocker.patch.object(fully_mocked_selector, "_evaluate_response", return_value={})
         mocker.patch("ai4rag.core.experiment.mps.apply_custom_metrics")
 
-        fully_mocked_selector._evaluate_single_pattern(mocker.sentinel.model, mocker.sentinel.retriever)
+        fully_mocked_selector._evaluate_single_pattern(mocker.MagicMock(), mocker.MagicMock())
 
-        assert isinstance(query_rag.call_args.kwargs["rag"], SimpleRAG)
+        assert isinstance(query_rag.call_args.kwargs["rag"], ReActRAG)
 
     def test_evaluate_patterns(self, fully_mocked_selector, caplog):
 

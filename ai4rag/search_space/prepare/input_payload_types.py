@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional
 
 from annotated_types import Ge, Le, MinLen
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -33,6 +33,7 @@ class AI4RAGConstraints(BaseModel):
 
     model_config = CONFIG
 
+    template_ids: Annotated[list[Literal["react_rag", "react_graph_rag", "sequential_rag"]], MinLen(1)] | None = None
     embedding_models: Optional[Annotated[list[AI4RAGEmbeddingModel], MinLen(1)]] = None
     foundation_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None
     chunking_methods: Optional[Annotated[list[Annotated[str, MinLen(1)]], MinLen(1)]] = None

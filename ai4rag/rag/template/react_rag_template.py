@@ -58,7 +58,7 @@ class _AgentRunContext:
     tool_execution: dict[str, list[dict[str, Any]]]
 
 
-class AgenticRAG(BaseRAGTemplate):
+class ReActRAG(BaseRAGTemplate):
     """Run a LangChain agent with query rewriting and retrieval tools.
 
     An initial retrieval supplies context for the question. The agent then
@@ -108,15 +108,15 @@ class AgenticRAG(BaseRAGTemplate):
         if value is None or isinstance(value, str | int | float | bool):
             return value
         if isinstance(value, dict):
-            return {str(key): AgenticRAG._json_safe(item) for key, item in value.items()}
+            return {str(key): ReActRAG._json_safe(item) for key, item in value.items()}
         if isinstance(value, list | tuple):
-            return [AgenticRAG._json_safe(item) for item in value]
+            return [ReActRAG._json_safe(item) for item in value]
         return str(value)
 
     @staticmethod
     def _document_payload(chunk: AI4RAGChunk) -> dict[str, Any]:
         """Return the JSON-safe portion of a retrieved chunk."""
-        return {"text": chunk.text, "metadata": AgenticRAG._json_safe(dict(chunk.metadata))}
+        return {"text": chunk.text, "metadata": ReActRAG._json_safe(dict(chunk.metadata))}
 
     @staticmethod
     def _message_payload(message: Any) -> dict[str, Any]:
@@ -124,18 +124,18 @@ class AgenticRAG(BaseRAGTemplate):
         message_type = getattr(message, "type", None)
         payload: dict[str, Any] = {"type": message_type or "unknown"}
         if message_type == "ai":
-            payload["content"] = AgenticRAG._json_safe(message.content)
-            payload["tool_calls"] = AgenticRAG._json_safe(getattr(message, "tool_calls", []))
+            payload["content"] = ReActRAG._json_safe(message.content)
+            payload["tool_calls"] = ReActRAG._json_safe(getattr(message, "tool_calls", []))
         elif message_type == "tool":
             payload.update(
                 {
                     "tool_call_id": message.tool_call_id,
                     "name": message.name,
-                    "output": AgenticRAG._json_safe(message.content),
+                    "output": ReActRAG._json_safe(message.content),
                 }
             )
         else:
-            payload["content"] = AgenticRAG._json_safe(getattr(message, "content", str(message)))
+            payload["content"] = ReActRAG._json_safe(getattr(message, "content", str(message)))
         return payload
 
     def _chat_model(self) -> BaseChatModel:

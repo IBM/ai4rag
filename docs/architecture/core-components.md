@@ -66,15 +66,17 @@ experiment.search()  # Execute optimization
 
 **RAG Template Selection:**
 
-Each candidate pattern is evaluated through a `rag_template` constructor argument — a `BaseRAGTemplate`
-subclass, defaulting to `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again
-before answering). Pass `rag_template=SimpleRAG` for the previous single-pass retrieve-then-generate
-behavior. The same parameter is accepted by `ModelsPreSelector` for the pre-selection phase below.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
+`sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
+use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
-Pattern publication resolves the selected class through the template registry and
-persists its `template_id`. Currently only the built-in `AgenticRAG` and `SimpleRAG`
-classes can be published; custom subclasses require registry support. Generated
-inference notebooks use that ID to recreate the selected template.
+Model pre-selection always evaluates a ReAct/vector proxy using temporary Milvus Lite,
+regardless of the requested templates or backend. It can prune models that would
+perform better with sequential or graph execution. Its ranking metric remains
+`OVERALL_SCORE`, independently of the experiment's optimization metric. Model-count
+thresholds and `skip_mps` remain available.
 
 When inference returns agent conversations, each `EvaluationResult` retains them in
 its optional `conversations` field alongside evaluation scores. They are available
@@ -137,7 +139,7 @@ sequenceDiagram
         VS-->>Exp: indexing complete
         deactivate VS
 
-        Exp->>RAG: create rag_template instance (AgenticRAG by default)
+        Exp->>RAG: create rag_template instance (ReActRAG by default)
         activate RAG
         Note over RAG: Parallel query execution
         RAG-->>Exp: inference responses
@@ -304,8 +306,8 @@ def search(self) -> dict[str, Any]:
 
 ```python
 known_observations = [
-    {"foundation_model": model_a, "chunk_size": 512, ..., "score": 0.72},
-    {"foundation_model": model_b, "chunk_size": 1024, ..., "score": 0.68},
+    {"template_id": "react_rag", "foundation_model": model_a, "chunk_size": 512, ..., "score": 0.72},
+    {"template_id": "react_rag", "foundation_model": model_b, "chunk_size": 1024, ..., "score": 0.68},
 ]
 
 optimizer = GAMOptimizer(

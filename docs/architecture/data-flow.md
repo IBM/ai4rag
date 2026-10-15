@@ -228,12 +228,12 @@ indexing_params = {
 ## Query Phase
 
 The query phase retrieves relevant chunks and generates answers for benchmark questions. The
-diagram below shows `SimpleRAG`'s single-pass flow; `AgenticRAG` (the experiment's default
-`rag_template`, see [AgenticRAG](rag-components.md#agenticrag)) starts with the same initial
+diagram below shows `SequentialRAG`'s single-pass flow; `ReActRAG` (the experiment's default
+template, see [ReActRAG](rag-components.md#reactrag)) starts with the same initial
 retrieval but then lets an agent loop through further `retriever`/`rewrite_query` tool calls,
 bounded by `max_retrieval_steps`, before generating the final answer.
 
-`AgenticRAG.generate()` also returns a JSON-safe `conversation` record containing the
+`ReActRAG.generate()` also returns a JSON-safe `conversation` record containing the
 initial retrieval, agent messages, and rewrite/retrieval tool activity. The experiment
 collects these records separately from evaluation data and forwards them on pattern
 publication; the selected warm-start candidate retains its trajectories when published
@@ -242,7 +242,7 @@ as `Pattern1`.
 ```mermaid
 sequenceDiagram
     participant QR as query_rag()
-    participant RAG as SimpleRAG
+    participant RAG as SequentialRAG
     participant Ret as Retriever
     participant VS as VectorStore
     participant EM as OpenAIEmbeddingModel
@@ -369,7 +369,7 @@ Combines the dense vector search with a backend-native sparse/keyword search —
 
 ### Context Formatting
 
-Context formatting lives in `BaseRAGTemplate` and is shared by `SimpleRAG` and `AgenticRAG`:
+Context formatting lives in `BaseRAGTemplate` and is shared by `SequentialRAG` and `ReActRAG`:
 
 ```python
 # Default context_template_text: "{document}\n"
@@ -463,7 +463,7 @@ answer = response.choices[0].message.content
 
 **Alternative Entry Point: `chat()`**
 
-`SimpleRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged. (`AgenticRAG.chat()` runs the same agent loop as `generate()` over the full message history instead; see [AgenticRAG](rag-components.md#agenticrag).)
+`SequentialRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged. (`ReActRAG.chat()` runs the same agent loop as `generate()` over the full message history instead; see [ReActRAG](rag-components.md#reactrag).)
 
 ```python
 response = rag.chat(messages=[
@@ -814,7 +814,7 @@ warm-start candidate is published from that phase):
 event_handler.on_pattern_creation(
     payload={
         "name": "Pattern5",
-        "template_id": "agentic_rag",
+        "template_id": "react_rag",
         "iteration": 4,
         "max_combinations": 24,
         "duration_seconds": 134,
@@ -981,7 +981,7 @@ Collection "xyz" in the configured backend (Milvus — server or embedded Milvus
 ```python
 contexts = ["Paris is the capital...", "France's capital city..."]
 question = "What is the capital of France?"
-↓ (SimpleRAG.generate via OpenAIFoundationModel.chat)
+↓ (SequentialRAG.generate via OpenAIFoundationModel.chat)
 "Based on the provided documents, Paris is the capital of France."
 ```
 

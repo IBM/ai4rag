@@ -108,13 +108,13 @@ classDiagram
         +chat(messages)* list
     }
 
-    class SimpleRAG {
+    class SequentialRAG {
         +generate(question) dict
         +generate_stream(question) iterator
         +chat(messages) list
     }
 
-    class AgenticRAG {
+    class ReActRAG {
         +max_retrieval_steps: int
         +generate(question) dict
         +generate_stream(question) iterator
@@ -128,8 +128,8 @@ classDiagram
     BaseVectorStore <|-- Neo4jGraphStore
     BaseChunker <|-- DoclingChunker
     BaseChunker <|-- LangChainChunker
-    BaseRAGTemplate <|-- SimpleRAG
-    BaseRAGTemplate <|-- AgenticRAG
+    BaseRAGTemplate <|-- SequentialRAG
+    BaseRAGTemplate <|-- ReActRAG
 
     BaseVectorStore --> BaseEmbeddingModel : uses
     Retriever --> BaseVectorStore : uses
@@ -1153,20 +1153,20 @@ docs = retriever.retrieve("What is X?")
 RAG templates compose a retriever and a foundation model into end-to-end
 retrieval-augmented generation. Index building is a separate, upstream concern
 owned by `ai4rag.rag.vector_store` — build the index (chunk → embed → store)
-before constructing a template. Two implementations are provided: `SimpleRAG`
-(a single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain
+before constructing a template. Two implementations are provided: `SequentialRAG`
+(a single fixed retrieve-then-generate pass) and `ReActRAG` (a LangChain
 agent that can rewrite its query and retrieve again before answering) — see
-[AgenticRAG](#agenticrag) below. `AgenticRAG` is the default template used by
+[ReActRAG](#reactrag) below. `ReActRAG` is the default template used by
 `AI4RAGExperiment` and `ModelsPreSelector`.
 
 Published patterns carry a `template_id` resolved by `ai4rag.rag.template.registry`.
 `RAGTemplateSpec` records the ID, implementation class, and import path;
 `get_template_spec()` resolves an allowed ID, and `template_id_for_class()` resolves
-a built-in class. The IDs are `simple_rag`, `agentic_rag`, and the accepted
-`agentic_graph_rag` alias for `AgenticRAG`. Experiments publish `agentic_rag` for
-`AgenticRAG` even with Neo4j: graph retrieval is selected by the store and retriever.
-Generated inference notebooks instantiate the resolved class. Legacy patterns without
-an ID warn and use `SimpleRAG`; unsupported IDs or custom classes raise `ValueError`.
+a built-in class. Vector stores accept `react_rag` (default) and `sequential_rag`;
+Neo4j requires `react_graph_rag` (also implemented by `ReActRAG`) and graph search.
+Generated inference notebooks instantiate the resolved class. Patterns without an ID
+warn and use `SequentialRAG`; explicit unsupported IDs raise `ValueError`.
+
 See the [registry API](../api-reference/assets-generator/notebooks.md#rag-template-registry).
 
 ### BaseRAGTemplate
@@ -1201,7 +1201,7 @@ def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
 **Shared Context-Building Helpers:**
 
 `BaseRAGTemplate` also implements the retrieval/formatting logic shared by
-every subclass, so `SimpleRAG` and `AgenticRAG` only need to drive it
+every subclass, so `SequentialRAG` and `ReActRAG` only need to drive it
 differently:
 
 - `_build_enriched_user_message(question, **kwargs)` — retrieves chunks via
@@ -1210,19 +1210,19 @@ differently:
 - `_render_enriched_user_message(question, reference_documents)` — formats
   already-retrieved chunks with `foundation_model.context_template_text` and
   renders the final user message with `foundation_model.user_message_text`,
-  without issuing a new retrieval call (used by `AgenticRAG` to fold
+  without issuing a new retrieval call (used by `ReActRAG` to fold
   additional tool-retrieved chunks into the running context)
 - `_build_rag_messages(messages, **kwargs)` — RAG-enriches only the last
   (current) user turn of a conversation, prepending the template's system
   message and forwarding prior history unchanged
 
-### SimpleRAG
+### SequentialRAG
 
 RAG implementation composing a retriever and a foundation model for a single
 retrieve-then-generate pass:
 
 ```python
-class SimpleRAG(BaseRAGTemplate):
+class SequentialRAG(BaseRAGTemplate):
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
@@ -1289,7 +1289,7 @@ def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
 # Build the index upstream, then construct the template
 vector_store.add_documents(chunker.split_documents(documents))
 
-rag = SimpleRAG(
+rag = SequentialRAG(
     foundation_model=foundation_model,
     retriever=retriever,
 )
@@ -1310,39 +1310,31 @@ response = rag.chat(messages=[
 
 **Within AI4RAGExperiment:**
 
-By default the experiment evaluates each candidate pattern with `AgenticRAG`,
-not `SimpleRAG` — pass `rag_template=SimpleRAG` to `AI4RAGExperiment` (or
-`ModelsPreSelector`) for this single-pass behavior instead:
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
+`sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
+use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
 ```python
-from ai4rag.rag.template import SimpleRAG
+from ai4rag.search_space.src.parameter import Parameter
 
-experiment = AI4RAGExperiment(
-    # ... other parameters
-    rag_template=SimpleRAG,
-)
+# Include this parameter alongside foundation_model and embedding_model:
+Parameter(name="template_id", values=("react_rag", "sequential_rag"))
 ```
 
-Internally, the experiment instantiates the configured `rag_template` class
-the same way regardless of which one is selected:
+The experiment resolves each candidate's ID with `get_template_spec()` and
+instantiates its `template_class`. Indexes are reused across templates when
+indexing settings match; evaluation cache entries remain distinct.
 
-```python
-rag_pattern = self.rag_template(
-    foundation_model=foundation_model,
-    retriever=retriever
-)
-# Note: chunking, embedding, and vector store insertion happen separately,
-#       upstream, during the experiment's indexing phase
-```
-
-### AgenticRAG
+### ReActRAG
 
 LangChain-agent RAG implementation that can rewrite its search query and
 retrieve additional context across several tool calls before answering,
 instead of committing to a single fixed retrieval pass:
 
 ```python
-class AgenticRAG(BaseRAGTemplate):
+class ReActRAG(BaseRAGTemplate):
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
@@ -1358,13 +1350,13 @@ class AgenticRAG(BaseRAGTemplate):
   message telling the agent to answer with what it already has.
 - `chat_model` is an optional pre-built LangChain `BaseChatModel`. When
   omitted, one is built from the configured `foundation_model` — which must
-  then be an `OpenAIFoundationModel`, since `AgenticRAG` wraps its MaaS/OpenAI
+  then be an `OpenAIFoundationModel`, since `ReActRAG` wraps its MaaS/OpenAI
   client in a LangChain `ChatOpenAI` instance.
 
 **How it works:**
 
 1. An initial retrieval (via the inherited `_build_enriched_user_message`)
-   supplies context for the question, exactly as `SimpleRAG` does.
+   supplies context for the question, exactly as `SequentialRAG` does.
 2. A LangChain agent (`langchain.agents.create_agent`), armed with a
    `rewrite_query` tool and a `retriever` tool, decides whether to answer
    immediately or search again. `rewrite_query` asks the chat model for a
@@ -1384,9 +1376,9 @@ class AgenticRAG(BaseRAGTemplate):
 **Usage:**
 
 ```python
-from ai4rag.rag.template import AgenticRAG
+from ai4rag.rag.template import ReActRAG
 
-rag = AgenticRAG(
+rag = ReActRAG(
     foundation_model=foundation_model,  # must be an OpenAIFoundationModel
     retriever=retriever,
     max_retrieval_steps=2,
@@ -1406,7 +1398,7 @@ and publishes trajectories through the event handler; `LocalEventHandler` saves 
 in `conversations.json`. See [Event Handlers](../user-guide/event-handlers.md#conversations-agent-trajectories).
 
 !!! note "Dependencies"
-    `AgenticRAG` requires the `langchain` and `langchain-openai` packages,
+    `ReActRAG` requires the `langchain` and `langchain-openai` packages,
     which are core dependencies of `ai4rag`.
 
 ---
@@ -1423,7 +1415,7 @@ from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.vector_store import get_vector_store, MilvusConfig
 from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.sequential_rag_template import SequentialRAG
 
 # 1. A single client serves everything: it lists available models and serves
 #    chat/completions and embeddings for all of them at the one MaaS endpoint.
@@ -1476,7 +1468,7 @@ retriever = Retriever(
 )
 
 # 8. Create RAG template
-rag = SimpleRAG(
+rag = SequentialRAG(
     foundation_model=foundation_model,
     retriever=retriever,
 )

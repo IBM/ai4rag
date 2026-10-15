@@ -50,4 +50,5 @@ def initialize_retriever(
         ranker_strategy=config.ranker_strategy or None,
         ranker_k=config.ranker_k,
         ranker_alpha=config.ranker_alpha,
+        search_kwargs=config.graph_retrieval if config.search_mode == "graph" else None,
     )
