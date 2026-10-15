@@ -52,6 +52,29 @@ _SAMPLE_PATTERN_DATA: dict = {
 }
 
 
+@pytest.mark.parametrize(
+    ("template", "expected_disconnected_cells"),
+    [
+        ("maas_indexing", 1),
+        ("maas_inference", 0),
+        ("mass_creating_knowledge_graph", 3),
+        ("mass_inference_knowledge_graph", 0),
+    ],
+)
+def test_generated_notebook_preserves_environment_tags(template, expected_disconnected_cells, tmp_path):
+    """Environment selection metadata must survive loading, formatting, and saving."""
+    output_path = tmp_path / f"{template}.ipynb"
+    generate_notebook_from_template(template, _SAMPLE_PATTERN_DATA, output_path)
+    generated = json.loads(output_path.read_text(encoding="utf-8"))
+    original = Notebook.load(f"{template}_template.ipynb")
+
+    assert len(generated["cells"]) == len(original.cells)
+    assert [cell["metadata"] for cell in generated["cells"]] == [cell.metadata for cell in original.cells]
+    tagged_cells = [cell for cell in generated["cells"] if "disconnected" in cell["metadata"].get("tags", [])]
+    assert len(tagged_cells) == expected_disconnected_cells
+    assert all(cell["cell_type"] == "code" for cell in tagged_cells)
+
+
 class TestCreatePlaceholderMapping:
     """Verify ``create_placeholder_mapping`` extracts all expected keys."""
 
