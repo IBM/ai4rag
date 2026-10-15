@@ -336,11 +336,12 @@ def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, moc
     initial = AI4RAGChunk(text="initial evidence", metadata={})
     initial_excerpt = AI4RAGChunk(text="initial excerpt", metadata={})
     large_result = AI4RAGChunk(text="very long retrieved evidence", metadata={})
+    additional_result = AI4RAGChunk(text="additional retrieved evidence", metadata={})
     excerpt = AI4RAGChunk(text="relevant excerpt", metadata={})
-    rag.retriever.retrieve.side_effect = [[initial], [large_result], [large_result]]
+    rag.retriever.retrieve.side_effect = [[initial], [large_result], [large_result, additional_result]]
     compress = mocker.patch(
         "ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress",
-        side_effect=[[initial_excerpt], [excerpt]],
+        side_effect=[[initial_excerpt], [initial_excerpt, excerpt]],
     )
     create_agent = rag._create_agent_mock
     context_error = BadRequestError(
@@ -380,17 +381,20 @@ def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, moc
         },
         "retriever_tool_calls": [
             {
-                "input_chunks": 1,
-                "retained_chunks": 1,
+                "input_chunks": 2,
+                "retained_chunks": 2,
                 "dropped_chunks": 0,
-                "original_tokens": 7,
-                "compressed_tokens": 4,
+                "original_tokens": 15,
+                "compressed_tokens": 8,
                 "max_completion_tokens": 512,
             }
         ],
     }
     assert result["conversation"]["tool_execution"]["retriever"][0]["compressed"] is True
-    assert compress.call_args_list == [mocker.call("question", [initial]), mocker.call("follow-up", [large_result])]
+    assert compress.call_args_list == [
+        mocker.call("question", [initial]),
+        mocker.call("follow-up", [large_result, additional_result]),
+    ]
 
 
 def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):

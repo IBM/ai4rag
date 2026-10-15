@@ -210,19 +210,20 @@ class AgenticRAG(BaseRAGTemplate):
                 original_retrieved = retrieved
                 retrieved = compressor.compress(query, original_retrieved)
                 compression_stats = compressor.compression_stats(original_retrieved, retrieved)
-                output = "\n\n".join(chunk.text for chunk in retrieved)
             with run_context.state_lock:
                 new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in run_context.seen]
                 run_context.documents.extend(new_documents)
                 run_context.seen.update(self._chunk_key(chunk) for chunk in new_documents)
-            if not compressed:
+            if not new_documents:
                 output = (
-                    "No new relevant documents were found for this query."
-                    if not new_documents
-                    else self._render_enriched_user_message(run_context.question, new_documents)
+                    "No new relevant excerpts were found for this query."
+                    if compressed
+                    else "No new relevant documents were found for this query."
                 )
-            elif not new_documents:
-                output = "No new relevant excerpts were found for this query."
+            elif compressed:
+                output = "\n\n".join(chunk.text for chunk in new_documents)
+            else:
+                output = self._render_enriched_user_message(run_context.question, new_documents)
             with run_context.state_lock:
                 execution = {
                     "input": {"query": query},
