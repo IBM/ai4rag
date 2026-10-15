@@ -75,11 +75,15 @@ class AgenticRAG(BaseRAGTemplate):
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
         max_retrieval_steps: int = 2,
+        enable_context_compression: bool = True,
         chat_model: BaseChatModel | None = None,
     ):
         super().__init__(foundation_model=foundation_model, retriever=retriever)
         self.chat_model = chat_model
         self.max_retrieval_steps = max_retrieval_steps
+        if not isinstance(enable_context_compression, bool):
+            raise TypeError("enable_context_compression must be a boolean")
+        self.enable_context_compression = enable_context_compression
         chat_model = self._chat_model()
         self.agent = create_agent(
             model=chat_model,
@@ -281,7 +285,7 @@ class AgenticRAG(BaseRAGTemplate):
                 "messages"
             ]
         except BadRequestError as error:
-            if not self._is_context_overflow(error):
+            if not self.enable_context_compression or not self._is_context_overflow(error):
                 raise
             context_compression_fallback = True
             compressor = LLMDocumentCompressor(self.chat_model)

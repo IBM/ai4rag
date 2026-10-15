@@ -397,6 +397,23 @@ def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, moc
     ]
 
 
+def test_context_overflow_is_propagated_when_compression_is_disabled(rag, mocker):
+    """Disabling context compression prevents the overflow retry."""
+    rag.enable_context_compression = False
+    context_error = BadRequestError(
+        "This model's maximum context length is 32000 tokens.",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = context_error
+    compress = mocker.patch("ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress")
+
+    with pytest.raises(BadRequestError):
+        rag.generate("question")
+
+    compress.assert_not_called()
+
+
 def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     """The local extractor preserves metadata and drops chunks without evidence."""
     relevant = AI4RAGChunk(text="full relevant document", metadata={"source": "relevant"})

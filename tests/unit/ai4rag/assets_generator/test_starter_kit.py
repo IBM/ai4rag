@@ -84,6 +84,7 @@ class TestGenerateStarterKit:
                 "ranker_k": None,
                 "ranker_alpha": 0.5,
             }
+            assert agent_config["agentic"] == {"enable_context_compression": True}
             assert agent_config["vector_store"] == {
                 "provider_type": "milvus",
                 "collection_name": "test_collection",
@@ -101,6 +102,15 @@ class TestGenerateStarterKit:
             config = json.loads(zf.read("starter_kit/agent_config.json"))
             assert config["vector_store"]["provider_type"] == "pgvector"
             assert config["vector_store"]["collection_name"] == "pg_collection"
+
+    def test_context_compression_setting_is_written_to_config(self, tmp_path):
+        data = {**_SAMPLE_PATTERN_DATA, "settings": {**_SAMPLE_PATTERN_DATA["settings"]}}
+        data["settings"]["agentic"] = {"enable_context_compression": False}
+
+        with zipfile.ZipFile(generate_starter_kit(data, tmp_path)) as archive:
+            config = json.loads(archive.read("starter_kit/agent_config.json"))
+
+        assert config["agentic"] == {"enable_context_compression": False}
 
     def test_rrf_ranker_k_is_preserved(self, tmp_path):
         data = {**_SAMPLE_PATTERN_DATA, "settings": {**_SAMPLE_PATTERN_DATA["settings"]}}

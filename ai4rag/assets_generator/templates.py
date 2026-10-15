@@ -85,6 +85,13 @@ def create_placeholder_mapping(
     mapping["RAG_TEMPLATE_IMPORT"] = f"from {template_spec.import_path} import {template_spec.template_class.__name__}"
     mapping["RAG_TEMPLATE_CLASS"] = template_spec.template_class.__name__
     settings = output_data.get("settings", {})
+    agentic = settings.get("agentic", {})
+    enable_context_compression = agentic.get("enable_context_compression", True)
+    mapping["RAG_TEMPLATE_ARGUMENTS"] = (
+        f", enable_context_compression={enable_context_compression!r}"
+        if template_spec.template_id in {"agentic_rag", "agentic_graph_rag"}
+        else ""
+    )
     fm = settings.get("generation", {})
     mapping["FM_MODEL_ID"] = fm.get("model_id", "")
     mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")

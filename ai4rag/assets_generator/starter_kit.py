@@ -33,6 +33,8 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     mapping["__AI4RAG_VERSION__"] = __version__
 
     settings = output_data.get("settings", {})
+    agentic = settings.get("agentic", {})
+    mapping["__ENABLE_CONTEXT_COMPRESSION__"] = _value(agentic.get("enable_context_compression"), "True")
 
     fm = settings.get("generation", {})
     mapping["__FM_MODEL_ID__"] = _value(fm.get("model_id"))
@@ -133,6 +135,9 @@ def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
             "ranker_strategy": mapping["__RANKER_STRATEGY__"],
             "ranker_k": int(mapping["__RANKER_K__"]) if mapping["__RANKER_K__"] else None,
             "ranker_alpha": float(mapping["__RANKER_ALPHA__"]) if mapping["__RANKER_ALPHA__"] else None,
+        },
+        "agentic": {
+            "enable_context_compression": mapping["__ENABLE_CONTEXT_COMPRESSION__"].lower() == "true",
         },
         "vector_store": {
             "provider_type": mapping["__PROVIDER_TYPE__"] or "milvus",
