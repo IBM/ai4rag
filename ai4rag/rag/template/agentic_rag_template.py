@@ -13,6 +13,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
+from openai import BadRequestError
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
@@ -20,6 +21,7 @@ from ai4rag.rag.chunking.chunk import AI4RAGChunk
 
 from ..foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ..foundation_models.openai_model import OpenAIFoundationModel
+from ..retrieval.document_compressor import LLMDocumentCompressor
 from ..retrieval.retriever import Retriever
 from .base_template import BaseRAGTemplate
 
@@ -52,6 +54,7 @@ class _AgentRunContext:
     max_retrieval_steps: int
     retrieval_kwargs: dict[str, Any]
     tool_execution: dict[str, list[dict[str, Any]]]
+    use_compressed_retriever_tool: bool
     # ``threading.Lock`` is a factory function in Python 3.12, not a type.
     # The lock is invocation-scoped runtime state, not input to validate.
     state_lock: Any
@@ -138,6 +141,12 @@ class AgenticRAG(BaseRAGTemplate):
             payload["content"] = AgenticRAG._json_safe(getattr(message, "content", str(message)))
         return payload
 
+    @staticmethod
+    def _is_context_overflow(error: BadRequestError) -> bool:
+        """Return whether a 400 response reports that the model context is too large."""
+        error_text = str(error).lower()
+        return any(term in error_text for term in ("context", "token", "maximum length", "too large", "overload"))
+
     def _chat_model(self) -> BaseChatModel:
         """Build the LangChain model from the configured MaaS client."""
         if self.chat_model is not None:
@@ -195,23 +204,31 @@ class AgenticRAG(BaseRAGTemplate):
                     return "Retrieval limit reached. Answer using the documents already found."
                 run_context.tool_counts["retriever"] += 1
             retrieved = self.retriever.retrieve(query, **run_context.retrieval_kwargs)
+            compressed = run_context.use_compressed_retriever_tool
+            if compressed:
+                retrieved = LLMDocumentCompressor(chat_model).compress(query, retrieved)
+                output = "\n\n".join(chunk.text for chunk in retrieved)
             with run_context.state_lock:
                 new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in run_context.seen]
                 run_context.documents.extend(new_documents)
                 run_context.seen.update(self._chunk_key(chunk) for chunk in new_documents)
-            output = (
-                "No new relevant documents were found for this query."
-                if not new_documents
-                else self._render_enriched_user_message(run_context.question, new_documents)
-            )
-            with run_context.state_lock:
-                run_context.tool_execution["retriever"].append(
-                    {
-                        "input": {"query": query},
-                        "output": output,
-                        "documents": [self._document_payload(chunk) for chunk in new_documents],
-                    }
+            if not compressed:
+                output = (
+                    "No new relevant documents were found for this query."
+                    if not new_documents
+                    else self._render_enriched_user_message(run_context.question, new_documents)
                 )
+            elif not new_documents:
+                output = "No new relevant excerpts were found for this query."
+            with run_context.state_lock:
+                execution = {
+                    "input": {"query": query},
+                    "output": output,
+                    "documents": [self._document_payload(chunk) for chunk in new_documents],
+                }
+                if compressed:
+                    execution["compressed"] = True
+                run_context.tool_execution["retriever"].append(execution)
             return output
 
         return [rewrite_query, retrieve]
@@ -223,21 +240,42 @@ class AgenticRAG(BaseRAGTemplate):
         question = messages[-1]["content"]
         documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
         initial_documents = list(documents)
-        run_context = _AgentRunContext(
-            question=question,
-            documents=documents,
-            seen={self._chunk_key(chunk) for chunk in documents},
-            tool_counts={"retriever": 1, "rewrite_query": 0},
-            max_retrieval_steps=self.max_retrieval_steps,
-            retrieval_kwargs=kwargs,
-            tool_execution={"rewrite_query": [], "retriever": []},
-            state_lock=Lock(),
-        )
-        agent_messages = self.agent.invoke(
-            {"messages": [*messages[:-1], {**messages[-1], "content": enriched_message}]},
-            config={"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)},
-            context=run_context,
-        )["messages"]
+
+        def new_run_context(run_documents: list[AI4RAGChunk], use_compressed_retriever_tool: bool) -> _AgentRunContext:
+            return _AgentRunContext(
+                question=question,
+                documents=list(run_documents),
+                seen={self._chunk_key(chunk) for chunk in run_documents},
+                tool_counts={"retriever": 1, "rewrite_query": 0},
+                max_retrieval_steps=self.max_retrieval_steps,
+                retrieval_kwargs=kwargs,
+                tool_execution={"rewrite_query": [], "retriever": []},
+                use_compressed_retriever_tool=use_compressed_retriever_tool,
+                state_lock=Lock(),
+            )
+
+        def agent_input_for(run_documents: list[AI4RAGChunk]) -> dict[str, list[MessageTyped]]:
+            content = (
+                enriched_message
+                if run_documents == initial_documents
+                else self._render_enriched_user_message(question, run_documents)
+            )
+            return {"messages": [*messages[:-1], {**messages[-1], "content": content}]}
+
+        config = {"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)}
+        run_context = new_run_context(initial_documents, use_compressed_retriever_tool=False)
+        try:
+            agent_messages = self.agent.invoke(agent_input_for(initial_documents), config=config, context=run_context)[
+                "messages"
+            ]
+        except BadRequestError as error:
+            if not self._is_context_overflow(error):
+                raise
+            compressed_initial_documents = LLMDocumentCompressor(self.chat_model).compress(question, initial_documents)
+            run_context = new_run_context(compressed_initial_documents, use_compressed_retriever_tool=True)
+            agent_messages = self.agent.invoke(
+                agent_input_for(compressed_initial_documents), config=config, context=run_context
+            )["messages"]
         final_message = agent_messages[-1]
         if not isinstance(final_message, AIMessage):
             raise ValueError("Agent did not return an assistant response")
@@ -250,7 +288,7 @@ class AgenticRAG(BaseRAGTemplate):
             "messages": [self._message_payload(message) for message in agent_messages],
             "tool_execution": run_context.tool_execution,
         }
-        return str(final_message.text).strip(), documents, conversation
+        return str(final_message.text).strip(), run_context.documents, conversation
 
     def generate(self, question: str, **kwargs) -> dict[str, Any]:
         """Answer a question and return retrieved chunks for evaluation."""

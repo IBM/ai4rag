@@ -12,8 +12,10 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
+from openai import BadRequestError
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
+from ai4rag.rag.retrieval.document_compressor import LLMDocumentCompressor
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 
@@ -325,3 +327,73 @@ def test_initial_retrieval_counts_toward_limit(rag, mocker):
     rag.generate("question")
 
     rag.retriever.retrieve.assert_called_once_with("question")
+
+
+def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, mocker):
+    """A context-window 400 replays the agent with excerpt-only tool responses."""
+    initial = AI4RAGChunk(text="initial evidence", metadata={})
+    initial_excerpt = AI4RAGChunk(text="initial excerpt", metadata={})
+    large_result = AI4RAGChunk(text="very long retrieved evidence", metadata={})
+    excerpt = AI4RAGChunk(text="relevant excerpt", metadata={})
+    rag.retriever.retrieve.side_effect = [[initial], [large_result], [large_result]]
+    compress = mocker.patch(
+        "ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress",
+        side_effect=[[initial_excerpt], [excerpt]],
+    )
+    create_agent = rag._create_agent_mock
+    context_error = BadRequestError(
+        "maximum context length exceeded",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+
+    def run_graph(*_args, **kwargs):
+        context = kwargs["context"]
+        if not context.use_compressed_retriever_tool:
+            _call_tool(create_agent, "retriever", {"query": "follow-up"}, context)
+            raise context_error
+        assert _call_tool(create_agent, "retriever", {"query": "follow-up"}, context) == "relevant excerpt"
+        return {"messages": [AIMessage(content="grounded answer")]}
+
+    create_agent.return_value.invoke.side_effect = run_graph
+
+    result = rag.generate("question")
+
+    assert result["answer"] == "grounded answer"
+    assert result["reference_documents"] == [initial_excerpt, excerpt]
+    assert result["conversation"]["tool_execution"]["retriever"][0]["compressed"] is True
+    assert compress.call_args_list == [mocker.call("question", [initial]), mocker.call("follow-up", [large_result])]
+
+
+def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
+    """The local extractor preserves metadata and drops chunks without evidence."""
+    relevant = AI4RAGChunk(text="full relevant document", metadata={"source": "relevant"})
+    irrelevant = AI4RAGChunk(text="unrelated document", metadata={"source": "irrelevant"})
+    rag.chat_model.invoke.side_effect = [
+        AIMessage(content="relevant excerpt"),
+        AIMessage(content="NO_RELEVANT_EXCERPT"),
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [relevant, irrelevant])
+
+    assert excerpts == [AI4RAGChunk(text="relevant excerpt", metadata={"source": "relevant"})]
+    assert rag.chat_model.invoke.call_count == 2
+    assert (
+        rag.chat_model.invoke.call_args_list[0].args[0][1].content
+        == "Query:\nquestion\n\nDocument:\nfull relevant document"
+    )
+
+
+def test_non_context_bad_request_is_not_retried(rag, mocker):
+    """Other 400 responses retain their original failure semantics."""
+    error = BadRequestError(
+        "invalid request parameter",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = error
+
+    with pytest.raises(BadRequestError, match="invalid request parameter"):
+        rag.generate("question")
+
+    assert rag._create_agent_mock.return_value.invoke.call_count == 1
