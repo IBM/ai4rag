@@ -416,7 +416,7 @@ def test_context_overflow_is_propagated_when_compression_is_disabled(rag, mocker
 
 def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     """The local extractor preserves metadata and drops chunks without evidence."""
-    relevant = AI4RAGChunk(text="full relevant document", metadata={"source": "relevant"})
+    relevant = AI4RAGChunk(text="full relevant excerpt document", metadata={"source": "relevant"})
     irrelevant = AI4RAGChunk(text="unrelated document", metadata={"source": "irrelevant"})
     rag.chat_model.invoke.side_effect = [
         AIMessage(content="relevant excerpt"),
@@ -429,13 +429,13 @@ def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     assert rag.chat_model.invoke.call_count == 2
     assert (
         rag.chat_model.invoke.call_args_list[0].args[0][1].content
-        == "User question:\nquestion\n\nSource document:\nfull relevant document"
+        == "User question:\nquestion\n\nSource document:\nfull relevant excerpt document"
     )
     assert rag.chat_model.invoke.call_args_list[0].kwargs == {"max_completion_tokens": 512}
 
 
-def test_context_compressor_never_expands(rag):
-    """Compression retains the source when an LLM excerpt would grow it."""
+def test_context_compressor_drops_non_verbatim_expanded_output(rag):
+    """An expanded model response is not valid source evidence."""
     source = AI4RAGChunk(text="source " * 300, metadata={"source": "source"})
     short_source = AI4RAGChunk(text="short source", metadata={"source": "short"})
     rag.chat_model.invoke.side_effect = [
@@ -445,8 +445,25 @@ def test_context_compressor_never_expands(rag):
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [source, short_source])
 
-    assert excerpts[0] == source
-    assert excerpts[1] == short_source
+    assert excerpts == []
+
+
+def test_context_compressor_drops_non_verbatim_llm_output(rag):
+    """Generated interpretations must not be used as retrieval evidence."""
+    source = AI4RAGChunk(text="The source says only this.", metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(content="The source means something else.")
+
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == []
+
+
+def test_context_compressor_caps_total_excerpt_tokens(rag):
+    """Compressed tool output remains bounded across multiple chunks."""
+    chunks = [AI4RAGChunk(text=character * 3000, metadata={}) for character in ("a", "b", "c")]
+    rag.chat_model.invoke.side_effect = [AIMessage(content=chunk.text) for chunk in chunks]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", chunks)
+
+    assert excerpts == chunks[:2]
 
 
 def test_non_context_bad_request_is_not_retried(rag, mocker):
