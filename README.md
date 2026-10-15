@@ -158,7 +158,14 @@ The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disc
 The MaaS indexing notebook selects model requirements after document discovery:
 PDF/image inputs require `DOCLING_ARTIFACTS_PATH`, audio inputs require `HF_MODEL_DIR`,
 and text-only corpora require neither. The knowledge-graph indexing notebook also
-includes S3 discovery and extraction, and retains its Docling artifact prerequisite.
+includes S3 discovery and extraction, with Docling artifact setup and validation for
+disconnected environments.
+
+Generated notebooks preserve environment tags in each cell's `metadata.tags`.
+Cells tagged `disconnected` are intended for disconnected environments; cells tagged
+`connected` are intended for connected environments. Untagged cells are shared.
+AutoX CI uses these tags to skip cells for the other environment. Interactive Jupyter
+execution requires selecting the appropriate cells manually; tags alone do not skip execution.
 
 
 ## Quick start
