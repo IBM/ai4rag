@@ -116,10 +116,14 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_API_KEY); [ -z "$$value" ] || MAAS_API_KEY="$$value"; \
 	fi && \
 	if [ -n "$$DB_SECRET_NAME" ] && [ "$$DB_SECRET_NAME" != "__DB_SECRET_NAME__" ]; then \
-	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT; do \
+	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT MILVUS_SERVER_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT; do \
 	    value=$$(secret_value "$$DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
 	  done; \
 	fi && \
+	MILVUS_CA_CERT=$${MILVUS_CA_CERT:-$${MILVUS_SERVER_CERT:-}} && \
+	case "$$MILVUS_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) MILVUS_CA_CERT=$$(printf "%s" "$$MILVUS_CA_CERT" | base64 | tr -d "\n");; esac && \
+	case "$$PGVECTOR_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) PGVECTOR_CA_CERT=$$(printf "%s" "$$PGVECTOR_CA_CERT" | base64 | tr -d "\\n");; esac && \
+	case "$$NEO4J_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) NEO4J_CA_CERT=$$(printf "%s" "$$NEO4J_CA_CERT" | base64 | tr -d "\\n");; esac && \
 	if [ "$$VECTOR_STORE_PROVIDER" = "pgvector" ]; then \
 	  [ -n "$$PGVECTOR_HOST" ] || { echo "ERROR: PGVECTOR_HOST is required for pgvector deployment."; exit 1; }; \
 	  PGVECTOR_PORT=$${PGVECTOR_PORT:-5432}; \
@@ -242,7 +246,6 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  NEO4J_USERNAME_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_USERNAME") && \
 	  NEO4J_PASSWORD_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_PASSWORD") && \
 	  NEO4J_DATABASE_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_DATABASE") && \
-	  NEO4J_CA_CERT_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_CA_CERT") && \
 	  echo "==> Starting agent (auth: enabled)..." && \
 	  openshell sandbox exec -n "$$SANDBOX" -- bash -c '\
 	    printf %s "'"$$K8S_CA_B64"'" | base64 -d > /sandbox/k8s-ca.crt && \
@@ -251,18 +254,18 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export AGENT_CONFIG_B64="'"$$AGENT_CONFIG_B64"'" && \
 	    export MILVUS_URI="'"$$MILVUS_URI"'" && \
 	    export MILVUS_TOKEN="'"$$MILVUS_TOKEN"'" && \
-	    export MILVUS_CA_CERT="'"$$MILVUS_CA_CERT"'" && \
+	    export MILVUS_CA_CERT="$$(printf %s '"'"$$MILVUS_CA_CERT"'"' | base64 -d)" && \
 	    export PGVECTOR_HOST="'"$$PGVECTOR_HOST"'" && \
 	    export PGVECTOR_PORT="'"$$PGVECTOR_PORT"'" && \
 	    export PGVECTOR_DB="'"$$PGVECTOR_DB"'" && \
 	    export PGVECTOR_USER="'"$$PGVECTOR_USER"'" && \
 	    export PGVECTOR_PASSWORD=$$(printf %s "'"$$PGVECTOR_PASSWORD_B64"'" | base64 -d) && \
-	    export PGVECTOR_CA_CERT="'"$$PGVECTOR_CA_CERT"'" && \
+	    export PGVECTOR_CA_CERT="$$(printf %s '"'"$$PGVECTOR_CA_CERT"'"' | base64 -d)" && \
 	    export NEO4J_URI='"$$NEO4J_URI_QUOTED"' && \
 	    export NEO4J_USERNAME='"$$NEO4J_USERNAME_QUOTED"' && \
 	    export NEO4J_PASSWORD='"$$NEO4J_PASSWORD_QUOTED"' && \
 	    export NEO4J_DATABASE='"$$NEO4J_DATABASE_QUOTED"' && \
-	    export NEO4J_CA_CERT='"$$NEO4J_CA_CERT_QUOTED"' && \
+	    export NEO4J_CA_CERT="$$(printf %s '"'"$$NEO4J_CA_CERT"'"' | base64 -d)" && \
 	    export K8S_API_URL="'"$$K8S_API_URL"'" && \
 	    export K8S_REVIEWER_TOKEN="'"$$K8S_REVIEWER_TOKEN"'" && \
 	    export K8S_CA_PATH=/sandbox/k8s-ca.crt && \
