@@ -462,3 +462,20 @@ def test_non_context_bad_request_is_not_retried(rag, mocker):
         rag.generate("question")
 
     assert rag._create_agent_mock.return_value.invoke.call_count == 1
+
+
+def test_token_parameter_error_is_not_treated_as_context_overflow(rag, mocker):
+    """A token-related request validation error must not trigger compression."""
+    error = BadRequestError(
+        "Unsupported max_completion_tokens parameter; use max_tokens instead.",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = error
+    compress = mocker.patch("ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress")
+
+    with pytest.raises(BadRequestError, match="max_completion_tokens"):
+        rag.generate("question")
+
+    compress.assert_not_called()
+    assert rag._create_agent_mock.return_value.invoke.call_count == 1

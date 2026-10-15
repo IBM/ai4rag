@@ -148,8 +148,7 @@ class AgenticRAG(BaseRAGTemplate):
     @staticmethod
     def _is_context_overflow(error: BadRequestError) -> bool:
         """Return whether a 400 response reports that the model context is too large."""
-        error_text = str(error).lower()
-        return any(term in error_text for term in ("context", "token", "maximum length", "too large", "overload"))
+        return "maximum context length" in str(error).lower()
 
     def _chat_model(self) -> BaseChatModel:
         """Build the LangChain model from the configured MaaS client."""
@@ -243,6 +242,88 @@ class AgenticRAG(BaseRAGTemplate):
 
         return [rewrite_query, retrieve]
 
+    def _new_run_context(
+        self,
+        question: str,
+        documents: list[AI4RAGChunk],
+        retrieval_kwargs: dict[str, Any],
+        use_compressed_retriever_tool: bool,
+        compression: dict[str, Any] | None = None,
+    ) -> _AgentRunContext:
+        """Create the mutable state used by one agent invocation."""
+        return _AgentRunContext(
+            question=question,
+            documents=list(documents),
+            seen={self._chunk_key(chunk) for chunk in documents},
+            tool_counts={"retriever": 1, "rewrite_query": 0},
+            max_retrieval_steps=self.max_retrieval_steps,
+            retrieval_kwargs=retrieval_kwargs,
+            tool_execution={"rewrite_query": [], "retriever": []},
+            use_compressed_retriever_tool=use_compressed_retriever_tool,
+            compression=compression or {"initial": None, "retriever_tool_calls": []},
+            state_lock=Lock(),
+        )
+
+    def _agent_input(
+        self,
+        messages: list[MessageTyped],
+        question: str,
+        initial_documents: list[AI4RAGChunk],
+        enriched_message: str,
+        run_documents: list[AI4RAGChunk],
+    ) -> dict[str, list[MessageTyped]]:
+        """Render the user message for an initial or compressed agent invocation."""
+        content = (
+            enriched_message
+            if run_documents == initial_documents
+            else self._render_enriched_user_message(question, run_documents)
+        )
+        return {"messages": [*messages[:-1], {**messages[-1], "content": content}]}
+
+    def _invoke_agent(
+        self,
+        messages: list[MessageTyped],
+        question: str,
+        initial_documents: list[AI4RAGChunk],
+        enriched_message: str,
+        run_context: _AgentRunContext,
+    ) -> list[Any]:
+        """Invoke the agent using the supplied invocation-scoped context."""
+        config = {"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)}
+        result = self.agent.invoke(
+            self._agent_input(messages, question, initial_documents, enriched_message, run_context.documents),
+            config=config,
+            context=run_context,
+        )
+        return result["messages"]
+
+    def _retry_with_compressed_context(
+        self,
+        messages: list[MessageTyped],
+        question: str,
+        initial_documents: list[AI4RAGChunk],
+        enriched_message: str,
+        retrieval_kwargs: dict[str, Any],
+    ) -> tuple[list[Any], _AgentRunContext]:
+        """Compress initial context and replay the agent after a context-window overflow."""
+        compressor = LLMDocumentCompressor(self.chat_model)
+        compressed_documents = compressor.compress(question, initial_documents)
+        compression = {
+            "initial": compressor.compression_stats(initial_documents, compressed_documents),
+            "retriever_tool_calls": [],
+        }
+        run_context = self._new_run_context(
+            question,
+            compressed_documents,
+            retrieval_kwargs,
+            use_compressed_retriever_tool=True,
+            compression=compression,
+        )
+        return (
+            self._invoke_agent(messages, question, initial_documents, enriched_message, run_context),
+            run_context,
+        )
+
     def _run_agent(self, messages: list[MessageTyped], **kwargs) -> tuple[str, list[AI4RAGChunk], dict[str, Any]]:
         """Retrieve initial context, then invoke the agent and collect further chunks."""
         if not messages:
@@ -250,56 +331,17 @@ class AgenticRAG(BaseRAGTemplate):
         question = messages[-1]["content"]
         documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
         initial_documents = list(documents)
-
-        def new_run_context(
-            run_documents: list[AI4RAGChunk],
-            use_compressed_retriever_tool: bool,
-            compression: dict[str, Any] | None = None,
-        ) -> _AgentRunContext:
-            return _AgentRunContext(
-                question=question,
-                documents=list(run_documents),
-                seen={self._chunk_key(chunk) for chunk in run_documents},
-                tool_counts={"retriever": 1, "rewrite_query": 0},
-                max_retrieval_steps=self.max_retrieval_steps,
-                retrieval_kwargs=kwargs,
-                tool_execution={"rewrite_query": [], "retriever": []},
-                use_compressed_retriever_tool=use_compressed_retriever_tool,
-                compression=compression or {"initial": None, "retriever_tool_calls": []},
-                state_lock=Lock(),
-            )
-
-        def agent_input_for(run_documents: list[AI4RAGChunk]) -> dict[str, list[MessageTyped]]:
-            content = (
-                enriched_message
-                if run_documents == initial_documents
-                else self._render_enriched_user_message(question, run_documents)
-            )
-            return {"messages": [*messages[:-1], {**messages[-1], "content": content}]}
-
-        config = {"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)}
-        run_context = new_run_context(initial_documents, use_compressed_retriever_tool=False)
+        run_context = self._new_run_context(question, initial_documents, kwargs, use_compressed_retriever_tool=False)
         context_compression_fallback = False
         try:
-            agent_messages = self.agent.invoke(agent_input_for(initial_documents), config=config, context=run_context)[
-                "messages"
-            ]
+            agent_messages = self._invoke_agent(messages, question, initial_documents, enriched_message, run_context)
         except BadRequestError as error:
             if not self.enable_context_compression or not self._is_context_overflow(error):
                 raise
             context_compression_fallback = True
-            compressor = LLMDocumentCompressor(self.chat_model)
-            compressed_initial_documents = compressor.compress(question, initial_documents)
-            compression = {
-                "initial": compressor.compression_stats(initial_documents, compressed_initial_documents),
-                "retriever_tool_calls": [],
-            }
-            run_context = new_run_context(
-                compressed_initial_documents, use_compressed_retriever_tool=True, compression=compression
+            agent_messages, run_context = self._retry_with_compressed_context(
+                messages, question, initial_documents, enriched_message, kwargs
             )
-            agent_messages = self.agent.invoke(
-                agent_input_for(compressed_initial_documents), config=config, context=run_context
-            )["messages"]
         final_message = agent_messages[-1]
         if not isinstance(final_message, AIMessage):
             raise ValueError("Agent did not return an assistant response")
