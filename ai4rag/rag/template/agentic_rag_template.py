@@ -55,10 +55,10 @@ class _AgentRunContext:
     retrieval_kwargs: dict[str, Any]
     tool_execution: dict[str, list[dict[str, Any]]]
     use_compressed_retriever_tool: bool
+    compression: dict[str, Any]
     # ``threading.Lock`` is a factory function in Python 3.12, not a type.
     # The lock is invocation-scoped runtime state, not input to validate.
     state_lock: Any
-    tool_execution: dict[str, list[dict[str, Any]]]
 
 
 class AgenticRAG(BaseRAGTemplate):
@@ -206,7 +206,10 @@ class AgenticRAG(BaseRAGTemplate):
             retrieved = self.retriever.retrieve(query, **run_context.retrieval_kwargs)
             compressed = run_context.use_compressed_retriever_tool
             if compressed:
-                retrieved = LLMDocumentCompressor(chat_model).compress(query, retrieved)
+                compressor = LLMDocumentCompressor(chat_model)
+                original_retrieved = retrieved
+                retrieved = compressor.compress(query, original_retrieved)
+                compression_stats = compressor.compression_stats(original_retrieved, retrieved)
                 output = "\n\n".join(chunk.text for chunk in retrieved)
             with run_context.state_lock:
                 new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in run_context.seen]
@@ -228,6 +231,8 @@ class AgenticRAG(BaseRAGTemplate):
                 }
                 if compressed:
                     execution["compressed"] = True
+                    execution["compression"] = compression_stats
+                    run_context.compression["retriever_tool_calls"].append(compression_stats)
                 run_context.tool_execution["retriever"].append(execution)
             return output
 
@@ -241,7 +246,11 @@ class AgenticRAG(BaseRAGTemplate):
         documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
         initial_documents = list(documents)
 
-        def new_run_context(run_documents: list[AI4RAGChunk], use_compressed_retriever_tool: bool) -> _AgentRunContext:
+        def new_run_context(
+            run_documents: list[AI4RAGChunk],
+            use_compressed_retriever_tool: bool,
+            compression: dict[str, Any] | None = None,
+        ) -> _AgentRunContext:
             return _AgentRunContext(
                 question=question,
                 documents=list(run_documents),
@@ -251,6 +260,7 @@ class AgenticRAG(BaseRAGTemplate):
                 retrieval_kwargs=kwargs,
                 tool_execution={"rewrite_query": [], "retriever": []},
                 use_compressed_retriever_tool=use_compressed_retriever_tool,
+                compression=compression or {"initial": None, "retriever_tool_calls": []},
                 state_lock=Lock(),
             )
 
@@ -264,6 +274,7 @@ class AgenticRAG(BaseRAGTemplate):
 
         config = {"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)}
         run_context = new_run_context(initial_documents, use_compressed_retriever_tool=False)
+        context_compression_fallback = False
         try:
             agent_messages = self.agent.invoke(agent_input_for(initial_documents), config=config, context=run_context)[
                 "messages"
@@ -271,8 +282,16 @@ class AgenticRAG(BaseRAGTemplate):
         except BadRequestError as error:
             if not self._is_context_overflow(error):
                 raise
-            compressed_initial_documents = LLMDocumentCompressor(self.chat_model).compress(question, initial_documents)
-            run_context = new_run_context(compressed_initial_documents, use_compressed_retriever_tool=True)
+            context_compression_fallback = True
+            compressor = LLMDocumentCompressor(self.chat_model)
+            compressed_initial_documents = compressor.compress(question, initial_documents)
+            compression = {
+                "initial": compressor.compression_stats(initial_documents, compressed_initial_documents),
+                "retriever_tool_calls": [],
+            }
+            run_context = new_run_context(
+                compressed_initial_documents, use_compressed_retriever_tool=True, compression=compression
+            )
             agent_messages = self.agent.invoke(
                 agent_input_for(compressed_initial_documents), config=config, context=run_context
             )["messages"]
@@ -285,6 +304,8 @@ class AgenticRAG(BaseRAGTemplate):
                 "query": question,
                 "documents": [self._document_payload(chunk) for chunk in initial_documents],
             },
+            "context_compression_fallback": context_compression_fallback,
+            "compression": run_context.compression if context_compression_fallback else None,
             "messages": [self._message_payload(message) for message in agent_messages],
             "tool_execution": run_context.tool_execution,
         }

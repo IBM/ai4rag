@@ -1390,6 +1390,42 @@ print(result["reference_documents"])  # chunks from every retrieval the agent ma
 print(result["conversation"])  # initial retrieval, messages, and tool activity
 ```
 
+#### Context-overflow fallback
+
+If the model rejects an agent invocation with a `BadRequestError` that reports
+a context or token limit, `AgenticRAG` retries the complete invocation once.
+Before that retry, `LLMDocumentCompressor` asks the same chat model to extract
+query-relevant passages from the initial retrieval. Any subsequent `retriever`
+tool result in the retry is compressed too. Chunks for which the model returns
+`NO_RELEVANT_EXCERPT` are omitted, while the retained excerpts preserve the
+source metadata.
+
+The following sample uses a real MaaS chat/embedding endpoint and an existing
+remote Milvus collection. It does not add documents or modify the collection:
+
+```bash
+export MAAS_BASE_URL=https://maas.example.com
+export MAAS_API_KEY=...
+export MILVUS_URI=https://milvus.example.com:19530
+export AI4RAG_COLLECTION_NAME=ai4rag_existing_collection
+export AI4RAG_FOUNDATION_MODEL=your-chat-model
+export AI4RAG_EMBEDDING_MODEL=your-embedding-model
+export AI4RAG_EMBEDDING_DIMENSION=1024
+export AI4RAG_EMBEDDING_CONTEXT_LENGTH=8192
+
+uv run python samples/agentic_rag_document_compressor_fallback.py \
+  "What is the project deadline?" --number-of-chunks 20
+```
+
+The embedding model, dimension, and context length must match the existing
+collection. The sample prints the `context_compression_fallback` flag, final
+documents, and each compressed retriever-tool trace record (`"compressed": true`).
+Increase `--number-of-chunks` if the initial agent attempt does not exceed the
+model's context window. The `compression` trace records estimated original/compressed
+token counts, retained and dropped chunks, plus the enforced 512 completion-token limit.
+This fallback applies only to context/token-overflow 400 responses; other
+`BadRequestError` responses are raised unchanged.
+
 `generate()` includes a JSON-safe `conversation` record with `question`,
 `initial_retrieval` (query and documents), serialized `messages`, and `tool_execution`
 records for `rewrite_query` and `retriever`. Retrieval tool records include newly

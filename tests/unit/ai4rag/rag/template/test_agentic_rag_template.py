@@ -83,6 +83,8 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
     assert result["conversation"] == {
         "question": "question",
         "initial_retrieval": {"query": "question", "documents": [{"text": "initial evidence", "metadata": {}}]},
+        "context_compression_fallback": False,
+        "compression": None,
         "messages": [
             {"type": "human", "content": "Question: question\nContext: initial evidence"},
             {
@@ -342,7 +344,12 @@ def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, moc
     )
     create_agent = rag._create_agent_mock
     context_error = BadRequestError(
-        "maximum context length exceeded",
+        (
+            "This model's maximum context length is 32000 tokens. However, you requested 1024 output tokens "
+            "and your prompt contains at least 30977 input tokens, for a total of at least 32001 tokens. "
+            "Please reduce the length of the input prompt or the number of requested output tokens. "
+            "(parameter=input_tokens, value=30977)"
+        ),
         response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
         body=None,
     )
@@ -361,6 +368,27 @@ def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, moc
 
     assert result["answer"] == "grounded answer"
     assert result["reference_documents"] == [initial_excerpt, excerpt]
+    assert result["conversation"]["context_compression_fallback"] is True
+    assert result["conversation"]["compression"] == {
+        "initial": {
+            "input_chunks": 1,
+            "retained_chunks": 1,
+            "dropped_chunks": 0,
+            "original_tokens": 4,
+            "compressed_tokens": 4,
+            "max_completion_tokens": 512,
+        },
+        "retriever_tool_calls": [
+            {
+                "input_chunks": 1,
+                "retained_chunks": 1,
+                "dropped_chunks": 0,
+                "original_tokens": 7,
+                "compressed_tokens": 4,
+                "max_completion_tokens": 512,
+            }
+        ],
+    }
     assert result["conversation"]["tool_execution"]["retriever"][0]["compressed"] is True
     assert compress.call_args_list == [mocker.call("question", [initial]), mocker.call("follow-up", [large_result])]
 
@@ -380,8 +408,24 @@ def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     assert rag.chat_model.invoke.call_count == 2
     assert (
         rag.chat_model.invoke.call_args_list[0].args[0][1].content
-        == "Query:\nquestion\n\nDocument:\nfull relevant document"
+        == "User question:\nquestion\n\nSource document:\nfull relevant document"
     )
+    assert rag.chat_model.invoke.call_args_list[0].kwargs == {"max_completion_tokens": 512}
+
+
+def test_context_compressor_never_expands(rag):
+    """Compression retains the source when an LLM excerpt would grow it."""
+    source = AI4RAGChunk(text="source " * 300, metadata={"source": "source"})
+    short_source = AI4RAGChunk(text="short source", metadata={"source": "short"})
+    rag.chat_model.invoke.side_effect = [
+        AIMessage(content="excerpt " * 300),
+        AIMessage(content="this response is longer than the short source"),
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [source, short_source])
+
+    assert excerpts[0] == source
+    assert excerpts[1] == short_source
 
 
 def test_non_context_bad_request_is_not_retried(rag, mocker):
