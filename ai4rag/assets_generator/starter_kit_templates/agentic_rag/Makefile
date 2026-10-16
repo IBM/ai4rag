@@ -116,11 +116,10 @@ _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export
 	  value=$$(secret_value "$$MAAS_SECRET_NAME" MAAS_API_KEY); [ -z "$$value" ] || MAAS_API_KEY="$$value"; \
 	fi && \
 	if [ -n "$$DB_SECRET_NAME" ] && [ "$$DB_SECRET_NAME" != "__DB_SECRET_NAME__" ]; then \
-	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT MILVUS_SERVER_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT; do \
+	  for key in MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT; do \
 	    value=$$(secret_value "$$DB_SECRET_NAME" "$$key"); current=$$(printenv "$$key"); [ -n "$$current" ] || [ -z "$$value" ] || export "$$key=$$value"; \
 	  done; \
 	fi && \
-	MILVUS_CA_CERT=$${MILVUS_CA_CERT:-$${MILVUS_SERVER_CERT:-}} && \
 	case "$$MILVUS_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) MILVUS_CA_CERT=$$(printf "%s" "$$MILVUS_CA_CERT" | base64 | tr -d "\n");; esac && \
 	case "$$PGVECTOR_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) PGVECTOR_CA_CERT=$$(printf "%s" "$$PGVECTOR_CA_CERT" | base64 | tr -d "\\n");; esac && \
 	case "$$NEO4J_CA_CERT" in *"-----BEGIN CERTIFICATE-----"*) NEO4J_CA_CERT=$$(printf "%s" "$$NEO4J_CA_CERT" | base64 | tr -d "\\n");; esac && \

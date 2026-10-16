@@ -9,8 +9,6 @@ configured, proxychains4 intercepts the agent's native TCP sockets and tunnels
 them through OpenShell's explicit egress proxy.
 """
 
-from __future__ import annotations
-
 import ipaddress
 import os
 import socket
@@ -49,13 +47,13 @@ def proxy_address(proxy_url: str) -> tuple[str, int]:
     port = parsed.port or DEFAULT_HTTP_PROXY_PORT
     try:
         address = str(ipaddress.IPv4Address(parsed.hostname))
-    except ipaddress.AddressValueError:
+    except ipaddress.AddressValueError as address_error:
         try:
             addresses = socket.getaddrinfo(parsed.hostname, port, socket.AF_INET, socket.SOCK_STREAM)
         except OSError as exc:
             raise ValueError(f"Could not resolve HTTP proxy host {parsed.hostname!r}.") from exc
         if not addresses:
-            raise ValueError(f"HTTP proxy host {parsed.hostname!r} has no IPv4 address.")
+            raise ValueError(f"HTTP proxy host {parsed.hostname!r} has no IPv4 address.") from address_error
         address = addresses[0][4][0]
 
     return address, port
