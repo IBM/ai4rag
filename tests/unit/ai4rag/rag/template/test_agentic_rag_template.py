@@ -450,6 +450,17 @@ def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     assert rag.chat_model.invoke.call_args_list[0].kwargs == {"max_completion_tokens": 512}
 
 
+def test_context_compressor_accepts_short_verbatim_excerpt(rag):
+    """A concise exact answer is useful evidence and must not fall back to the full chunk."""
+    excerpt = "Meyerson (1970–1981)"
+    source = AI4RAGChunk(text=f"Presidents included {excerpt} and others.", metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(content=json.dumps({"excerpt": excerpt}))
+
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == [
+        AI4RAGChunk(text=excerpt, metadata={})
+    ]
+
+
 def test_context_compressor_retains_source_for_invalid_model_output(rag):
     """Invalid model output preserves source evidence instead of dropping it."""
     source = AI4RAGChunk(text="source " * 300, metadata={"source": "source"})
