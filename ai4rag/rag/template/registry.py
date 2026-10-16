@@ -53,14 +53,3 @@ def get_template_spec(template_id: str) -> RAGTemplateSpec:
         return _SPECS_BY_ID[template_id]
     except (KeyError, TypeError) as exc:
         raise ValueError(f"Unsupported template_id {template_id!r}. Expected one of {sorted(_SPECS_BY_ID)}.") from exc
-
-
-def template_id_for_class(template_class: type[BaseRAGTemplate]) -> str:
-    """Return the canonical pattern ID for an experiment template class."""
-    for spec in _TEMPLATE_SPECS:
-        if spec.template_class is template_class and spec.template_id != "react_graph_rag":
-            return spec.template_id
-    raise ValueError(
-        f"Unsupported RAG template class {template_class.__name__!r}. "
-        f"Expected one of {[spec.template_class.__name__ for spec in _TEMPLATE_SPECS]}."
-    )

@@ -5,7 +5,7 @@
 
 from .base_template import BaseRAGTemplate
 from .react_rag_template import ReActRAG
-from .registry import RAGTemplateSpec, get_template_spec, template_id_for_class
+from .registry import RAGTemplateSpec, get_template_spec
 from .sequential_rag_template import SequentialRAG
 
 __all__ = [
@@ -14,5 +14,4 @@ __all__ = [
     "RAGTemplateSpec",
     "SequentialRAG",
     "get_template_spec",
-    "template_id_for_class",
 ]
