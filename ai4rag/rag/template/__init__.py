@@ -5,14 +5,13 @@
 
 from .agentic_rag_template import AgenticRAG
 from .base_template import BaseRAGTemplate
-from .registry import RAGTemplateSpec, get_template_spec, template_id_for_class
-from .simple_rag_template import SimpleRAG
+from .registry import RAGTemplateSpec, get_template_spec
+from .sequential_rag_template import SequentialRAG
 
 __all__ = [
     "AgenticRAG",
     "BaseRAGTemplate",
     "RAGTemplateSpec",
-    "SimpleRAG",
+    "SequentialRAG",
     "get_template_spec",
-    "template_id_for_class",
 ]

@@ -41,6 +41,7 @@ class RAGExperimentError(Exception):
 class RAGParamsType(TypedDict):
     """Parameters required for single AutoRAG Pattern evaluation."""
 
+    template_id: str
     embedding_model: BaseEmbeddingModel
     foundation_model: BaseFoundationModel
     chunk_size: int

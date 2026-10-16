@@ -17,7 +17,7 @@ from ai4rag.rag.chunking.langchain_chunker import LangChainChunker
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.sequential_rag_template import SequentialRAG
 
 
 def calibration_subset_size(total_rows: int) -> int:
@@ -201,7 +201,7 @@ def _run_reference_rag(
     with temporary_milvus_lite_store(embedding_model, collection_name="ai4rag_judge_calibration") as vector_store:
         vector_store.add_documents(chunks)
         retriever = Retriever(vector_store=vector_store, number_of_chunks=3, method="simple", search_mode="vector")
-        rag = SimpleRAG(foundation_model=foundation_model, retriever=retriever)
+        rag = SequentialRAG(foundation_model=foundation_model, retriever=retriever)
         inference_response = query_rag(rag=rag, questions=list(benchmark_data.questions), max_threads=max_threads)
         return build_evaluation_data(benchmark_data=benchmark_data, inference_response=inference_response)
 

@@ -6,11 +6,11 @@
 import pytest
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.rag.template.simple_rag_template import SimpleRAG
+from ai4rag.rag.template.sequential_rag_template import SequentialRAG
 
 
-class TestSimpleRAGInitialization:
-    """Test suite for SimpleRAG initialization."""
+class TestSequentialRAGInitialization:
+    """Test suite for SequentialRAG initialization."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -29,7 +29,7 @@ class TestSimpleRAGInitialization:
 
     def test_init_with_required_params(self, mock_foundation_model, mock_retriever):
         """Test initialization with the only supported parameters."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -41,8 +41,8 @@ class TestSimpleRAGInitialization:
         mock_foundation_model,
         mock_retriever,
     ):
-        """Test that SimpleRAG properly inherits from BaseRAGTemplate."""
-        rag = SimpleRAG(
+        """Test that SequentialRAG properly inherits from BaseRAGTemplate."""
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -53,8 +53,8 @@ class TestSimpleRAGInitialization:
         assert not hasattr(rag, "chunker")
 
 
-class TestSimpleRAGGenerate:
-    """Test suite for SimpleRAG.generate method."""
+class TestSequentialRAGGenerate:
+    """Test suite for SequentialRAG.generate method."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -88,7 +88,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns a dict with answer, reference_documents, and question."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -106,7 +106,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate calls retriever.retrieve."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -121,7 +121,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate passes retrieval kwargs to retriever."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -140,7 +140,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate builds context correctly from retrieved documents."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -170,7 +170,7 @@ class TestSimpleRAGGenerate:
     ):
         """Test that doc_number is passed when the context template includes it."""
         mock_foundation_model.context_template_text = "Document {doc_number}:\n{document}\n"
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -187,7 +187,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate calls foundation model's chat method."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -211,7 +211,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns the answer from foundation model."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -226,7 +226,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns the reference documents."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -243,7 +243,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test that generate returns the original question."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -260,7 +260,7 @@ class TestSimpleRAGGenerate:
         """Test generate when retriever returns no documents."""
         mock_retriever.retrieve.return_value = []
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -288,7 +288,7 @@ class TestSimpleRAGGenerate:
             AI4RAGChunk(text="Single document", metadata={"document_id": "doc1"}),
         ]
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -310,7 +310,7 @@ class TestSimpleRAGGenerate:
         del mock_chunk.text  # Ensure text doesn't exist
         mock_retriever.retrieve.return_value = [mock_chunk]
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -325,7 +325,7 @@ class TestSimpleRAGGenerate:
         mock_retriever,
     ):
         """Test generate with various question types."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -358,7 +358,7 @@ class TestSimpleRAGGenerate:
         retrieval_kwargs,
     ):
         """Parameterized test for generate with various retrieval kwargs."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -368,8 +368,8 @@ class TestSimpleRAGGenerate:
         mock_retriever.retrieve.assert_called_once_with("What is AI?", **retrieval_kwargs)
 
 
-class TestSimpleRAGGenerateStream:
-    """Test suite for SimpleRAG.generate_stream method."""
+class TestSequentialRAGGenerateStream:
+    """Test suite for SequentialRAG.generate_stream method."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -402,7 +402,7 @@ class TestSimpleRAGGenerateStream:
         mock_retriever,
     ):
         """Test that generate_stream returns a generator."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -420,7 +420,7 @@ class TestSimpleRAGGenerateStream:
         mock_retriever,
     ):
         """Test that generate_stream yields the answer."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -437,7 +437,7 @@ class TestSimpleRAGGenerateStream:
         mocker,
     ):
         """Test that generate_stream calls generate method internally."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -456,7 +456,7 @@ class TestSimpleRAGGenerateStream:
         mocker,
     ):
         """Test that generate_stream passes kwargs to generate."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -477,7 +477,7 @@ class TestSimpleRAGGenerateStream:
         mock_message = mock_foundation_model.chat.return_value[0].message
         mock_message.content = "This is a longer answer with multiple sentences."
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -493,7 +493,7 @@ class TestSimpleRAGGenerateStream:
         mock_retriever,
     ):
         """Test generate_stream with various questions."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -506,8 +506,8 @@ class TestSimpleRAGGenerateStream:
             assert result[0] == "This is the generated answer."
 
 
-class TestSimpleRAGChat:
-    """Test suite for SimpleRAG.chat method."""
+class TestSequentialRAGChat:
+    """Test suite for SequentialRAG.chat method."""
 
     @pytest.fixture
     def mock_foundation_model(self, mocker):
@@ -535,14 +535,14 @@ class TestSimpleRAGChat:
 
     def test_chat_raises_on_empty_messages(self, mock_foundation_model, mock_retriever):
         """Test that chat rejects an empty message list."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         with pytest.raises(ValueError):
             rag.chat([])
 
     def test_chat_retrieves_using_last_message_content(self, mock_foundation_model, mock_retriever):
         """Test that chat uses the last message's content as the retrieval query."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         rag.chat([{"role": "user", "content": "What is AI?"}])
 
@@ -550,7 +550,7 @@ class TestSimpleRAGChat:
 
     def test_chat_passes_retrieval_kwargs(self, mock_foundation_model, mock_retriever):
         """Test that chat forwards kwargs to the retriever."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         rag.chat([{"role": "user", "content": "What is AI?"}], number_of_chunks=5)
 
@@ -558,7 +558,7 @@ class TestSimpleRAGChat:
 
     def test_chat_prepends_system_message(self, mock_foundation_model, mock_retriever):
         """Test that chat always prepends the template's system message."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         rag.chat([{"role": "user", "content": "What is AI?"}])
 
@@ -567,7 +567,7 @@ class TestSimpleRAGChat:
 
     def test_chat_preserves_earlier_history_untouched(self, mock_foundation_model, mock_retriever):
         """Test that only the last message is enriched; earlier turns pass through unchanged."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         rag.chat(
             [
@@ -586,7 +586,7 @@ class TestSimpleRAGChat:
 
     def test_chat_enriches_last_message_with_context(self, mock_foundation_model, mock_retriever):
         """Test that the last message's content is replaced with the RAG-enriched version."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         rag.chat([{"role": "user", "content": "What is AI?"}])
 
@@ -597,7 +597,7 @@ class TestSimpleRAGChat:
 
     def test_chat_preserves_last_message_role(self, mock_foundation_model, mock_retriever):
         """Test that the role of the last message is preserved after enrichment."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         rag.chat([{"role": "user", "content": "What is AI?"}])
 
@@ -606,7 +606,7 @@ class TestSimpleRAGChat:
 
     def test_chat_returns_foundation_model_chat_response(self, mock_foundation_model, mock_retriever):
         """Test that chat returns the foundation model's chat response verbatim."""
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         result = rag.chat([{"role": "user", "content": "What is AI?"}])
 
@@ -615,7 +615,7 @@ class TestSimpleRAGChat:
     def test_chat_with_no_retrieved_documents(self, mock_foundation_model, mock_retriever):
         """Test chat when the retriever returns no documents."""
         mock_retriever.retrieve.return_value = []
-        rag = SimpleRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
+        rag = SequentialRAG(foundation_model=mock_foundation_model, retriever=mock_retriever)
 
         result = rag.chat([{"role": "user", "content": "What is AI?"}])
 
@@ -624,8 +624,8 @@ class TestSimpleRAGChat:
         assert "What is AI?" in messages[-1]["content"]
 
 
-class TestSimpleRAGIntegration:
-    """Integration tests for SimpleRAG retrieval-and-generation workflow."""
+class TestSequentialRAGIntegration:
+    """Integration tests for SequentialRAG retrieval-and-generation workflow."""
 
     @pytest.fixture
     def rag_system(self, mocker):
@@ -652,8 +652,8 @@ class TestSimpleRAGIntegration:
         return {"foundation_model": foundation_model, "retriever": retriever}
 
     def test_multiple_generate_calls(self, rag_system):
-        """Test multiple generate calls against a single SimpleRAG instance."""
-        rag = SimpleRAG(
+        """Test multiple generate calls against a single SequentialRAG instance."""
+        rag = SequentialRAG(
             foundation_model=rag_system["foundation_model"],
             retriever=rag_system["retriever"],
         )
@@ -669,7 +669,7 @@ class TestSimpleRAGIntegration:
 
     def test_generate_then_chat_share_the_same_retrieval_and_context_logic(self, rag_system):
         """Test that generate and chat produce equivalent enriched content for the same question."""
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=rag_system["foundation_model"],
             retriever=rag_system["retriever"],
         )
@@ -683,7 +683,7 @@ class TestSimpleRAGIntegration:
         assert generate_messages[1]["content"] == chat_messages[-1]["content"]
 
 
-class TestSimpleRAGEdgeCases:
+class TestSequentialRAGEdgeCases:
     """Test suite for edge cases and error scenarios."""
 
     @pytest.fixture
@@ -711,7 +711,7 @@ class TestSimpleRAGEdgeCases:
         """Test generate with empty question string."""
         mock_retriever.retrieve.return_value = []
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -726,7 +726,7 @@ class TestSimpleRAGEdgeCases:
         """Test generate with very long question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -741,7 +741,7 @@ class TestSimpleRAGEdgeCases:
         """Test generate with special characters in question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -756,7 +756,7 @@ class TestSimpleRAGEdgeCases:
         """Test generate with Unicode characters in question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )
@@ -770,7 +770,7 @@ class TestSimpleRAGEdgeCases:
         """Test generate with multiline question."""
         mock_retriever.retrieve.return_value = []
 
-        rag = SimpleRAG(
+        rag = SequentialRAG(
             foundation_model=mock_foundation_model,
             retriever=mock_retriever,
         )

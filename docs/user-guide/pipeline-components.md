@@ -281,6 +281,7 @@ search_space = prepare_search_space_with_maas(
     payload={
         "foundation_models": [{"model_id": "qwen3-8b-fp8-dynamic"}],
         "embedding_models": [{"model_id": "bge-m3"}],
+        "template_ids": ["agentic_rag", "sequential_rag"],  # optional: template search dimension
         "chunking_methods": ["recursive"],  # optional: constrain chunking methods
         "chunk_sizes": [256, 512, 1024],    # optional: constrain chunk sizes
         "chunk_overlaps": [0, 128],         # optional: constrain chunk overlaps

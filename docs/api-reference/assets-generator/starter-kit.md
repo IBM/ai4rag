@@ -7,6 +7,15 @@ Packages a published RAG pattern into a deployable agentic-RAG microservice proj
       members:
         - generate_starter_kit
 
+
+The generated `agent_config.json` includes the pattern's `template_id`. The runtime
+resolves it through the template registry, selecting `AgenticRAG` or `SequentialRAG`.
+Neo4j configurations retain effective graph retrieval settings and pass them to the
+retriever. Graph retrieval also works when these options are omitted: the store
+uses its built-in defaults. Persisting the options reproduces any custom graph
+settings used during optimization. The application/package name remains
+`agentic_rag` for all templates.
+
 ## OpenShell Deployment
 
 Generated starter kits can deploy an agent backed by Milvus, PostgreSQL/pgvector,
@@ -17,7 +26,7 @@ pipeline step.
 
 Deployment requires an OpenShift cluster with the Agent Sandbox operator, a logged-in
 `oc` client, the `openshell` CLI, Helm 3, and `uv`. MaaS must provide reachable chat
-and embedding models, and the chat model must support tool calling.
+and embedding models, and agentic templates require a chat model that supports tool calling.
 
 Set database credentials in `.env` or the Kubernetes secret referenced by
 `db_secret_name` in `values.yaml`. Non-empty environment settings take precedence

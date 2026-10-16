@@ -17,6 +17,8 @@ def agent_module(monkeypatch, mocker):
     monkeypatch.syspath_prepend(str(template_src))
     module = importlib.import_module("agentic_rag.agent")
     config = SimpleNamespace(
+        template_id="agentic_rag",
+        graph_retrieval={},
         model_id="test-model",
         temperature=0.2,
         max_completion_tokens=128,
@@ -48,7 +50,8 @@ def test_create_rag_reuses_one_maas_client(agent_module, mocker):
     openai = mocker.patch.object(agent_module, "OpenAI", return_value=client)
     foundation_model = mocker.patch.object(agent_module, "OpenAIFoundationModel")
     initialize_retriever = mocker.patch.object(agent_module, "initialize_retriever", return_value=retriever)
-    rag_class = mocker.patch.object(agent_module, "AgenticRAG", return_value=rag)
+    rag_class = mocker.Mock(return_value=rag)
+    mocker.patch.object(agent_module, "get_template_spec", return_value=SimpleNamespace(template_class=rag_class))
 
     result = agent_module.create_rag(base_url="https://maas.example/v1/", api_key="secret")
 
@@ -101,7 +104,7 @@ def test_create_rag_allows_local_http(agent_module, mocker):
     openai = mocker.patch.object(agent_module, "OpenAI", return_value=mocker.sentinel.client)
     mocker.patch.object(agent_module, "OpenAIFoundationModel")
     mocker.patch.object(agent_module, "initialize_retriever")
-    mocker.patch.object(agent_module, "AgenticRAG")
+    mocker.patch.object(agent_module, "get_template_spec")
 
     agent_module.create_rag(base_url="http://localhost:8000")
 

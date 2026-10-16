@@ -23,6 +23,7 @@ def config_module(monkeypatch):
 def generated_config():
     """A complete generated agent configuration."""
     return {
+        "template_id": "agentic_rag",
         "generation": {
             "model_id": "chat-model",
             "temperature": 0.2,
@@ -85,3 +86,32 @@ def test_missing_required_config_is_rejected(config_module, generated_config, mo
 
     with pytest.raises(ValueError, match="model_id"):
         config_module.AgentConfig.from_env()
+
+
+@pytest.mark.parametrize(
+    "graph_settings", [{}, {"route_k": 4, "entity_relationship_hops": 2, "include_entity_neighbors": False}]
+)
+def test_graph_settings_reach_store_search(config_module, generated_config, monkeypatch, mocker, graph_settings):
+    """Generated graph options survive config loading and actual retriever calls."""
+    generated_config["template_id"] = "agentic_graph_rag"
+    generated_config["vector_store"]["provider_type"] = "neo4j"
+    generated_config["retrieval"].update(search_mode="graph", **graph_settings)
+    _inject_config(monkeypatch, generated_config)
+    config = config_module.AgentConfig.from_env()
+
+    tools_module = importlib.import_module("agentic_rag.tools")
+    mocker.patch.object(tools_module, "OpenAIEmbeddingModel")
+    mocker.patch.object(tools_module, "get_vector_store_config")
+    store = mocker.patch.object(tools_module, "get_vector_store").return_value
+    retriever = tools_module.initialize_retriever(mocker.sentinel.client, config)
+    retriever.retrieve("What is connected?")
+
+    options = store.search.call_args.kwargs
+    assert options["search_mode"] == "graph"
+    assert options["entity_neighbor_limit"] == 5
+    assert options["entity_relationship_hops"] == graph_settings.get("entity_relationship_hops", 1)
+    assert options["include_entity_neighbors"] == graph_settings.get("include_entity_neighbors", True)
+    if "route_k" in graph_settings:
+        assert options["route_k"] == 4
+    else:
+        assert "route_k" not in options  # Leave the store's k-dependent route limit in effect.

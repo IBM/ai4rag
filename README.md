@@ -80,24 +80,23 @@ using the `.pdfium.json` suffix.
 
 ## RAG templates
 
-Each candidate pattern is evaluated through a `rag_template` passed to `AI4RAGExperiment` — a `BaseRAGTemplate` subclass. The default, `AgenticRAG`, is a LangChain agent that can rewrite its search query and retrieve again before answering; `SimpleRAG` (a single fixed retrieve-then-generate pass) is also available via `rag_template=SimpleRAG`. See the [RAG Components](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#rag-templates) architecture doc.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
-Published patterns persist the selected template as `template_id`, which generated
-inference notebooks use to recreate it. Pattern publication currently supports the
-built-in `AgenticRAG` and `SimpleRAG` classes; custom subclasses need registry support.
 `LocalEventHandler` writes `conversations.json` alongside each agentic pattern's
 `pattern.json` and `evaluation_results.json`, recording retrieved context and tool activity.
+Conversations are also available as `EvaluationResult.conversations` and included
+by `to_dict()`; the field is `None` when no conversations are emitted. Per-question
+evaluation records include an optional `conversation_id` linking to these records.
 
-Conversations are also available as `EvaluationResult.conversations` through
-`experiment.results` and included by `to_dict()`; the field is `None` when no
-conversations are emitted. Per-question evaluation JSON records include an optional
-`conversation_id` linking to `conversations.json` when conversation and evaluation
-counts match.
-
-`generate_starter_kit()` packages a published pattern into an agentic microservice
-with OpenShell deployment for Milvus, PostgreSQL/pgvector, or Neo4j. Deployment
-forwards database CA certificates and serves retrieval from an already indexed
-collection. See the [Starter Kit guide](https://ibm.github.io/ai4rag/latest/api-reference/assets-generator/starter-kit/).
+`generate_starter_kit()` packages the selected pattern into a microservice with
+OpenShell deployment for Milvus, PostgreSQL/pgvector, or Neo4j. Deployment forwards
+database CA certificates and retrieves from an already indexed collection. See the
+[Starter Kit guide](https://ibm.github.io/ai4rag/latest/api-reference/assets-generator/starter-kit/)
+and [template migration guidance](https://ibm.github.io/ai4rag/latest/getting-started/quick-start/#template-migration-and-pre-selection).
 
 ## Running on Disconnected Clusters
 

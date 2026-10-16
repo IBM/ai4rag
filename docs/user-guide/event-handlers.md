@@ -68,7 +68,7 @@ def on_pattern_creation(
 ```python
 {
     "name": "Pattern1",
-    "template_id": "simple_rag",
+    "template_id": "sequential_rag",
     "iteration": 0,
     "max_combinations": 24,
     "duration_seconds": 134,
@@ -105,9 +105,11 @@ def on_pattern_creation(
 }
 ```
 
-`template_id` identifies the selected template: experiments publish `agentic_rag` for
-`AgenticRAG` and `simple_rag` for `SimpleRAG`, including when retrieval uses Neo4j.
-Notebook rendering also accepts `agentic_graph_rag` as an alias for `AgenticRAG`.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
 For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, for example:
 
@@ -117,6 +119,35 @@ For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, 
 
 This replaces `settings.knowledge_graph`; the published settings no longer contain a
 separate extraction-model block. Retrieval controls remain in `settings.retrieval`.
+
+For graph mode, `_stream_finished_pattern()` copies the effective
+`Neo4jGraphRetrievalConfig` options into `settings.retrieval`. For example, with an
+explicit `route_k=12`:
+
+```python
+{
+    "method": "simple",
+    "number_of_chunks": 5,
+    "search_mode": "graph",
+    "route_k": 12,
+    "include_entity_neighbors": True,
+    "entity_neighbor_limit": 5,
+    "entity_pivot_limit": 3,
+    "entity_relationship_hops": 1,
+    "relationship_neighbor_limit": 5,
+}
+```
+
+When `route_k` is unset, it is omitted and Neo4j computes `max(2 * k, 10)` from
+the requested chunk count. The other graph options include their effective
+defaults even when `graph_retrieval_config` was omitted from the experiment.
+
+`LocalEventHandler` writes the streamed payload to `pattern.json`. The
+[starter-kit generator](../api-reference/assets-generator/starter-kit.md) copies
+these retrieval settings into `agent_config.json`; deployment `config.py` loads
+them and the retriever forwards them to Neo4j through `search_kwargs`. This
+preserves custom graph settings through evaluation, publication, and deployment,
+including deferred publication of the best warm-start candidate.
 
 ### `evaluation_results` — per-question breakdown
 
