@@ -419,8 +419,8 @@ def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     relevant = AI4RAGChunk(text="full relevant excerpt document", metadata={"source": "relevant"})
     irrelevant = AI4RAGChunk(text="unrelated document", metadata={"source": "irrelevant"})
     rag.chat_model.invoke.side_effect = [
-        AIMessage(content="relevant excerpt"),
-        AIMessage(content="NO_RELEVANT_EXCERPT"),
+        AIMessage(content='{"spans":[{"start_char":5,"end_char":21}]}'),
+        AIMessage(content='{"spans":[]}'),
     ]
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [relevant, irrelevant])
@@ -435,7 +435,7 @@ def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
 
 
 def test_context_compressor_drops_non_verbatim_expanded_output(rag):
-    """An expanded model response is not valid source evidence."""
+    """Non-JSON model output is not valid source evidence."""
     source = AI4RAGChunk(text="source " * 300, metadata={"source": "source"})
     short_source = AI4RAGChunk(text="short source", metadata={"source": "short"})
     rag.chat_model.invoke.side_effect = [
@@ -449,9 +449,9 @@ def test_context_compressor_drops_non_verbatim_expanded_output(rag):
 
 
 def test_context_compressor_drops_non_verbatim_llm_output(rag):
-    """Generated interpretations must not be used as retrieval evidence."""
+    """Out-of-range source spans must not be used as retrieval evidence."""
     source = AI4RAGChunk(text="The source says only this.", metadata={})
-    rag.chat_model.invoke.return_value = AIMessage(content="The source means something else.")
+    rag.chat_model.invoke.return_value = AIMessage(content='{"spans":[{"start_char":0,"end_char":1000}]}')
 
     assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == []
 
@@ -459,7 +459,9 @@ def test_context_compressor_drops_non_verbatim_llm_output(rag):
 def test_context_compressor_caps_total_excerpt_tokens(rag):
     """Compressed tool output remains bounded across multiple chunks."""
     chunks = [AI4RAGChunk(text=character * 3000, metadata={}) for character in ("a", "b", "c")]
-    rag.chat_model.invoke.side_effect = [AIMessage(content=chunk.text) for chunk in chunks]
+    rag.chat_model.invoke.side_effect = [
+        AIMessage(content='{"spans":[{"start_char":0,"end_char":3000}]}') for _ in chunks
+    ]
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", chunks)
 
