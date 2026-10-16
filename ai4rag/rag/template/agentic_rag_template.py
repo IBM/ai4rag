@@ -76,8 +76,8 @@ class AgenticRAG(BaseRAGTemplate):
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
         max_retrieval_steps: int = 2,
-        enable_context_compression: bool = True,
         chat_model: BaseChatModel | None = None,
+        enable_context_compression: bool = True,
     ):
         super().__init__(foundation_model=foundation_model, retriever=retriever)
         self.chat_model = chat_model

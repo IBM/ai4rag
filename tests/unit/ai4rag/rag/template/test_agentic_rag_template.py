@@ -314,6 +314,21 @@ def test_retrieval_limit_is_validated_on_assignment(rag):
     assert rag.max_retrieval_steps == 3
 
 
+def test_chat_model_remains_the_fourth_positional_constructor_argument(mocker):
+    """Adding compression configuration does not break existing callers."""
+    foundation_model = mocker.MagicMock()
+    foundation_model.system_message_text = "Answer from context."
+    foundation_model.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation_model.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    chat_model = mocker.MagicMock()
+
+    rag_template = AgenticRAG(foundation_model, retriever, 2, chat_model)
+
+    assert rag_template.chat_model is chat_model
+    assert rag_template.enable_context_compression is True
+
+
 def test_initial_retrieval_counts_toward_limit(rag, mocker):
     """A one-step budget cannot issue another retrieval from the agent."""
     rag.max_retrieval_steps = 1
