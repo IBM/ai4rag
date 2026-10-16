@@ -11,7 +11,10 @@ Packages a published RAG pattern into a deployable agentic-RAG microservice proj
 The generated `agent_config.json` includes the pattern's `template_id`. The runtime
 resolves it through the template registry, selecting `ReActRAG` or `SequentialRAG`.
 Neo4j configurations retain effective graph retrieval settings and pass them to the
-retriever. The application/package name remains `agentic_rag` for all templates.
+retriever. Graph retrieval also works when these options are omitted: the store
+uses its built-in defaults. Persisting the options reproduces any custom graph
+settings used during optimization. The application/package name remains
+`agentic_rag` for all templates.
 
 ## OpenShell Deployment
 

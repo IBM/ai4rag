@@ -165,12 +165,6 @@ class AI4RAGExperiment:
             "n_mps_embedding_models", PreSelectorConstants.DEFAULT_N_EMBEDDING_MODELS
         )
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
-        if "rag_template" in kwargs:
-            raise TypeError(
-                "rag_template was removed. Use Parameter(name='template_id', values=('sequential_rag',)) "
-                "in the search space instead."
-            )
-        self.search_space.validate_compatibility(self.vector_store_config.provider)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
         graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
@@ -433,11 +427,8 @@ class AI4RAGExperiment:
         float
             A single evaluation score obtained by the executed rag pattern.
         """
-        self.search_space.validate_compatibility(self.vector_store_config.provider)
         template_id = rag_params[AI4RAGParamNames.TEMPLATE_ID]
         template_spec = get_template_spec(template_id)
-        if template_id not in self.search_space[AI4RAGParamNames.TEMPLATE_ID].values:
-            raise ValueError(f"Candidate template_id {template_id!r} is outside the search space.")
         start_time = time.time()
 
         chunking_params = get_chunking_params(rag_params)
@@ -448,8 +439,6 @@ class AI4RAGExperiment:
         foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
-        if search_mode not in self.search_space[AI4RAGParamNames.SEARCH_MODE].all_values():
-            raise ValueError(f"Candidate search_mode {search_mode!r} is outside the search space.")
 
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
@@ -776,18 +765,6 @@ class AI4RAGExperiment:
                 raise FailedIterationError(msg) from err
             finally:
                 self._optimization_phase = None
-
-        self.search_space.validate_compatibility(self.vector_store_config.provider)
-        for observation in self.known_observations or []:
-            if "template_id" not in observation:
-                raise ValueError("Known observations require an explicit template_id; regenerate template-less scores.")
-            template_id = observation["template_id"]
-            get_template_spec(template_id)
-            if template_id not in self.search_space[AI4RAGParamNames.TEMPLATE_ID].values:
-                raise ValueError("Known observation template_id must belong to the search space.")
-            mode = observation.get("search_mode", "graph" if self.vector_store_config.provider == "neo4j" else "vector")
-            if mode not in self.search_space[AI4RAGParamNames.SEARCH_MODE].all_values():
-                raise ValueError("Known observation search_mode is incompatible with the search space.")
 
         # MPS - models pre-selection based on sample evaluation.
         # Run if there are more than 3 foundation models or more than 2 embedding models.

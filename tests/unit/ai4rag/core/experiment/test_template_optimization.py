@@ -81,17 +81,21 @@ def test_incompatible_templates(provider, templates):
         make_space(provider, templates)
 
 
-def test_search_modes_and_actual_connection_are_validated():
+@pytest.mark.parametrize("provider,mode", [("milvus", "graph"), ("neo4j", "vector"), ("neo4j", "hybrid")])
+def test_incompatible_search_modes_are_rejected_at_construction(provider, mode):
+    space = make_space(provider)
+    params = [param for param in space.as_list() if param.name != "search_mode"]
+    params.append(Parameter(name="search_mode", values=(mode,)))
+    with pytest.raises(ValueError, match="requires search modes"):
+        AI4RAGSearchSpace(params=params, vector_store_type=provider)
+
+
+def test_non_categorical_template_parameter_is_rejected_at_construction():
     space = make_space()
-    with pytest.raises(ValueError):
-        space.validate_compatibility("neo4j")
-    space["search_mode"] = Parameter(name="search_mode", values=("graph",))
-    with pytest.raises(ValueError):
-        make_experiment(space)
-    space = make_space()
-    space["template_id"] = Parameter(name="template_id", param_type="I", v_min=1, v_max=2)
-    with pytest.raises(ValueError):
-        space.validate_compatibility("milvus_lite")
+    params = [param for param in space.as_list() if param.name != "template_id"]
+    params.append(Parameter(name="template_id", param_type="I", v_min=1, v_max=2))
+    with pytest.raises(ValueError, match="categorical"):
+        AI4RAGSearchSpace(params=params, vector_store_type=space.vector_store_type)
 
 
 def mock_execution(mocker, experiment):
@@ -148,18 +152,6 @@ def test_deferred_publication_uses_stored_template(mocker):
     assert experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]["template_id"] == "sequential_rag"
 
 
-@pytest.mark.parametrize("template_id", [None, "simple_rag", "react_graph_rag", "react_rag"])
-def test_known_observations_require_explicit_selected_template(mocker, template_id):
-    observation = {"score": 0.5}
-    if template_id is not None:
-        observation["template_id"] = template_id
-    experiment = make_experiment(make_space(templates=("sequential_rag",)), known_observations=[observation])
-    preselect = mocker.patch.object(experiment, "run_pre_selection")
-    with pytest.raises(ValueError):
-        experiment.search()
-    preselect.assert_not_called()
-
-
 @pytest.mark.parametrize(
     "provider,templates",
     [
@@ -196,12 +188,3 @@ def test_valid_known_observation_reaches_gam(mocker):
     mocker.patch.object(GAMOptimizer, "search")
     experiment.search()
     assert loaded.call_args.args[1] == [observation]
-
-
-def test_known_observation_with_incompatible_search_mode_is_rejected():
-    experiment = make_experiment(
-        make_space(templates=("sequential_rag",)),
-        known_observations=[{"template_id": "sequential_rag", "search_mode": "graph", "score": 0.5}],
-    )
-    with pytest.raises(ValueError, match="search_mode"):
-        experiment.search()

@@ -418,9 +418,8 @@ Replace `AgenticRAG` / `agentic_rag_template` with `ReActRAG` /
 `react_rag_template`, and `SimpleRAG` / `simple_rag_template` with
 `SequentialRAG` / `sequential_rag_template`. Replace persisted IDs `agentic_rag`,
 `agentic_graph_rag`, and `simple_rag` with `react_rag`, `react_graph_rag`, and
-`sequential_rag`, respectively. Explicit old IDs are rejected. Known observations
-must include the actual compatible `template_id`; historical scores without an ID
-cannot safely be attributed to a template.
+`sequential_rag`, respectively. Explicit old IDs are rejected. When reusing known
+observations, include the actual `template_id` associated with the historical score.
 
 Automatic model pre-selection always uses temporary Milvus Lite and `ReActRAG`,
 including sequential-only, graph, and multiple-template searches. This vector proxy

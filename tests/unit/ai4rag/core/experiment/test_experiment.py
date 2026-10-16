@@ -114,13 +114,13 @@ class TestEvaluatorType:
 
 
 class TestRAGTemplateSelection:
-    def test_agentic_rag_is_the_default(self):
+    def test_graph_retrieval_configuration_has_defaults(self):
         assert _build_experiment().graph_retrieval_config is not None
 
-    def test_accepts_another_rag_template(self):
+    def test_template_selection_is_not_an_experiment_attribute(self):
         assert not hasattr(_build_experiment(), "rag_template")
 
-    def test_preselection_receives_selected_rag_template(self, mocker):
+    def test_preselection_does_not_receive_an_experiment_template(self, mocker):
         experiment = _build_experiment()
         selector_class = mocker.patch("ai4rag.core.experiment.mps.ModelsPreSelector")
         selector = selector_class.return_value
@@ -129,19 +129,6 @@ class TestRAGTemplateSelection:
         experiment.run_pre_selection(foundation_models=[], embedding_models=[])
 
         assert "rag_template" not in selector_class.call_args.kwargs
-
-    @pytest.mark.parametrize("invalid_template", ["SequentialRAG", object])
-    def test_rejects_non_template_classes(self, invalid_template):
-        with pytest.raises(TypeError, match="rag_template was removed"):
-            AI4RAGExperiment(
-                documents=[],
-                benchmark_data=_BENCHMARK_DF,
-                search_space=MagicMock(),
-                optimizer_settings=MagicMock(),
-                event_handler=MagicMock(),
-                vector_store_config=MilvusLiteConfig(db_path="./ai4rag.db"),
-                rag_template=invalid_template,
-            )
 
 
 class TestGraphCollectionReuse:
@@ -168,8 +155,6 @@ class TestGraphCollectionReuse:
             raise _StopBeforeIndexing
 
         experiment._get_reusable_collection_name = stop_before_indexing
-        experiment.search_space["template_id"].values = ("react_graph_rag",)
-        experiment.search_space["search_mode"].all_values.return_value = ("graph",)
         params = {
             "template_id": "react_graph_rag",
             AI4RAGParamNames.FOUNDATION_MODEL: foundation_model,

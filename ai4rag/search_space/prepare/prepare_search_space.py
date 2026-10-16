@@ -152,10 +152,6 @@ def prepare_search_space_with_maas(
 
     validated_payload = AI4RAGConstraints(**payload)
 
-    allowed_templates = {"react_graph_rag"} if vector_store_type == "neo4j" else {"react_rag", "sequential_rag"}
-    if validated_payload.template_ids is not None and not set(validated_payload.template_ids) <= allowed_templates:
-        raise SearchSpaceValueError(f"Templates are incompatible with backend {vector_store_type!r}.")
-
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
 
     if benchmark_data is not None:

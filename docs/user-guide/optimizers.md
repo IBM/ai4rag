@@ -288,7 +288,7 @@ best_result = optimizer.search()
 !!! note "Known Observations Format"
     Each observation must include:
     - All search space parameter keys with their values
-    - For RAG experiments, an explicit compatible `template_id` identifying the evaluated template; observations without an ID are rejected
+    - For RAG experiments, the actual `template_id` identifying the evaluated template
     - A `"score"` key with the evaluation result (float)
 
 ---

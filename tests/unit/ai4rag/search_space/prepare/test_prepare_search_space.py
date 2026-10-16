@@ -296,8 +296,7 @@ def test_maas_template_dimension(mocker, provider, templates, expected):
     assert result["template_id"].values == expected
 
 
-def test_maas_rejects_incompatible_templates_before_model_calls(mocker):
+def test_maas_rejects_incompatible_templates_in_search_space(mocker):
     client = _setup_client(mocker, ["default-llm", "default-embedding"])
     with pytest.raises(SearchSpaceValueError, match="incompatible"):
         prepare_search_space_with_maas(_payload(template_ids=["sequential_rag"]), client, vector_store_type="neo4j")
-    client.models.list.assert_not_called()

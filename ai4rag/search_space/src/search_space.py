@@ -382,20 +382,13 @@ class AI4RAGSearchSpace(SearchSpace):
         builtin_rules = self._base_rules + self._hybrid_rules
         _summed_rules = builtin_rules + rules if rules else builtin_rules
         super().__init__(params, _summed_rules)
-        self.validate_compatibility(vector_store_type)
+        self.validate_vector_store_compatibility()
 
-    def validate_compatibility(self, provider: str) -> None:
-        """Validate templates and retrieval modes against the connection provider.
-
-        Parameters
-        ----------
-        provider : str
-            Provider of the actual store connection used by the experiment.
-        """
+    def validate_vector_store_compatibility(self) -> None:
+        """Validate templates and retrieval modes for this search space's backend."""
         from ai4rag.rag.template.registry import get_template_spec
 
-        if (provider == "neo4j") != (self.vector_store_type == "neo4j"):
-            raise SearchSpaceValueError("Search-space provider must match the experiment connection provider.")
+        provider = self.vector_store_type
         templates = self[AI4RAGParamNames.TEMPLATE_ID]
         if templates.param_type != "C" or isinstance(templates.values, (str, bytes)):
             raise SearchSpaceValueError("template_id must be a categorical parameter containing template IDs.")
