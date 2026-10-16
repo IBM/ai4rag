@@ -93,7 +93,7 @@ The `search()` method is the main entry point that executes the optimization loo
 1. **Models Pre-Selection (MPS)** (optional):
    - Triggered when `len(foundation_models) > n_mps_foundation_models` or `len(embedding_models) > n_mps_embedding_models`
    - Evaluates all model combinations on a small sample (default: 5 benchmark questions)
-   - Selects top N models based on optimization metric
+   - Selects top N models based on `Metrics.OVERALL_SCORE`, independently of the experiment's optimization metric
    - Reduces search space by eliminating poorly-performing models early
    - Can be skipped with `skip_mps=True` kwarg
 
@@ -122,12 +122,13 @@ sequenceDiagram
     participant Optimizer
     participant Exp as AI4RAGExperiment
     participant VS as VectorStore
-    participant RAG as rag_template
+    participant RAG as Selected RAG template
     participant Eval as Evaluator
     participant EH as EventHandler
 
     Optimizer->>Exp: run_single_evaluation(config)
     activate Exp
+    Note over Exp: Resolve config.template_id through the template registry
     Note over Exp: Check results cache
 
     alt Config cached
@@ -139,7 +140,7 @@ sequenceDiagram
         VS-->>Exp: indexing complete
         deactivate VS
 
-        Exp->>RAG: create rag_template instance (ReActRAG by default)
+        Exp->>RAG: instantiate class selected by config.template_id
         activate RAG
         Note over RAG: Parallel query execution
         RAG-->>Exp: inference responses
@@ -160,14 +161,15 @@ sequenceDiagram
 
 **Key Features:**
 
-1. **Results Caching**: Checks if identical `indexing_params` + `rag_params` have been evaluated before
-2. **Collection Reuse**: Reuses vector store collections when `indexing_params` match (chunking + embedding)
+1. **Results Caching**: Checks if identical `indexing_params` + `rag_params` have been evaluated before; `rag_params` includes `template_id`, so different templates receive separate evaluations
+2. **Collection Reuse**: Reuses vector store collections when `indexing_params` match, including across templates; Neo4j indexing settings also include the extraction model and graph extraction configuration
 3. **Parallel Query Execution**: Uses `ThreadPoolExecutor` (max 10 threads) for concurrent question processing
 4. **Event Streaming**: Notifies event handler at each step (chunking, embedding, retrieval, generation, evaluation)
 5. **Error Handling**: Wraps errors in domain-specific exceptions (`IndexingError`, `GenerationError`, `EvaluationError`)
 
 **Parameters Extracted:**
 
+- **Template**: `template_id`, resolved through the template registry
 - **Chunking params**: `chunking_method`, `chunk_size`, `chunk_overlap`
 - **Embedding params**: `model_id`, `distance_metric`, `embedding_dimension`, `context_length`
 - **Retrieval params**: `retrieval_method`, `window_size`, `number_of_chunks`, `search_mode`, `ranker_*`
@@ -190,8 +192,8 @@ def run_pre_selection(
 **Process:**
 
 1. Sample `n_records` questions from benchmark data (with `random_seed` for reproducibility)
-2. Evaluate every `(foundation_model, embedding_model)` combination
-3. Rank by `optimization_metric` performance
+2. Evaluate every `(foundation_model, embedding_model)` combination using `ReActRAG` and temporary Milvus Lite storage
+3. Rank by `Metrics.OVERALL_SCORE`, independently of the experiment's `optimization_metric`
 4. Select top `n_mps_foundation_models` and `n_mps_embedding_models`
 5. Update search space with selected models
 
