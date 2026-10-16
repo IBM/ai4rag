@@ -273,7 +273,7 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    export ALLOWED_SA_USERNAME="'"$$ALLOWED_SA_USERNAME"'" && \
 	    export PYTHONPATH=/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib64/python3.12/site-packages:/sandbox && \
 	    cd /sandbox && \
-	    nohup /usr/bin/python3.12 -m uvicorn auth_wrapper:app --host 0.0.0.0 --port 8080 > /sandbox/agent.log 2>&1 &\
+	    nohup /usr/bin/python3.12 /sandbox/proxychains_entrypoint.py /usr/bin/python3.12 -m uvicorn auth_wrapper:app --host 0.0.0.0 --port 8080 > /sandbox/agent.log 2>&1 &\
 	    echo $$! > /sandbox/agent.pid && \
 	    sleep 3 && \
 	    if kill -0 $$! 2>/dev/null; then echo "Agent process alive"; else echo "ERROR: Agent died on startup"; cat /sandbox/agent.log; exit 1; fi' && \
