@@ -431,26 +431,27 @@ def test_context_overflow_is_propagated_when_compression_is_disabled(rag, mocker
 
 def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
     """The local extractor preserves metadata and drops chunks without evidence."""
-    relevant = AI4RAGChunk(text="full relevant excerpt document", metadata={"source": "relevant"})
+    relevant_text = "relevant excerpt " * 20
+    relevant = AI4RAGChunk(text=f"start {relevant_text}end", metadata={"source": "relevant"})
     irrelevant = AI4RAGChunk(text="unrelated document", metadata={"source": "irrelevant"})
     rag.chat_model.invoke.side_effect = [
-        AIMessage(content='{"spans":[{"start_char":5,"end_char":21}]}'),
-        AIMessage(content='{"spans":[]}'),
+        AIMessage(content=json.dumps({"excerpt": relevant_text})),
+        AIMessage(content='{"excerpt":""}'),
     ]
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [relevant, irrelevant])
 
-    assert excerpts == [AI4RAGChunk(text="relevant excerpt", metadata={"source": "relevant"})]
+    assert excerpts == [AI4RAGChunk(text=relevant_text, metadata={"source": "relevant"})]
     assert rag.chat_model.invoke.call_count == 2
     assert (
         rag.chat_model.invoke.call_args_list[0].args[0][1].content
-        == "User question:\nquestion\n\nSource document:\nfull relevant excerpt document"
+        == f"User question:\nquestion\n\nSource document:\nstart {relevant_text}end"
     )
     assert rag.chat_model.invoke.call_args_list[0].kwargs == {"max_completion_tokens": 512}
 
 
-def test_context_compressor_drops_non_verbatim_expanded_output(rag):
-    """Non-JSON model output is not valid source evidence."""
+def test_context_compressor_retains_source_for_invalid_model_output(rag):
+    """Invalid model output preserves source evidence instead of dropping it."""
     source = AI4RAGChunk(text="source " * 300, metadata={"source": "source"})
     short_source = AI4RAGChunk(text="short source", metadata={"source": "short"})
     rag.chat_model.invoke.side_effect = [
@@ -460,27 +461,53 @@ def test_context_compressor_drops_non_verbatim_expanded_output(rag):
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [source, short_source])
 
-    assert excerpts == []
+    assert excerpts == [source, short_source]
 
 
-def test_context_compressor_drops_non_verbatim_llm_output(rag):
-    """Out-of-range source spans must not be used as retrieval evidence."""
-    source = AI4RAGChunk(text="The source says only this.", metadata={})
-    rag.chat_model.invoke.return_value = AIMessage(content='{"spans":[{"start_char":0,"end_char":1000}]}')
+def test_context_compressor_retains_source_for_non_verbatim_quote(rag):
+    """A quote that differs from the source is never returned as model text."""
+    source = AI4RAGChunk(text="source " * 300, metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(content='{"excerpt":"invented text"}')
 
-    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == []
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == [source]
+
+
+def test_context_compressor_retains_source_for_legacy_span_response(rag):
+    """A response in the old span format remains source-grounded."""
+    source = AI4RAGChunk(text="source " * 600, metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(
+        content='{"spans":[{"start_char":0,"end_char":256},{"start_char":256,"end_char":512}]}'
+    )
+
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == [source]
 
 
 def test_context_compressor_caps_total_excerpt_tokens(rag):
     """Compressed tool output remains bounded across multiple chunks."""
-    chunks = [AI4RAGChunk(text=character * 3000, metadata={}) for character in ("a", "b", "c")]
+    chunks = [AI4RAGChunk(text=character * 2000, metadata={}) for character in "abcdefghij"]
     rag.chat_model.invoke.side_effect = [
-        AIMessage(content='{"spans":[{"start_char":0,"end_char":3000}]}') for _ in chunks
+        AIMessage(content=json.dumps({"excerpt": chunk.text})) for chunk in chunks
     ]
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", chunks)
 
-    assert excerpts == chunks[:2]
+    assert excerpts == chunks[:8]
+
+
+def test_context_compressor_stops_at_first_ranked_chunk_that_exceeds_budget(rag):
+    """A lower-ranked small excerpt must not displace an earlier chunk that did not fit."""
+    chunks = [AI4RAGChunk(text=character * 2000, metadata={}) for character in "abcdefgh"]
+    oversized = AI4RAGChunk(text="e" * 1000, metadata={})
+    lower_ranked = AI4RAGChunk(text="f" * 256, metadata={})
+    rag.chat_model.invoke.side_effect = [
+        *(AIMessage(content=json.dumps({"excerpt": chunk.text})) for chunk in chunks),
+        AIMessage(content=json.dumps({"excerpt": oversized.text})),
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [*chunks, oversized, lower_ranked])
+
+    assert excerpts == chunks
+    assert rag.chat_model.invoke.call_count == 9
 
 
 def test_non_context_bad_request_is_not_retried(rag, mocker):
