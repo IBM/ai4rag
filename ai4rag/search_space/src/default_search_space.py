@@ -59,7 +59,7 @@ def get_default_ai4rag_search_space_parameters(vector_store_type: str = "milvus"
     default_search_space_parameters = [
         Parameter(
             name=AI4RAGParamNames.TEMPLATE_ID,
-            values=("react_graph_rag" if vector_store_type == "neo4j" else "react_rag",),
+            values=("agentic_graph_rag" if vector_store_type == "neo4j" else "agentic_rag",),
         ),
         Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=_default_chunking_methods),
         Parameter(name=AI4RAGParamNames.CHUNK_SIZE, values=chunk_sizes),

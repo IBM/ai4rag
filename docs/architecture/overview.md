@@ -139,9 +139,9 @@ graph TB
 - Complete RAG implementations
 - Combines all RAG components
 - Provides end-to-end RAG pipeline
-- Two implementations: `SequentialRAG` (single fixed retrieve-then-generate pass) and `ReActRAG` (a LangChain agent that can rewrite its query and retrieve again before answering — the default used by `AI4RAGExperiment` and `ModelsPreSelector`)
+- Two implementations: `SequentialRAG` (single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again before answering — the default used by `AI4RAGExperiment` and `ModelsPreSelector`)
 - `ai4rag.rag.template.registry` maps persisted template IDs to allowed classes and import paths; generated inference notebooks use the selected template
-- `ReActRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
+- `AgenticRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
 
 ### 4. Evaluation Layer
 

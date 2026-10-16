@@ -12,7 +12,7 @@ from pydantic import ValidationError
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.rag.template import ReActRAG, SequentialRAG
+from ai4rag.rag.template import AgenticRAG, SequentialRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig, Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
@@ -55,26 +55,31 @@ def make_experiment(space, **kwargs):
 
 @pytest.mark.parametrize(
     "provider,expected",
-    [("milvus", "react_rag"), ("milvus_lite", "react_rag"), ("pgvector", "react_rag"), ("neo4j", "react_graph_rag")],
+    [
+        ("milvus", "agentic_rag"),
+        ("milvus_lite", "agentic_rag"),
+        ("pgvector", "agentic_rag"),
+        ("neo4j", "agentic_graph_rag"),
+    ],
 )
 def test_backend_defaults(provider, expected):
     assert make_space(provider)["template_id"].values == (expected,)
 
 
-@pytest.mark.parametrize("value", [[], ["simple_rag"], ["agentic_rag"], ["agentic_graph_rag"], [1], "react_rag"])
+@pytest.mark.parametrize("value", [[], ["simple_rag"], ["react_rag"], ["react_graph_rag"], [1], "agentic_rag"])
 def test_invalid_payload_templates(value):
     with pytest.raises(ValidationError):
         AI4RAGConstraints(template_ids=value)
 
 
-@pytest.mark.parametrize("value", [None, ["react_rag", "sequential_rag"], ["react_graph_rag"]])
+@pytest.mark.parametrize("value", [None, ["agentic_rag", "sequential_rag"], ["agentic_graph_rag"]])
 def test_payload_templates(value):
     assert AI4RAGConstraints(template_ids=value).template_ids == value
 
 
 @pytest.mark.parametrize(
     "provider,templates",
-    [("neo4j", ("react_rag",)), ("milvus", ("react_graph_rag",)), ("milvus", ("simple_rag",)), ("milvus", (1,))],
+    [("neo4j", ("agentic_rag",)), ("milvus", ("agentic_graph_rag",)), ("milvus", ("simple_rag",)), ("milvus", (1,))],
 )
 def test_incompatible_templates(provider, templates):
     with pytest.raises(ValueError):
@@ -108,25 +113,25 @@ def mock_execution(mocker, experiment):
     mocker.patch.object(
         experiment, "_evaluate_response", return_value=(_make_result("faithfulness", "unitxt", 0.7, {}), [])
     )
-    mocker.patch.object(ReActRAG, "__init__", return_value=None)
+    mocker.patch.object(AgenticRAG, "__init__", return_value=None)
     mocker.patch.object(SequentialRAG, "__init__", return_value=None)
     return store, retriever, query
 
 
 def test_templates_have_distinct_cache_entries_and_reuse_index(mocker):
-    experiment = make_experiment(make_space(templates=("react_rag", "sequential_rag")))
+    experiment = make_experiment(make_space(templates=("agentic_rag", "sequential_rag")))
     store, _, query = mock_execution(mocker, experiment)
     candidate = experiment.search_space.combinations[0]
-    for template in ("react_rag", "sequential_rag", "react_rag"):
+    for template in ("agentic_rag", "sequential_rag", "agentic_rag"):
         assert experiment.run_single_evaluation({**candidate, "template_id": template}) == 0.7
     assert query.call_count == 2
-    assert isinstance(query.call_args_list[0].kwargs["rag"], ReActRAG)
+    assert isinstance(query.call_args_list[0].kwargs["rag"], AgenticRAG)
     assert isinstance(query.call_args_list[1].kwargs["rag"], SequentialRAG)
     assert store.add_documents.call_count == 1
-    assert [result.rag_params["template_id"] for result in experiment.results] == ["react_rag", "sequential_rag"]
+    assert [result.rag_params["template_id"] for result in experiment.results] == ["agentic_rag", "sequential_rag"]
     assert [
         call.kwargs["payload"]["template_id"] for call in experiment.event_handler.on_pattern_creation.call_args_list
-    ] == ["react_rag", "sequential_rag"]
+    ] == ["agentic_rag", "sequential_rag"]
 
 
 @pytest.mark.parametrize("config", [None, {"route_k": 4, "include_entity_neighbors": False}])
@@ -136,9 +141,9 @@ def test_graph_execution_persists_effective_settings(mocker, config):
     experiment.run_single_evaluation(experiment.search_space.combinations[0])
     expected = Neo4jGraphRetrievalConfig.from_mapping(config or {}).to_search_kwargs()
     assert retriever.call_args.kwargs["search_kwargs"] == expected
-    assert isinstance(query.call_args.kwargs["rag"], ReActRAG)
+    assert isinstance(query.call_args.kwargs["rag"], AgenticRAG)
     payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
-    assert payload["template_id"] == "react_graph_rag"
+    assert payload["template_id"] == "agentic_graph_rag"
     assert all(payload["settings"]["retrieval"][key] == value for key, value in expected.items())
 
 
@@ -156,8 +161,8 @@ def test_deferred_publication_uses_stored_template(mocker):
     "provider,templates",
     [
         ("milvus_lite", ("sequential_rag",)),
-        ("milvus_lite", ("react_rag", "sequential_rag")),
-        ("neo4j", ("react_graph_rag",)),
+        ("milvus_lite", ("agentic_rag", "sequential_rag")),
+        ("neo4j", ("agentic_graph_rag",)),
     ],
 )
 @pytest.mark.parametrize("skip", [False, True])

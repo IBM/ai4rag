@@ -136,13 +136,13 @@ def test_all_templates_and_graph_settings_are_preserved(tmp_path):
     from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 
     for template_id, class_name in [
-        ("react_rag", "ReActRAG"),
+        ("agentic_rag", "AgenticRAG"),
         ("sequential_rag", "SequentialRAG"),
-        ("react_graph_rag", "ReActRAG"),
+        ("agentic_graph_rag", "AgenticRAG"),
     ]:
         data = deepcopy(_SAMPLE_PATTERN_DATA)
         data["template_id"] = template_id
-        if template_id == "react_graph_rag":
+        if template_id == "agentic_graph_rag":
             data["settings"]["store_binding"]["provider_type"] = "neo4j"
             data["settings"]["retrieval"] = {
                 "method": "simple",
@@ -157,6 +157,6 @@ def test_all_templates_and_graph_settings_are_preserved(tmp_path):
             assert config["template_id"] == template_id
             code = archive.read("starter_kit/src/agentic_rag/agent.py").decode()
             assert "get_template_spec(config.template_id).template_class(" in code
-            if template_id == "react_graph_rag":
+            if template_id == "agentic_graph_rag":
                 expected = Neo4jGraphRetrievalConfig(route_k=5, include_entity_neighbors=False).to_search_kwargs()
                 assert all(config["retrieval"][key] == value for key, value in expected.items())

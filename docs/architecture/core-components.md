@@ -67,12 +67,12 @@ experiment.search()  # Execute optimization
 **RAG Template Selection:**
 
 Each candidate selects its template through the categorical `template_id` search parameter.
-Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
-`sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
-use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
 results, streamed patterns, inference notebooks, and starter kits.
 
-Model pre-selection always evaluates a ReAct/vector proxy using temporary Milvus Lite,
+Model pre-selection always evaluates `AgenticRAG` with vector retrieval using temporary Milvus Lite,
 regardless of the requested templates or backend. It can prune models that would
 perform better with sequential or graph execution. Its ranking metric remains
 `OVERALL_SCORE`, independently of the experiment's optimization metric. Model-count
@@ -192,7 +192,7 @@ def run_pre_selection(
 **Process:**
 
 1. Sample `n_records` questions from benchmark data (with `random_seed` for reproducibility)
-2. Evaluate every `(foundation_model, embedding_model)` combination using `ReActRAG` and temporary Milvus Lite storage
+2. Evaluate every `(foundation_model, embedding_model)` combination using `AgenticRAG` and temporary Milvus Lite storage
 3. Rank by `Metrics.OVERALL_SCORE`, independently of the experiment's `optimization_metric`
 4. Select top `n_mps_foundation_models` and `n_mps_embedding_models`
 5. Update search space with selected models
@@ -308,8 +308,8 @@ def search(self) -> dict[str, Any]:
 
 ```python
 known_observations = [
-    {"template_id": "react_rag", "foundation_model": model_a, "chunk_size": 512, ..., "score": 0.72},
-    {"template_id": "react_rag", "foundation_model": model_b, "chunk_size": 1024, ..., "score": 0.68},
+    {"template_id": "agentic_rag", "foundation_model": model_a, "chunk_size": 512, ..., "score": 0.72},
+    {"template_id": "agentic_rag", "foundation_model": model_b, "chunk_size": 1024, ..., "score": 0.68},
 ]
 
 optimizer = GAMOptimizer(

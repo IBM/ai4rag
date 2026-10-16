@@ -202,7 +202,7 @@ class TestExperimentMilvusLiteWithKnownObservations:
                 "search_mode": "vector",
                 "window_size": 0,
                 "number_of_chunks": 3,
-                "template_id": "react_rag",
+                "template_id": "agentic_rag",
                 "score": 0.4,
             },
             {
@@ -215,7 +215,7 @@ class TestExperimentMilvusLiteWithKnownObservations:
                 "search_mode": "vector",
                 "window_size": 0,
                 "number_of_chunks": 3,
-                "template_id": "react_rag",
+                "template_id": "agentic_rag",
                 "score": 0.5,
             },
             {
@@ -228,7 +228,7 @@ class TestExperimentMilvusLiteWithKnownObservations:
                 "search_mode": "vector",
                 "window_size": 0,
                 "number_of_chunks": 3,
-                "template_id": "react_rag",
+                "template_id": "agentic_rag",
                 "score": 0.6,
             },
         ]

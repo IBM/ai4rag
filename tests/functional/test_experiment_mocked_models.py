@@ -27,7 +27,7 @@ from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.rag.template.react_rag_template import ReActRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -41,13 +41,13 @@ _EMBEDDING_DIMENSION = 64
 
 
 @pytest.fixture(autouse=True)
-def mocked_react_agent(monkeypatch):
-    """Use mocked model responses in the ReAct pre-selection proxy.
+def mocked_agentic_agent(monkeypatch):
+    """Use mocked model responses in the AgenticRAG pre-selection proxy.
 
     Retrieval, Milvus Lite, evaluation, and pre-selection still run normally;
     only the LangChain chat/agent boundary is replaced for non-OpenAI mocks.
     """
-    monkeypatch.setattr(ReActRAG, "_chat_model", lambda self: self.foundation_model)
+    monkeypatch.setattr(AgenticRAG, "_chat_model", lambda self: self.foundation_model)
 
     def create_agent(model, **_kwargs):
         def invoke(inputs, **_run_kwargs):
@@ -56,7 +56,7 @@ def mocked_react_agent(monkeypatch):
 
         return SimpleNamespace(invoke=invoke)
 
-    monkeypatch.setattr("ai4rag.rag.template.react_rag_template.create_agent", create_agent)
+    monkeypatch.setattr("ai4rag.rag.template.agentic_rag_template.create_agent", create_agent)
 
 
 @pytest.fixture(scope="module")

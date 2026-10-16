@@ -284,9 +284,9 @@ class TestPrepareSearchSpaceWithMaas:
 @pytest.mark.parametrize(
     "provider,templates,expected",
     [
-        ("milvus", None, ("react_rag",)),
-        ("neo4j", None, ("react_graph_rag",)),
-        ("milvus_lite", ["react_rag", "sequential_rag"], ("react_rag", "sequential_rag")),
+        ("milvus", None, ("agentic_rag",)),
+        ("neo4j", None, ("agentic_graph_rag",)),
+        ("milvus_lite", ["agentic_rag", "sequential_rag"], ("agentic_rag", "sequential_rag")),
         ("pgvector", ["sequential_rag"], ("sequential_rag",)),
     ],
 )

@@ -260,9 +260,9 @@ optimizer_settings = GAMOptSettings(
 
 !!! note "RAG template"
     Each candidate selects its template through the categorical `template_id` search parameter.
-    Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
-    `sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
-    use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+    Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+    `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+    use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
     results, streamed patterns, inference notebooks, and starter kits.
 
 Create and run the optimization experiment:
@@ -414,14 +414,14 @@ The former `rag_template` experiment argument has been removed. Use
 `Parameter(name="template_id", values=("sequential_rag",))` in the search space,
 or pass `template_ids=["sequential_rag"]` in MaaS constraints. Omitting
 `template_ids` or passing `None` selects the backend default; an empty list is invalid.
-Replace `AgenticRAG` / `agentic_rag_template` with `ReActRAG` /
-`react_rag_template`, and `SimpleRAG` / `simple_rag_template` with
-`SequentialRAG` / `sequential_rag_template`. Replace persisted IDs `agentic_rag`,
-`agentic_graph_rag`, and `simple_rag` with `react_rag`, `react_graph_rag`, and
-`sequential_rag`, respectively. Explicit old IDs are rejected. When reusing known
-observations, include the actual `template_id` associated with the historical score.
+`AgenticRAG` and its `agentic_rag_template` import path are retained. Replace
+`SimpleRAG` / `simple_rag_template` with `SequentialRAG` /
+`sequential_rag_template`, and the persisted `simple_rag` ID with `sequential_rag`.
+Use `agentic_rag` for vector backends and `agentic_graph_rag` for Neo4j; both use
+`AgenticRAG`. When reusing known observations, include the actual `template_id`
+associated with the historical score.
 
-Automatic model pre-selection always uses temporary Milvus Lite and `ReActRAG`,
+Automatic model pre-selection always uses temporary Milvus Lite and `AgenticRAG`,
 including sequential-only, graph, and multiple-template searches. This vector proxy
 can prune models that would perform better with sequential or graph execution.
 It ranks by `OVERALL_SCORE`, independently of the experiment’s optimization metric.

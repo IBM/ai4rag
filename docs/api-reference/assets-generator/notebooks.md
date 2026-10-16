@@ -46,14 +46,13 @@ The registry maps stable IDs to allowed template classes and import paths:
 | ID | Class | Use |
 |---|---|---|
 | `sequential_rag` | `SequentialRAG` | Single-pass retrieval and generation |
-| `react_rag` | `ReActRAG` | Agent-driven retrieval and query rewriting |
-| `react_graph_rag` | `ReActRAG` | Neo4j graph retrieval |
+| `agentic_rag` | `AgenticRAG` | Agent-driven retrieval and query rewriting |
+| `agentic_graph_rag` | `AgenticRAG` | Neo4j graph retrieval |
 
-Experiments publish the candidate’s selected ID, including `react_graph_rag` for Neo4j.
+Experiments publish the candidate’s selected ID, including `agentic_graph_rag` for Neo4j.
 
 ::: ai4rag.rag.template.registry
     options:
       members:
         - RAGTemplateSpec
         - get_template_spec
-        - template_id_for_class

@@ -17,7 +17,7 @@ def agent_module(monkeypatch, mocker):
     monkeypatch.syspath_prepend(str(template_src))
     module = importlib.import_module("agentic_rag.agent")
     config = SimpleNamespace(
-        template_id="react_rag",
+        template_id="agentic_rag",
         graph_retrieval={},
         model_id="test-model",
         temperature=0.2,

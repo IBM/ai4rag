@@ -114,7 +114,7 @@ classDiagram
         +chat(messages) list
     }
 
-    class ReActRAG {
+    class AgenticRAG {
         +max_retrieval_steps: int
         +generate(question) dict
         +generate_stream(question) iterator
@@ -129,7 +129,7 @@ classDiagram
     BaseChunker <|-- DoclingChunker
     BaseChunker <|-- LangChainChunker
     BaseRAGTemplate <|-- SequentialRAG
-    BaseRAGTemplate <|-- ReActRAG
+    BaseRAGTemplate <|-- AgenticRAG
 
     BaseVectorStore --> BaseEmbeddingModel : uses
     Retriever --> BaseVectorStore : uses
@@ -1154,16 +1154,16 @@ RAG templates compose a retriever and a foundation model into end-to-end
 retrieval-augmented generation. Index building is a separate, upstream concern
 owned by `ai4rag.rag.vector_store` — build the index (chunk → embed → store)
 before constructing a template. Two implementations are provided: `SequentialRAG`
-(a single fixed retrieve-then-generate pass) and `ReActRAG` (a LangChain
+(a single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain
 agent that can rewrite its query and retrieve again before answering) — see
-[ReActRAG](#reactrag) below. `ReActRAG` is the default template used by
+[AgenticRAG](#agenticrag) below. `AgenticRAG` is the default template used by
 `AI4RAGExperiment` and `ModelsPreSelector`.
 
 Published patterns carry a `template_id` resolved by `ai4rag.rag.template.registry`.
 `RAGTemplateSpec` records the ID, implementation class, and import path;
-`get_template_spec()` resolves an allowed ID, and `template_id_for_class()` resolves
-a built-in class. Vector stores accept `react_rag` (default) and `sequential_rag`;
-Neo4j requires `react_graph_rag` (also implemented by `ReActRAG`) and graph search.
+`get_template_spec()` resolves an allowed ID to its implementation. Vector stores
+accept `agentic_rag` (default) and `sequential_rag`;
+Neo4j requires `agentic_graph_rag` (also implemented by `AgenticRAG`) and graph search.
 Generated inference notebooks instantiate the resolved class. Patterns without an ID
 warn and use `SequentialRAG`; explicit unsupported IDs raise `ValueError`.
 
@@ -1201,7 +1201,7 @@ def chat(self, messages: list[MessageTyped], **kwargs) -> list[Any]:
 **Shared Context-Building Helpers:**
 
 `BaseRAGTemplate` also implements the retrieval/formatting logic shared by
-every subclass, so `SequentialRAG` and `ReActRAG` only need to drive it
+every subclass, so `SequentialRAG` and `AgenticRAG` only need to drive it
 differently:
 
 - `_build_enriched_user_message(question, **kwargs)` — retrieves chunks via
@@ -1210,7 +1210,7 @@ differently:
 - `_render_enriched_user_message(question, reference_documents)` — formats
   already-retrieved chunks with `foundation_model.context_template_text` and
   renders the final user message with `foundation_model.user_message_text`,
-  without issuing a new retrieval call (used by `ReActRAG` to fold
+  without issuing a new retrieval call (used by `AgenticRAG` to fold
   additional tool-retrieved chunks into the running context)
 - `_build_rag_messages(messages, **kwargs)` — RAG-enriches only the last
   (current) user turn of a conversation, prepending the template's system
@@ -1311,30 +1311,30 @@ response = rag.chat(messages=[
 **Within AI4RAGExperiment:**
 
 Each candidate selects its template through the categorical `template_id` search parameter.
-Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
-`sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
-use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
 results, streamed patterns, inference notebooks, and starter kits.
 
 ```python
 from ai4rag.search_space.src.parameter import Parameter
 
 # Include this parameter alongside foundation_model and embedding_model:
-Parameter(name="template_id", values=("react_rag", "sequential_rag"))
+Parameter(name="template_id", values=("agentic_rag", "sequential_rag"))
 ```
 
 The experiment resolves each candidate's ID with `get_template_spec()` and
 instantiates its `template_class`. Indexes are reused across templates when
 indexing settings match; evaluation cache entries remain distinct.
 
-### ReActRAG
+### AgenticRAG
 
 LangChain-agent RAG implementation that can rewrite its search query and
 retrieve additional context across several tool calls before answering,
 instead of committing to a single fixed retrieval pass:
 
 ```python
-class ReActRAG(BaseRAGTemplate):
+class AgenticRAG(BaseRAGTemplate):
     def __init__(
         self,
         foundation_model: BaseFoundationModel,
@@ -1350,7 +1350,7 @@ class ReActRAG(BaseRAGTemplate):
   message telling the agent to answer with what it already has.
 - `chat_model` is an optional pre-built LangChain `BaseChatModel`. When
   omitted, one is built from the configured `foundation_model` — which must
-  then be an `OpenAIFoundationModel`, since `ReActRAG` wraps its MaaS/OpenAI
+  then be an `OpenAIFoundationModel`, since `AgenticRAG` wraps its MaaS/OpenAI
   client in a LangChain `ChatOpenAI` instance.
 
 **How it works:**
@@ -1376,9 +1376,9 @@ class ReActRAG(BaseRAGTemplate):
 **Usage:**
 
 ```python
-from ai4rag.rag.template import ReActRAG
+from ai4rag.rag.template import AgenticRAG
 
-rag = ReActRAG(
+rag = AgenticRAG(
     foundation_model=foundation_model,  # must be an OpenAIFoundationModel
     retriever=retriever,
     max_retrieval_steps=2,
@@ -1398,7 +1398,7 @@ and publishes trajectories through the event handler; `LocalEventHandler` saves 
 in `conversations.json`. See [Event Handlers](../user-guide/event-handlers.md#conversations-agent-trajectories).
 
 !!! note "Dependencies"
-    `ReActRAG` requires the `langchain` and `langchain-openai` packages,
+    `AgenticRAG` requires the `langchain` and `langchain-openai` packages,
     which are core dependencies of `ai4rag`.
 
 ---

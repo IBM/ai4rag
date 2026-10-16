@@ -32,7 +32,7 @@ If you want to use specific version, please use e.g. `"@v0.1.1"`
 Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, `asyncpg`, `neo4j`, and `neo4j-graphrag` — are core dependencies and install automatically. There is no separate vector-store extra to install.
 No extra step is needed to use a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j as a vector store.
 
-`langchain` and `langchain-openai` are also core dependencies, powering the `ReActRAG` template that `AI4RAGExperiment` uses by default (see [RAG Templates](../architecture/rag-components.md#rag-templates)).
+`langchain` and `langchain-openai` are also core dependencies, powering the `AgenticRAG` template that `AI4RAGExperiment` uses by default (see [RAG Templates](../architecture/rag-components.md#rag-templates)).
 
 `nest-asyncio~=1.6.0` is installed as a core dependency for notebook event-loop
 compatibility. Generated knowledge-graph indexing notebooks call `nest_asyncio.apply()`

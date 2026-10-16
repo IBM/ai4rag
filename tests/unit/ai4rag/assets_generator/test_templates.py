@@ -18,7 +18,7 @@ from ai4rag.assets_generator.templates import create_placeholder_mapping, genera
 
 _SAMPLE_PATTERN_DATA: dict = {
     "name": "pattern_001",
-    "template_id": "react_rag",
+    "template_id": "agentic_rag",
     "settings": {
         "generation": {
             "model_id": "publishers/ibm/models/granite-3.1-8b-instruct",
@@ -68,9 +68,9 @@ class TestCreatePlaceholderMapping:
         assert mapping["PATTERN_NAME"] == "pattern_001"
 
     def test_template_fields(self, mapping: dict):
-        assert mapping["TEMPLATE_ID"] == "react_rag"
-        assert mapping["RAG_TEMPLATE_IMPORT"] == ("from ai4rag.rag.template.react_rag_template import ReActRAG")
-        assert mapping["RAG_TEMPLATE_CLASS"] == "ReActRAG"
+        assert mapping["TEMPLATE_ID"] == "agentic_rag"
+        assert mapping["RAG_TEMPLATE_IMPORT"] == ("from ai4rag.rag.template.agentic_rag_template import AgenticRAG")
+        assert mapping["RAG_TEMPLATE_CLASS"] == "AgenticRAG"
 
     def test_generation_fields(self, mapping: dict):
         # The full '/'-containing id is carried through verbatim.
@@ -373,7 +373,7 @@ def test_inference_notebook_passes_detected_language(tmp_path: Path):
 @pytest.mark.parametrize(
     "template_id,module,class_name",
     [
-        ("react_rag", "react_rag_template", "ReActRAG"),
+        ("agentic_rag", "agentic_rag_template", "AgenticRAG"),
         ("sequential_rag", "sequential_rag_template", "SequentialRAG"),
     ],
 )
@@ -423,7 +423,7 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
         }
     )
     pattern["settings"]["generation"].update({"temperature": 0.1, "max_completion_tokens": 1024})
-    pattern["template_id"] = "react_graph_rag"
+    pattern["template_id"] = "agentic_graph_rag"
 
     output_path = tmp_path / f"{template}.ipynb"
     generate_notebook_from_template(template, pattern, output_path)
@@ -462,8 +462,8 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
         assert "build_knowledge_graph_from_documents" not in code
         assert "kg_extraction_config={'mode': 'free'" in code
     else:
-        assert "from ai4rag.rag.template.react_rag_template import ReActRAG" in code
-        assert "rag_pattern = ReActRAG(" in code
+        assert "from ai4rag.rag.template.agentic_rag_template import AgenticRAG" in code
+        assert "rag_pattern = AgenticRAG(" in code
         assert "search_kwargs={'entity_pivot_limit': 3" in code
         assert "**{'entity_pivot_limit': 3" in code
         assert "embedding_model = OpenAIEmbeddingModel(" in code

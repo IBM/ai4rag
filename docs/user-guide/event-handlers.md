@@ -106,9 +106,9 @@ def on_pattern_creation(
 ```
 
 Each candidate selects its template through the categorical `template_id` search parameter.
-Vector backends (Milvus, Milvus Lite, pgvector) accept `react_rag` (default) or
-`sequential_rag`; Neo4j requires `react_graph_rag` and graph search. Both ReAct IDs
-use `ReActRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
 results, streamed patterns, inference notebooks, and starter kits.
 
 For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, for example:

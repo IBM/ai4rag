@@ -392,7 +392,7 @@ class AI4RAGSearchSpace(SearchSpace):
         templates = self[AI4RAGParamNames.TEMPLATE_ID]
         if templates.param_type != "C" or isinstance(templates.values, (str, bytes)):
             raise SearchSpaceValueError("template_id must be a categorical parameter containing template IDs.")
-        allowed = {"react_graph_rag"} if provider == "neo4j" else {"react_rag", "sequential_rag"}
+        allowed = {"agentic_graph_rag"} if provider == "neo4j" else {"agentic_rag", "sequential_rag"}
         for template_id in templates.values:
             get_template_spec(template_id)
             if template_id not in allowed:

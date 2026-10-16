@@ -6,8 +6,8 @@
 
 from dataclasses import dataclass
 
+from .agentic_rag_template import AgenticRAG
 from .base_template import BaseRAGTemplate
-from .react_rag_template import ReActRAG
 from .sequential_rag_template import SequentialRAG
 
 
@@ -31,10 +31,10 @@ class RAGTemplateSpec:
 
 
 _TEMPLATE_SPECS = (
-    RAGTemplateSpec("react_rag", ReActRAG, "ai4rag.rag.template.react_rag_template"),
+    RAGTemplateSpec("agentic_rag", AgenticRAG, "ai4rag.rag.template.agentic_rag_template"),
     # Graph retrieval is a provider concern. It uses the same agentic template
     # implementation while retaining a distinct, published pattern identifier.
-    RAGTemplateSpec("react_graph_rag", ReActRAG, "ai4rag.rag.template.react_rag_template"),
+    RAGTemplateSpec("agentic_graph_rag", AgenticRAG, "ai4rag.rag.template.agentic_rag_template"),
     RAGTemplateSpec("sequential_rag", SequentialRAG, "ai4rag.rag.template.sequential_rag_template"),
 )
 _SPECS_BY_ID = {spec.template_id: spec for spec in _TEMPLATE_SPECS}

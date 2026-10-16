@@ -120,7 +120,7 @@ class AgentConfig:
     ranker_k: int | None
     ranker_alpha: float | None
 
-    template_id: str = "react_rag"
+    template_id: str = "agentic_rag"
     graph_retrieval: dict[str, int | bool] = field(default_factory=dict)
 
     @classmethod

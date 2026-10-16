@@ -9,7 +9,7 @@ Packages a published RAG pattern into a deployable agentic-RAG microservice proj
 
 
 The generated `agent_config.json` includes the pattern's `template_id`. The runtime
-resolves it through the template registry, selecting `ReActRAG` or `SequentialRAG`.
+resolves it through the template registry, selecting `AgenticRAG` or `SequentialRAG`.
 Neo4j configurations retain effective graph retrieval settings and pass them to the
 retriever. Graph retrieval also works when these options are omitted: the store
 uses its built-in defaults. Persisting the options reproduces any custom graph
@@ -26,7 +26,7 @@ pipeline step.
 
 Deployment requires an OpenShift cluster with the Agent Sandbox operator, a logged-in
 `oc` client, the `openshell` CLI, Helm 3, and `uv`. MaaS must provide reachable chat
-and embedding models, and ReAct templates require a chat model that supports tool calling.
+and embedding models, and agentic templates require a chat model that supports tool calling.
 
 Set database credentials in `.env` or the Kubernetes secret referenced by
 `db_secret_name` in `values.yaml`. Non-empty environment settings take precedence

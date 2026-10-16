@@ -23,7 +23,7 @@ def config_module(monkeypatch):
 def generated_config():
     """A complete generated agent configuration."""
     return {
-        "template_id": "react_rag",
+        "template_id": "agentic_rag",
         "generation": {
             "model_id": "chat-model",
             "temperature": 0.2,
@@ -93,7 +93,7 @@ def test_missing_required_config_is_rejected(config_module, generated_config, mo
 )
 def test_graph_settings_reach_store_search(config_module, generated_config, monkeypatch, mocker, graph_settings):
     """Generated graph options survive config loading and actual retriever calls."""
-    generated_config["template_id"] = "react_graph_rag"
+    generated_config["template_id"] = "agentic_graph_rag"
     generated_config["vector_store"]["provider_type"] = "neo4j"
     generated_config["retrieval"].update(search_mode="graph", **graph_settings)
     _inject_config(monkeypatch, generated_config)

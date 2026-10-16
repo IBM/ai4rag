@@ -156,7 +156,7 @@ class TestGraphCollectionReuse:
 
         experiment._get_reusable_collection_name = stop_before_indexing
         params = {
-            "template_id": "react_graph_rag",
+            "template_id": "agentic_graph_rag",
             AI4RAGParamNames.FOUNDATION_MODEL: foundation_model,
             AI4RAGParamNames.EMBEDDING_MODEL: embedding_model,
             AI4RAGParamNames.CHUNKING_METHOD: "recursive",

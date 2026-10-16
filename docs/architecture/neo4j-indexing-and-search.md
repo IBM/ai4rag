@@ -147,7 +147,7 @@ before generating new graph indexing notebooks.
 
 ## Graph retrieval
 
-A RAG template's retrieval step (e.g. `SequentialRAG.generate(question)`, or `ReActRAG`'s initial retrieval) calls `Retriever.retrieve(question)`, which passes `k`, graph mode, and graph options to `Neo4jGraphStore.search()`.
+A RAG template's retrieval step (e.g. `SequentialRAG.generate(question)`, or `AgenticRAG`'s initial retrieval) calls `Retriever.retrieve(question)`, which passes `k`, graph mode, and graph options to `Neo4jGraphStore.search()`.
 The store runs two routes concurrently.
 By default, each requests `route_k = max(2 * k, 10)` candidates; fused output is trimmed to `k`.
 

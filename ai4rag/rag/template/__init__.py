@@ -3,13 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+from .agentic_rag_template import AgenticRAG
 from .base_template import BaseRAGTemplate
-from .react_rag_template import ReActRAG
 from .registry import RAGTemplateSpec, get_template_spec
 from .sequential_rag_template import SequentialRAG
 
 __all__ = [
-    "ReActRAG",
+    "AgenticRAG",
     "BaseRAGTemplate",
     "RAGTemplateSpec",
     "SequentialRAG",
