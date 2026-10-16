@@ -71,6 +71,13 @@ class TestCreatePlaceholderMapping:
         assert mapping["TEMPLATE_ID"] == "agentic_rag"
         assert mapping["RAG_TEMPLATE_IMPORT"] == ("from ai4rag.rag.template.agentic_rag_template import AgenticRAG")
         assert mapping["RAG_TEMPLATE_CLASS"] == "AgenticRAG"
+        assert mapping["RAG_TEMPLATE_ARGUMENTS"] == ", enable_context_compression=True"
+
+    def test_context_compression_can_be_disabled(self):
+        pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+        pattern["settings"]["agentic"] = {"enable_context_compression": False}
+
+        assert create_placeholder_mapping(pattern)["RAG_TEMPLATE_ARGUMENTS"] == ", enable_context_compression=False"
 
     def test_generation_fields(self, mapping: dict):
         # The full '/'-containing id is carried through verbatim.
@@ -125,6 +132,7 @@ class TestCreatePlaceholderMapping:
             "TEMPLATE_ID",
             "RAG_TEMPLATE_IMPORT",
             "RAG_TEMPLATE_CLASS",
+            "RAG_TEMPLATE_ARGUMENTS",
             "FM_MODEL_ID",
             "SYSTEM_MESSAGE",
             "USER_MESSAGE",

@@ -39,6 +39,91 @@ def _format_required_env_vars(provider: str) -> str:
     return "\n".join(f"- `{name}` — {description}" for name, description in env_vars)
 
 
+def _template_placeholder_mapping(output_data: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+    """Return notebook placeholders determined by the selected RAG template."""
+    template_id = output_data.get("template_id")
+    if template_id is None:
+        # Patterns written before template_id was added generated SequentialRAG
+        # notebooks. Retain that behaviour during the schema transition.
+        warnings.warn(
+            "Pattern has no template_id; generating a legacy SequentialRAG notebook. "
+            "Regenerate the pattern to persist its selected template.",
+            UserWarning,
+            stacklevel=3,
+        )
+        template_id = "sequential_rag"
+    template_spec = get_template_spec(template_id)
+    enable_context_compression = settings.get("agentic", {}).get("enable_context_compression", True)
+    return {
+        "TEMPLATE_ID": template_spec.template_id,
+        "RAG_TEMPLATE_IMPORT": f"from {template_spec.import_path} import {template_spec.template_class.__name__}",
+        "RAG_TEMPLATE_CLASS": template_spec.template_class.__name__,
+        "RAG_TEMPLATE_ARGUMENTS": (
+            f", enable_context_compression={enable_context_compression!r}"
+            if template_spec.template_id in {"agentic_rag", "agentic_graph_rag"}
+            else ""
+        ),
+    }
+
+
+def _generation_placeholder_mapping(settings: dict[str, Any]) -> dict[str, Any]:
+    """Return notebook placeholders for the foundation model configuration."""
+    foundation_model = settings.get("generation", {})
+    return {
+        "FM_MODEL_ID": foundation_model.get("model_id", ""),
+        "SYSTEM_MESSAGE": foundation_model.get("system_message_text", ""),
+        "USER_MESSAGE": foundation_model.get("user_message_text", ""),
+        "CONTEXT_TEXT": foundation_model.get("context_template_text", ""),
+        "FM_PARAMS": {
+            key: foundation_model[key] for key in ("temperature", "max_completion_tokens") if key in foundation_model
+        },
+        "LANGUAGE": foundation_model.get("language", {"code": "", "name": "auto"}),
+    }
+
+
+def _store_placeholder_mapping(settings: dict[str, Any]) -> dict[str, Any]:
+    """Return notebook placeholders for the embedding and vector store configuration."""
+    embedding_model = settings.get("embedding", {})
+    store_binding = settings.get("store_binding", {})
+    provider_type = store_binding.get("provider_type", "")
+    return {
+        "EMBEDDING_MODEL_ID": embedding_model.get("model_id", ""),
+        "EMBEDDING_PARAMS": embedding_model.get("embedding_params", {"embedding_dimension": 768}),
+        "PROVIDER_TYPE": provider_type,
+        "COLLECTION_NAME": store_binding.get("collection_name", ""),
+        "REQUIRED_ENV_VARS": _format_required_env_vars(provider_type),
+    }
+
+
+def _retrieval_placeholder_mapping(settings: dict[str, Any]) -> dict[str, Any]:
+    """Return notebook placeholders for retrieval configuration."""
+    retrieval = settings.get("retrieval", {})
+    return {
+        "RETRIEVAL_METHOD": retrieval.get("method", ""),
+        "NUMBER_OF_CHUNKS": retrieval.get("number_of_chunks", 5),
+        "SEARCH_MODE": retrieval.get("search_mode"),
+        "RANKER_STRATEGY": retrieval.get("ranker_strategy"),
+        "RANKER_K": retrieval.get("ranker_k"),
+        "RANKER_ALPHA": retrieval.get("ranker_alpha"),
+        "GRAPH_RETRIEVAL_CONFIG": {key: retrieval[key] for key in Neo4jGraphRetrievalConfig.keys() if key in retrieval},
+    }
+
+
+def _chunking_placeholder_mapping(output_data: dict[str, Any], settings: dict[str, Any]) -> dict[str, Any]:
+    """Return notebook placeholders for chunking and graph extraction configuration."""
+    chunking = settings.get("chunking", {})
+    graph_extraction = settings.get("graph_extraction") or {}
+    indexing_parameters = output_data.get("indexing", {}).get("pipeline_spec", {}).get("parameters", {})
+    return {
+        "CHUNKING_METHOD": chunking.get("method", ""),
+        "CHUNK_SIZE": chunking.get("chunk_size", 512),
+        "CHUNK_OVERLAP": chunking.get("chunk_overlap", 50),
+        "KG_EXTRACTION_CONFIG": graph_extraction
+        or indexing_parameters.get("graph_extraction_config")
+        or {"mode": "constrained"},
+    }
+
+
 def create_placeholder_mapping(
     output_data: dict[str, Any],
     test_data_key: str = "",
@@ -65,65 +150,17 @@ def create_placeholder_mapping(
     dict[str, Any]
         Dictionary mapping placeholder names to their values.
     """
-    mapping: dict[str, Any] = {}
-
-    mapping["AI4RAG_VERSION"] = __version__
-    mapping["PATTERN_NAME"] = output_data.get("name", "")
-    template_id = output_data.get("template_id")
-    if template_id is None:
-        # Patterns written before template_id was added generated SequentialRAG
-        # notebooks. Retain that behaviour during the schema transition.
-        warnings.warn(
-            "Pattern has no template_id; generating a legacy SequentialRAG notebook. "
-            "Regenerate the pattern to persist its selected template.",
-            UserWarning,
-            stacklevel=2,
-        )
-        template_id = "sequential_rag"
-    template_spec = get_template_spec(template_id)
-    mapping["TEMPLATE_ID"] = template_spec.template_id
-    mapping["RAG_TEMPLATE_IMPORT"] = f"from {template_spec.import_path} import {template_spec.template_class.__name__}"
-    mapping["RAG_TEMPLATE_CLASS"] = template_spec.template_class.__name__
     settings = output_data.get("settings", {})
-    fm = settings.get("generation", {})
-    mapping["FM_MODEL_ID"] = fm.get("model_id", "")
-    mapping["SYSTEM_MESSAGE"] = fm.get("system_message_text", "")
-    mapping["USER_MESSAGE"] = fm.get("user_message_text", "")
-    mapping["CONTEXT_TEXT"] = fm.get("context_template_text", "")
-    mapping["FM_PARAMS"] = {key: fm[key] for key in ("temperature", "max_completion_tokens") if key in fm}
-    # Detected generation language ({"code", "name"}); defaults mirror
-    # BaseFoundationModel's "auto" so the notebook restores the same behaviour.
-    mapping["LANGUAGE"] = fm.get("language", {"code": "", "name": "auto"})
-
-    em = settings.get("embedding", {})
-    mapping["EMBEDDING_MODEL_ID"] = em.get("model_id", "")
-    mapping["EMBEDDING_PARAMS"] = em.get("embedding_params", {"embedding_dimension": 768})
-    vs = settings.get("store_binding", {})
-    provider_type = vs.get("provider_type", "")
-    mapping["PROVIDER_TYPE"] = provider_type
-    mapping["COLLECTION_NAME"] = vs.get("collection_name", "")
-    mapping["REQUIRED_ENV_VARS"] = _format_required_env_vars(provider_type)
-
-    ret = settings.get("retrieval", {})
-    mapping["RETRIEVAL_METHOD"] = ret.get("method", "")
-    mapping["NUMBER_OF_CHUNKS"] = ret.get("number_of_chunks", 5)
-    mapping["SEARCH_MODE"] = ret.get("search_mode")
-    mapping["RANKER_STRATEGY"] = ret.get("ranker_strategy")
-    mapping["RANKER_K"] = ret.get("ranker_k")
-    mapping["RANKER_ALPHA"] = ret.get("ranker_alpha")
-    mapping["GRAPH_RETRIEVAL_CONFIG"] = {key: ret[key] for key in Neo4jGraphRetrievalConfig.keys() if key in ret}
-
-    ch = settings.get("chunking", {})
-    mapping["CHUNKING_METHOD"] = ch.get("method", "")
-    mapping["CHUNK_SIZE"] = ch.get("chunk_size", 512)
-    mapping["CHUNK_OVERLAP"] = ch.get("chunk_overlap", 50)
-    graph_extraction = settings.get("graph_extraction") or {}
-    indexing_parameters = output_data.get("indexing", {}).get("pipeline_spec", {}).get("parameters", {})
-    mapping["KG_EXTRACTION_CONFIG"] = (
-        graph_extraction or indexing_parameters.get("graph_extraction_config") or {"mode": "constrained"}
-    )
-
-    mapping["TEST_DATA_KEY"] = test_data_key
+    mapping = {
+        "AI4RAG_VERSION": __version__,
+        "PATTERN_NAME": output_data.get("name", ""),
+        **_template_placeholder_mapping(output_data, settings),
+        **_generation_placeholder_mapping(settings),
+        **_store_placeholder_mapping(settings),
+        **_retrieval_placeholder_mapping(settings),
+        **_chunking_placeholder_mapping(output_data, settings),
+        "TEST_DATA_KEY": test_data_key,
+    }
     # Rendered by ``str.format`` into a bare expression, so it has to carry its
     # own quoting and brackets to become a valid Python list literal.
     mapping["INPUT_DATA_KEYS"] = json.dumps(input_data_keys or [])

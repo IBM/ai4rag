@@ -85,4 +85,5 @@ def create_rag(
             client=client,
             config=config,
         ),
+        enable_context_compression=config.enable_context_compression,
     )

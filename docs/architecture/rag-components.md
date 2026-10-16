@@ -1390,6 +1390,26 @@ print(result["reference_documents"])  # chunks from every retrieval the agent ma
 print(result["conversation"])  # initial retrieval, messages, and tool activity
 ```
 
+#### Context-overflow fallback
+
+If the model rejects an agent invocation with a `BadRequestError` that reports
+a context or token limit, `AgenticRAG` retries the complete invocation once.
+Before that retry, `LLMDocumentCompressor` asks the same chat model to return
+one query-relevant, verbatim excerpt from each initial result. Any subsequent
+`retriever` tool result in the retry is compressed too. An excerpt is used only
+when it exactly occurs in the source chunk and is at most 512 estimated tokens;
+an empty response omits the chunk. Invalid or non-verbatim responses retain the
+original chunk rather than introducing model-generated text. Retained context is
+limited to 4,096 estimated tokens in retrieval-rank order; compression stops
+when the next evidence-bearing chunk cannot fit.
+
+Set `enable_context_compression=False` when constructing `AgenticRAG` to
+disable this retry. The `compression` trace records estimated
+original/compressed token counts, retained and dropped chunks, and the
+completion-token limit used for extraction.
+This fallback applies only to context/token-overflow 400 responses; other
+`BadRequestError` responses are raised unchanged.
+
 `generate()` includes a JSON-safe `conversation` record with `question`,
 `initial_retrieval` (query and documents), serialized `messages`, and `tool_execution`
 records for `rewrite_query` and `retriever`. Retrieval tool records include newly

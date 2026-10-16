@@ -71,6 +71,20 @@ def test_rrf_ranker_k_is_loaded(config_module, generated_config, monkeypatch):
     assert config_module.AgentConfig.from_env().ranker_k == 42
 
 
+def test_context_compression_defaults_to_enabled(config_module, generated_config, monkeypatch):
+    """Older agent configurations remain compatible."""
+    _inject_config(monkeypatch, generated_config)
+
+    assert config_module.AgentConfig.from_env().enable_context_compression is True
+
+
+def test_context_compression_can_be_disabled(config_module, generated_config, monkeypatch):
+    generated_config["agentic"] = {"enable_context_compression": False}
+    _inject_config(monkeypatch, generated_config)
+
+    assert config_module.AgentConfig.from_env().enable_context_compression is False
+
+
 def test_invalid_base64_is_rejected(config_module, monkeypatch):
     """A malformed injected configuration fails before model initialization."""
     monkeypatch.setenv("AGENT_CONFIG_B64", "%%%")

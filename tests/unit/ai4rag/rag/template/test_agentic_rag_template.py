@@ -12,8 +12,10 @@ import pytest
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
+from openai import BadRequestError
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
+from ai4rag.rag.retrieval.document_compressor import LLMDocumentCompressor
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 
@@ -81,6 +83,8 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
     assert result["conversation"] == {
         "question": "question",
         "initial_retrieval": {"query": "question", "documents": [{"text": "initial evidence", "metadata": {}}]},
+        "context_compression_fallback": False,
+        "compression": None,
         "messages": [
             {"type": "human", "content": "Question: question\nContext: initial evidence"},
             {
@@ -310,6 +314,21 @@ def test_retrieval_limit_is_validated_on_assignment(rag):
     assert rag.max_retrieval_steps == 3
 
 
+def test_chat_model_remains_the_fourth_positional_constructor_argument(mocker):
+    """Adding compression configuration does not break existing callers."""
+    foundation_model = mocker.MagicMock()
+    foundation_model.system_message_text = "Answer from context."
+    foundation_model.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation_model.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    chat_model = mocker.MagicMock()
+
+    rag_template = AgenticRAG(foundation_model, retriever, 2, chat_model)
+
+    assert rag_template.chat_model is chat_model
+    assert rag_template.enable_context_compression is True
+
+
 def test_initial_retrieval_counts_toward_limit(rag, mocker):
     """A one-step budget cannot issue another retrieval from the agent."""
     rag.max_retrieval_steps = 1
@@ -325,3 +344,210 @@ def test_initial_retrieval_counts_toward_limit(rag, mocker):
     rag.generate("question")
 
     rag.retriever.retrieve.assert_called_once_with("question")
+
+
+def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, mocker):
+    """A context-window 400 replays the agent with excerpt-only tool responses."""
+    initial = AI4RAGChunk(text="initial evidence", metadata={})
+    initial_excerpt = AI4RAGChunk(text="initial excerpt", metadata={})
+    large_result = AI4RAGChunk(text="very long retrieved evidence", metadata={})
+    additional_result = AI4RAGChunk(text="additional retrieved evidence", metadata={})
+    excerpt = AI4RAGChunk(text="relevant excerpt", metadata={})
+    rag.retriever.retrieve.side_effect = [[initial], [large_result], [large_result, additional_result]]
+    compress = mocker.patch(
+        "ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress",
+        side_effect=[[initial_excerpt], [initial_excerpt, excerpt]],
+    )
+    create_agent = rag._create_agent_mock
+    context_error = BadRequestError(
+        (
+            "This model's maximum context length is 32000 tokens. However, you requested 1024 output tokens "
+            "and your prompt contains at least 30977 input tokens, for a total of at least 32001 tokens. "
+            "Please reduce the length of the input prompt or the number of requested output tokens. "
+            "(parameter=input_tokens, value=30977)"
+        ),
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+
+    def run_graph(*_args, **kwargs):
+        context = kwargs["context"]
+        if not context.use_compressed_retriever_tool:
+            _call_tool(create_agent, "retriever", {"query": "follow-up"}, context)
+            raise context_error
+        assert _call_tool(create_agent, "retriever", {"query": "follow-up"}, context) == "relevant excerpt"
+        return {"messages": [AIMessage(content="grounded answer")]}
+
+    create_agent.return_value.invoke.side_effect = run_graph
+
+    result = rag.generate("question")
+
+    assert result["answer"] == "grounded answer"
+    assert result["reference_documents"] == [initial_excerpt, excerpt]
+    assert result["conversation"]["context_compression_fallback"] is True
+    assert result["conversation"]["compression"] == {
+        "initial": {
+            "input_chunks": 1,
+            "retained_chunks": 1,
+            "dropped_chunks": 0,
+            "original_tokens": 4,
+            "compressed_tokens": 4,
+            "max_completion_tokens": 512,
+        },
+        "retriever_tool_calls": [
+            {
+                "input_chunks": 2,
+                "retained_chunks": 2,
+                "dropped_chunks": 0,
+                "original_tokens": 15,
+                "compressed_tokens": 8,
+                "max_completion_tokens": 512,
+            }
+        ],
+    }
+    assert result["conversation"]["tool_execution"]["retriever"][0]["compressed"] is True
+    assert compress.call_args_list == [
+        mocker.call("question", [initial]),
+        mocker.call("follow-up", [large_result, additional_result]),
+    ]
+
+
+def test_context_overflow_is_propagated_when_compression_is_disabled(rag, mocker):
+    """Disabling context compression prevents the overflow retry."""
+    rag.enable_context_compression = False
+    context_error = BadRequestError(
+        "This model's maximum context length is 32000 tokens.",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = context_error
+    compress = mocker.patch("ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress")
+
+    with pytest.raises(BadRequestError):
+        rag.generate("question")
+
+    compress.assert_not_called()
+
+
+def test_context_compressor_extracts_excerpts_with_the_agent_model(rag):
+    """The local extractor preserves metadata and drops chunks without evidence."""
+    relevant_text = "relevant excerpt " * 20
+    relevant = AI4RAGChunk(text=f"start {relevant_text}end", metadata={"source": "relevant"})
+    irrelevant = AI4RAGChunk(text="unrelated document", metadata={"source": "irrelevant"})
+    rag.chat_model.invoke.side_effect = [
+        AIMessage(content=json.dumps({"excerpt": relevant_text})),
+        AIMessage(content='{"excerpt":""}'),
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [relevant, irrelevant])
+
+    assert excerpts == [AI4RAGChunk(text=relevant_text, metadata={"source": "relevant"})]
+    assert rag.chat_model.invoke.call_count == 2
+    assert (
+        rag.chat_model.invoke.call_args_list[0].args[0][1].content
+        == f"User question:\nquestion\n\nSource document:\nstart {relevant_text}end"
+    )
+    assert rag.chat_model.invoke.call_args_list[0].kwargs == {"max_completion_tokens": 512}
+
+
+def test_context_compressor_accepts_short_verbatim_excerpt(rag):
+    """A concise exact answer is useful evidence and must not fall back to the full chunk."""
+    excerpt = "Meyerson (1970–1981)"
+    source = AI4RAGChunk(text=f"Presidents included {excerpt} and others.", metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(content=json.dumps({"excerpt": excerpt}))
+
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == [
+        AI4RAGChunk(text=excerpt, metadata={})
+    ]
+
+
+def test_context_compressor_retains_source_for_invalid_model_output(rag):
+    """Invalid model output preserves source evidence instead of dropping it."""
+    source = AI4RAGChunk(text="source " * 300, metadata={"source": "source"})
+    short_source = AI4RAGChunk(text="short source", metadata={"source": "short"})
+    rag.chat_model.invoke.side_effect = [
+        AIMessage(content="excerpt " * 300),
+        AIMessage(content="this response is longer than the short source"),
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [source, short_source])
+
+    assert excerpts == [source, short_source]
+
+
+def test_context_compressor_retains_source_for_non_verbatim_quote(rag):
+    """A quote that differs from the source is never returned as model text."""
+    source = AI4RAGChunk(text="source " * 300, metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(content='{"excerpt":"invented text"}')
+
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == [source]
+
+
+def test_context_compressor_retains_source_for_legacy_span_response(rag):
+    """A response in the old span format remains source-grounded."""
+    source = AI4RAGChunk(text="source " * 600, metadata={})
+    rag.chat_model.invoke.return_value = AIMessage(
+        content='{"spans":[{"start_char":0,"end_char":256},{"start_char":256,"end_char":512}]}'
+    )
+
+    assert LLMDocumentCompressor(rag.chat_model).compress("question", [source]) == [source]
+
+
+def test_context_compressor_caps_total_excerpt_tokens(rag):
+    """Compressed tool output remains bounded across multiple chunks."""
+    chunks = [AI4RAGChunk(text=character * 2000, metadata={}) for character in "abcdefghij"]
+    rag.chat_model.invoke.side_effect = [
+        AIMessage(content=json.dumps({"excerpt": chunk.text})) for chunk in chunks
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", chunks)
+
+    assert excerpts == chunks[:8]
+
+
+def test_context_compressor_stops_at_first_ranked_chunk_that_exceeds_budget(rag):
+    """A lower-ranked small excerpt must not displace an earlier chunk that did not fit."""
+    chunks = [AI4RAGChunk(text=character * 2000, metadata={}) for character in "abcdefgh"]
+    oversized = AI4RAGChunk(text="e" * 1000, metadata={})
+    lower_ranked = AI4RAGChunk(text="f" * 256, metadata={})
+    rag.chat_model.invoke.side_effect = [
+        *(AIMessage(content=json.dumps({"excerpt": chunk.text})) for chunk in chunks),
+        AIMessage(content=json.dumps({"excerpt": oversized.text})),
+    ]
+
+    excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", [*chunks, oversized, lower_ranked])
+
+    assert excerpts == chunks
+    assert rag.chat_model.invoke.call_count == 9
+
+
+def test_non_context_bad_request_is_not_retried(rag, mocker):
+    """Other 400 responses retain their original failure semantics."""
+    error = BadRequestError(
+        "invalid request parameter",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = error
+
+    with pytest.raises(BadRequestError, match="invalid request parameter"):
+        rag.generate("question")
+
+    assert rag._create_agent_mock.return_value.invoke.call_count == 1
+
+
+def test_token_parameter_error_is_not_treated_as_context_overflow(rag, mocker):
+    """A token-related request validation error must not trigger compression."""
+    error = BadRequestError(
+        "Unsupported max_completion_tokens parameter; use max_tokens instead.",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = error
+    compress = mocker.patch("ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress")
+
+    with pytest.raises(BadRequestError, match="max_completion_tokens"):
+        rag.generate("question")
+
+    compress.assert_not_called()
+    assert rag._create_agent_mock.return_value.invoke.call_count == 1
