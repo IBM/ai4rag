@@ -13,6 +13,11 @@ ai4rag's data flow consists of four distinct phases executed for each configurat
 3. **Evaluation Phase**: Answers + Ground Truth → Metrics → Scores
 4. **Optimization Loop**: Scores → Optimizer → Next Configuration
 
+Each candidate's categorical `template_id` selects the query-phase implementation.
+Milvus, Milvus Lite, and pgvector support `agentic_rag` (default) and
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. The two
+agentic IDs use `AgenticRAG`; `sequential_rag` uses `SequentialRAG`.
+
 ---
 
 ## Indexing Phase
@@ -238,6 +243,15 @@ initial retrieval, agent messages, and rewrite/retrieval tool activity. The expe
 collects these records separately from evaluation data and forwards them on pattern
 publication; the selected warm-start candidate retains its trajectories when published
 as `Pattern1`.
+
+When an agent invocation raises `BadRequestError` containing `maximum context length`,
+the default compression fallback extracts query-relevant excerpts from the initial
+retrieval and retries once with fresh invocation state. Retrieval-tool results are
+also compressed during that retry. The successful run's retained context becomes
+`reference_documents` for evaluation; the conversation keeps the original initial
+retrieval and adds compression statistics. See
+[Context-overflow fallback](rag-components.md#context-overflow-fallback) for limits
+and how to disable it.
 
 ```mermaid
 sequenceDiagram
@@ -751,6 +765,10 @@ def results.evaluation_explored_or_cached(indexing_params, rag_params) -> float 
 ```
 
 If exact `(indexing_params, rag_params)` evaluated before, return cached score immediately.
+
+`rag_params` includes `template_id`, so different templates are evaluated separately.
+The template ID is excluded from `indexing_params`, allowing collection reuse across
+templates when their indexing settings match.
 
 **Level 2: Collection Reuse (indexing only)**
 

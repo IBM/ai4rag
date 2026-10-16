@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.24.0](https://github.com/IBM/ai4rag/releases/tag/v0.24.0)
+
+### Added
+
+- **Search space** — categorical `template_id` and MaaS `template_ids` constraints let vector-backend experiments compare `agentic_rag` and `sequential_rag`; Neo4j defaults to `agentic_graph_rag`
+- **Agentic RAG** — context-overflow responses reporting "maximum context length" trigger one retry with query-relevant document excerpts; `enable_context_compression` defaults to `True` and can disable the fallback
+- **Retrieval** — new `LLMDocumentCompressor` extracts verified verbatim excerpts while preserving source metadata, omits chunks with no relevant evidence, and limits each compression pass to 4,096 estimated tokens
+- **Agentic RAG** — conversation records include `context_compression_fallback` and `compression` statistics for initial context and subsequent retrievals during the retry
+- **Assets generator** — generated inference notebooks and starter kits accept `settings.agentic.enable_context_compression`, defaulting to enabled when absent
+
+### Changed
+
+- **BREAKING CHANGE: Experiment** — template selection moves from the `rag_template` constructor argument to each candidate's `template_id`; results, evaluation caching, streamed patterns, notebooks, and starter kits retain the selected ID, while matching indexing settings still reuse collections
+- **BREAKING CHANGE: RAG template** — `SimpleRAG` and its `simple_rag_template` module are renamed to `SequentialRAG` and `sequential_rag_template`; persisted `simple_rag` IDs must become `sequential_rag`
+- **Search space** — construction validates template and search-mode compatibility: vector backends accept `agentic_rag` or `sequential_rag` with vector/hybrid search, while Neo4j requires `agentic_graph_rag` with graph search
+- **Models pre-selector** — model pre-selection always uses `AgenticRAG` with temporary Milvus Lite, including sequential-only and graph searches; experiment pre-selection continues ranking by `OVERALL_SCORE`, with existing thresholds and `skip_mps` support
+
+### Fixed
+
+- **Assets generator** — generated starter kits instantiate the selected template and retain effective Neo4j graph-retrieval settings through configuration and deployment
+- **Assets generator** — OpenShell deployment preserves database CA certificates across shell boundaries, including PEM or base64-encoded pgvector CA input
+- **Assets generator** — pgvector connections in OpenShell sandboxes tunnel native TCP through the sandbox's HTTP CONNECT proxy
+
+### Removed
+
+- **RAG template** — removed `template_id_for_class()`; use `get_template_spec(template_id)` to resolve a selected template
+
+---
+
 ## [0.23.0](https://github.com/IBM/ai4rag/releases/tag/v0.23.0)
 
 ### Added

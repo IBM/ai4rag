@@ -145,6 +145,14 @@ For each RAG configuration being tested:
 5. **Compute custom metrics** (e.g. `overall_score`) on top of the merged results
 6. **Return scores** with confidence intervals
 
+Each candidate's `template_id` selects sequential or agentic execution, and templates
+receive separate evaluations even when they reuse the same index. If `AgenticRAG`
+uses its [context-overflow fallback](../architecture/rag-components.md#context-overflow-fallback),
+evaluation contexts come from the successful retry's retained excerpts or fallback
+source chunks. Omitted chunks are excluded; retained metadata preserves source
+document IDs for context-correctness scoring. The conversation record retains the
+original initial retrieval and compression statistics for inspection.
+
 ### EvaluationData Structure
 
 Each question's data is packaged as an `EvaluationData` instance:

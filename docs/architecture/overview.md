@@ -101,6 +101,7 @@ graph TB
 - Validates configurations against rules
 - Provides parameter sampling
 - Enforces constraints (e.g., `chunk_size > chunk_overlap`)
+- Selects templates through categorical `template_id` and validates template/search-mode compatibility with the backend
 
 ### 3. RAG Components Layer
 
@@ -127,6 +128,7 @@ graph TB
 - Retrieves relevant chunks for queries
 - Supports simple and window-based retrieval
 - Configurable top-k parameter
+- `LLMDocumentCompressor` extracts query-relevant, verbatim excerpts with source metadata for `AgenticRAG`'s optional context-overflow retry
 
 **Foundation Models** (`ai4rag/rag/foundation_models/`)
 
@@ -142,6 +144,7 @@ graph TB
 - Two implementations: `SequentialRAG` (single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again before answering — the default used by `AI4RAGExperiment` and `ModelsPreSelector`)
 - `ai4rag.rag.template.registry` maps persisted template IDs to allowed classes and import paths; generated inference notebooks use the selected template
 - `AgenticRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
+- Context compression is enabled by default for `AgenticRAG`; a recognized context overflow triggers one retry, with retained context and compression statistics recorded in the result
 
 ### 4. Evaluation Layer
 

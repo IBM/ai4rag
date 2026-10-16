@@ -294,8 +294,11 @@ build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
 !!! note "Neo4j search space defaults"
-    Passing `vector_store_type="neo4j"` fixes `chunk_size`/`chunk_overlap` and `search_mode="graph"`, and
-    omits the hybrid ranker parameters, since the Neo4j backend supports graph retrieval only. See
+    For Neo4j, set `vector_store_type="neo4j"` and omit `template_ids` (or use
+    `["agentic_graph_rag"]`); the vector-template IDs in the example above are incompatible.
+    Neo4j defaults use `chunk_size=1024`, `chunk_overlap` values `0` and `64`, and
+    `search_mode="graph"`, omitting hybrid ranker parameters. Explicit chunking constraints
+    in the payload still override those defaults. See
     [Search Space defaults](../user-guide/search-space.md#default-parameters).
 
 !!! note "RAG optimization orchestration"

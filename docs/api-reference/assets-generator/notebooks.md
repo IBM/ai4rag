@@ -22,6 +22,12 @@ that template. Patterns without an ID emit a `UserWarning` and use `SequentialRA
 unsupported IDs raise `ValueError`. Regenerate older patterns to persist the selected
 template before generating new notebooks.
 
+For agentic templates, `settings.agentic.enable_context_compression` controls the
+generated constructor's boolean `enable_context_compression` argument and defaults
+to `True` when absent. Set it to `False` in the pattern dictionary before rendering
+to disable the [context-overflow fallback](../../architecture/rag-components.md#context-overflow-fallback).
+Sequential templates receive no compression argument.
+
 For graph indexing, `KG_EXTRACTION_CONFIG` comes from `settings.graph_extraction`,
 then `indexing.pipeline_spec.parameters.graph_extraction_config`, with
 `{"mode": "constrained"}` as the fallback. The previous `settings.knowledge_graph`
