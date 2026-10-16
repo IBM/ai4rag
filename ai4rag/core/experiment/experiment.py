@@ -169,7 +169,9 @@ class AI4RAGExperiment:
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
         graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
         if graph_retrieval_config is None:
-            self.graph_retrieval_config = Neo4jGraphRetrievalConfig()
+            self.graph_retrieval_config: Neo4jGraphRetrievalConfig | None = (
+                Neo4jGraphRetrievalConfig() if self.vector_store_config.provider == "neo4j" else None
+            )
         elif isinstance(graph_retrieval_config, Neo4jGraphRetrievalConfig):
             self.graph_retrieval_config = graph_retrieval_config
         elif isinstance(graph_retrieval_config, Mapping):

@@ -114,8 +114,8 @@ class TestEvaluatorType:
 
 
 class TestRAGTemplateSelection:
-    def test_graph_retrieval_configuration_has_defaults(self):
-        assert _build_experiment().graph_retrieval_config is not None
+    def test_vector_backend_does_not_initialize_graph_retrieval_configuration(self):
+        assert _build_experiment().graph_retrieval_config is None
 
     def test_template_selection_is_not_an_experiment_attribute(self):
         assert not hasattr(_build_experiment(), "rag_template")
