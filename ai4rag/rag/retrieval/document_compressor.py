@@ -6,7 +6,6 @@
 """LLM-based compression of retrieved document chunks."""
 
 import json
-import logging
 import math
 
 from langchain_core.language_models.chat_models import BaseChatModel
@@ -14,8 +13,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.utils.constants import TokenEstimation
-
-_logger = logging.getLogger(__name__)
 
 _MAX_COMPLETION_TOKENS = 512
 _MAX_TOTAL_EXCERPT_TOKENS = 4096
@@ -70,23 +67,12 @@ class LLMDocumentCompressor:
                 ],
                 max_completion_tokens=_MAX_COMPLETION_TOKENS,
             )
-            response_text = str(response.text)
-            _logger.info(
-                "Context-compressor response for chunk %r: %s",
-                chunk.metadata,
-                response_text,
-            )
-            excerpt = self._extract_excerpt(response_text, chunk.text)
+            excerpt = self._extract_excerpt(str(response.text), chunk.text)
             if excerpt is None:
-                _logger.info("Retaining original chunk after a non-verbatim compressor response: %r", chunk.metadata)
                 excerpt = chunk.text
             if excerpt:
                 estimated_tokens = self._estimate_tokens(excerpt)
                 if excerpt_tokens + estimated_tokens > _MAX_TOTAL_EXCERPT_TOKENS:
-                    _logger.info(
-                        "Stopping context compression because chunk %r would exceed the total excerpt budget",
-                        chunk.metadata,
-                    )
                     break
                 excerpts.append(AI4RAGChunk(text=excerpt, metadata=dict(chunk.metadata)))
                 excerpt_tokens += estimated_tokens
