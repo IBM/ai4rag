@@ -1341,17 +1341,20 @@ class AgenticRAG(BaseRAGTemplate):
         retriever: Retriever,
         max_retrieval_steps: int = 2,
         chat_model: BaseChatModel | None = None,
+        enable_context_compression: bool = True,
     ):
 ```
 
-- `max_retrieval_steps` caps how many `retriever` tool calls (and,
-  independently, how many `rewrite_query` tool calls) the agent may make for
-  one request; once a budget is exhausted, the corresponding tool returns a
-  message telling the agent to answer with what it already has.
+- `max_retrieval_steps` caps retrieval actions including the initial retrieval,
+  so the default of `2` allows one additional search through the `retriever` tool.
+  Independently, it caps the number of `rewrite_query` tool calls. Once a budget
+  is exhausted, the corresponding tool tells the agent to use the evidence found.
 - `chat_model` is an optional pre-built LangChain `BaseChatModel`. When
   omitted, one is built from the configured `foundation_model` — which must
   then be an `OpenAIFoundationModel`, since `AgenticRAG` wraps its MaaS/OpenAI
   client in a LangChain `ChatOpenAI` instance.
+- `enable_context_compression` enables one retry after a recognized context
+  overflow. It must be a boolean and defaults to `True`.
 
 **How it works:**
 
@@ -1368,10 +1371,11 @@ class AgenticRAG(BaseRAGTemplate):
    per-invocation `_AgentRunContext` passed through LangChain's `ToolRuntime`
    so concurrent requests (see `query_rag`'s `ThreadPoolExecutor`) never share
    state.
-4. The agent's final assistant message becomes the answer; every chunk seen
-   across the initial and tool-driven retrievals is returned as
+4. The agent's final assistant message becomes the answer; chunks retained
+   across the successful run's initial and tool-driven retrievals are returned as
    `reference_documents`, for evaluation against the benchmark's ground
-   truth.
+   truth. After a compression retry, these are the retained excerpts or fallback
+   source chunks rather than all documents seen by the failed run.
 
 **Usage:**
 
@@ -1386,29 +1390,38 @@ rag = AgenticRAG(
 
 result = rag.generate("What is the capital of France?")
 print(result["answer"])
-print(result["reference_documents"])  # chunks from every retrieval the agent made
+print(result["reference_documents"])  # retained context from the successful run
 print(result["conversation"])  # initial retrieval, messages, and tool activity
 ```
 
 #### Context-overflow fallback
 
-If the model rejects an agent invocation with a `BadRequestError` that reports
-a context or token limit, `AgenticRAG` retries the complete invocation once.
+If an agent invocation raises `BadRequestError` whose message contains
+`maximum context length` (case-insensitive), `AgenticRAG` retries the complete
+invocation once when context compression is enabled. It starts fresh from the
+original initial retrieval and resets the tool budgets; messages and additional
+retrievals from the failed attempt are discarded.
 Before that retry, `LLMDocumentCompressor` asks the same chat model to return
 one query-relevant, verbatim excerpt from each initial result. Any subsequent
 `retriever` tool result in the retry is compressed too. An excerpt is used only
 when it exactly occurs in the source chunk and is at most 512 estimated tokens;
-an empty response omits the chunk. Invalid or non-verbatim responses retain the
+an `{"excerpt": ""}` response omits the chunk. Invalid or non-verbatim responses retain the
 original chunk rather than introducing model-generated text. Retained context is
-limited to 4,096 estimated tokens in retrieval-rank order; compression stops
-when the next evidence-bearing chunk cannot fit.
+limited to 4,096 estimated tokens per compression pass in retrieval-rank order;
+compression stops when the next evidence-bearing chunk cannot fit. This is not
+a limit on the entire prompt or on context accumulated across multiple retrievals.
+Token estimates use four characters per token. Each extraction call allows up to
+512 completion tokens and adds model-inference cost.
 
 Set `enable_context_compression=False` when constructing `AgenticRAG` to
-disable this retry. The `compression` trace records estimated
-original/compressed token counts, retained and dropped chunks, and the
-completion-token limit used for extraction.
-This fallback applies only to context/token-overflow 400 responses; other
-`BadRequestError` responses are raised unchanged.
+disable this retry. Without a retry, `conversation.context_compression_fallback`
+is `False` and `conversation.compression` is `None`. After a successful retry,
+the flag is `True` and `compression` contains `initial` statistics and a
+`retriever_tool_calls` list, recording estimated original/compressed tokens,
+retained and dropped chunks, and the extraction completion-token limit.
+Other `BadRequestError` responses, compression failures, and errors from the
+retry propagate without another retry. Compression applies to retrieved context;
+it does not shorten chat history or system instructions.
 
 `generate()` includes a JSON-safe `conversation` record with `question`,
 `initial_retrieval` (query and documents), serialized `messages`, and `tool_execution`

@@ -86,6 +86,11 @@ Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) o
 use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
 results, streamed patterns, inference notebooks, and starter kits.
 
+`AgenticRAG` can retry a recognized context-window overflow once with query-relevant
+excerpts from retrieved documents. This fallback is enabled by default; see
+[context compression](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#context-overflow-fallback)
+for its limits and configuration.
+
 `LocalEventHandler` writes `conversations.json` alongside each agentic pattern's
 `pattern.json` and `evaluation_results.json`, recording retrieved context and tool activity.
 Conversations are also available as `EvaluationResult.conversations` and included

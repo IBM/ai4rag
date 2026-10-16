@@ -462,6 +462,12 @@ class AI4RAGSearchSpace(SearchSpace):
 
 `milvus`, `milvus_lite`, and `pgvector` all support hybrid search, so the same validation rules and defaults apply across them regardless of which one is used at runtime. Passing `vector_store_type="neo4j"` instead selects Neo4j's graph-only defaults: `search_mode` is fixed to `"graph"`, `chunk_size`/`chunk_overlap` are fixed, and the hybrid ranker parameters are omitted (see [Search Space](../user-guide/search-space.md#default-parameters)).
 
+At construction, `validate_vector_store_compatibility()` also checks that `template_id`
+is categorical and contains registered IDs compatible with `vector_store_type`.
+Vector backends accept `agentic_rag` and `sequential_rag` with vector/hybrid search;
+Neo4j requires `agentic_graph_rag` with graph search. Set the search-space backend
+to match the experiment's vector-store configuration.
+
 **Built-in Validation Rules:**
 
 **Base Rules (always applied):**

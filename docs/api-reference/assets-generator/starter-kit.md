@@ -16,6 +16,17 @@ uses its built-in defaults. Persisting the options reproduces any custom graph
 settings used during optimization. The application/package name remains
 `agentic_rag` for all templates.
 
+`template_id` is required by the generated runtime configuration. Regenerate older
+starter kits when upgrading, and migrate explicit `simple_rag` pattern IDs to
+`sequential_rag` before generation.
+
+The generator reads the boolean `settings.agentic.enable_context_compression` from
+the published pattern, defaulting to `True`, and writes it as
+`agentic.enable_context_compression` in `agent_config.json`. Set it to `false` in
+that JSON file to disable the agentic
+[context-overflow fallback](../../architecture/rag-components.md#context-overflow-fallback).
+This option does not affect sequential execution.
+
 ## OpenShell Deployment
 
 Generated starter kits can deploy an agent backed by Milvus, PostgreSQL/pgvector,
@@ -39,11 +50,20 @@ over database secret values. The secret referenced by `maas_secret_name` supplie
 | PostgreSQL/pgvector | `PGVECTOR_HOST`, optional `PGVECTOR_PORT`, `PGVECTOR_DB`, `PGVECTOR_USER`, `PGVECTOR_PASSWORD` | `PGVECTOR_CA_CERT` |
 | Neo4j | Required `NEO4J_URI` and `NEO4J_PASSWORD`; `NEO4J_USERNAME` and `NEO4J_DATABASE` default to `neo4j` | `NEO4J_CA_CERT` |
 
-CA variables contain inline PEM certificate text. The Makefile loads these values
-from the database secret when needed and forwards them to both the sandbox and
-agent. Use `MILVUS_CA_CERT` in place of the obsolete `MILVUS_SERVER_CERT` key.
+CA variables accept inline PEM certificate text; pgvector deployment also accepts
+base64-encoded PEM. The Makefile loads these values from the database secret when
+needed, transports CA values in base64 across shell boundaries, and restores PEM
+text for the agent. Use `MILVUS_CA_CERT` in place of the obsolete `MILVUS_SERVER_CERT` key.
 For Neo4j, use a verified TLS URI such as `neo4j+s://host:7687`; egress setup reads
 the host and port from that URI, defaulting to port `7687` when it is omitted.
+
+For pgvector, the generated OpenShell image includes `proxychains4` and an entrypoint
+that tunnels native TCP connections through OpenShell's HTTP CONNECT proxy. When
+`PGVECTOR_HOST` is set, startup requires a proxy supplied through `grpc_proxy`,
+`GRPC_PROXY`, `https_proxy`, `HTTPS_PROXY`, `http_proxy`, or `HTTP_PROXY` (first
+non-empty value wins). The proxy must use HTTP, have no authentication, and resolve
+to an IPv4 address. If `PGVECTOR_HOST` is unset, the entrypoint launches the agent
+directly.
 
 Run these commands from the extracted starter-kit directory:
 

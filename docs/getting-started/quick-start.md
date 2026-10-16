@@ -372,10 +372,10 @@ search_space = AI4RAGSearchSpace(
                 )
             ],
         ),
-        Parameter(name="chunk_size", param_type="I", values=[200, 400, 800]),
-        Parameter(name="chunk_overlap", param_type="I", values=[0, 50, 100]),
+        Parameter(name="chunk_size", param_type="C", values=[200, 400, 800]),
+        Parameter(name="chunk_overlap", param_type="C", values=[0, 50, 100]),
         Parameter(name="retrieval_method", param_type="C", values=["simple", "window"]),
-        Parameter(name="number_of_chunks", param_type="I", values=[3, 5, 7]),
+        Parameter(name="number_of_chunks", param_type="C", values=[3, 5, 7]),
     ]
 )
 
@@ -417,8 +417,11 @@ or pass `template_ids=["sequential_rag"]` in MaaS constraints. Omitting
 `AgenticRAG` and its `agentic_rag_template` import path are retained. Replace
 `SimpleRAG` / `simple_rag_template` with `SequentialRAG` /
 `sequential_rag_template`, and the persisted `simple_rag` ID with `sequential_rag`.
+The `template_id_for_class()` helper has been removed; resolve an explicit ID with
+`get_template_spec(template_id)` from `ai4rag.rag.template` instead.
 Use `agentic_rag` for vector backends and `agentic_graph_rag` for Neo4j; both use
-`AgenticRAG`. When reusing known observations, include the actual `template_id`
+`AgenticRAG`. Set the search space's `vector_store_type` to match the experiment's
+backend. When reusing known observations, include the actual `template_id`
 associated with the historical score.
 
 Automatic model pre-selection always uses temporary Milvus Lite and `AgenticRAG`,

@@ -192,8 +192,17 @@ and evaluation results on publication. They are also accessible through
 | `conversation_id` | Benchmark position, such as `case-0000` |
 | `question` | Original question |
 | `initial_retrieval` | Initial query and retrieved documents, each with text and metadata |
+| `context_compression_fallback` | Whether the successful response used the context-compression retry |
+| `compression` | `None` without a retry; otherwise `initial` statistics and a `retriever_tool_calls` list |
 | `messages` | Agent messages, including assistant tool calls and tool responses |
 | `tool_execution` | `rewrite_query` and `retriever` input/output records; retrieval records also include new documents |
+
+Compression statistics contain `input_chunks`, `retained_chunks`, `dropped_chunks`,
+`original_tokens`, `compressed_tokens`, and `max_completion_tokens`. Token counts are
+estimates. During the retry, compressed retrieval-tool records also include
+`compressed=True` and their own `compression` statistics. `initial_retrieval` retains
+the original documents; `messages` and `tool_execution` describe the successful retry.
+See [Context-overflow fallback](../architecture/rag-components.md#context-overflow-fallback).
 
 The selected warm-start pattern retains its trajectories when it is published as `Pattern1`.
 Non-agentic publication omits the `conversations` keyword. Custom handlers used with
