@@ -8,17 +8,20 @@ import json
 import mimetypes
 import subprocess
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import AsrPipelineOptions
 from docling.pipeline.asr_pipeline import AsrPipeline
 from docling.pipeline.base_pipeline import BasePipeline
-from docling_core.types.doc import ContentLayer, DocItemLabel, DoclingDocument, DocumentOrigin, TrackSource
+from docling_core.types.doc import (
+    ContentLayer,
+    DocItemLabel,
+    DoclingDocument,
+    DocumentOrigin,
+    TrackSource,
+)
+import numpy as np
 from pydantic import ConfigDict
-
-if TYPE_CHECKING:
-    import numpy as np
 
 
 class LocalHuggingFaceAsrPipelineOptions(AsrPipelineOptions):
@@ -67,7 +70,9 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
         from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 
         processor = AutoProcessor.from_pretrained(model_dir, local_files_only=True)
-        model = AutoModelForSpeechSeq2Seq.from_pretrained(model_dir, local_files_only=True)
+        model = AutoModelForSpeechSeq2Seq.from_pretrained(
+            model_dir, local_files_only=True
+        )
         model.eval()
         self._transcriber = pipeline(
             task="automatic-speech-recognition",
@@ -85,7 +90,9 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
         transcriber = self._load_transcriber()
         sampling_rate = transcriber.feature_extractor.sampling_rate
         waveform = _decode_audio(audio, sampling_rate)
-        output = transcriber({"raw": waveform, "sampling_rate": sampling_rate}, return_timestamps=True)
+        output = transcriber(
+            {"raw": waveform, "sampling_rate": sampling_rate}, return_timestamps=True
+        )
 
         conv_res.document = DoclingDocument(
             name=audio.stem,
@@ -117,7 +124,6 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
 
 def _decode_audio(audio: Path, sampling_rate: int) -> "np.ndarray":
     """Decode a seekable local file to mono float32 audio at the model's rate."""
-    import numpy as np
 
     # Transformers pipes encoded bytes into FFmpeg. M4A files with a trailing
     # moov atom require seeking back to the audio data after reading metadata,
@@ -140,12 +146,18 @@ def _decode_audio(audio: Path, sampling_rate: int) -> "np.ndarray":
         "pipe:1",
     ]
     try:
-        result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, check=True)
+        result = subprocess.run(
+            command, stdin=subprocess.DEVNULL, capture_output=True, check=True
+        )
     except FileNotFoundError as exc:
-        raise RuntimeError("Audio extraction requires the ffmpeg executable on PATH.") from exc
+        raise RuntimeError(
+            "Audio extraction requires the ffmpeg executable on PATH."
+        ) from exc
     except subprocess.CalledProcessError as exc:
         details = exc.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(f"FFmpeg failed to decode audio file '{audio}': {details}") from exc
+        raise RuntimeError(
+            f"FFmpeg failed to decode audio file '{audio}': {details}"
+        ) from exc
 
     waveform = np.frombuffer(result.stdout, dtype="<f4")
     if waveform.size == 0:
@@ -172,9 +184,13 @@ def _validate_model_directory(raw_path: str | None) -> str:
         with config_path.open(encoding="utf-8") as config_file:
             model_config = json.load(config_file)
     except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"HF_MODEL_DIR={model_dir} has an invalid config.json.") from exc
+        raise ValueError(
+            f"HF_MODEL_DIR={model_dir} has an invalid config.json."
+        ) from exc
 
-    model_type = model_config.get("model_type", "") if isinstance(model_config, dict) else ""
+    model_type = (
+        model_config.get("model_type", "") if isinstance(model_config, dict) else ""
+    )
     if model_type != "whisper":
         raise ValueError(
             "Audio extraction supports only Hugging Face Whisper models; "
