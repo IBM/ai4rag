@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Text extraction** — local Whisper ASR decodes audio from seekable file paths with FFmpeg before transcription, fixing M4A files with trailing metadata that failed when piped through Transformers; decoding failures now include actionable diagnostics
+
+---
+
 ## [0.24.0](https://github.com/IBM/ai4rag/releases/tag/v0.24.0)
 
 ### Added

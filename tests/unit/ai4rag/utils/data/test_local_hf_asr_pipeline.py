@@ -5,15 +5,19 @@
 """Tests for the offline local Hugging Face ASR adapter."""
 
 import json
+import shutil
+import subprocess
 import sys
 from types import SimpleNamespace
 from unittest import mock
 
+import numpy as np
 import pytest
 
 from ai4rag.utils.data.local_hf_asr_pipeline import (
     LocalHuggingFaceAsrPipeline,
     LocalHuggingFaceAsrPipelineOptions,
+    _decode_audio,
     _validate_model_directory,
 )
 
@@ -88,11 +92,14 @@ def test_load_transcriber_uses_local_files_only(monkeypatch, tmp_path):
     model.eval.assert_called_once_with()
 
 
-def test_build_document_preserves_timestamped_transcript(tmp_path):
-    """Transformers segments become Docling text items with timing metadata."""
+def test_build_document_preserves_timestamped_transcript(monkeypatch, tmp_path):
+    """Decoded waveforms reach ASR and retain document and segment provenance."""
     model_dir = _model_directory(tmp_path)
     adapter = LocalHuggingFaceAsrPipeline(LocalHuggingFaceAsrPipelineOptions(asr_model_path=str(model_dir)))
-    adapter._transcriber = mock.MagicMock(  # pylint: disable=protected-access
+    waveform = np.array([0.25, -0.5, 0.75], dtype=np.float32)
+    decode_audio = mock.MagicMock(return_value=waveform)
+    monkeypatch.setattr("ai4rag.utils.data.local_hf_asr_pipeline._decode_audio", decode_audio)
+    transcriber = mock.MagicMock(
         return_value={
             "chunks": [
                 {"text": " First segment ", "timestamp": (1.0, 2.0)},
@@ -101,10 +108,104 @@ def test_build_document_preserves_timestamped_transcript(tmp_path):
             ]
         }
     )
+    transcriber.feature_extractor.sampling_rate = 22050
+    adapter._transcriber = transcriber  # pylint: disable=protected-access
     result = SimpleNamespace(input=SimpleNamespace(file=tmp_path / "recording.mp3", document_hash="0" * 64))
 
     adapter._build_document(result)  # pylint: disable=protected-access
 
+    decode_audio.assert_called_once_with(result.input.file, 22050)
+    transcriber.assert_called_once_with({"raw": waveform, "sampling_rate": 22050}, return_timestamps=True)
+    assert result.document.origin.filename == "recording.mp3"
+    assert result.document.origin.mimetype == "audio/mpeg"
     assert result.document.texts[0].text == "First segment"
     source = result.document.texts[0].source[0]
     assert (source.start_time, source.end_time) == (1.0, 2.0)
+
+
+@pytest.mark.parametrize("sampling_rate", [16000, 22050])
+def test_decode_audio_opens_file_directly(monkeypatch, tmp_path, sampling_rate):
+    """FFmpeg receives a seekable filename and emits the requested mono waveform."""
+    audio = tmp_path / "recording with spaces.m4a"
+    expected = np.array([0.25, -0.5, 0.75], dtype="<f4")
+    run = mock.MagicMock(return_value=SimpleNamespace(stdout=expected.tobytes()))
+    monkeypatch.setattr("ai4rag.utils.data.local_hf_asr_pipeline.subprocess.run", run)
+
+    waveform = _decode_audio(audio, sampling_rate)
+
+    np.testing.assert_array_equal(waveform, expected)
+    assert waveform.dtype == np.float32
+    assert waveform.ndim == 1
+    command = run.call_args.args[0]
+    assert command[command.index("-i") + 1] == str(audio)
+    assert command[command.index("-ar") + 1] == str(sampling_rate)
+    assert command[command.index("-ac") + 1] == "1"
+    assert command[command.index("-f") + 1] == "f32le"
+    assert "pipe:0" not in command
+    assert run.call_args.kwargs == {"stdin": subprocess.DEVNULL, "capture_output": True, "check": True}
+
+
+def test_decode_audio_reports_missing_ffmpeg(monkeypatch, tmp_path):
+    """Missing system FFmpeg is reported as an actionable dependency error."""
+    run = mock.MagicMock(side_effect=FileNotFoundError("ffmpeg"))
+    monkeypatch.setattr("ai4rag.utils.data.local_hf_asr_pipeline.subprocess.run", run)
+
+    with pytest.raises(RuntimeError, match="ffmpeg executable on PATH"):
+        _decode_audio(tmp_path / "recording.m4a", 16000)
+
+
+def test_decode_audio_preserves_ffmpeg_error(monkeypatch, tmp_path):
+    """Decoder failures include the filename and FFmpeg's diagnostic output."""
+    error = subprocess.CalledProcessError(1, ["ffmpeg"], stderr=b"Invalid data found when processing input\n")
+    run = mock.MagicMock(side_effect=error)
+    monkeypatch.setattr("ai4rag.utils.data.local_hf_asr_pipeline.subprocess.run", run)
+
+    with pytest.raises(RuntimeError, match="recording.m4a.*Invalid data found") as exc_info:
+        _decode_audio(tmp_path / "recording.m4a", 16000)
+
+    assert exc_info.value.__cause__ is error
+
+
+def test_decode_audio_rejects_empty_output(monkeypatch, tmp_path):
+    """FFmpeg can exit successfully yet produce no samples for an unreadable file."""
+    run = mock.MagicMock(return_value=SimpleNamespace(stdout=b""))
+    monkeypatch.setattr("ai4rag.utils.data.local_hf_asr_pipeline.subprocess.run", run)
+
+    with pytest.raises(ValueError, match="no audio samples.*recording.m4a"):
+        _decode_audio(tmp_path / "recording.m4a", 16000)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="FFmpeg is required for audio decoding")
+@pytest.mark.parametrize("extension", ["m4a", "mp3", "wav"])
+def test_decode_audio_with_real_ffmpeg(tmp_path, extension):
+    """Trailing-metadata M4A and existing formats decode to mono at the model rate."""
+    audio = tmp_path / f"recording.{extension}"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=48000:duration=5",
+            "-ac",
+            "2",
+            str(audio),
+        ],
+        capture_output=True,
+        check=True,
+    )
+    if extension == "m4a":
+        encoded = audio.read_bytes()
+        assert encoded.index(b"mdat") < encoded.index(b"moov")
+
+    waveform = _decode_audio(audio, 16000)
+
+    assert waveform.dtype == np.float32
+    assert waveform.ndim == 1
+    assert waveform.size / 16000 == pytest.approx(5, abs=0.1)
+    assert np.isfinite(waveform).all()
+    assert np.max(np.abs(waveform)) > 0.01
