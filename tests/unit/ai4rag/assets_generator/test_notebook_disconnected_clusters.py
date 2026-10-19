@@ -94,17 +94,23 @@ class TestDisconnectedClusterDocumentation:
         assert "Audio data supports only Hugging Face Whisper models" in full_code
         assert "Use a workbench image with the Docling artifacts bundle" in full_code
 
-    def test_offline_docling_validation_is_a_tagged_cell(self, indexing_notebook):
-        """Connected runners skip offline validation and retain shared model selection."""
+    def test_model_validation_is_shared_and_only_offline_setup_is_tagged(self, indexing_notebook):
+        """Both environments validate the pinned models; only offline flags are skipped."""
         cells = indexing_notebook["cells"]
-        validation_cells = [cell for cell in cells if "disconnected" in cell["metadata"].get("tags", [])]
-        assert len(validation_cells) == 1
-        validation_cell = validation_cells[0]
+        offline_cells = [cell for cell in cells if "disconnected" in cell["metadata"].get("tags", [])]
+        assert len(offline_cells) == 1
+        assert 'os.environ["HF_HUB_OFFLINE"] = "1"' in "".join(offline_cells[0]["source"])
+        validation_cell = next(
+            cell
+            for cell in cells
+            if cell["cell_type"] == "code" and "docling_config = DoclingExtractionConfig(" in "".join(cell["source"])
+        )
         validation_source = "".join(validation_cell["source"])
 
         assert validation_cell["cell_type"] == "code"
         assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in validation_source
-        assert "RapidOCR models are missing" in validation_source
+        assert "models are missing" in validation_source
+        assert not {"connected", "disconnected"}.intersection(validation_cell["metadata"].get("tags", []))
 
         shared_cell = next(
             cell for cell in cells if cell["cell_type"] == "code" and "needs_ocr =" in "".join(cell["source"])
@@ -112,8 +118,7 @@ class TestDisconnectedClusterDocumentation:
         shared_source = "".join(shared_cell["source"])
         assert shared_cell["cell_type"] == "code"
         assert "needs_ocr =" in shared_source
-        assert "DoclingExtractionConfig" in shared_source
-        assert "RapidOCR models are missing" not in shared_source
+        assert "ocr_language =" in shared_source
         assert not {"connected", "disconnected"}.intersection(shared_cell["metadata"].get("tags", []))
 
     def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
@@ -160,8 +165,8 @@ class TestDisconnectedClusterDocumentation:
                 assert "outputs" in cell, f"Code cell {i} missing outputs"
 
 
-def test_graph_notebook_tags_only_disconnected_setup_and_validation():
-    """Graph connected runs must skip the mandatory offline path check and OpenCV reinstall."""
+def test_graph_notebook_tags_only_disconnected_setup():
+    """Shared model validation runs in both environments after document discovery."""
     notebook_path = (
         Path(__file__).parents[4]
         / "ai4rag/assets_generator/notebook_templates/mass_creating_knowledge_graph_template.ipynb"
@@ -169,8 +174,7 @@ def test_graph_notebook_tags_only_disconnected_setup_and_validation():
     notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
     expected_offline_sources = (
         "%pip install --force-reinstall",
-        "if not docling_path:",
-        "RapidOCR models are missing",
+        'os.environ["HF_HUB_OFFLINE"] = "1"',
     )
     for cell in notebook["cells"]:
         source = "".join(cell["source"])

@@ -57,7 +57,7 @@ _SAMPLE_PATTERN_DATA: dict = {
     [
         ("maas_indexing", 1),
         ("maas_inference", 0),
-        ("mass_creating_knowledge_graph", 3),
+        ("mass_creating_knowledge_graph", 2),
         ("mass_inference_knowledge_graph", 0),
     ],
 )

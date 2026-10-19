@@ -159,17 +159,23 @@ The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disc
 - Configuration examples for custom model paths
 - Step-by-step download instructions in the appendix
 
-The MaaS indexing notebook selects model requirements after document discovery:
+Both indexing notebooks select model requirements after document discovery:
 PDF/image inputs require `DOCLING_ARTIFACTS_PATH`, audio inputs require `HF_MODEL_DIR`,
-and text-only corpora require neither. The knowledge-graph indexing notebook also
-includes S3 discovery and extraction, with Docling artifact setup and validation for
-disconnected environments.
+and text-only corpora require neither. Connected and disconnected runs validate and
+pin the same PP-OCRv4 detection, classification, recognition, and character-dictionary
+files as the indexing pipeline. OCR starts from the pattern's detected language;
+edit `ocr_language` when the document language differs. Chinese selects the Chinese
+bundle; other languages use the English bundle.
 
 Generated notebooks preserve environment tags in each cell's `metadata.tags`.
 Cells tagged `disconnected` are intended for disconnected environments; cells tagged
 `connected` are intended for connected environments. Untagged cells are shared.
 AutoX CI uses these tags to skip cells for the other environment. Interactive Jupyter
 execution requires selecting the appropriate cells manually; tags alone do not skip execution.
+Model selection, validation, and extraction cells are shared. Only offline execution
+setup and the graph notebook's offline OpenCV reinstall carry `disconnected` tags.
+For AutoX notebook Jobs, set `RHOAI_NOTEBOOK_CLUSTER_MODE` to `connected` or
+`disconnected`; supplying model artifacts does not select the cluster mode.
 
 
 ## Quick start
