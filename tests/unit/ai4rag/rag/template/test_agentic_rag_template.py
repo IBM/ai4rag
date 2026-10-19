@@ -496,9 +496,7 @@ def test_context_compressor_retains_source_for_legacy_span_response(rag):
 def test_context_compressor_caps_total_excerpt_tokens(rag):
     """Compressed tool output remains bounded across multiple chunks."""
     chunks = [AI4RAGChunk(text=character * 2000, metadata={}) for character in "abcdefghij"]
-    rag.chat_model.invoke.side_effect = [
-        AIMessage(content=json.dumps({"excerpt": chunk.text})) for chunk in chunks
-    ]
+    rag.chat_model.invoke.side_effect = [AIMessage(content=json.dumps({"excerpt": chunk.text})) for chunk in chunks]
 
     excerpts = LLMDocumentCompressor(rag.chat_model).compress("question", chunks)
 
