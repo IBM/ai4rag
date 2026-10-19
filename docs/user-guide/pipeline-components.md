@@ -220,6 +220,11 @@ Transformers Whisper model. Set `HF_MODEL_DIR`, or override it with
 the first audio input with `local_files_only=True`; non-audio conversion does not
 require Whisper artifacts, and ASR weights are never downloaded at runtime.
 
+Audio decoding requires the `ffmpeg` executable on `PATH`, with support for the
+input codec. AI4RAG opens the local file directly with FFmpeg and passes mono
+float32 samples at the model's sampling rate to Transformers. This supports M4A
+files whose metadata is stored at the end, which require seeking during decoding.
+
 The directory must contain `config.json` with `model_type="whisper"`,
 `preprocessor_config.json`, `tokenizer_config.json`, model weights (or a sharded-weight
 index), and the processor/tokenizer files needed by Transformers. Missing or incomplete

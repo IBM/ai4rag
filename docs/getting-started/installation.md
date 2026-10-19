@@ -52,7 +52,8 @@ before graph extraction.
     indexing notebooks install them through `ai4rag[text-extraction]` without separate
     OCR package installation commands.
 
-    Audio extraction also requires `HF_MODEL_DIR` (or
+    Audio extraction requires the system `ffmpeg` executable on `PATH`, with decoders
+    for the input audio formats. It also requires `HF_MODEL_DIR` (or
     `DoclingExtractionConfig.asr_model_path`) to point to a complete local
     Transformers-format Whisper model directory; openai-whisper checkpoints are not
     compatible with this backend. ai4rag does not download ASR weights at runtime. See
