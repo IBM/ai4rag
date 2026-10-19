@@ -10,7 +10,8 @@ from openai import OpenAI
 
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.template.base_template import BaseRAGTemplate
+from ai4rag.rag.template.registry import get_template_spec
 
 from .config import AgentConfig
 from .tools import initialize_retriever
@@ -20,7 +21,7 @@ def create_rag(
     model_id: str | None = None,
     base_url: str | None = None,
     api_key: str | None = None,
-) -> AgenticRAG:
+) -> BaseRAGTemplate:
     """Create the configured RAG template and its MaaS/vector-store clients.
 
     Parameters
@@ -34,7 +35,7 @@ def create_rag(
 
     Returns
     -------
-    AgenticRAG
+    BaseRAGTemplate
         Configured RAG template using the MaaS chat model and vector-store retriever.
 
     Raises
@@ -78,10 +79,11 @@ def create_rag(
         language=Language(code=config.language_code, name=config.language_name),
     )
 
-    return AgenticRAG(
+    return get_template_spec(config.template_id).template_class(
         foundation_model=foundation_model,
         retriever=initialize_retriever(
             client=client,
             config=config,
         ),
+        enable_context_compression=config.enable_context_compression,
     )

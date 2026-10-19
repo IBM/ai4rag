@@ -8,7 +8,7 @@ from dataclasses import dataclass
 
 from .agentic_rag_template import AgenticRAG
 from .base_template import BaseRAGTemplate
-from .simple_rag_template import SimpleRAG
+from .sequential_rag_template import SequentialRAG
 
 
 @dataclass(frozen=True)
@@ -35,7 +35,7 @@ _TEMPLATE_SPECS = (
     # Graph retrieval is a provider concern. It uses the same agentic template
     # implementation while retaining a distinct, published pattern identifier.
     RAGTemplateSpec("agentic_graph_rag", AgenticRAG, "ai4rag.rag.template.agentic_rag_template"),
-    RAGTemplateSpec("simple_rag", SimpleRAG, "ai4rag.rag.template.simple_rag_template"),
+    RAGTemplateSpec("sequential_rag", SequentialRAG, "ai4rag.rag.template.sequential_rag_template"),
 )
 _SPECS_BY_ID = {spec.template_id: spec for spec in _TEMPLATE_SPECS}
 
@@ -51,16 +51,5 @@ def get_template_spec(template_id: str) -> RAGTemplateSpec:
     """
     try:
         return _SPECS_BY_ID[template_id]
-    except KeyError as exc:
+    except (KeyError, TypeError) as exc:
         raise ValueError(f"Unsupported template_id {template_id!r}. Expected one of {sorted(_SPECS_BY_ID)}.") from exc
-
-
-def template_id_for_class(template_class: type[BaseRAGTemplate]) -> str:
-    """Return the canonical pattern ID for an experiment template class."""
-    for spec in _TEMPLATE_SPECS:
-        if spec.template_class is template_class and spec.template_id != "agentic_graph_rag":
-            return spec.template_id
-    raise ValueError(
-        f"Unsupported RAG template class {template_class.__name__!r}. "
-        f"Expected one of {[spec.template_class.__name__ for spec in _TEMPLATE_SPECS]}."
-    )

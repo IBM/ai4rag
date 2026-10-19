@@ -15,16 +15,19 @@ With 4 foundation models and 3 embedding models:
   that does not explicitly pass skip_mps=True.
 """
 
+from types import SimpleNamespace
+
 import pandas as pd
 import pytest
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
+from langchain_core.messages import AIMessage
 
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.experiment.mps import ModelsPreSelector
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.rag.template import SimpleRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -35,6 +38,25 @@ from dev_utils.mocks import MockedEmbeddingModel, MockedFoundationModel
 _N_FOUNDATION_MODELS = 4
 _N_EMBEDDING_MODELS = 3
 _EMBEDDING_DIMENSION = 64
+
+
+@pytest.fixture(autouse=True)
+def mocked_agentic_agent(monkeypatch):
+    """Use mocked model responses in the AgenticRAG pre-selection proxy.
+
+    Retrieval, Milvus Lite, evaluation, and pre-selection still run normally;
+    only the LangChain chat/agent boundary is replaced for non-OpenAI mocks.
+    """
+    monkeypatch.setattr(AgenticRAG, "_chat_model", lambda self: self.foundation_model)
+
+    def create_agent(model, **_kwargs):
+        def invoke(inputs, **_run_kwargs):
+            answer = model.chat(inputs["messages"])[0].message.content
+            return {"messages": [AIMessage(content=answer)]}
+
+        return SimpleNamespace(invoke=invoke)
+
+    monkeypatch.setattr("ai4rag.rag.template.agentic_rag_template.create_agent", create_agent)
 
 
 @pytest.fixture(scope="module")
@@ -109,6 +131,7 @@ def milvus_lite_config(tmp_path):
 def _build_search_space(foundation_models, embedding_models):
     return AI4RAGSearchSpace(
         params=[
+            Parameter(name="template_id", values=("sequential_rag",)),
             Parameter(name="foundation_model", param_type="C", values=foundation_models),
             Parameter(name="embedding_model", param_type="C", values=embedding_models),
         ],
@@ -116,7 +139,6 @@ def _build_search_space(foundation_models, embedding_models):
 
 
 def _make_experiment(documents, benchmark_data, foundation_models, embedding_models, vector_store_config, **kwargs):
-    kwargs.setdefault("rag_template", SimpleRAG)
     return AI4RAGExperiment(
         documents=documents,
         benchmark_data=benchmark_data,

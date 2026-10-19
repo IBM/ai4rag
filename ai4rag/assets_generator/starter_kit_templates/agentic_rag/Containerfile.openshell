@@ -12,6 +12,10 @@ USER 0
 
 WORKDIR /sandbox
 
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends proxychains4 && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install uv for fast dependency installation
 COPY --from=ghcr.io/astral-sh/uv@sha256:fc93e9ecd7218e9ec8fba117af89348eef8fd2463c50c13347478769aaedd0ce /uv /usr/local/bin/uv
 
@@ -27,7 +31,7 @@ RUN uv export --locked --no-dev --no-emit-project --no-hashes > requirements.txt
 ENV PYTHONPATH="/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib64/python3.12/site-packages:$PYTHONPATH"
 
 # Application code and assets
-COPY --chown=1001:0 main.py auth_wrapper.py .
+COPY --chown=1001:0 main.py auth_wrapper.py proxychains_entrypoint.py .
 
 # Set granular permissions
 RUN chmod -R 755 /sandbox && \

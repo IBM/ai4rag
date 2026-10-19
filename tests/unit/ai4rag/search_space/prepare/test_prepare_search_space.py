@@ -279,3 +279,24 @@ class TestPrepareSearchSpaceWithMaas:
         """A chunk overlap above MAX_CHUNK_OVERLAP raises ValidationError before any I/O."""
         with pytest.raises(ValidationError):
             prepare_search_space_with_maas({"chunk_overlaps": [99999]}, MagicMock())
+
+
+@pytest.mark.parametrize(
+    "provider,templates,expected",
+    [
+        ("milvus", None, ("agentic_rag",)),
+        ("neo4j", None, ("agentic_graph_rag",)),
+        ("milvus_lite", ["agentic_rag", "sequential_rag"], ("agentic_rag", "sequential_rag")),
+        ("pgvector", ["sequential_rag"], ("sequential_rag",)),
+    ],
+)
+def test_maas_template_dimension(mocker, provider, templates, expected):
+    client = _setup_client(mocker, ["default-llm", "default-embedding"])
+    result = prepare_search_space_with_maas(_payload(template_ids=templates), client, vector_store_type=provider)
+    assert result["template_id"].values == expected
+
+
+def test_maas_rejects_incompatible_templates_in_search_space(mocker):
+    client = _setup_client(mocker, ["default-llm", "default-embedding"])
+    with pytest.raises(SearchSpaceValueError, match="incompatible"):
+        prepare_search_space_with_maas(_payload(template_ids=["sequential_rag"]), client, vector_store_type="neo4j")

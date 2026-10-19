@@ -67,6 +67,7 @@ class ConstantMeta(type):
 class AI4RAGParamNames(metaclass=ConstantMeta):
     """Parameter's names used in the experiment."""
 
+    TEMPLATE_ID = "template_id"
     CHUNKING = "chunking"
     CHUNKING_METHOD = "chunking_method"
     CHUNK_SIZE = "chunk_size"

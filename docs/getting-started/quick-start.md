@@ -259,13 +259,11 @@ optimizer_settings = GAMOptSettings(
     All four classes live in `ai4rag.rag.vector_store` and can be built explicitly or from environment variables via `.from_env()`.
 
 !!! note "RAG template"
-    Each candidate pattern is evaluated through a `rag_template` constructor argument, defaulting to
-    `AgenticRAG` — a LangChain agent that can rewrite its query and retrieve again before answering.
-    Pass `rag_template=SimpleRAG` (from `ai4rag.rag.template`) for the previous single-pass
-    retrieve-then-generate behavior. Pattern publication currently supports these two
-    built-in classes; custom subclasses require template-registry support. The chosen
-    class is persisted as `template_id` for generated inference notebooks. See
-    [RAG Templates](../architecture/rag-components.md#rag-templates).
+    Each candidate selects its template through the categorical `template_id` search parameter.
+    Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+    `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+    use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+    results, streamed patterns, inference notebooks, and starter kits.
 
 Create and run the optimization experiment:
 
@@ -374,10 +372,10 @@ search_space = AI4RAGSearchSpace(
                 )
             ],
         ),
-        Parameter(name="chunk_size", param_type="I", values=[200, 400, 800]),
-        Parameter(name="chunk_overlap", param_type="I", values=[0, 50, 100]),
+        Parameter(name="chunk_size", param_type="C", values=[200, 400, 800]),
+        Parameter(name="chunk_overlap", param_type="C", values=[0, 50, 100]),
         Parameter(name="retrieval_method", param_type="C", values=["simple", "window"]),
-        Parameter(name="number_of_chunks", param_type="I", values=[3, 5, 7]),
+        Parameter(name="number_of_chunks", param_type="C", values=[3, 5, 7]),
     ]
 )
 
@@ -408,3 +406,28 @@ print(f"Optimization complete! Best pattern: {best_pattern}")
 - [Custom event handlers](../user-guide/event-handlers.md) - Track experiments in production
 
 ---
+
+
+### Template migration and pre-selection
+
+The former `rag_template` experiment argument has been removed. Use
+`Parameter(name="template_id", values=("sequential_rag",))` in the search space,
+or pass `template_ids=["sequential_rag"]` in MaaS constraints. Omitting
+`template_ids` or passing `None` selects the backend default; an empty list is invalid.
+`AgenticRAG` and its `agentic_rag_template` import path are retained. Replace
+`SimpleRAG` / `simple_rag_template` with `SequentialRAG` /
+`sequential_rag_template`, and the persisted `simple_rag` ID with `sequential_rag`.
+The `template_id_for_class()` helper has been removed; resolve an explicit ID with
+`get_template_spec(template_id)` from `ai4rag.rag.template` instead.
+Use `agentic_rag` for vector backends and `agentic_graph_rag` for Neo4j; both use
+`AgenticRAG`. Set the search space's `vector_store_type` to match the experiment's
+backend. When reusing known observations, include the actual `template_id`
+associated with the historical score.
+
+Automatic model pre-selection always uses temporary Milvus Lite and `AgenticRAG`,
+including sequential-only, graph, and multiple-template searches. This vector proxy
+can prune models that would perform better with sequential or graph execution.
+It ranks by `OVERALL_SCORE`, independently of the experiment’s optimization metric.
+Existing model-count thresholds and `search(skip_mps=True)` still apply. Graph RAG
+extension enablement belongs to the calling product; the library adds no feature flag.
+The starter-kit application/package remains named `agentic_rag`.

@@ -1,4 +1,5 @@
 {
+  "template_id": "__TEMPLATE_ID__",
   "generation": {
     "model_id": "__FM_MODEL_ID__",
     "temperature": "__TEMPERATURE__",

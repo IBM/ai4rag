@@ -66,15 +66,17 @@ experiment.search()  # Execute optimization
 
 **RAG Template Selection:**
 
-Each candidate pattern is evaluated through a `rag_template` constructor argument — a `BaseRAGTemplate`
-subclass, defaulting to `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again
-before answering). Pass `rag_template=SimpleRAG` for the previous single-pass retrieve-then-generate
-behavior. The same parameter is accepted by `ModelsPreSelector` for the pre-selection phase below.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
-Pattern publication resolves the selected class through the template registry and
-persists its `template_id`. Currently only the built-in `AgenticRAG` and `SimpleRAG`
-classes can be published; custom subclasses require registry support. Generated
-inference notebooks use that ID to recreate the selected template.
+Model pre-selection always evaluates `AgenticRAG` with vector retrieval using temporary Milvus Lite,
+regardless of the requested templates or backend. It can prune models that would
+perform better with sequential or graph execution. Its ranking metric remains
+`OVERALL_SCORE`, independently of the experiment's optimization metric. Model-count
+thresholds and `skip_mps` remain available.
 
 When inference returns agent conversations, each `EvaluationResult` retains them in
 its optional `conversations` field alongside evaluation scores. They are available
@@ -91,7 +93,7 @@ The `search()` method is the main entry point that executes the optimization loo
 1. **Models Pre-Selection (MPS)** (optional):
    - Triggered when `len(foundation_models) > n_mps_foundation_models` or `len(embedding_models) > n_mps_embedding_models`
    - Evaluates all model combinations on a small sample (default: 5 benchmark questions)
-   - Selects top N models based on optimization metric
+   - Selects top N models based on `Metrics.OVERALL_SCORE`, independently of the experiment's optimization metric
    - Reduces search space by eliminating poorly-performing models early
    - Can be skipped with `skip_mps=True` kwarg
 
@@ -120,12 +122,13 @@ sequenceDiagram
     participant Optimizer
     participant Exp as AI4RAGExperiment
     participant VS as VectorStore
-    participant RAG as rag_template
+    participant RAG as Selected RAG template
     participant Eval as Evaluator
     participant EH as EventHandler
 
     Optimizer->>Exp: run_single_evaluation(config)
     activate Exp
+    Note over Exp: Resolve config.template_id through the template registry
     Note over Exp: Check results cache
 
     alt Config cached
@@ -137,7 +140,7 @@ sequenceDiagram
         VS-->>Exp: indexing complete
         deactivate VS
 
-        Exp->>RAG: create rag_template instance (AgenticRAG by default)
+        Exp->>RAG: instantiate class selected by config.template_id
         activate RAG
         Note over RAG: Parallel query execution
         RAG-->>Exp: inference responses
@@ -158,14 +161,15 @@ sequenceDiagram
 
 **Key Features:**
 
-1. **Results Caching**: Checks if identical `indexing_params` + `rag_params` have been evaluated before
-2. **Collection Reuse**: Reuses vector store collections when `indexing_params` match (chunking + embedding)
+1. **Results Caching**: Checks if identical `indexing_params` + `rag_params` have been evaluated before; `rag_params` includes `template_id`, so different templates receive separate evaluations
+2. **Collection Reuse**: Reuses vector store collections when `indexing_params` match, including across templates; Neo4j indexing settings also include the extraction model and graph extraction configuration
 3. **Parallel Query Execution**: Uses `ThreadPoolExecutor` (max 10 threads) for concurrent question processing
 4. **Event Streaming**: Notifies event handler at each step (chunking, embedding, retrieval, generation, evaluation)
 5. **Error Handling**: Wraps errors in domain-specific exceptions (`IndexingError`, `GenerationError`, `EvaluationError`)
 
 **Parameters Extracted:**
 
+- **Template**: `template_id`, resolved through the template registry
 - **Chunking params**: `chunking_method`, `chunk_size`, `chunk_overlap`
 - **Embedding params**: `model_id`, `distance_metric`, `embedding_dimension`, `context_length`
 - **Retrieval params**: `retrieval_method`, `window_size`, `number_of_chunks`, `search_mode`, `ranker_*`
@@ -188,8 +192,8 @@ def run_pre_selection(
 **Process:**
 
 1. Sample `n_records` questions from benchmark data (with `random_seed` for reproducibility)
-2. Evaluate every `(foundation_model, embedding_model)` combination
-3. Rank by `optimization_metric` performance
+2. Evaluate every `(foundation_model, embedding_model)` combination using `AgenticRAG` and temporary Milvus Lite storage
+3. Rank by `Metrics.OVERALL_SCORE`, independently of the experiment's `optimization_metric`
 4. Select top `n_mps_foundation_models` and `n_mps_embedding_models`
 5. Update search space with selected models
 
@@ -304,8 +308,8 @@ def search(self) -> dict[str, Any]:
 
 ```python
 known_observations = [
-    {"foundation_model": model_a, "chunk_size": 512, ..., "score": 0.72},
-    {"foundation_model": model_b, "chunk_size": 1024, ..., "score": 0.68},
+    {"template_id": "agentic_rag", "foundation_model": model_a, "chunk_size": 512, ..., "score": 0.72},
+    {"template_id": "agentic_rag", "foundation_model": model_b, "chunk_size": 1024, ..., "score": 0.68},
 ]
 
 optimizer = GAMOptimizer(
@@ -457,6 +461,12 @@ class AI4RAGSearchSpace(SearchSpace):
 ```
 
 `milvus`, `milvus_lite`, and `pgvector` all support hybrid search, so the same validation rules and defaults apply across them regardless of which one is used at runtime. Passing `vector_store_type="neo4j"` instead selects Neo4j's graph-only defaults: `search_mode` is fixed to `"graph"`, `chunk_size`/`chunk_overlap` are fixed, and the hybrid ranker parameters are omitted (see [Search Space](../user-guide/search-space.md#default-parameters)).
+
+At construction, `validate_vector_store_compatibility()` also checks that `template_id`
+is categorical and contains registered IDs compatible with `vector_store_type`.
+Vector backends accept `agentic_rag` and `sequential_rag` with vector/hybrid search;
+Neo4j requires `agentic_graph_rag` with graph search. Set the search-space backend
+to match the experiment's vector-store configuration.
 
 **Built-in Validation Rules:**
 

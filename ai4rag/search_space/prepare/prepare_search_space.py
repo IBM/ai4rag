@@ -107,6 +107,7 @@ def prepare_search_space_with_maas(
     payload : dict[str, Any]
         A mapping of constraint names to their values. Supported keys:
 
+        - "template_ids" (list[str]) — template search dimension; None uses the backend default.
         - "foundation_models" (list[dict]) — foundation model identifiers
           to include; required.
         - "embedding_models" (list[dict]) — embedding model identifiers
@@ -162,6 +163,8 @@ def prepare_search_space_with_maas(
     logger.info("Selected embedding models for the experiment: %s.", [m.model_id for m in ems_param.values])
 
     extra_params: list[Parameter] = []
+    if validated_payload.template_ids is not None:
+        extra_params.append(Parameter(name=AI4RAGParamNames.TEMPLATE_ID, values=tuple(validated_payload.template_ids)))
     if validated_payload.chunking_methods is not None:
         extra_params.append(
             Parameter(name=AI4RAGParamNames.CHUNKING_METHOD, values=tuple(validated_payload.chunking_methods))
