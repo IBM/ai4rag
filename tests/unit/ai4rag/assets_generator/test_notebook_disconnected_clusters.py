@@ -94,12 +94,15 @@ class TestDisconnectedClusterDocumentation:
         assert "Audio data supports only Hugging Face Whisper models" in full_code
         assert "Use a workbench image with the Docling artifacts bundle" in full_code
 
-    def test_model_validation_is_shared_and_only_offline_setup_is_tagged(self, indexing_notebook):
-        """Both environments validate the pinned models; only offline flags are skipped."""
+    def test_model_validation_is_shared_and_setup_cells_have_environment_tags(self, indexing_notebook):
+        """Both environments validate pinned models and select their own setup cells."""
         cells = indexing_notebook["cells"]
         offline_cells = [cell for cell in cells if "disconnected" in cell["metadata"].get("tags", [])]
         assert len(offline_cells) == 1
         assert 'os.environ["HF_HUB_OFFLINE"] = "1"' in "".join(offline_cells[0]["source"])
+        connected_cells = [cell for cell in cells if "connected" in cell["metadata"].get("tags", [])]
+        assert len(connected_cells) == 1
+        assert "hf_hub_download(" in "".join(connected_cells[0]["source"])
         validation_cell = next(
             cell
             for cell in cells
@@ -165,7 +168,7 @@ class TestDisconnectedClusterDocumentation:
                 assert "outputs" in cell, f"Code cell {i} missing outputs"
 
 
-def test_graph_notebook_tags_only_disconnected_setup():
+def test_graph_notebook_tags_environment_specific_setup():
     """Shared model validation runs in both environments after document discovery."""
     notebook_path = (
         Path(__file__).parents[4]
@@ -181,6 +184,8 @@ def test_graph_notebook_tags_only_disconnected_setup():
         environment_tags = {"connected", "disconnected"}.intersection(cell["metadata"].get("tags", []))
         if cell["cell_type"] == "code" and any(fragment in source for fragment in expected_offline_sources):
             assert environment_tags == {"disconnected"}
+        elif cell["cell_type"] == "code" and "hf_hub_download(" in source:
+            assert environment_tags == {"connected"}
         else:
             assert not environment_tags
     for fragment in expected_offline_sources:

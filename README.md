@@ -160,8 +160,10 @@ The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disc
 - Step-by-step download instructions in the appendix
 
 Both indexing notebooks select model requirements after document discovery:
-PDF/image inputs require `DOCLING_ARTIFACTS_PATH`, audio inputs require `HF_MODEL_DIR`,
-and text-only corpora require neither. Connected and disconnected runs validate and
+Disconnected PDF/image runs require `DOCLING_ARTIFACTS_PATH`. Connected runs use
+that bundle when configured, or download the selected OCR files from the same public
+Hugging Face mirror as the pipeline image, pinned to a fixed revision. Audio inputs
+require `HF_MODEL_DIR`, and text-only corpora require neither. Both environments validate and
 pin the same PP-OCRv4 detection, classification, recognition, and character-dictionary
 files as the indexing pipeline. OCR starts from the pattern's detected language;
 edit `ocr_language` when the document language differs. Chinese selects the Chinese
@@ -174,6 +176,8 @@ AutoX CI uses these tags to skip cells for the other environment. Interactive Ju
 execution requires selecting the appropriate cells manually; tags alone do not skip execution.
 Model selection, validation, and extraction cells are shared. Only offline execution
 setup and the graph notebook's offline OpenCV reinstall carry `disconnected` tags.
+The optional OCR download cell carries a `connected` tag. It leaves the full Docling
+artifacts path unset so Docling can download its core models normally.
 For AutoX notebook Jobs, set `RHOAI_NOTEBOOK_CLUSTER_MODE` to `connected` or
 `disconnected`; supplying model artifacts does not select the cluster mode.
 

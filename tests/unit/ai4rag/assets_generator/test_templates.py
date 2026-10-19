@@ -53,15 +53,17 @@ _SAMPLE_PATTERN_DATA: dict = {
 
 
 @pytest.mark.parametrize(
-    ("template", "expected_disconnected_cells"),
+    ("template", "expected_disconnected_cells", "expected_connected_cells"),
     [
-        ("maas_indexing", 1),
-        ("maas_inference", 0),
-        ("mass_creating_knowledge_graph", 2),
-        ("mass_inference_knowledge_graph", 0),
+        ("maas_indexing", 1, 1),
+        ("maas_inference", 0, 0),
+        ("mass_creating_knowledge_graph", 2, 1),
+        ("mass_inference_knowledge_graph", 0, 0),
     ],
 )
-def test_generated_notebook_preserves_environment_tags(template, expected_disconnected_cells, tmp_path):
+def test_generated_notebook_preserves_environment_tags(
+    template, expected_disconnected_cells, expected_connected_cells, tmp_path
+):
     """Environment selection metadata must survive loading, formatting, and saving."""
     output_path = tmp_path / f"{template}.ipynb"
     generate_notebook_from_template(template, _SAMPLE_PATTERN_DATA, output_path)
@@ -73,6 +75,9 @@ def test_generated_notebook_preserves_environment_tags(template, expected_discon
     tagged_cells = [cell for cell in generated["cells"] if "disconnected" in cell["metadata"].get("tags", [])]
     assert len(tagged_cells) == expected_disconnected_cells
     assert all(cell["cell_type"] == "code" for cell in tagged_cells)
+    connected_cells = [cell for cell in generated["cells"] if "connected" in cell["metadata"].get("tags", [])]
+    assert len(connected_cells) == expected_connected_cells
+    assert all(cell["cell_type"] == "code" for cell in connected_cells)
 
 
 class TestCreatePlaceholderMapping:
