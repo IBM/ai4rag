@@ -9,7 +9,7 @@ from ..foundation_models.base_model import MessageTyped
 from .base_template import BaseRAGTemplate
 
 
-class SimpleRAG(BaseRAGTemplate):
+class SequentialRAG(BaseRAGTemplate):
     """
     RAG template composing a retriever and a foundation model for retrieval
     and generation.

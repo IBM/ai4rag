@@ -42,13 +42,18 @@ before graph extraction.
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
     Scanned PDFs/images (via RapidOCR) and audio transcription (via a local Hugging Face Whisper model)
     additionally require the `text-extraction` extra, which pulls in `torch`, `docling-ibm-models`,
-    `rapidocr`, and the audio dependencies:
+    `rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, and the audio dependencies:
 
     ```bash
     pip install "ai4rag[text-extraction] @ git+https://github.com/IBM/ai4rag.git@main"
     ```
 
-    Audio extraction also requires `HF_MODEL_DIR` (or
+    RapidOCR and ONNX Runtime are declared directly by this extra. Generated MaaS
+    indexing notebooks install them through `ai4rag[text-extraction]` without separate
+    OCR package installation commands.
+
+    Audio extraction requires the system `ffmpeg` executable on `PATH`, with decoders
+    for the input audio formats. It also requires `HF_MODEL_DIR` (or
     `DoclingExtractionConfig.asr_model_path`) to point to a complete local
     Transformers-format Whisper model directory; openai-whisper checkpoints are not
     compatible with this backend. ai4rag does not download ASR weights at runtime. See
@@ -94,6 +99,7 @@ uv sync --extra docs        # documentation tools only
 
 | Extra | Dependencies | Purpose |
 |-------|-------------|---------|
+| `text-extraction` | Docling conversion and audio dependencies, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
 | `test` | `pytest`, `pytest-cov`, `pytest-mock` | Testing tools |
 | `code_check` | `black`, `pylint`, `isort` | Code quality tools |
 | `docs` | `mkdocs`, `mkdocs-material` | Documentation tools |

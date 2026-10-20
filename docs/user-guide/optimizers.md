@@ -255,12 +255,14 @@ known_observations = [
         "chunk_size": 512,
         "chunk_overlap": 64,
         "number_of_chunks": 5,
+        "template_id": "agentic_rag",
         "score": 0.72
     },
     {
         "chunk_size": 1024,
         "chunk_overlap": 128,
         "number_of_chunks": 7,
+        "template_id": "agentic_rag",
         "score": 0.68
     },
     # ... more observations
@@ -286,6 +288,7 @@ best_result = optimizer.search()
 !!! note "Known Observations Format"
     Each observation must include:
     - All search space parameter keys with their values
+    - For RAG experiments, the actual `template_id` identifying the evaluated template
     - A `"score"` key with the evaluation result (float)
 
 ---
@@ -454,6 +457,7 @@ known_observations = [
         "chunk_size": result["settings"]["chunking"]["chunk_size"],
         "chunk_overlap": result["settings"]["chunking"]["chunk_overlap"],
         "number_of_chunks": result["settings"]["retrieval"]["number_of_chunks"],
+        "template_id": result["template_id"],
         "score": result["final_score"]
     }
     for result in previous_results

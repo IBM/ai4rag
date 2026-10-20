@@ -5,7 +5,7 @@
 import base64
 import binascii
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from os import getenv
 from pathlib import Path
 from typing import TypedDict, cast
@@ -54,13 +54,21 @@ class VectorStoreConfig(TypedDict):
     collection_name: str
 
 
+class AgenticConfig(TypedDict):
+    """Agentic RAG runtime settings."""
+
+    enable_context_compression: bool
+
+
 class AgentConfigData(TypedDict):
     """Expected structure of the generated agent_config.json."""
 
+    template_id: str
     generation: GenerationConfig
     prompts: PromptConfig
     embedding: EmbeddingConfig
     retrieval: RetrievalConfig
+    agentic: AgenticConfig
     vector_store: VectorStoreConfig
 
 
@@ -118,6 +126,10 @@ class AgentConfig:
     ranker_strategy: str
     ranker_k: int | None
     ranker_alpha: float | None
+    enable_context_compression: bool
+
+    template_id: str = "agentic_rag"
+    graph_retrieval: dict[str, int | bool] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls) -> "AgentConfig":
@@ -128,8 +140,21 @@ class AgentConfig:
             prompts = file_config["prompts"]
             embedding = file_config["embedding"]
             retrieval = file_config["retrieval"]
+            agentic = file_config.get("agentic", {"enable_context_compression": True})
             vector_store = file_config["vector_store"]
+            from ai4rag.rag.template.registry import get_template_spec
+            from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
+
+            template_id = get_template_spec(file_config["template_id"]).template_id
             config = cls(
+                template_id=template_id,
+                graph_retrieval=(
+                    Neo4jGraphRetrievalConfig.from_mapping(
+                        {k: v for k, v in retrieval.items() if k in Neo4jGraphRetrievalConfig.keys()}
+                    ).to_search_kwargs()
+                    if retrieval["search_mode"] == "graph"
+                    else {}
+                ),
                 model_id=generation["model_id"],
                 temperature=float(generation["temperature"]),
                 max_completion_tokens=int(generation["max_completion_tokens"]),
@@ -148,6 +173,7 @@ class AgentConfig:
                 ranker_strategy=retrieval["ranker_strategy"],
                 ranker_k=int(retrieval["ranker_k"]) if retrieval["ranker_k"] is not None else None,
                 ranker_alpha=float(retrieval["ranker_alpha"]) if retrieval["ranker_alpha"] is not None else None,
+                enable_context_compression=agentic["enable_context_compression"],
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise ValueError(f"Invalid agent configuration: {exc}") from exc
@@ -165,4 +191,6 @@ class AgentConfig:
                 raise ValueError(f"Agent configuration requires a non-empty {name}")
         if min(config.max_completion_tokens, config.embedding_dimension, config.number_of_chunks) < 1:
             raise ValueError("Token limit, embedding dimension, and chunk count must be positive")
+        if not isinstance(config.enable_context_compression, bool):
+            raise ValueError("Agent configuration requires a boolean enable_context_compression")
         return config

@@ -25,10 +25,15 @@ This user guide covers:
 ai4rag transforms templates into patterns through optimization.
 
 Published patterns include `template_id`, allowing generated inference notebooks to
-recreate the chosen `AgenticRAG` or `SimpleRAG` template. With `LocalEventHandler`,
+recreate the chosen `AgenticRAG` or `SequentialRAG` template. With `LocalEventHandler`,
 each published pattern has `pattern.json` and `evaluation_results.json`; agentic
 patterns also include `conversations.json` with retrieval and tool activity. See
 [Event Handlers](event-handlers.md) for the output schema.
+
+Each evaluated pattern also retains its conversations in
+`EvaluationResult.conversations`, accessible through `experiment.results`. The field
+is `None` when inference emits no conversations. Evaluation JSON records can link to
+the full conversations through an optional `conversation_id`.
 
 ### Search Space
 
@@ -40,11 +45,20 @@ from ai4rag.search_space.src.parameter import Parameter
 
 search_space = AI4RAGSearchSpace(
     params=[
-        Parameter(name="chunk_size", param_type="I", values=[200, 400, 800]),
+        # Configured foundation-model and embedding-model instances:
+        Parameter(name="foundation_model", values=[model]),
+        Parameter(name="embedding_model", values=[embedding]),
+        Parameter(name="template_id", values=["agentic_rag", "sequential_rag"]),
+        Parameter(name="chunk_size", param_type="C", values=[200, 400, 800]),
         Parameter(name="retrieval_method", param_type="C", values=["simple", "window"]),
     ]
 )
 ```
+
+The categorical `template_id` dimension lets vector-backend experiments compare
+agentic and sequential execution. Neo4j requires `vector_store_type="neo4j"`,
+`template_id="agentic_graph_rag"`, and graph search; its defaults select these
+automatically. See [Template Selection](search-space.md#template-selection).
 
 ### Hyperparameter Optimization
 

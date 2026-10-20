@@ -68,7 +68,7 @@ def on_pattern_creation(
 ```python
 {
     "name": "Pattern1",
-    "template_id": "simple_rag",
+    "template_id": "sequential_rag",
     "iteration": 0,
     "max_combinations": 24,
     "duration_seconds": 134,
@@ -105,9 +105,11 @@ def on_pattern_creation(
 }
 ```
 
-`template_id` identifies the selected template: experiments publish `agentic_rag` for
-`AgenticRAG` and `simple_rag` for `SimpleRAG`, including when retrieval uses Neo4j.
-Notebook rendering also accepts `agentic_graph_rag` as an alias for `AgenticRAG`.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
 For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, for example:
 
@@ -118,12 +120,50 @@ For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, 
 This replaces `settings.knowledge_graph`; the published settings no longer contain a
 separate extraction-model block. Retrieval controls remain in `settings.retrieval`.
 
+For graph mode, `_stream_finished_pattern()` copies the effective
+`Neo4jGraphRetrievalConfig` options into `settings.retrieval`. For example, with an
+explicit `route_k=12`:
+
+```python
+{
+    "method": "simple",
+    "number_of_chunks": 5,
+    "search_mode": "graph",
+    "route_k": 12,
+    "include_entity_neighbors": True,
+    "entity_neighbor_limit": 5,
+    "entity_pivot_limit": 3,
+    "entity_relationship_hops": 1,
+    "relationship_neighbor_limit": 5,
+}
+```
+
+When `route_k` is unset, it is omitted and Neo4j computes `max(2 * k, 10)` from
+the requested chunk count. The other graph options include their effective
+defaults even when `graph_retrieval_config` was omitted from the experiment.
+
+`LocalEventHandler` writes the streamed payload to `pattern.json`. The
+[starter-kit generator](../api-reference/assets-generator/starter-kit.md) copies
+these retrieval settings into `agent_config.json`; deployment `config.py` loads
+them and the retriever forwards them to Neo4j through `search_kwargs`. This
+preserves custom graph settings through evaluation, publication, and deployment,
+including deferred publication of the best warm-start candidate.
+
 ### `evaluation_results` — per-question breakdown
+
+Agentic evaluation records can include an optional `conversation_id`, as in the
+example below. It links to the record with the same ID in `conversations.json` or
+the handler's `conversations` argument. Links are added by benchmark position only
+when conversation and evaluation counts match and the conversation has an ID.
+If the counts differ, a warning is logged and all links are omitted. Full
+conversation records are passed separately rather than embedded in each evaluation
+record.
 
 ```python
 [
     {
         "question": "What is ...?",
+        "conversation_id": "case-0000",
         "answer": "According to the document ...",
         "correct_answers": ["The correct answer is ..."],
         "answer_contexts": [
@@ -141,16 +181,28 @@ separate extraction-model block. Retrieval controls remain in `settings.retrieva
 
 ### `conversations` — agent trajectories
 
-When inference returns conversation records, the experiment passes them separately from
-the pattern payload and evaluation results. Each record contains:
+When inference returns conversation records, the experiment stores them on
+`EvaluationResult.conversations` and passes them separately from the pattern payload
+and evaluation results on publication. They are also accessible through
+`experiment.results` and included in `EvaluationResult.to_dict()`. The field is
+`None` when no conversations are emitted. Each record contains:
 
 | Field | Content |
 |---|---|
 | `conversation_id` | Benchmark position, such as `case-0000` |
 | `question` | Original question |
 | `initial_retrieval` | Initial query and retrieved documents, each with text and metadata |
+| `context_compression_fallback` | Whether the successful response used the context-compression retry |
+| `compression` | `None` without a retry; otherwise `initial` statistics and a `retriever_tool_calls` list |
 | `messages` | Agent messages, including assistant tool calls and tool responses |
 | `tool_execution` | `rewrite_query` and `retriever` input/output records; retrieval records also include new documents |
+
+Compression statistics contain `input_chunks`, `retained_chunks`, `dropped_chunks`,
+`original_tokens`, `compressed_tokens`, and `max_completion_tokens`. Token counts are
+estimates. During the retry, compressed retrieval-tool records also include
+`compressed=True` and their own `compression` statistics. `initial_retrieval` retains
+the original documents; `messages` and `tool_execution` describe the successful retry.
+See [Context-overflow fallback](../architecture/rag-components.md#context-overflow-fallback).
 
 The selected warm-start pattern retains its trajectories when it is published as `Pattern1`.
 Non-agentic publication omits the `conversations` keyword. Custom handlers used with

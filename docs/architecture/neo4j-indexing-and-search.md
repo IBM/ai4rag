@@ -50,7 +50,7 @@ When the experiment reuses a completed collection, it skips indexing.
 
 ### Collection reuse and indexes
 
-For Neo4j, the experiment's collection-reuse key includes chunking settings, embedding model and parameters, foundation-model ID, temperature, maximum completion tokens, and `kg_extraction_config`.
+For Neo4j, the experiment's collection-reuse key includes chunking settings, embedding model and parameters, foundation-model ID, temperature, the KG-specific maximum completion tokens, and `kg_extraction_config`.
 The foundation-model and KG settings are part of the key because they change the extracted graph even when the chunk embeddings are identical.
 
 If no exact match exists, ai4rag creates a namespaced `ai4rag_*` collection.
@@ -102,7 +102,7 @@ Both its async `run()` and GraphRAG chunk-iterator interface preserve the canoni
 text and chunk index. During extraction, ai4rag suppresses GraphRAG's verbose logs
 that include document text, retains warnings/errors, and logs extraction start and
 completion with chunk counts.
-The pipeline uses `on_error="IGNORE"` and processes up to eight chunks concurrently.
+The pipeline uses `on_error="IGNORE"` and processes up to two chunks concurrently by default to reduce pressure on the foundation-model endpoint. Extraction start logs include the concurrency limit.
 ai4rag disables GraphRAG's database-wide resolver and optionally resolves entities for this collection after all chunk extraction finishes (enabled by default).
 Each chunk is therefore one KG extraction input; an upstream chunk that is too large for the foundation model can exceed its context limit.
 
@@ -110,6 +110,12 @@ Each chunk is therefore one KG extraction input; an upstream chunk that is too l
 | --- | --- |
 | `constrained` (default) | Uses ai4rag's fixed entity and relationship type sets. |
 | `free` | Passes `schema="FREE"`, lets the model choose types, and uses positive per-chunk entity and relationship limits. |
+
+Both modes accept `kg_extraction_config.max_completion_tokens`, a positive integer
+defaulting to `1024`. It caps each entity-extraction response independently of the
+model's answer-generation limit and does not mutate the model's general parameters.
+For example, pass `kg_extraction_config={"mode": "constrained", "max_completion_tokens": 2048}`
+to `AI4RAGExperiment` or `Neo4jGraphStore` for a larger extraction response.
 
 The pipeline builds a temporary lexical graph for extraction, using `__AI4RAG_KG_SOURCE_DOCUMENT__` and `__AI4RAG_KG_SOURCE_CHUNK__` labels.
 These are distinct from model-extracted entity types such as `Document` or `Chunk`.
@@ -133,7 +139,7 @@ Calling both on the same documents with different chunking settings can therefor
 
 Published experiment patterns store the extraction policy in
 `settings.graph_extraction`, replacing `settings.knowledge_graph`. The policy contains
-the mode and any per-chunk limits; the published payload no longer carries a separate
+the mode, any configured extraction-token override, and any per-chunk limits; the published payload no longer carries a separate
 extraction-model ID/parameters block. The indexing notebook uses the published
 generation model and this extraction policy. Graph retrieval controls remain in
 `settings.retrieval`. Regenerate older patterns or migrate their `extraction_config`
@@ -141,7 +147,7 @@ before generating new graph indexing notebooks.
 
 ## Graph retrieval
 
-A RAG template's retrieval step (e.g. `SimpleRAG.generate(question)`, or `AgenticRAG`'s initial retrieval) calls `Retriever.retrieve(question)`, which passes `k`, graph mode, and graph options to `Neo4jGraphStore.search()`.
+A RAG template's retrieval step (e.g. `SequentialRAG.generate(question)`, or `AgenticRAG`'s initial retrieval) calls `Retriever.retrieve(question)`, which passes `k`, graph mode, and graph options to `Neo4jGraphStore.search()`.
 The store runs two routes concurrently.
 By default, each requests `route_k = max(2 * k, 10)` candidates; fused output is trimmed to `k`.
 
@@ -234,5 +240,5 @@ Rebuilding those collections is needed to obtain the single-set layout.
 
 Graph indexing adds embedding, LLM extraction, and graph-write costs.
 Exact collection reuse avoids them.
-Changing the indexed foundation-model ID, temperature, maximum completion tokens, or `kg_extraction_config` changes the experiment's collection-reuse key.
+Changing the indexed foundation-model ID, temperature, KG-specific maximum completion tokens, or `kg_extraction_config` changes the experiment's collection-reuse key. Changing only the answer-generation completion-token limit does not require a new collection.
 Search still returns direct vector evidence when graph extraction yields no useful links, while increasing final `k` increases the amount of prompt context.

@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- **Text extraction** — local Whisper ASR decodes audio from seekable file paths with FFmpeg before transcription, fixing M4A files with trailing metadata that failed when piped through Transformers; decoding failures now include actionable diagnostics
+
+---
+
+## [0.24.0](https://github.com/IBM/ai4rag/releases/tag/v0.24.0)
+
+### Added
+
+- **Search space** — categorical `template_id` and MaaS `template_ids` constraints let vector-backend experiments compare `agentic_rag` and `sequential_rag`; Neo4j defaults to `agentic_graph_rag`
+- **Agentic RAG** — context-overflow responses reporting "maximum context length" trigger one retry with query-relevant document excerpts; `enable_context_compression` defaults to `True` and can disable the fallback
+- **Retrieval** — new `LLMDocumentCompressor` extracts verified verbatim excerpts while preserving source metadata, omits chunks with no relevant evidence, and limits each compression pass to 4,096 estimated tokens
+- **Agentic RAG** — conversation records include `context_compression_fallback` and `compression` statistics for initial context and subsequent retrievals during the retry
+- **Assets generator** — generated inference notebooks and starter kits accept `settings.agentic.enable_context_compression`, defaulting to enabled when absent
+
+### Changed
+
+- **BREAKING CHANGE: Experiment** — template selection moves from the `rag_template` constructor argument to each candidate's `template_id`; results, evaluation caching, streamed patterns, notebooks, and starter kits retain the selected ID, while matching indexing settings still reuse collections
+- **BREAKING CHANGE: RAG template** — `SimpleRAG` and its `simple_rag_template` module are renamed to `SequentialRAG` and `sequential_rag_template`; persisted `simple_rag` IDs must become `sequential_rag`
+- **Search space** — construction validates template and search-mode compatibility: vector backends accept `agentic_rag` or `sequential_rag` with vector/hybrid search, while Neo4j requires `agentic_graph_rag` with graph search
+- **Models pre-selector** — model pre-selection always uses `AgenticRAG` with temporary Milvus Lite, including sequential-only and graph searches; experiment pre-selection continues ranking by `OVERALL_SCORE`, with existing thresholds and `skip_mps` support
+
+### Fixed
+
+- **Assets generator** — generated starter kits instantiate the selected template and retain effective Neo4j graph-retrieval settings through configuration and deployment
+- **Assets generator** — OpenShell deployment preserves database CA certificates across shell boundaries, including PEM or base64-encoded pgvector CA input
+- **Assets generator** — pgvector connections in OpenShell sandboxes tunnel native TCP through the sandbox's HTTP CONNECT proxy
+
+### Removed
+
+- **RAG template** — removed `template_id_for_class()`; use `get_template_spec(template_id)` to resolve a selected template
+
+---
+
+## [0.23.0](https://github.com/IBM/ai4rag/releases/tag/v0.23.0)
+
+### Added
+
+- **Experiment** — `EvaluationResult.conversations` retains agent conversation records with each evaluated pattern, making them accessible through experiment results and `to_dict()`
+- **Experiment** — evaluation JSON records include `conversation_id` links to full agent conversations when conversation and evaluation counts match; mismatched counts produce a warning and omit the links
+- **Vector store** — Neo4j `kg_extraction_config.max_completion_tokens` accepts a positive integer to control entity-extraction output independently of answer generation, defaulting to 1024
+- **Assets generator** — generated starter kits support Neo4j OpenShell deployment, loading database credentials, validating required settings, and configuring egress from the Neo4j URI (default port 7687)
+
+### Changed
+
+- **Dependencies** — the `text-extraction` extra now includes `rapidocr~=3.9.2` and `onnxruntime~=1.25.0`, providing OCR dependencies through the standard installation
+- **Dependencies** — refreshed `uv.lock` with Transformers 5.8.1 → 5.10.1 and platform-specific Docling IBM Models versions (3.13.2 on macOS, 3.15.0 elsewhere)
+- **Notebooks** — the MaaS indexing notebook installs OCR dependencies through `ai4rag[text-extraction]`, replacing separate RapidOCR and ONNX Runtime installation commands
+- **Development utilities** — `FileStore` defaults PDF model inference to CPU and accepts a keyword-only `device` override; PDF caches use `.pdfium.json` so legacy cached extractions are regenerated
+
+### Fixed
+
+- **Experiment** — pattern publication, including the selected warm-start pattern, reads conversations from its `EvaluationResult`, keeping conversation artifacts attached to the result being published
+- **Text extraction** — production PDF extraction and the local `FileStore` helper use Docling's PDFium backend to recover text that the native parser emitted as NUL characters
+- **Vector store** — Neo4j entity extraction reduces default chunk concurrency from eight to two and uses a dedicated completion-token limit; collection reuse tracks that extraction limit rather than the answer-generation limit
+- **Assets generator** — starter-kit deployment forwards `MILVUS_CA_CERT`, `PGVECTOR_CA_CERT`, and `NEO4J_CA_CERT` to the sandbox and agent; Milvus deployment uses `MILVUS_CA_CERT` instead of the obsolete `MILVUS_SERVER_CERT` key
+
+---
+
 ## [0.22.0](https://github.com/IBM/ai4rag/releases/tag/v0.22.0)
 
 ### Added

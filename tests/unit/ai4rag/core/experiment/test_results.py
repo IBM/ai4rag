@@ -3,6 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+from dataclasses import replace
+
 import pytest
 
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
@@ -76,8 +78,16 @@ class TestEvaluationResult:
             "scores",
             "execution_time",
             "final_score",
+            "conversations",
         }
         assert set(result_dict.keys()) == expected_keys
+
+    def test_evaluation_result_retains_conversations(self, sample_evaluation_result):
+        """Test trajectories are retained with the pattern result."""
+        conversations = [{"conversation_id": "case-0000", "messages": [{"type": "ai", "content": "Hi"}]}]
+        result = EvaluationResult(**{**sample_evaluation_result.to_dict(), "conversations": conversations})
+
+        assert result.conversations is conversations
 
     def test_evaluation_result_with_none_indexing_params(self, sample_scores):
         """Test EvaluationResult with None indexing_params."""
@@ -615,6 +625,20 @@ class TestExperimentResultsCreateEvaluationResultsJson:
         expected_fields = {"question", "correct_answers", "answer", "answer_contexts", "metrics"}
         for entry in result:
             assert set(entry.keys()) == expected_fields
+
+    def test_create_evaluation_results_json_links_conversations(self, evaluation_data_list, evaluation_result):
+        """Test lightweight evaluation records link to their full trajectories."""
+        conversations = [
+            {"conversation_id": "case-0000", "messages": []},
+            {"conversation_id": "case-0001", "messages": []},
+        ]
+
+        result = ExperimentResults.create_evaluation_results_json(
+            evaluation_data_list,
+            replace(evaluation_result, conversations=conversations),
+        )
+
+        assert [record["conversation_id"] for record in result] == ["case-0000", "case-0001"]
 
     def test_create_evaluation_results_json_empty_list(self, evaluation_result):
         """Test with empty evaluation data list."""

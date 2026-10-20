@@ -13,6 +13,11 @@ ai4rag's data flow consists of four distinct phases executed for each configurat
 3. **Evaluation Phase**: Answers + Ground Truth → Metrics → Scores
 4. **Optimization Loop**: Scores → Optimizer → Next Configuration
 
+Each candidate's categorical `template_id` selects the query-phase implementation.
+Milvus, Milvus Lite, and pgvector support `agentic_rag` (default) and
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. The two
+agentic IDs use `AgenticRAG`; `sequential_rag` uses `SequentialRAG`.
+
 ---
 
 ## Indexing Phase
@@ -228,8 +233,8 @@ indexing_params = {
 ## Query Phase
 
 The query phase retrieves relevant chunks and generates answers for benchmark questions. The
-diagram below shows `SimpleRAG`'s single-pass flow; `AgenticRAG` (the experiment's default
-`rag_template`, see [AgenticRAG](rag-components.md#agenticrag)) starts with the same initial
+diagram below shows `SequentialRAG`'s single-pass flow; `AgenticRAG` (the experiment's default
+template, see [AgenticRAG](rag-components.md#agenticrag)) starts with the same initial
 retrieval but then lets an agent loop through further `retriever`/`rewrite_query` tool calls,
 bounded by `max_retrieval_steps`, before generating the final answer.
 
@@ -239,10 +244,19 @@ collects these records separately from evaluation data and forwards them on patt
 publication; the selected warm-start candidate retains its trajectories when published
 as `Pattern1`.
 
+When an agent invocation raises `BadRequestError` containing `maximum context length`,
+the default compression fallback extracts query-relevant excerpts from the initial
+retrieval and retries once with fresh invocation state. Retrieval-tool results are
+also compressed during that retry. The successful run's retained context becomes
+`reference_documents` for evaluation; the conversation keeps the original initial
+retrieval and adds compression statistics. See
+[Context-overflow fallback](rag-components.md#context-overflow-fallback) for limits
+and how to disable it.
+
 ```mermaid
 sequenceDiagram
     participant QR as query_rag()
-    participant RAG as SimpleRAG
+    participant RAG as SequentialRAG
     participant Ret as Retriever
     participant VS as VectorStore
     participant EM as OpenAIEmbeddingModel
@@ -369,7 +383,7 @@ Combines the dense vector search with a backend-native sparse/keyword search —
 
 ### Context Formatting
 
-Context formatting lives in `BaseRAGTemplate` and is shared by `SimpleRAG` and `AgenticRAG`:
+Context formatting lives in `BaseRAGTemplate` and is shared by `SequentialRAG` and `AgenticRAG`:
 
 ```python
 # Default context_template_text: "{document}\n"
@@ -463,7 +477,7 @@ answer = response.choices[0].message.content
 
 **Alternative Entry Point: `chat()`**
 
-`SimpleRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged. (`AgenticRAG.chat()` runs the same agent loop as `generate()` over the full message history instead; see [AgenticRAG](rag-components.md#agenticrag).)
+`SequentialRAG.chat()` shares the same retrieval and context-formatting path as `generate()`, but takes a full chat history instead of a single question. Only the last message (the current user turn) is used as the retrieval query and RAG-enriched; prior turns are forwarded to the foundation model unchanged. (`AgenticRAG.chat()` runs the same agent loop as `generate()` over the full message history instead; see [AgenticRAG](rag-components.md#agenticrag).)
 
 ```python
 response = rag.chat(messages=[
@@ -752,6 +766,10 @@ def results.evaluation_explored_or_cached(indexing_params, rag_params) -> float 
 
 If exact `(indexing_params, rag_params)` evaluated before, return cached score immediately.
 
+`rag_params` includes `template_id`, so different templates are evaluated separately.
+The template ID is excluded from `indexing_params`, allowing collection reuse across
+templates when their indexing settings match.
+
 **Level 2: Collection Reuse (indexing only)**
 
 ```python
@@ -846,8 +864,13 @@ event_handler.on_pattern_creation(
 )
 ```
 
-When conversation records are present, the call also includes a `conversations`
-keyword containing one record per traced benchmark case, with IDs such as `case-0000`.
+When conversation records are present, they are stored on
+`EvaluationResult.conversations`. Publication reads this field and includes a
+`conversations` keyword containing one record per traced benchmark case, with IDs
+such as `case-0000`. Evaluation JSON records receive matching `conversation_id`
+links by position when conversation and evaluation counts match and an ID is present;
+mismatched counts log a warning and omit all links. Full conversations remain
+separate from the per-question evaluation JSON records.
 `LocalEventHandler` writes `pattern.json`, `evaluation_results.json`, and optional
 `conversations.json` under the published pattern's directory. `KFPEventHandler`
 retains the same records in memory. For Neo4j patterns, `settings.graph_extraction`
@@ -976,7 +999,7 @@ Collection "xyz" in the configured backend (Milvus — server or embedded Milvus
 ```python
 contexts = ["Paris is the capital...", "France's capital city..."]
 question = "What is the capital of France?"
-↓ (SimpleRAG.generate via OpenAIFoundationModel.chat)
+↓ (SequentialRAG.generate via OpenAIFoundationModel.chat)
 "Based on the provided documents, Paris is the capital of France."
 ```
 

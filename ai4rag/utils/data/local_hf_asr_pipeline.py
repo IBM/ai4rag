@@ -6,13 +6,21 @@
 
 import json
 import mimetypes
+import subprocess
 from pathlib import Path
 
+import numpy as np
 from docling.datamodel.document import ConversionResult
 from docling.datamodel.pipeline_options import AsrPipelineOptions
 from docling.pipeline.asr_pipeline import AsrPipeline
 from docling.pipeline.base_pipeline import BasePipeline
-from docling_core.types.doc import ContentLayer, DocItemLabel, DoclingDocument, DocumentOrigin, TrackSource
+from docling_core.types.doc import (
+    ContentLayer,
+    DocItemLabel,
+    DoclingDocument,
+    DocumentOrigin,
+    TrackSource,
+)
 from pydantic import ConfigDict
 
 
@@ -77,7 +85,10 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
     def _build_document(self, conv_res: ConversionResult) -> ConversionResult:
         """Transcribe one audio input and retain segment timing provenance."""
         audio = Path(conv_res.input.file)
-        output = self._load_transcriber()(str(audio), return_timestamps=True)
+        transcriber = self._load_transcriber()
+        sampling_rate = transcriber.feature_extractor.sampling_rate
+        waveform = _decode_audio(audio, sampling_rate)
+        output = transcriber({"raw": waveform, "sampling_rate": sampling_rate}, return_timestamps=True)
 
         conv_res.document = DoclingDocument(
             name=audio.stem,
@@ -105,6 +116,43 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
                 ),
             )
         return conv_res
+
+
+def _decode_audio(audio: Path, sampling_rate: int) -> "np.ndarray":
+    """Decode a seekable local file to mono float32 audio at the model's rate."""
+
+    # Transformers pipes encoded bytes into FFmpeg. M4A files with a trailing
+    # moov atom require seeking back to the audio data after reading metadata,
+    # so FFmpeg must open the original file instead of a non-seekable pipe.
+    command = [
+        "ffmpeg",
+        "-nostdin",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(audio),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        str(sampling_rate),
+        "-f",
+        "f32le",
+        "pipe:1",
+    ]
+    try:
+        result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, check=True)
+    except FileNotFoundError as exc:
+        raise RuntimeError("Audio extraction requires the ffmpeg executable on PATH.") from exc
+    except subprocess.CalledProcessError as exc:
+        details = exc.stderr.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"FFmpeg failed to decode audio file '{audio}': {details}") from exc
+
+    waveform = np.frombuffer(result.stdout, dtype="<f4")
+    if waveform.size == 0:
+        raise ValueError(f"FFmpeg decoded no audio samples from '{audio}'.")
+    return waveform
 
 
 def _validate_model_directory(raw_path: str | None) -> str:

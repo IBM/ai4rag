@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any
 
 from ai4rag import __version__
+from ai4rag.assets_generator.templates import create_placeholder_mapping
+from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
 
 _CONFIGURABLE_FILES = frozenset({"values.yaml", "agent_config.json", "README.md", "pyproject.toml"})
 _IGNORED_TEMPLATE_NAMES = frozenset({".DS_Store", ".env", ".venv", "__pycache__"})
@@ -22,6 +24,7 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     All values are stringified so they can be used with ``str.replace()``.
     """
     mapping: dict[str, str] = {}
+    mapping["__TEMPLATE_ID__"] = create_placeholder_mapping(output_data)["TEMPLATE_ID"]
 
     def _value(value: Any, default: str = "") -> str:
         return default if value is None else str(value)
@@ -30,6 +33,8 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     mapping["__AI4RAG_VERSION__"] = __version__
 
     settings = output_data.get("settings", {})
+    agentic = settings.get("agentic", {})
+    mapping["__ENABLE_CONTEXT_COMPRESSION__"] = _value(agentic.get("enable_context_compression"), "True")
 
     fm = settings.get("generation", {})
     mapping["__FM_MODEL_ID__"] = _value(fm.get("model_id"))
@@ -58,6 +63,14 @@ def _create_starter_kit_mapping(output_data: dict[str, Any]) -> dict[str, str]:
     mapping["__RANKER_STRATEGY__"] = _value(ret.get("ranker_strategy"))
     mapping["__RANKER_K__"] = _value(ret.get("ranker_k"))
     mapping["__RANKER_ALPHA__"] = _value(ret.get("ranker_alpha"))
+
+    mapping["__GRAPH_RETRIEVAL__"] = json.dumps(
+        Neo4jGraphRetrievalConfig.from_mapping(
+            {k: v for k, v in ret.items() if k in Neo4jGraphRetrievalConfig.keys()}
+        ).to_search_kwargs()
+        if ret.get("search_mode") == "graph"
+        else {}
+    )
 
     vs = settings.get("store_binding", {})
     mapping["__PROVIDER_TYPE__"] = _value(vs.get("provider_type"), "milvus")
@@ -97,6 +110,7 @@ def _replace_placeholders(file_path: Path, mapping: dict[str, str]) -> None:
 def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
     """Render generated prompts and RAG settings as readable JSON."""
     config = {
+        "template_id": mapping["__TEMPLATE_ID__"],
         "generation": {
             "model_id": mapping["__FM_MODEL_ID__"],
             "temperature": float(mapping["__TEMPERATURE__"] or 0.0),
@@ -114,12 +128,16 @@ def _write_agent_config_file(file_path: Path, mapping: dict[str, str]) -> None:
             "dimension": int(mapping["__EMBEDDING_DIMENSION__"] or 768),
         },
         "retrieval": {
+            **json.loads(mapping["__GRAPH_RETRIEVAL__"]),
             "method": mapping["__RETRIEVAL_METHOD__"] or "simple",
             "number_of_chunks": int(mapping["__NUMBER_OF_CHUNKS__"] or 5),
             "search_mode": mapping["__SEARCH_MODE__"] or "vector",
             "ranker_strategy": mapping["__RANKER_STRATEGY__"],
             "ranker_k": int(mapping["__RANKER_K__"]) if mapping["__RANKER_K__"] else None,
             "ranker_alpha": float(mapping["__RANKER_ALPHA__"]) if mapping["__RANKER_ALPHA__"] else None,
+        },
+        "agentic": {
+            "enable_context_compression": mapping["__ENABLE_CONTEXT_COMPRESSION__"].lower() == "true",
         },
         "vector_store": {
             "provider_type": mapping["__PROVIDER_TYPE__"] or "milvus",

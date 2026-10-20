@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from ai4rag.assets_generator.templates import create_placeholder_mapping, generate_notebook_from_template
 from ai4rag.assets_generator.notebook import Notebook
+from ai4rag.assets_generator.templates import create_placeholder_mapping, generate_notebook_from_template
 
 # ---------------------------------------------------------------------------
 # create_placeholder_mapping
@@ -69,10 +69,15 @@ class TestCreatePlaceholderMapping:
 
     def test_template_fields(self, mapping: dict):
         assert mapping["TEMPLATE_ID"] == "agentic_rag"
-        assert mapping["RAG_TEMPLATE_IMPORT"] == (
-            "from ai4rag.rag.template.agentic_rag_template import AgenticRAG"
-        )
+        assert mapping["RAG_TEMPLATE_IMPORT"] == ("from ai4rag.rag.template.agentic_rag_template import AgenticRAG")
         assert mapping["RAG_TEMPLATE_CLASS"] == "AgenticRAG"
+        assert mapping["RAG_TEMPLATE_ARGUMENTS"] == ", enable_context_compression=True"
+
+    def test_context_compression_can_be_disabled(self):
+        pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+        pattern["settings"]["agentic"] = {"enable_context_compression": False}
+
+        assert create_placeholder_mapping(pattern)["RAG_TEMPLATE_ARGUMENTS"] == ", enable_context_compression=False"
 
     def test_generation_fields(self, mapping: dict):
         # The full '/'-containing id is carried through verbatim.
@@ -127,6 +132,7 @@ class TestCreatePlaceholderMapping:
             "TEMPLATE_ID",
             "RAG_TEMPLATE_IMPORT",
             "RAG_TEMPLATE_CLASS",
+            "RAG_TEMPLATE_ARGUMENTS",
             "FM_MODEL_ID",
             "SYSTEM_MESSAGE",
             "USER_MESSAGE",
@@ -169,8 +175,8 @@ class TestCreatePlaceholderMapping:
         with pytest.warns(UserWarning, match="no template_id"):
             mapping = create_placeholder_mapping(legacy_pattern)
 
-        assert mapping["TEMPLATE_ID"] == "simple_rag"
-        assert mapping["RAG_TEMPLATE_CLASS"] == "SimpleRAG"
+        assert mapping["TEMPLATE_ID"] == "sequential_rag"
+        assert mapping["RAG_TEMPLATE_CLASS"] == "SequentialRAG"
 
     def test_unknown_template_id_is_rejected(self):
         pattern = deepcopy(_SAMPLE_PATTERN_DATA)
@@ -372,19 +378,27 @@ def test_inference_notebook_passes_detected_language(tmp_path: Path):
     assert "language=language," in text
 
 
-def test_inference_notebook_uses_pattern_template(tmp_path: Path):
+@pytest.mark.parametrize(
+    "template_id,module,class_name",
+    [
+        ("agentic_rag", "agentic_rag_template", "AgenticRAG"),
+        ("sequential_rag", "sequential_rag_template", "SequentialRAG"),
+    ],
+)
+def test_inference_notebook_uses_pattern_template(tmp_path: Path, template_id, module, class_name):
     """A pattern's allowlisted template ID controls the generated notebook."""
+    pattern = deepcopy(_SAMPLE_PATTERN_DATA)
+    pattern["template_id"] = template_id
     output_path = tmp_path / "maas_inference.ipynb"
     generate_notebook_from_template(
         notebook_template="maas_inference",
-        output_data=_SAMPLE_PATTERN_DATA,
+        output_data=pattern,
         output_notebook_path=output_path,
     )
 
     text = _read_notebook_text(output_path)
-    assert "from ai4rag.rag.template.agentic_rag_template import AgenticRAG" in text
-    assert "rag_pattern = AgenticRAG(" in text
-    assert "SimpleRAG" not in text
+    assert f"from ai4rag.rag.template.{module} import {class_name}" in text
+    assert f"rag_pattern = {class_name}(" in text
 
 
 @pytest.mark.parametrize(

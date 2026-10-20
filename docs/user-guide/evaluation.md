@@ -145,6 +145,14 @@ For each RAG configuration being tested:
 5. **Compute custom metrics** (e.g. `overall_score`) on top of the merged results
 6. **Return scores** with confidence intervals
 
+Each candidate's `template_id` selects sequential or agentic execution, and templates
+receive separate evaluations even when they reuse the same index. If `AgenticRAG`
+uses its [context-overflow fallback](../architecture/rag-components.md#context-overflow-fallback),
+evaluation contexts come from the successful retry's retained excerpts or fallback
+source chunks. Omitted chunks are excluded; retained metadata preserves source
+document IDs for context-correctness scoring. The conversation record retains the
+original initial retrieval and compression statistics for inspection.
+
 ### EvaluationData Structure
 
 Each question's data is packaged as an `EvaluationData` instance:
@@ -174,6 +182,16 @@ evaluation_data = EvaluationData(
 ## Result Structure
 
 Evaluation results are returned as an `EvaluationMetricsResult` TypedDict with two sections: aggregate metrics and per-question breakdowns.
+
+For each evaluated pattern, `experiment.results` retains an `EvaluationResult` whose
+`scores` field contains these metrics. Its optional `conversations` field holds full
+agent conversation records and defaults to `None` when inference emits none;
+`to_dict()` includes the field. Published evaluation JSON records include an optional
+`conversation_id` linking to the full conversation when conversation and evaluation
+counts match and the conversation has an ID. Full conversations are saved separately
+by `LocalEventHandler` in `conversations.json`. See
+[Event Handlers](event-handlers.md#evaluation_results-per-question-breakdown) for the
+linking rules and output schema.
 
 ### Aggregate Metrics
 

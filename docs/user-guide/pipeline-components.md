@@ -165,6 +165,10 @@ result = extract_text(
 
 Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email (`.eml`, `.msg`), Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
+PDFs are parsed with Docling's PDFium backend to recover text that the native parser
+can emit as NUL characters. This applies to `extract_text()`; the development-only
+`FileStore` helper also uses PDFium for local files.
+
 OCR is **off by default**. Conversion behaviour (table structure and OCR) is
 controlled through a single `DoclingExtractionConfig` instance. To enable
 RapidOCR (for scanned PDFs / images):
@@ -215,6 +219,11 @@ Transformers Whisper model. Set `HF_MODEL_DIR`, or override it with
 `DoclingExtractionConfig.asr_model_path` as shown below. The model is loaded lazily on
 the first audio input with `local_files_only=True`; non-audio conversion does not
 require Whisper artifacts, and ASR weights are never downloaded at runtime.
+
+Audio decoding requires the `ffmpeg` executable on `PATH`, with support for the
+input codec. AI4RAG opens the local file directly with FFmpeg and passes mono
+float32 samples at the model's sampling rate to Transformers. This supports M4A
+files whose metadata is stored at the end, which require seeking during decoding.
 
 The directory must contain `config.json` with `model_type="whisper"`,
 `preprocessor_config.json`, `tokenizer_config.json`, model weights (or a sharded-weight
@@ -277,6 +286,7 @@ search_space = prepare_search_space_with_maas(
     payload={
         "foundation_models": [{"model_id": "qwen3-8b-fp8-dynamic"}],
         "embedding_models": [{"model_id": "bge-m3"}],
+        "template_ids": ["agentic_rag", "sequential_rag"],  # optional: template search dimension
         "chunking_methods": ["recursive"],  # optional: constrain chunking methods
         "chunk_sizes": [256, 512, 1024],    # optional: constrain chunk sizes
         "chunk_overlaps": [0, 128],         # optional: constrain chunk overlaps
@@ -289,8 +299,11 @@ build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
 !!! note "Neo4j search space defaults"
-    Passing `vector_store_type="neo4j"` fixes `chunk_size`/`chunk_overlap` and `search_mode="graph"`, and
-    omits the hybrid ranker parameters, since the Neo4j backend supports graph retrieval only. See
+    For Neo4j, set `vector_store_type="neo4j"` and omit `template_ids` (or use
+    `["agentic_graph_rag"]`); the vector-template IDs in the example above are incompatible.
+    Neo4j defaults use `chunk_size=1024`, `chunk_overlap` values `0` and `64`, and
+    `search_mode="graph"`, omitting hybrid ranker parameters. Explicit chunking constraints
+    in the payload still override those defaults. See
     [Search Space defaults](../user-guide/search-space.md#default-parameters).
 
 !!! note "RAG optimization orchestration"

@@ -68,15 +68,40 @@ Each config is a frozen dataclass with a `.from_env()` constructor and an `env_v
 
 ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, `langchain`/`langchain-openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
 
+For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra includes
+`rapidocr~=3.9.2` and `onnxruntime~=1.25.0` along with Docling's conversion and audio
+dependencies. Generated MaaS indexing notebooks install OCR packages through this extra.
+
+`extract_text()` and the repository's development-only `FileStore` helper parse PDFs
+with PDFium to recover text that the native parser can emit as NUL characters.
+`FileStore` defaults PDF model inference to CPU; pass `device="auto"` or a specific
+accelerator to enable GPU inference. It automatically rebuilds legacy PDF caches
+using the `.pdfium.json` suffix.
+
 ## RAG templates
 
-Each candidate pattern is evaluated through a `rag_template` passed to `AI4RAGExperiment` — a `BaseRAGTemplate` subclass. The default, `AgenticRAG`, is a LangChain agent that can rewrite its search query and retrieve again before answering; `SimpleRAG` (a single fixed retrieve-then-generate pass) is also available via `rag_template=SimpleRAG`. See the [RAG Components](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#rag-templates) architecture doc.
+Each candidate selects its template through the categorical `template_id` search parameter.
+Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
+`sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
+use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
+results, streamed patterns, inference notebooks, and starter kits.
 
-Published patterns persist the selected template as `template_id`, which generated
-inference notebooks use to recreate it. Pattern publication currently supports the
-built-in `AgenticRAG` and `SimpleRAG` classes; custom subclasses need registry support.
+`AgenticRAG` can retry a recognized context-window overflow once with query-relevant
+excerpts from retrieved documents. This fallback is enabled by default; see
+[context compression](https://ibm.github.io/ai4rag/latest/architecture/rag-components/#context-overflow-fallback)
+for its limits and configuration.
+
 `LocalEventHandler` writes `conversations.json` alongside each agentic pattern's
 `pattern.json` and `evaluation_results.json`, recording retrieved context and tool activity.
+Conversations are also available as `EvaluationResult.conversations` and included
+by `to_dict()`; the field is `None` when no conversations are emitted. Per-question
+evaluation records include an optional `conversation_id` linking to these records.
+
+`generate_starter_kit()` packages the selected pattern into a microservice with
+OpenShell deployment for Milvus, PostgreSQL/pgvector, or Neo4j. Deployment forwards
+database CA certificates and retrieves from an already indexed collection. See the
+[Starter Kit guide](https://ibm.github.io/ai4rag/latest/api-reference/assets-generator/starter-kit/)
+and [template migration guidance](https://ibm.github.io/ai4rag/latest/getting-started/quick-start/#template-migration-and-pre-selection).
 
 ## Running on Disconnected Clusters
 

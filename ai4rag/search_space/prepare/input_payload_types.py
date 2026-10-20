@@ -7,6 +7,7 @@ from typing import Annotated, Optional
 from annotated_types import Ge, Le, MinLen
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from ai4rag.rag.template.registry import get_template_spec
 from ai4rag.utils.constants import ChunkingConstraints
 
 CONFIG = ConfigDict(extra="forbid")
@@ -33,6 +34,7 @@ class AI4RAGConstraints(BaseModel):
 
     model_config = CONFIG
 
+    template_ids: Annotated[list[str], MinLen(1)] | None = None
     embedding_models: Optional[Annotated[list[AI4RAGEmbeddingModel], MinLen(1)]] = None
     foundation_models: Optional[Annotated[list[AI4RAGFoundationModel], MinLen(1)]] = None
     chunking_methods: Optional[Annotated[list[Annotated[str, MinLen(1)]], MinLen(1)]] = None
@@ -48,6 +50,14 @@ class AI4RAGConstraints(BaseModel):
             MinLen(1),
         ]
     ] = None
+
+    @field_validator("template_ids", mode="after")
+    @classmethod
+    def _validate_template_ids(cls, values: list[str] | None) -> list[str] | None:
+        if values is not None:
+            for template_id in values:
+                get_template_spec(template_id)
+        return values
 
     @field_validator("chunking_methods", mode="after")
     @classmethod

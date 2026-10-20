@@ -267,6 +267,7 @@ search_space = AI4RAGSearchSpace(params=[...], vector_store_type="milvus")  # or
 
 | Parameter | Default (Milvus / Milvus Lite / PGVector) | Type |
 |-----------|----------------------|------|
+| `template_id` | `("agentic_rag",)` | Categorical |
 | `chunking_method` | `("recursive", "hybrid")` | Categorical |
 | `chunk_size` | `(512, 1024, 2048)` | Categorical |
 | `chunk_overlap` | `(0, 128, 256)` | Categorical |
@@ -291,6 +292,7 @@ graph indexing, and drops the hybrid ranker parameters entirely:
 
 | Parameter | Default (Neo4j) | Type |
 |-----------|------------------|------|
+| `template_id` | `("agentic_graph_rag",)` | Categorical |
 | `chunking_method` | `("recursive", "hybrid")` | Categorical |
 | `chunk_size` | `(1024,)` | Categorical |
 | `chunk_overlap` | `(0, 64)` | Categorical |
@@ -326,6 +328,45 @@ search_space = AI4RAGSearchSpace(
     ]
 )
 ```
+
+---
+
+### Template Selection
+
+To optimize across templates on a vector backend, include `template_id` alongside
+the required foundation and embedding models. With configured `model` and
+`embedding` instances:
+
+```python
+from ai4rag.search_space.src.parameter import Parameter
+from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
+
+search_space = AI4RAGSearchSpace(
+    params=[
+        Parameter(name="foundation_model", values=[model]),
+        Parameter(name="embedding_model", values=[embedding]),
+        Parameter(name="template_id", values=("agentic_rag", "sequential_rag")),
+    ],
+    vector_store_type="milvus_lite",
+)
+```
+
+Each candidate uses its selected template: `AgenticRAG` for `agentic_rag` or
+`agentic_graph_rag`, and `SequentialRAG` for `sequential_rag`.
+
+| Backend | Supported template IDs | Supported search modes |
+|---|---|---|
+| Milvus, Milvus Lite, pgvector | `agentic_rag`, `sequential_rag` | `vector`, `hybrid` |
+| Neo4j | `agentic_graph_rag` | `graph` |
+
+Set `vector_store_type` to the backend used by the experiment. At construction,
+`AI4RAGSearchSpace.validate_vector_store_compatibility()` checks that `template_id`
+is categorical, its IDs are registered, and the templates and search modes are
+compatible with that backend. Invalid configurations raise `ValueError`.
+
+For MaaS preparation, pass `template_ids=["agentic_rag", "sequential_rag"]` in the
+constraints payload. Omitting `template_ids` or passing `None` keeps the backend
+default; an empty list or an unsupported ID is rejected.
 
 ---
 
