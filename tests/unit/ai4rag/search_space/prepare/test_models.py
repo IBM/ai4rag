@@ -60,6 +60,7 @@ def _serving_client(registered_ids: list[str], *, dim: int = 768) -> MagicMock:
       embedding dimension auto-detection succeeds.
     """
     client = MagicMock(spec=OpenAI)
+    client.with_options.return_value = client
     # spec=OpenAI does not expose instance attributes set in __init__, so set them explicitly.
     client.base_url = "https://maas.example.com/maas-api/v1"
     client.api_key = "secret-key"

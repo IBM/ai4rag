@@ -22,10 +22,15 @@ _FALLBACK_TIMEOUT = 1200.0
 
 @dataclass
 class OpenAIEmbeddingParams:
-    """Parameters to be used to create embeddings."""
+    """Parameters to be used to create embeddings.
+
+    ``max_retries`` bounds SDK retries per request, including transient HTTP
+    500s. The SDK applies exponential backoff with jitter and Retry-After.
+    """
 
     embedding_dimension: Optional[int] = None
     context_length: Optional[int] = None
+    max_retries: int = 4
 
 
 class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
@@ -52,6 +57,15 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
             self._params = OpenAIEmbeddingParams(**params)
         else:
             raise TypeError(f"Incorrect type of 'params' parameter: {type(params)}.")
+        if (
+            not isinstance(self._params.max_retries, int)
+            or isinstance(self._params.max_retries, bool)
+            or self._params.max_retries < 0
+        ):
+            raise ValueError("max_retries must be a non-negative integer")
+        # Clone the caller's client so embedding retries have one explicit
+        # owner and do not alter clients shared with generation or discovery.
+        self.client = self.client.with_options(max_retries=self._params.max_retries)
         if self._params.embedding_dimension is None:
             self._params.embedding_dimension = self._detect_embedding_dimension()
         if self._params.context_length is None:
@@ -128,6 +142,8 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     def _call_embedding_api(self, text_input: list[str] | str) -> list[list[float]]:
         """Send an embedding request to the embedding server.
 
+        The SDK retries transient failures up to ``params.max_retries`` times
+        for this batch, without repeating previously completed batches.
         On ``APITimeoutError``, retries once with a 20-minute timeout
         and no client-level retries to accommodate slow (CPU-deployed)
         models.

@@ -5,6 +5,7 @@
 
 import json
 import warnings
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import httpx
@@ -50,7 +51,7 @@ def _call_tool(create_agent, name, arguments, context):
     return tool.func(**arguments, runtime=SimpleNamespace(context=context))
 
 
-def test_real_agent_graph_rewrites_then_retrieves(mocker):
+def test_real_agent_graph_rewrites_then_retrieves(mocker, caplog):
     """LangChain executes both tools and returns their observations to the model."""
     foundation_model = mocker.MagicMock()
     foundation_model.system_message_text = "Answer from context."
@@ -127,6 +128,7 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker):
         },
     }
     assert [call.args[0] for call in retriever.retrieve.call_args_list] == ["question", "focused search"]
+    assert "RAG_FAILURE" not in caplog.text
 
 
 def test_agent_initialization_does_not_emit_lock_schema_warning(mocker):
@@ -266,6 +268,8 @@ def test_chat_completions_executes_retriever_tool(mocker):
             finish_reason = "tool_calls"
         else:
             assert any(message["role"] == "tool" for message in requests[1]["messages"])
+            assert "tools" not in requests[1]
+            assert "tool budget is exhausted" in requests[1]["messages"][0]["content"]
             message = {"role": "assistant", "content": "grounded answer"}
             finish_reason = "stop"
         return httpx.Response(
@@ -301,6 +305,142 @@ def test_chat_completions_executes_retriever_tool(mocker):
     assert result["reference_documents"] == [initial, follow_up]
     assert [call.args[0] for call in retriever.retrieve.call_args_list] == ["question", "focused search"]
     assert len(requests) == 2
+
+
+@pytest.mark.parametrize("budget", [1, 2, 3])
+@pytest.mark.parametrize("empty_context", [False, True])
+def test_real_graph_finalizes_at_retrieval_budget(mocker, budget, empty_context):
+    """Repeated search requests terminate with an answer even when retrieval is empty."""
+    requests = []
+
+    def respond(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if payload.get("tools"):
+            message = {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": f"search_{len(requests)}",
+                        "type": "function",
+                        "function": {"name": "retriever", "arguments": '{"query":"more evidence"}'},
+                    }
+                ],
+            }
+            finish_reason = "tool_calls"
+        else:
+            assert "tool budget is exhausted" in payload["messages"][0]["content"]
+            message = {"role": "assistant", "content": "Evidence is insufficient."}
+            finish_reason = "stop"
+        return httpx.Response(
+            200,
+            json={
+                "id": f"response_{len(requests)}",
+                "object": "chat.completion",
+                "created": 0,
+                "model": "model",
+                "choices": [{"index": 0, "finish_reason": finish_reason, "message": message}],
+            },
+        )
+
+    model = ChatOpenAI(
+        model="model",
+        api_key="test",
+        base_url="https://maas.example/v1",
+        use_responses_api=False,
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    )
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    chunks = [] if empty_context else [AI4RAGChunk(text="indexed evidence", metadata={})]
+    retriever.retrieve.return_value = chunks
+    agent = AgenticRAG(foundation, retriever, budget, model)
+
+    # Reuse the graph to ensure turn counts and finalization remain request-scoped.
+    for _ in range(2):
+        requests.clear()
+        result = agent.generate("question")
+        assert result["answer"] == "Evidence is insufficient."
+        assert result["reference_documents"] == chunks
+        assert len(requests) == budget
+        assert result["conversation"]["messages"][-1]["tool_calls"] == []
+    assert retriever.retrieve.call_count == 2 * budget
+
+
+@pytest.mark.parametrize("tool_name", ["rewrite_query", "unknown_tool"])
+def test_real_graph_bounds_calls_without_retrieval_progress(mocker, tool_name):
+    """Rewrite-only and invalid-tool loops cannot consume the graph recursion limit."""
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    retriever.retrieve.return_value = []
+    arguments = {"missing_information": "date"} if tool_name == "rewrite_query" else {}
+    model = ToolCallingFake(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": tool_name, "args": arguments, "id": f"call_{index}"}])
+            for index in range(20)
+        ]
+    )
+    agent = AgenticRAG(foundation, retriever, chat_model=model)
+
+    result = agent.generate("question")
+
+    assert "could not produce an answer" in result["answer"]
+    assert result["conversation"]["messages"][-1]["tool_calls"] == []
+    assert len(result["conversation"]["messages"]) == 10
+    retriever.retrieve.assert_called_once_with("question")
+
+
+def test_real_graph_keeps_concurrent_budgets_independent(mocker):
+    """Questions sharing an agent each retain their own retrieval and turn budgets."""
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    retriever.retrieve.return_value = []
+    # Every response requests another search, including the final tool-free
+    # response. This also exercises the finalization fallback concurrently.
+    model = ToolCallingFake(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": "retriever", "args": {"query": "again"}, "id": "search"}])
+        ]
+    )
+    agent = AgenticRAG(foundation, retriever, chat_model=model)
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        results = list(executor.map(agent.generate, [f"question {index}" for index in range(4)]))
+
+    assert retriever.retrieve.call_count == 8
+    assert all("could not produce an answer" in result["answer"] for result in results)
+    assert all(len(result["conversation"]["tool_execution"]["retriever"]) == 1 for result in results)
+
+
+def test_real_graph_ignores_tool_calls_returned_after_finalization(mocker):
+    """A provider ignoring the tool-free request cannot restart retrieval."""
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    retriever.retrieve.return_value = []
+    model = ToolCallingFake(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": "retriever", "args": {"query": "again"}, "id": "repeat"}])
+        ]
+    )
+
+    result = AgenticRAG(foundation, retriever, 1, model).generate("question")
+
+    assert "could not produce an answer" in result["answer"]
+    assert result["conversation"]["messages"][-1]["tool_calls"] == []
+    retriever.retrieve.assert_called_once_with("question")
 
 
 def test_retrieval_limit_is_validated_on_assignment(rag):
@@ -346,7 +486,7 @@ def test_initial_retrieval_counts_toward_limit(rag, mocker):
     rag.retriever.retrieve.assert_called_once_with("question")
 
 
-def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, mocker):
+def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, mocker, caplog):
     """A context-window 400 replays the agent with excerpt-only tool responses."""
     initial = AI4RAGChunk(text="initial evidence", metadata={})
     initial_excerpt = AI4RAGChunk(text="initial excerpt", metadata={})
@@ -406,6 +546,7 @@ def test_context_overflow_retries_with_compressed_retriever_tool_output(rag, moc
         ],
     }
     assert result["conversation"]["tool_execution"]["retriever"][0]["compressed"] is True
+    assert not _failure_traces(caplog)
     assert compress.call_args_list == [
         mocker.call("question", [initial]),
         mocker.call("follow-up", [large_result, additional_result]),
@@ -549,3 +690,157 @@ def test_token_parameter_error_is_not_treated_as_context_overflow(rag, mocker):
 
     compress.assert_not_called()
     assert rag._create_agent_mock.return_value.invoke.call_count == 1
+
+
+@pytest.mark.parametrize("failure_location", ["model", "tool", "recursion", "rewrite"])
+def test_failed_graph_logs_safe_model_and_tool_events(mocker, caplog, failure_location):
+    """Real graph failures log call order and observations without content."""
+    from langchain.agents.middleware import wrap_model_call
+    from langgraph.errors import GraphRecursionError
+
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    chunk = AI4RAGChunk(text="initial evidence", metadata={"document_id": "source"})
+    retriever.retrieve.return_value = [chunk]
+    tool_name = "rewrite_query" if failure_location == "rewrite" else "retriever"
+    arguments = {"missing_information": "missing fact"} if failure_location == "rewrite" else {"query": "missing fact"}
+    model = ToolCallingFake(
+        responses=[
+            AIMessage(content="", tool_calls=[{"name": tool_name, "args": arguments, "id": f"c{i}"}]) for i in range(20)
+        ]
+    )
+    if failure_location == "recursion":
+
+        @wrap_model_call
+        def without_budget(request, handler):
+            return handler(request)
+
+        # Simulate the original failure even though normal runs now finalize.
+        mocker.patch("ai4rag.rag.template.agentic_rag_template._enforce_agent_budget", without_budget)
+        expected_error = GraphRecursionError
+    elif failure_location == "tool":
+        retriever.retrieve.side_effect = [[chunk], RuntimeError("retrieval failed")]
+        expected_error = RuntimeError
+    else:
+        generate = model._generate
+        calls = []
+
+        def fail_after_tool(*args, **kwargs):
+            calls.append(None)
+            if len(calls) == 2:
+                raise ConnectionError("model unavailable")
+            return generate(*args, **kwargs)
+
+        mocker.patch.object(model, "_generate", side_effect=fail_after_tool)
+        expected_error = ConnectionError
+    agent = AgenticRAG(foundation, retriever, chat_model=model)
+
+    with pytest.raises(expected_error) as error:
+        agent.generate("original question")
+
+    assert not hasattr(error.value, "conversation")
+    traces = _failure_traces(caplog)
+    assert len(traces) == 1
+    trace = traces[0]
+    assert trace["initial_document_count"] == 1
+    events = trace["events"]
+    assert any(event["event"] == "tool_start" and event["tool"] == tool_name for event in events)
+    if failure_location == "recursion":
+        assert trace["error_type"] == "GraphRecursionError"
+        assert any(event.get("outcome") == "retrieval_limit_reached" for event in events)
+    elif failure_location == "rewrite":
+        assert any(event["event"] == "tool_error" for event in events)
+        assert any(event["event"] == "model_error" for event in events)
+        assert trace["model_calls"] == 2
+    else:
+        assert any(event["event"] == f"{failure_location}_error" for event in events)
+    serialized = json.dumps(trace)
+    assert all(value not in serialized for value in ("original question", "initial evidence", "missing fact", "source"))
+
+
+def test_failed_compression_retry_logs_once_and_preserves_error(rag, mocker, caplog):
+    """Failure while preparing a retry still emits safe diagnostics."""
+    overflow = BadRequestError(
+        "maximum context length exceeded",
+        response=httpx.Response(400, request=httpx.Request("POST", "https://maas.example/v1/chat/completions")),
+        body=None,
+    )
+    rag._create_agent_mock.return_value.invoke.side_effect = overflow
+    mocker.patch.object(LLMDocumentCompressor, "compress", side_effect=RuntimeError("compression failed"))
+
+    with pytest.raises(RuntimeError, match="compression failed") as error:
+        rag.generate("original question")
+
+    assert not hasattr(error.value, "conversation")
+    traces = _failure_traces(caplog)
+    assert len(traces) == 1
+    assert traces[0]["context_compression_retry"] is True
+    assert traces[0]["error_type"] == "RuntimeError"
+
+
+@pytest.mark.parametrize(
+    "result_kind,expected_retrieved,expected_new", [("empty", 0, 0), ("duplicate", 1, 0), ("mixed", 3, 2)]
+)
+def test_failure_log_retains_retrieval_chunk_counts(rag, caplog, result_kind, expected_retrieved, expected_new):
+    """Counts survive a later agent failure, including empty and repeated hits."""
+    initial = AI4RAGChunk(text="private initial evidence", metadata={"source": "private"})
+    new_chunks = [AI4RAGChunk(text=f"private new evidence {index}", metadata={}) for index in range(2)]
+    hits = {"empty": [], "duplicate": [initial], "mixed": [initial, *new_chunks]}[result_kind]
+    rag.retriever.retrieve.side_effect = [[initial], hits]
+
+    def fail_after_retrieval(*_args, **kwargs):
+        _call_tool(rag._create_agent_mock, "retriever", {"query": "private query"}, kwargs["context"])
+        raise RuntimeError("private model error")
+
+    rag._create_agent_mock.return_value.invoke.side_effect = fail_after_retrieval
+    with pytest.raises(RuntimeError):
+        rag.generate("private question")
+
+    trace = _failure_traces(caplog)[0]
+    assert trace["initial_document_count"] == 1
+    assert trace["new_chunk_count"] == expected_new
+    assert trace["retrieval_results"] == [
+        {
+            "retrieval_index": 0,
+            "retrieved_chunk_count": expected_retrieved,
+            "retained_chunk_count": expected_retrieved,
+            "new_chunk_count": expected_new,
+        }
+    ]
+    assert "private" not in "\n".join(
+        record.message for record in caplog.records if record.message.startswith("RAG_FAILURE")
+    )
+
+
+def _failure_traces(caplog):
+    return [
+        json.loads(record.getMessage().split(" ", 1)[1])
+        for record in caplog.records
+        if record.getMessage().startswith("RAG_FAILURE_TRACE ")
+    ]
+
+
+def test_all_failed_questions_log_independently_before_pattern_failure(rag, caplog):
+    """The unchanged executor.map path cannot suppress diagnostics from later workers."""
+    from ai4rag.core.experiment.exception_handler import GenerationError
+    from ai4rag.core.experiment.utils import query_rag
+
+    rag.retriever.retrieve.return_value = [AI4RAGChunk(text="private evidence", metadata={})]
+
+    def fail_after_retrieval(*_args, **kwargs):
+        _call_tool(rag._create_agent_mock, "retriever", {"query": "private query"}, kwargs["context"])
+        raise RuntimeError("private failure")
+
+    rag._create_agent_mock.return_value.invoke.side_effect = fail_after_retrieval
+    with pytest.raises(GenerationError):
+        query_rag(rag, ["private Q0", "private Q1", "private Q2"], max_threads=3)
+
+    traces = _failure_traces(caplog)
+    assert len(traces) == 3
+    assert len({trace["diagnostic_id"] for trace in traces}) == 3
+    assert all(trace["initial_document_count"] == 1 and trace["new_chunk_count"] == 0 for trace in traces)
+    assert all(len(trace["retrieval_results"]) == 1 for trace in traces)
+    assert all("private" not in json.dumps(trace) for trace in traces)

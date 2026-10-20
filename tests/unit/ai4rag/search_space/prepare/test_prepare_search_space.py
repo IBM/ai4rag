@@ -43,6 +43,7 @@ def _setup_client(mocker, registered_ids, *, foundation_valid=True, embedding_va
         Length of the embedding vector returned during auto-detection.
     """
     client = MagicMock(spec=OpenAI)
+    client.with_options.return_value = client
     # spec=OpenAI does not expose instance attributes set in __init__, so set them explicitly.
     client.base_url = "https://maas.example.com/maas-api/v1"
     client.api_key = "secret-key"

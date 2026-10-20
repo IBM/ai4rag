@@ -5,7 +5,7 @@
 
 import httpx
 import pytest
-from openai import BadRequestError
+from openai import APIStatusError, APITimeoutError, BadRequestError, InternalServerError, OpenAI
 
 from ai4rag.rag.embedding.openai_model import (
     _TRUNCATION_MARGINS,
@@ -43,6 +43,7 @@ class TestOpenAIEmbeddingModel:
     def mock_openai_client(self, mocker):
         """Create a mock OpenAI client with default embedding response for auto-detection."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         mock_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
             mocker, [[0.1, 0.2, 0.3, 0.4]]
         )
@@ -100,6 +101,7 @@ class TestOpenAIEmbeddingModel:
     def test_detect_embedding_dimension_api_failure(self, mocker):
         """Test that _detect_embedding_dimension raises RuntimeError on API failure."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         mock_client.embeddings.create.side_effect = ConnectionError("Service unavailable")
 
         with pytest.raises(RuntimeError, match="Failed to auto-detect embedding dimension"):
@@ -108,6 +110,7 @@ class TestOpenAIEmbeddingModel:
     def test_detect_embedding_dimension_preserves_original_exception(self, mocker):
         """Test that the original exception is chained in the RuntimeError."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         original_error = ConnectionError("Connection refused")
         mock_client.embeddings.create.side_effect = original_error
 
@@ -127,6 +130,7 @@ class TestOpenAIEmbeddingModel:
     def test_detect_context_length_binary_search_finds_limit(self, mocker):
         """Test that binary search finds the correct context_length limit."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         def side_effect(**kwargs):
@@ -148,6 +152,7 @@ class TestOpenAIEmbeddingModel:
     def test_detect_context_length_all_probes_fail(self, mocker):
         """Test that RuntimeError is raised when all context_length probes fail."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         dim_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         call_count = [0]
@@ -166,6 +171,7 @@ class TestOpenAIEmbeddingModel:
     def test_detect_context_length_disables_server_truncation(self, mocker):
         """Test that context_length probes send truncate_prompt_tokens=None to override server defaults."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
         mock_client.embeddings.create.return_value = response
 
@@ -268,6 +274,7 @@ class TestOpenAIEmbeddingModel:
     def test_auto_detected_context_length_below_minimum_raises(self, mocker):
         """Test that auto-detected context_length below MIN_CONTEXT_LENGTH raises ValueError."""
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         dim_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
 
         call_count = [0]
@@ -319,6 +326,7 @@ class TestEmbeddingTruncationFallback:
     @pytest.fixture
     def model(self, mocker):
         mock_client = mocker.MagicMock()
+        mock_client.with_options.return_value = mock_client
         return OpenAIEmbeddingModel(
             client=mock_client,
             model_id="test-model",
@@ -436,3 +444,131 @@ class TestEmbeddingTruncationFallback:
         result = model.embed_query(oversized_query)
 
         assert result == [0.1, 0.2, 0.3]
+
+
+class TestEmbeddingRetries:
+    """Exercise the real SDK retry policy against an in-memory HTTP transport."""
+
+    @staticmethod
+    def _response(request, status):
+        if status != 200:
+            return httpx.Response(
+                status,
+                request=request,
+                headers={"retry-after-ms": "1"},
+                json={"error": {"message": "Embedding service failure", "type": "server_error"}},
+            )
+        return httpx.Response(
+            200,
+            request=request,
+            json={
+                "object": "list",
+                "data": [{"object": "embedding", "index": 0, "embedding": [0.1, 0.2]}],
+                "model": "test-model",
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            },
+        )
+
+    @pytest.mark.parametrize("operation", ["embed_documents", "embed_query"])
+    def test_transient_500_recovers_beyond_sdk_default(self, operation):
+        """Three initial 500s recover within the embedding-specific retry budget."""
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return self._response(request, 500 if len(requests) <= 3 else 200)
+
+        with OpenAI(
+            api_key="test",
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client:
+            model = OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 2, "context_length": 1024})
+            result = getattr(model, operation)(["text"] if operation == "embed_documents" else "text")
+            assert result == ([[0.1, 0.2]] if operation == "embed_documents" else [0.1, 0.2])
+            assert len(requests) == 4
+            assert client.max_retries == 2
+
+    @pytest.mark.parametrize("retries", [0, 1, 4])
+    def test_persistent_500_is_bounded(self, retries):
+        """Configured attempts are not multiplied by retries on the supplied client."""
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return self._response(request, 500)
+
+        with OpenAI(
+            api_key="test",
+            max_retries=10,
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client:
+            model = OpenAIEmbeddingModel(
+                client, "test-model", {"embedding_dimension": 2, "context_length": 1024, "max_retries": retries}
+            )
+            with pytest.raises(InternalServerError):
+                model.embed_documents(["text"])
+            assert len(requests) == retries + 1
+            assert client.max_retries == 10
+
+    @pytest.mark.parametrize("status", [401, 403, 422])
+    def test_non_transient_errors_are_not_retried(self, status):
+        """Authentication and validation errors retain their original failure path."""
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return self._response(request, status)
+
+        with OpenAI(
+            api_key="test",
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client:
+            model = OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 2, "context_length": 1024})
+            with pytest.raises(APIStatusError) as error:
+                model.embed_query("text")
+            assert error.value.status_code == status
+            assert len(requests) == 1
+
+    def test_retry_only_repeats_failed_batch(self, mocker):
+        """A failure in a later batch never replays a completed embedding batch."""
+        requests = []
+
+        def respond(request):
+            requests.append(request)
+            return self._response(request, 500 if len(requests) == 2 else 200)
+
+        with OpenAI(
+            api_key="test",
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client:
+            model = OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 2, "context_length": 1024})
+            mocker.patch.object(model, "_BATCH_SIZE", 1)
+            result = model.embed_documents(["first", "second"])
+            assert result == [[0.1, 0.2], [0.1, 0.2]]
+            assert len(requests) == 3
+            assert requests[0].content != requests[1].content
+            assert requests[1].content == requests[2].content
+
+    @pytest.mark.parametrize("retries", [-1, True, 1.5, "2"])
+    def test_retry_budget_requires_non_negative_integer(self, mocker, retries):
+        """Reject invalid retry budgets before any embedding request."""
+        client = mocker.MagicMock()
+        with pytest.raises(ValueError, match="max_retries must be a non-negative integer"):
+            OpenAIEmbeddingModel(
+                client, "test-model", {"embedding_dimension": 2, "context_length": 1024, "max_retries": retries}
+            )
+        client.with_options.assert_not_called()
+        client.embeddings.create.assert_not_called()
+
+    def test_timeout_keeps_single_long_timeout_fallback(self, mocker):
+        """The existing slow-model fallback disables SDK retries on the final call."""
+        client = mocker.MagicMock()
+        initial_client = client.with_options.return_value
+        initial_client.embeddings.create.side_effect = APITimeoutError(request=httpx.Request("POST", "https://test"))
+        fallback_client = initial_client.with_options.return_value
+        fallback_client.embeddings.create.return_value = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2]])
+        model = OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 2, "context_length": 1024})
+
+        assert model.embed_query("text") == [0.1, 0.2]
+        initial_client.with_options.assert_called_once_with(timeout=1200.0, max_retries=0)
+        fallback_client.embeddings.create.assert_called_once()
