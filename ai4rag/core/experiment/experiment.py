@@ -445,6 +445,9 @@ class AI4RAGExperiment:
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
         )
+        if isinstance(embedding_params_dict, dict):
+            # Transport retries do not change embeddings or the resulting index.
+            embedding_params_dict = {key: value for key, value in embedding_params_dict.items() if key != "max_retries"}
         indexing_params = {
             "chunking": chunking_params,
             "embedding": {
