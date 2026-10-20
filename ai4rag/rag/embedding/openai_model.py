@@ -63,8 +63,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
             or self._params.max_retries < 0
         ):
             raise ValueError("max_retries must be a non-negative integer")
-        # Clone the caller's client so embedding retries have one explicit
-        # owner and do not alter clients shared with generation or discovery.
+
         self.client = self.client.with_options(max_retries=self._params.max_retries)
         if self._params.embedding_dimension is None:
             self._params.embedding_dimension = self._detect_embedding_dimension()
