@@ -69,7 +69,7 @@ class _AgentRunContext:  # pylint: disable=too-many-instance-attributes
 @wrap_model_call
 def _enforce_agent_budget(
     request: ModelRequest[_AgentRunContext], handler: Callable[[ModelRequest], ModelResponse]
-) -> ModelResponse | AIMessage:
+) -> ModelResponse:
     """Reserve a tool-free final answer before the graph can exhaust its steps."""
     context = request.runtime.context
     with context.state_lock:
@@ -82,14 +82,15 @@ def _enforce_agent_budget(
         return handler(request)
     instructions = (
         "The tool budget is exhausted. Answer the original question now using the evidence already retrieved. "
-        "If the evidence is insufficient, explain what cannot be answered. Do not request any tools."
+        "If the evidence is insufficient, say that you could not produce an answer from the retrieved evidence. "
+        "Follow the response-language instructions already provided. Do not request any tools."
     )
     system_message = SystemMessage(content=f"{request.system_message.text}\n\n{instructions}")
     response = handler(request.override(tools=[], tool_choice=None, system_message=system_message))
     # A provider may return tool calls even when no tools are offered. Never
     # route those calls back into the graph and restart the exhausted loop.
     if any(message.tool_calls for message in response.result if isinstance(message, AIMessage)):
-        return AIMessage(content="I could not produce an answer from the retrieved evidence within the tool budget.")
+        raise RuntimeError("Model returned tool calls after the tool budget was exhausted")
     return response
 
 
@@ -363,7 +364,7 @@ class AgenticRAG(BaseRAGTemplate):
         """Compress initial context and replay the agent after a context-window overflow."""
         trace.compression_retry = True
         compressor = LLMDocumentCompressor(self.chat_model)
-        compressed_documents = compressor.compress(question, initial_documents)
+        compressed_documents = compressor.compress(question, initial_documents, config={"callbacks": [trace]})
         compression = {
             "initial": compressor.compression_stats(initial_documents, compressed_documents),
             "retriever_tool_calls": [],

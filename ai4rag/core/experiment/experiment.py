@@ -442,12 +442,12 @@ class AI4RAGExperiment:
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
         search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
 
-        embedding_params_dict = (
-            asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
-        )
-        if isinstance(embedding_params_dict, dict):
-            # Transport retries do not change embeddings or the resulting index.
-            embedding_params_dict = {key: value for key, value in embedding_params_dict.items() if key != "max_retries"}
+        if hasattr(embedding_model.params, "to_dict"):
+            embedding_params_dict = embedding_model.params.to_dict()
+        else:
+            embedding_params_dict = (
+                asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
+            )
         indexing_params = {
             "chunking": chunking_params,
             "embedding": {

@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Optional
 
 from openai import APITimeoutError, BadRequestError, OpenAI
@@ -31,6 +31,10 @@ class OpenAIEmbeddingParams:
     embedding_dimension: Optional[int] = None
     context_length: Optional[int] = None
     max_retries: int = 4
+
+    def to_dict(self) -> dict[str, int | None]:
+        """Return index parameters, excluding transport retry settings."""
+        return {key: value for key, value in asdict(self).items() if key != "max_retries"}
 
 
 class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
