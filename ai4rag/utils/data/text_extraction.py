@@ -67,8 +67,6 @@ AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"})
 _CHINESE_OCR_LANGS = frozenset({"chinese", "ch", "zh", "zho", "chi", "zh-cn", "zh-tw"})
 _OCR_ARTIFACT_REPO = "superlinked/docling-artifacts"
 _OCR_ARTIFACT_REVISION = "310479be56f3a99a0fea75d930e11eea38bf5ef7"
-_ASR_MODEL_REPO = "openai/whisper-tiny"
-_ASR_MODEL_REVISION = "169d4a4341b33bc18d8881c4b69c2e104e1cc0af"
 
 # Relative paths Docling expects under ``$DOCLING_ARTIFACTS_PATH/RapidOcr/`` for
 # the onnxruntime backend (see docling.models.stages.ocr.rapid_ocr_model).  These
@@ -227,8 +225,7 @@ def prepare_extraction(
 
     Connected runs download the pinned PP-OCRv4 files when no local artifacts
     directory is configured. Disconnected runs require those files locally.
-    Audio uses a local Whisper model when configured. Connected runs can
-    download the same pinned Whisper weights as the pipeline modelcar.
+    Audio requires a complete local Whisper model in either mode.
     Text-only runs require neither model bundle.
 
     Parameters
@@ -257,7 +254,7 @@ def prepare_extraction(
     model_paths, local_path = (
         _prepare_ocr_model_paths(bundle, disconnected, docling_artifacts_path) if needs_ocr else ({}, None)
     )
-    local_asr_path = _prepare_asr_model_path(asr_model_path, disconnected) if needs_asr else None
+    local_asr_path = _validate_model_directory(asr_model_path or os.getenv("HF_MODEL_DIR")) if needs_asr else None
     config = DoclingExtractionConfig(do_ocr=needs_ocr, ocr_lang=bundle, asr_model_path=local_asr_path, **model_paths)
     return PreparedExtraction(
         config=config,
@@ -298,20 +295,6 @@ def _prepare_ocr_model_paths(
         source = "RapidOCR" if local_path else "Downloaded RapidOCR"
         raise FileNotFoundError(f"{source} {bundle} models are missing:\n  - " + "\n  - ".join(missing))
     return model_paths, local_path
-
-
-def _prepare_asr_model_path(asr_model_path: str | None, disconnected: bool) -> str:
-    """Use a local Whisper model or download the pinned connected snapshot."""
-    local_path = asr_model_path or os.getenv("HF_MODEL_DIR")
-    if not local_path and not disconnected:
-        from huggingface_hub import snapshot_download
-
-        local_path = snapshot_download(
-            repo_id=_ASR_MODEL_REPO,
-            revision=_ASR_MODEL_REVISION,
-            allow_patterns=["*.json", "*.txt", "*.safetensors"],
-        )
-    return _validate_model_directory(local_path)
 
 
 def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments,too-many-statements

@@ -91,48 +91,22 @@ def test_connected_ocr_downloads_only_selected_bundle(tmp_path, monkeypatch):
     assert {call["revision"] for call in calls} == {extraction._OCR_ARTIFACT_REVISION}
 
 
-def test_audio_reuses_local_whisper_validation(tmp_path, monkeypatch):
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_audio_reuses_local_whisper_validation(tmp_path, monkeypatch, disconnected):
     """Audio needs a complete local Whisper model, including in mixed corpora."""
     monkeypatch.delenv("HF_MODEL_DIR", raising=False)
     with pytest.raises(FileNotFoundError, match="HF_MODEL_DIR"):
-        extraction.prepare_extraction(_documents("voice.mp3"), disconnected=True)
+        extraction.prepare_extraction(_documents("voice.mp3"), disconnected=disconnected)
 
     (tmp_path / "config.json").write_text(json.dumps({"model_type": "whisper"}), encoding="utf-8")
     for name in ("preprocessor_config.json", "tokenizer_config.json", "model.safetensors"):
         (tmp_path / name).touch()
     prepared = extraction.prepare_extraction(
-        _documents("voice.mp3", "notes.txt"), disconnected=True, asr_model_path=str(tmp_path)
+        _documents("voice.mp3", "notes.txt"), disconnected=disconnected, asr_model_path=str(tmp_path)
     )
     assert prepared.needs_asr
     assert not prepared.needs_ocr
     assert prepared.config.asr_model_path == str(tmp_path)
-
-
-def test_connected_audio_downloads_pinned_whisper(tmp_path, monkeypatch):
-    """Audio downloads the pipeline-compatible Whisper snapshot only when needed."""
-    monkeypatch.delenv("HF_MODEL_DIR", raising=False)
-    (tmp_path / "config.json").write_text(json.dumps({"model_type": "whisper"}), encoding="utf-8")
-    for name in ("preprocessor_config.json", "tokenizer_config.json", "model.safetensors"):
-        (tmp_path / name).touch()
-    calls = []
-    hub = ModuleType("huggingface_hub")
-
-    def fake_snapshot_download(**kwargs):
-        calls.append(kwargs)
-        return str(tmp_path)
-
-    hub.snapshot_download = fake_snapshot_download
-    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
-    prepared = extraction.prepare_extraction(_documents("voice.wav"))
-    assert prepared.needs_asr
-    assert prepared.config.asr_model_path == str(tmp_path)
-    assert calls == [
-        {
-            "repo_id": extraction._ASR_MODEL_REPO,
-            "revision": extraction._ASR_MODEL_REVISION,
-            "allow_patterns": ["*.json", "*.txt", "*.safetensors"],
-        }
-    ]
 
 
 def test_mixed_corpus_requires_both_bundles(tmp_path):
