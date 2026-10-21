@@ -254,58 +254,64 @@ def prepare_extraction(
     needs_ocr = bool(extensions & OCR_EXTENSIONS)
     needs_asr = bool(extensions & AUDIO_EXTENSIONS)
     bundle = "chinese" if (language or "").strip().lower() in _CHINESE_OCR_LANGS else "english"
+    model_paths, local_path = (
+        _prepare_ocr_model_paths(bundle, disconnected, docling_artifacts_path) if needs_ocr else ({}, None)
+    )
+    local_asr_path = _prepare_asr_model_path(asr_model_path, disconnected) if needs_asr else None
+    config = DoclingExtractionConfig(do_ocr=needs_ocr, ocr_lang=bundle, asr_model_path=local_asr_path, **model_paths)
+    return PreparedExtraction(
+        config=config,
+        artifacts_path=local_path,
+        needs_ocr=needs_ocr,
+        needs_asr=needs_asr,
+    )
+
+
+def _prepare_ocr_model_paths(
+    bundle: str, disconnected: bool, docling_artifacts_path: str | None
+) -> tuple[dict[str, str], str | None]:
+    """Resolve and validate the selected RapidOCR files."""
     local_path = docling_artifacts_path or os.getenv("DOCLING_ARTIFACTS_PATH")
-    model_paths: dict[str, str] = {}
+    relative_paths = _RAPIDOCR_BUNDLES[bundle]
+    if local_path:
+        root = Path(local_path).expanduser().resolve()
+        model_paths = {name: str(root / "RapidOcr" / relative) for name, relative in relative_paths.items()}
+        local_path = str(root)
+    elif disconnected:
+        raise FileNotFoundError(
+            "PDF or image documents need DOCLING_ARTIFACTS_PATH on a disconnected cluster. "
+            "Mount the approved Docling/RapidOCR bundle before running the notebook."
+        )
+    else:
+        from huggingface_hub import hf_hub_download
 
-    if needs_ocr:
-        relative_paths = _RAPIDOCR_BUNDLES[bundle]
-        if local_path:
-            root = Path(local_path).expanduser().resolve()
-            model_paths = {name: str(root / "RapidOcr" / relative) for name, relative in relative_paths.items()}
-            missing = sorted(path for path in model_paths.values() if not Path(path).is_file())
-            if missing:
-                raise FileNotFoundError(f"RapidOCR {bundle} models are missing:\n  - " + "\n  - ".join(missing))
-            local_path = str(root)
-        elif disconnected:
-            raise FileNotFoundError(
-                "PDF or image documents need DOCLING_ARTIFACTS_PATH on a disconnected cluster. "
-                "Mount the approved Docling/RapidOCR bundle before running the notebook."
+        model_paths = {
+            name: hf_hub_download(
+                repo_id=_OCR_ARTIFACT_REPO,
+                filename=f"RapidOcr/{relative}",
+                revision=_OCR_ARTIFACT_REVISION,
             )
-        else:
-            from huggingface_hub import hf_hub_download
+            for name, relative in relative_paths.items()
+        }
+    missing = sorted(path for path in model_paths.values() if not Path(path).is_file())
+    if missing:
+        source = "RapidOCR" if local_path else "Downloaded RapidOCR"
+        raise FileNotFoundError(f"{source} {bundle} models are missing:\n  - " + "\n  - ".join(missing))
+    return model_paths, local_path
 
-            model_paths = {
-                name: hf_hub_download(
-                    repo_id=_OCR_ARTIFACT_REPO,
-                    filename=f"RapidOcr/{relative}",
-                    revision=_OCR_ARTIFACT_REVISION,
-                )
-                for name, relative in relative_paths.items()
-            }
-            missing = sorted(path for path in model_paths.values() if not Path(path).is_file())
-            if missing:
-                raise FileNotFoundError(
-                    f"Downloaded RapidOCR {bundle} models are missing:\n  - " + "\n  - ".join(missing)
-                )
 
-    local_asr_path = asr_model_path or os.getenv("HF_MODEL_DIR") if needs_asr else None
-    if needs_asr and not local_asr_path and not disconnected:
+def _prepare_asr_model_path(asr_model_path: str | None, disconnected: bool) -> str:
+    """Use a local Whisper model or download the pinned connected snapshot."""
+    local_path = asr_model_path or os.getenv("HF_MODEL_DIR")
+    if not local_path and not disconnected:
         from huggingface_hub import snapshot_download
 
-        local_asr_path = snapshot_download(
+        local_path = snapshot_download(
             repo_id=_ASR_MODEL_REPO,
             revision=_ASR_MODEL_REVISION,
             allow_patterns=["*.json", "*.txt", "*.safetensors"],
         )
-    if needs_asr:
-        local_asr_path = _validate_model_directory(local_asr_path)
-    config = DoclingExtractionConfig(do_ocr=needs_ocr, ocr_lang=bundle, asr_model_path=local_asr_path, **model_paths)
-    return PreparedExtraction(
-        config=config,
-        artifacts_path=local_path if needs_ocr else None,
-        needs_ocr=needs_ocr,
-        needs_asr=needs_asr,
-    )
+    return _validate_model_directory(local_path)
 
 
 def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments,too-many-statements
