@@ -10,6 +10,7 @@ import math
 
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.runnables import RunnableConfig
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.utils.constants import TokenEstimation
@@ -41,7 +42,9 @@ class LLMDocumentCompressor:
     def __init__(self, chat_model: BaseChatModel):
         self._chat_model = chat_model
 
-    def compress(self, query: str, chunks: list[AI4RAGChunk]) -> list[AI4RAGChunk]:
+    def compress(
+        self, query: str, chunks: list[AI4RAGChunk], *, config: RunnableConfig | None = None
+    ) -> list[AI4RAGChunk]:
         """Return relevant excerpts while preserving each source chunk's metadata.
 
         Parameters
@@ -50,6 +53,8 @@ class LLMDocumentCompressor:
             Query used to determine which passages are relevant.
         chunks : list[AI4RAGChunk]
             Retrieved chunks to compress.
+        config : RunnableConfig | None, optional
+            Invocation configuration, including callbacks for compression model calls.
 
         Returns
         -------
@@ -64,6 +69,7 @@ class LLMDocumentCompressor:
                     SystemMessage(content=_EXCERPT_EXTRACTION_INSTRUCTIONS),
                     HumanMessage(content=f"User question:\n{query}\n\nSource document:\n{chunk.text}"),
                 ],
+                config=config,
                 max_completion_tokens=_MAX_COMPLETION_TOKENS,
             )
             excerpt = self._extract_excerpt(str(response.text), chunk.text)
