@@ -55,9 +55,9 @@ _SAMPLE_PATTERN_DATA: dict = {
 @pytest.mark.parametrize(
     ("template", "expected_disconnected_cells", "expected_connected_cells"),
     [
-        ("maas_indexing", 1, 1),
+        ("maas_indexing", 0, 0),
         ("maas_inference", 0, 0),
-        ("mass_creating_knowledge_graph", 2, 1),
+        ("mass_creating_knowledge_graph", 0, 0),
         ("mass_inference_knowledge_graph", 0, 0),
     ],
 )
@@ -364,8 +364,7 @@ def test_indexing_notebook_renders_every_input_location(tmp_path: Path):
     """The indexing notebook must rediscover the same corpus the pipeline ingested.
 
     The keys are rendered as a Python list literal and sent to
-    ``discover_documents`` through its ``prefixes`` API when it is available.
-    An older installation fails clearly instead of silently dropping locations.
+    ``discover_documents`` through its ``prefixes`` API.
     """
     output_path = tmp_path / "maas_indexing.ipynb"
     generate_notebook_from_template(
@@ -378,11 +377,9 @@ def test_indexing_notebook_renders_every_input_location(tmp_path: Path):
     text = _read_notebook_text(output_path)
 
     assert 'input_data_keys = ["manuals/", "reports/"]' in text
-    assert 'discovery_kwargs["prefixes"] = input_data_keys' in text
-    assert 'discovery_kwargs["prefix"] = input_data_keys[0] if input_data_keys else ""' in text
-    assert "Install ai4rag >= 0.18.0." in text
+    assert "prefixes=input_data_keys," in text
     assert 'test_data_key = "benchmarks/test.json"' in text
-    assert '"test_data_doc_names": test_data_doc_names' in text
+    assert "test_data_doc_names=test_data_doc_names," in text
 
 
 def test_inference_notebook_passes_detected_language(tmp_path: Path):
@@ -480,7 +477,7 @@ def test_generated_neo4j_notebooks_match_graph_pattern(template: str, tmp_path: 
     if template == "mass_creating_knowledge_graph":
         assert f"## {pattern['name']} Knowledge Graph Building Content" in text
         assert "## Process input documents" in text
-        assert "Appendix: Downloading Models for Offline Use" in text
+        assert "### Disconnected cluster setup" in text
     else:
         assert f"## {pattern['name']} Knowledge Graph Retrieve & Generation Content" in text
         assert "## Next steps" in text

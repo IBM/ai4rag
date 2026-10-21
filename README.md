@@ -119,6 +119,10 @@ ai4rag depends on models from two sources:
 
 ### Setup Instructions
 
+For the MaaS indexing notebook, use the approved Docling artifact bundle from
+the documents-indexing pipeline image. A generic Docling download alone does
+not provide the pinned PP-OCRv4 files required for OCR parity.
+
 1. **On an internet-connected machine**, download the artifacts:
    ```bash
    pip install 'ai4rag[text-extraction]'
@@ -148,38 +152,28 @@ ai4rag depends on models from two sources:
    export HF_HUB_OFFLINE=1  # Enforce offline mode
    ```
 
-   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model. AI4RAG does not
-   download audio-transcription weights at runtime. You can override the environment
-   setting with `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
+   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model.
+   `extract_text()` does not download ASR weights; connected indexing notebooks can
+   prepare them before extraction. You can override the environment setting with
+   `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
 
 ### Indexing Notebooks
 
-The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disconnected Clusters"** section with:
-- Validation cells to verify artifact availability
-- Configuration examples for custom model paths
-- Step-by-step download instructions in the appendix
+Both indexing notebooks default to connected mode. Their early
+**Disconnected cluster setup** cell lists everything to prepare before running
+offline. Set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in the workbench, or pass
+`NOTEBOOK_CLUSTER_MODE=disconnected` to an AutoX Job. There are no environment
+tags or cells to skip; Jupyter **Run All** uses the same mode setting.
 
-Both indexing notebooks select model requirements after document discovery:
-Disconnected PDF/image runs require `DOCLING_ARTIFACTS_PATH`. Connected runs use
-that bundle when configured, or download the selected OCR files from the same public
-Hugging Face mirror as the pipeline image, pinned to a fixed revision. Audio inputs
-require `HF_MODEL_DIR`, and text-only corpora require neither. Both environments validate and
-pin the same PP-OCRv4 detection, classification, recognition, and character-dictionary
-files as the indexing pipeline. OCR starts from the pattern's detected language;
-edit `ocr_language` when the document language differs. Chinese selects the Chinese
-bundle; other languages use the English bundle.
-
-Generated notebooks preserve environment tags in each cell's `metadata.tags`.
-Cells tagged `disconnected` are intended for disconnected environments; cells tagged
-`connected` are intended for connected environments. Untagged cells are shared.
-AutoX CI uses these tags to skip cells for the other environment. Interactive Jupyter
-execution requires selecting the appropriate cells manually; tags alone do not skip execution.
-Model selection, validation, and extraction cells are shared. Only offline execution
-setup and the graph notebook's offline OpenCV reinstall carry `disconnected` tags.
-The optional OCR download cell carries a `connected` tag. It leaves the full Docling
-artifacts path unset so Docling can download its core models normally.
-For AutoX notebook Jobs, set `RHOAI_NOTEBOOK_CLUSTER_MODE` to `connected` or
-`disconnected`; supplying model artifacts does not select the cluster mode.
+After document discovery, `prepare_extraction()` checks the selected file types.
+PDFs and images need the pipeline-compatible PP-OCRv4 bundle; audio needs a
+Whisper model. Text-only corpora need neither. Connected runs download the pinned
+OCR or Whisper files only when no local model path is configured. The Whisper
+weights match the pipeline image's modelcar. Disconnected runs must mount the
+approved OCR bundle under `DOCLING_ARTIFACTS_PATH` and, for audio, a complete
+Whisper model under `HF_MODEL_DIR`. The pattern's selected language chooses
+English or Chinese OCR automatically. Each notebook uses one extraction worker
+so a small workbench can process scanned PDFs and audio without exhausting memory.
 
 
 ## Quick start
