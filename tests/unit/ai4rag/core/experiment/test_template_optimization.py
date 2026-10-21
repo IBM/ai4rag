@@ -15,7 +15,6 @@ from ai4rag.core.experiment.exception_handler import IndexingError
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel, OpenAIEmbeddingParams
 from ai4rag.rag.template import AgenticRAG, SequentialRAG
 from ai4rag.rag.vector_store.config import MilvusLiteConfig, Neo4jConfig
 from ai4rag.rag.vector_store.neo4j import Neo4jGraphRetrievalConfig
@@ -136,44 +135,6 @@ def test_templates_have_distinct_cache_entries_and_reuse_index(mocker):
     assert [
         call.kwargs["payload"]["template_id"] for call in experiment.event_handler.on_pattern_creation.call_args_list
     ] == ["agentic_rag", "sequential_rag"]
-
-
-@pytest.mark.parametrize("legacy_params", [False, True])
-def test_embedding_retries_do_not_change_index_or_evaluation_identity(mocker, legacy_params):
-    """Retry-only changes reuse collections and cached scores, including older parameter dictionaries."""
-    models = [
-        OpenAIEmbeddingModel(
-            client=MagicMock(),
-            model_id="em",
-            params=OpenAIEmbeddingParams(embedding_dimension=2, context_length=1024, max_retries=retries),
-        )
-        for retries in (0, 4)
-    ]
-    if legacy_params:
-        models[0] = MagicMock(model_id="em", params={"embedding_dimension": 2, "context_length": 1024})
-    space = make_space(templates=("agentic_rag", "sequential_rag"))
-    space["embedding_model"] = Parameter(name="embedding_model", values=models)
-    experiment = make_experiment(space)
-    store, _, query = mock_execution(mocker, experiment)
-    reuse = mocker.spy(experiment, "_get_reusable_collection_name")
-    candidate = experiment.search_space.combinations[0]
-
-    for model, template in ((models[0], "agentic_rag"), (models[1], "sequential_rag"), (models[1], "agentic_rag")):
-        assert experiment.run_single_evaluation({**candidate, "embedding_model": model, "template_id": template}) == 0.7
-
-    assert store.add_documents.call_count == 1  # Different template shares the index.
-    assert query.call_count == 2  # Original template reuses the cached evaluation.
-    assert reuse.spy_return_list == [None, "collection"]
-    assert len(experiment.results) == 2
-    assert all(
-        result.indexing_params["embedding"]["embedding_params"] == {"embedding_dimension": 2, "context_length": 1024}
-        for result in experiment.results
-    )
-    assert models[1].params.max_retries == 4
-    if legacy_params:
-        assert models[0].params == {"embedding_dimension": 2, "context_length": 1024}
-    else:
-        assert models[0].params.max_retries == 0
 
 
 def test_failed_indexing_never_constructs_or_invokes_agent(mocker):

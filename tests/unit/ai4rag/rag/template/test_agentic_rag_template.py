@@ -898,12 +898,16 @@ def _failure_traces(caplog):
 
 def test_all_failed_questions_log_independently_before_pattern_failure(rag, caplog):
     """The unchanged executor.map path cannot suppress diagnostics from later workers."""
+    from threading import Barrier
+
     from ai4rag.core.experiment.exception_handler import GenerationError
     from ai4rag.core.experiment.utils import query_rag
 
     rag.retriever.retrieve.return_value = [AI4RAGChunk(text="private evidence", metadata={})]
+    workers_started = Barrier(3, timeout=10)
 
     def fail_after_retrieval(*_args, **kwargs):
+        workers_started.wait()
         _call_tool(rag._create_agent_mock, "retriever", {"query": "private query"}, kwargs["context"])
         raise RuntimeError("private failure")
 
