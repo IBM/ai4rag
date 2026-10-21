@@ -4,9 +4,9 @@
 # -----------------------------------------------------------------------------
 """Run the agent through OpenShell's HTTP CONNECT proxy for native TCP.
 
-asyncpg does not honor HTTP proxy environment variables. When PGVector is
-configured, proxychains4 intercepts the agent's native TCP sockets and tunnels
-them through OpenShell's explicit egress proxy.
+The asyncpg and Neo4j Python drivers use native TCP connections. When either
+store is configured, proxychains4 tunnels the agent's TCP sockets through
+OpenShell's explicit egress proxy.
 """
 
 import ipaddress
@@ -31,6 +31,7 @@ PROXY_ENV_VARS = (
     "http_proxy",
     "HTTP_PROXY",
 )
+NATIVE_DATABASE_ENV_VARS = ("PGVECTOR_HOST", "NEO4J_URI")
 
 
 def proxy_address(proxy_url: str) -> tuple[str, int]:
@@ -83,17 +84,17 @@ def write_proxychains_config(address: str, port: int) -> str:
 
 
 def main() -> None:
-    """Exec the agent, wrapping PGVector's native TCP connections if configured."""
+    """Exec the agent, wrapping native database TCP connections if configured."""
     command = sys.argv[1:]
     if not command:
         raise SystemExit("Usage: proxychains_entrypoint.py COMMAND [ARG ...]")
 
-    if not os.environ.get("PGVECTOR_HOST"):
+    if not any(os.environ.get(name) for name in NATIVE_DATABASE_ENV_VARS):
         os.execv(command[0], command)
 
     proxy_url = next((os.environ[name] for name in PROXY_ENV_VARS if os.environ.get(name)), None)
     if proxy_url is None:
-        raise SystemExit("PGVECTOR_HOST is set, but OpenShell did not provide an HTTP proxy.")
+        raise SystemExit("A native database host is configured, but OpenShell did not provide an HTTP proxy.")
 
     address, port = proxy_address(proxy_url)
     config_path = write_proxychains_config(address, port)
