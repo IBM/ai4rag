@@ -169,7 +169,55 @@ PDFs are parsed with Docling's PDFium backend to recover text that the native pa
 can emit as NUL characters. This applies to `extract_text()`; the development-only
 `FileStore` helper also uses PDFium for local files.
 
-OCR is **off by default**. Conversion behaviour (table structure and OCR) is
+#### Preparing extraction models
+
+Call `prepare_extraction()` after discovery to select the models needed by the
+corpus. Import it from `ai4rag.utils.data.text_extraction`; it is not re-exported
+from `ai4rag.utils.data`.
+
+```python
+from ai4rag.utils.data.text_extraction import extract_text, prepare_extraction
+
+documents = [{"key": "docs/report.pdf", "size_bytes": 1024}]
+prepared = prepare_extraction(
+    documents,
+    language="en",
+    disconnected=False,
+)
+result = extract_text(
+    documents=documents,
+    bucket="my-bucket",
+    output_dir="/tmp/extracted",
+    docling_config=prepared.config,
+    docling_artifacts_path=prepared.artifacts_path,
+    max_extraction_workers=1,
+)
+```
+
+The returned `PreparedExtraction` exposes `config`, `artifacts_path`, `needs_ocr`,
+and `needs_asr`. PDFs/images enable OCR, audio requires Whisper, and text-only
+corpora need neither bundle. The `language` argument selects Chinese OCR for
+`chinese`, `ch`, `zh`, `zho`, `chi`, `zh-cn`, or `zh-tw` (case-insensitive), and
+English otherwise; it does not detect document language.
+
+Connected preparation downloads pinned PP-OCRv4 files from
+`superlinked/docling-artifacts` and a pinned `openai/whisper-tiny` snapshot only
+when the corresponding local path is unset. Pass `docling_artifacts_path` or
+`asr_model_path` to override `DOCLING_ARTIFACTS_PATH` or `HF_MODEL_DIR`, respectively.
+Configured local paths are validated rather than replaced by downloads. With
+`disconnected=True`, required local bundles must exist before preparation: OCR needs
+the selected detection, classification, recognition, and matching dictionary files
+under `RapidOcr/`; audio needs a complete Transformers-format Whisper directory.
+
+Generated MaaS and knowledge-graph indexing notebooks use this workflow, select
+`language` from the pattern, and use one extraction worker to reduce memory pressure.
+They default to connected mode; set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in a
+workbench or `NOTEBOOK_CLUSTER_MODE=disconnected` as an override, including in AutoX
+Jobs. Both variables accept `connected` or `disconnected`. Run All uses the chosen
+mode without skipping cells. Direct Python callers set `disconnected` explicitly;
+the helper does not read notebook mode variables.
+
+Without a prepared configuration, OCR is **off by default**. Conversion behaviour (table structure and OCR) is
 controlled through a single `DoclingExtractionConfig` instance. To enable
 RapidOCR (for scanned PDFs / images):
 
@@ -207,8 +255,9 @@ connected environment can use Docling's normal model downloader. Explicit model 
 and bundled wheel models do not require `DOCLING_ARTIFACTS_PATH`.
 
 For disconnected OCR runs, stage all required models before extraction. The generated
-MaaS indexing notebook selects OCR for discovered PDF/image inputs and requires the
-Docling/RapidOCR artifacts for those inputs; text-only corpora do not need them.
+MaaS and knowledge-graph indexing notebooks use the pinned PP-OCRv4 bundles selected
+by `prepare_extraction()`, rather than relying on bundled wheel models or Docling's
+default downloader. See the [offline staging instructions](https://github.com/IBM/ai4rag#running-on-disconnected-clusters).
 Docling auto-detects pages that need OCR when `do_ocr=True`.
 
 #### Audio Transcription
@@ -218,12 +267,16 @@ through `LocalHuggingFaceAsrPipeline`, a Docling ASR pipeline using a local Hugg
 Transformers Whisper model. Set `HF_MODEL_DIR`, or override it with
 `DoclingExtractionConfig.asr_model_path` as shown below. The model is loaded lazily on
 the first audio input with `local_files_only=True`; non-audio conversion does not
-require Whisper artifacts, and ASR weights are never downloaded at runtime.
+require Whisper artifacts. `extract_text()` and the audio pipeline do not download
+ASR weights. Connected `prepare_extraction()` can download the pinned Whisper Tiny
+snapshot before extraction when no local model is configured.
 
 Audio decoding requires the `ffmpeg` executable on `PATH`, with support for the
 input codec. AI4RAG opens the local file directly with FFmpeg and passes mono
 float32 samples at the model's sampling rate to Transformers. This supports M4A
 files whose metadata is stored at the end, which require seeking during decoding.
+Missing FFmpeg or a decoding failure raises `RuntimeError` with actionable details;
+decoding an empty waveform raises `ValueError`.
 
 The directory must contain `config.json` with `model_type="whisper"`,
 `preprocessor_config.json`, `tokenizer_config.json`, model weights (or a sharded-weight

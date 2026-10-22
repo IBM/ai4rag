@@ -16,6 +16,21 @@ The MaaS indexing template installs `ai4rag[text-extraction]` for the generated
 notebook's ai4rag version. That extra supplies `rapidocr~=3.9.2` and
 `onnxruntime~=1.25.0`, replacing separate OCR package installation commands.
 
+Both MaaS and knowledge-graph indexing templates use this extra and default to
+connected mode. Set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in a workbench;
+`NOTEBOOK_CLUSTER_MODE` takes precedence when set, including in AutoX Jobs. Both
+variables accept `connected` or `disconnected`. Run All uses the selected mode
+without skipping cells; disconnected mode sets Hugging Face and Transformers
+offline flags, while connected mode clears them.
+
+After document discovery, the notebooks call `prepare_extraction()` to select only
+the models needed by the corpus. Connected runs download pinned PP-OCRv4 or Whisper
+Tiny models when local paths are unset. Disconnected runs validate the mounted
+`DOCLING_ARTIFACTS_PATH` and `HF_MODEL_DIR` bundles for PDF/image and audio inputs,
+respectively; text-only inputs require neither. The pattern language selects Chinese
+OCR for Chinese codes and English otherwise. Extraction uses one worker to reduce
+memory use. See [Text Extraction](../../user-guide/pipeline-components.md#text-extraction).
+
 `create_placeholder_mapping()` reads the pattern's `template_id` and resolves it
 through the template registry. Standard and graph inference notebooks instantiate
 that template. Patterns without an ID emit a `UserWarning` and use `SequentialRAG`;

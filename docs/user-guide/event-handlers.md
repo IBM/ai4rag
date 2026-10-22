@@ -210,8 +210,10 @@ agentic experiments must accept it explicitly or through `**kwargs`.
 
 ### Failed-agent diagnostics
 
-When an agent ultimately fails, ai4rag logs one `RAG_FAILURE_TRACE` JSON record
-before re-raising the original exception. It contains a generated diagnostic ID,
+After initial retrieval succeeds, an unrecovered agent or context-compression
+failure logs one `RAG_FAILURE_TRACE` JSON record before re-raising the original
+exception. Input validation and initial retrieval failures occur before this trace
+is created. It contains a generated diagnostic ID,
 error category, initial chunk count, model/tool call counts and the last 32 events.
 The last 32 completed retrieval-tool calls report retrieved chunks before
 compression, retained chunks after compression and new chunks added to context.

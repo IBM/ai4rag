@@ -111,7 +111,9 @@ documents = load_docling_documents(extracted_dir)
 !!! tip "Reading from object storage instead"
     If your corpus already lives in a bucket, `discover_documents()` and `extract_text()` do the same job,
     naming each document by its **full S3 object key** — so a benchmark written against a bucket must spell
-    keys out in full, prefix included (`datasets/rag/docs/manuals/xr-200/setup.pdf`). See
+    keys out in full, prefix included (`datasets/rag/docs/manuals/xr-200/setup.pdf`).
+    Use `prepare_extraction()` from `ai4rag.utils.data.text_extraction` between discovery
+    and extraction to select OCR/audio models for connected or disconnected runs. See
     [Pipeline Components](../user-guide/pipeline-components.md).
 
 !!! note "`dev_utils.file_store.FileStore`"

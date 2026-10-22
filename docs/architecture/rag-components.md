@@ -1349,6 +1349,15 @@ class AgenticRAG(BaseRAGTemplate):
   so the default of `2` allows one additional search through the `retriever` tool.
   Independently, it caps the number of `rewrite_query` tool calls. Once a budget
   is exhausted, the corresponding tool tells the agent to use the evidence found.
+  Before each agent model call, budget middleware also checks the retrieval count
+  and the number of preceding agent model calls. Once retrieval reaches its cap,
+  or after `2 * max_retrieval_steps` agent model calls, the next call has no tools
+  and requests a final answer from the evidence already retrieved. This preserves
+  the configured response language and asks the model to acknowledge insufficient
+  evidence. With `max_retrieval_steps=1`, the first agent call has no tools.
+  Nested query-rewrite and compression model calls do not count toward this
+  middleware limit. A provider returning tool calls after tools are removed raises
+  `RuntimeError` instead of restarting the loop.
 - `chat_model` is an optional pre-built LangChain `BaseChatModel`. When
   omitted, one is built from the configured `foundation_model` — which must
   then be an `OpenAIFoundationModel`, since `AgenticRAG` wraps its MaaS/OpenAI
@@ -1429,6 +1438,15 @@ records for `rewrite_query` and `retriever`. Retrieval tool records include newl
 discovered documents with text and metadata. The experiment adds a `conversation_id`
 and publishes trajectories through the event handler; `LocalEventHandler` saves them
 in `conversations.json`. See [Event Handlers](../user-guide/event-handlers.md#conversations-agent-trajectories).
+
+Each invocation has its own `AgentTrace` callback from
+`ai4rag.rag.template.agent_trace`. After initial retrieval succeeds, an unrecovered
+agent or compression failure emits one `RAG_FAILURE_TRACE` warning before the
+exception propagates. Counts span the original attempt and any compression retry;
+only the last 32 events and completed retrieval results are retained. Prompts,
+document content, tool arguments, and exception messages are excluded. Successful
+runs emit no failure trace. See
+[Failed-agent diagnostics](../user-guide/event-handlers.md#failed-agent-diagnostics).
 
 !!! note "Dependencies"
     `AgenticRAG` requires the `langchain` and `langchain-openai` packages,

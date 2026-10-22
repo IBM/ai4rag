@@ -7,19 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [Unreleased]
+## [0.25.0](https://github.com/IBM/ai4rag/releases/tag/v0.25.0)
 
-### Security
+### Added
 
-- **Dependencies** — relaxed `docling-slim` from the `~=2.121.0` micro-pin (which froze the whole docling stack on the vulnerable 2.121.0) to `>=2.132.0,<3.0.0` (base and `text-extraction` extras), clearing PYSEC-2026-4208/4209/4210/4211/4213/4214/4216, CVE-2026-105744, and related findings fixed upstream in docling-slim 2.131.0/2.132.0 (METS tar memory exhaustion, plugin entrypoint import, rowspan/colspan exhaustion, local file read via embedded images, auth-header forwarding to remote image hosts, DNS-rebinding/private-IP bypass, Tectonic TikZ arbitrary file read/write). The `feat-chunking`, `standard`, `format-opendocument`, and `format-audio` extras are unchanged and verified present through 2.140.0. The full runtime dependency closure was additionally verified to resolve against the RHOAI package index (`cpu-torch2.13-el9.8-test`), which picks docling-slim 2.140.0, docling-core 2.102.0, docling-ibm-models 4.0.3, and docling-parse 7.22.3 there — matching the locked docling-slim and docling-ibm-models exactly, with docling-core differing only by a patch release (2.101.1 locked) that still postdates the `audio/m4a`/`audio/mp4` MIME addition in 2.99.0
+- **Text extraction** — new `prepare_extraction()` helper returns a `PreparedExtraction` configuration based on discovered file types, downloads pinned PP-OCRv4 and Whisper Tiny models for connected runs when local paths are unset, and validates local bundles for disconnected runs; text-only corpora need neither bundle
+- **Agentic RAG** — failed agent invocations emit a `RAG_FAILURE_TRACE` JSON record with a diagnostic ID, model/tool call counts, retrieval counts, and bounded recent events across context-compression attempts, excluding prompts, document content, tool arguments, and exception messages
+- **Retrieval** — `LLMDocumentCompressor.compress()` accepts an optional keyword-only `config` for invocation callbacks, including tracing compression model calls
 
 ### Changed
 
-- **Indexing notebooks** — connected runs download the pinned Whisper Tiny model when audio is present and no local ASR model is configured; disconnected runs still require a local model
+- **Indexing notebooks** — MaaS and knowledge-graph indexing default to connected mode and support disconnected Run All execution through `RHOAI_NOTEBOOK_CLUSTER_MODE` or the overriding `NOTEBOOK_CLUSTER_MODE`, with model preparation after document discovery
+- **Indexing notebooks** — the pattern language selects English or Chinese OCR automatically, and extraction uses one worker to reduce memory pressure on small workbenches
+- **Dependencies** — raised the base and `text-extraction` extra's `docling-slim` requirement to `>=2.132.0,<3.0.0`, addressing PYSEC-2026-4208/4209/4210/4211/4213/4214/4216, CVE-2026-105744, and related upstream fixes for resource exhaustion, file access, plugin imports, and network trust bypasses
+- **Dependencies** — added `huggingface-hub>=0.30,<2` to the `text-extraction` extra and refreshed the lockfile, including `docling-slim` 2.140.0, `docling-ibm-models` 4.0.3 across platforms, Transformers 5.20.1, and PyTorch 2.13.0
+- **Assets generator** — starter-kit documentation recommends the Red Hat OpenShell sandbox base image for production deployments
 
 ### Fixed
 
-- **Text extraction** — local Whisper ASR decodes audio from seekable file paths with FFmpeg before transcription, fixing M4A files with trailing metadata that failed when piped through Transformers; decoding failures now include actionable diagnostics
+- **Agentic RAG** — exhausted retrieval or model-call budgets force a final answer without tools, preventing recursion loops while preserving response-language instructions; providers returning tool calls after exhaustion raise a clear error
+- **Text extraction** — local Whisper ASR decodes audio from seekable file paths with FFmpeg before transcription, fixing M4A files with trailing metadata that failed when piped through Transformers; missing FFmpeg, decoding failures, and empty audio now produce actionable errors
+- **Assets generator** — Neo4j starter-kit connections tunnel native TCP through OpenShell's HTTP CONNECT proxy, extending the existing pgvector support
 
 ---
 

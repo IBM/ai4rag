@@ -70,6 +70,13 @@ sequenceDiagram
 
 Documents are provided as `list[DoclingDocument]` (from the `docling-core` library). Each document is a structured representation of a parsed file, with the document name used as `document_id`. If the name is not set, a content-based hash is generated instead.
 
+Before this experiment phase, generated MaaS and knowledge-graph indexing notebooks
+discover S3 objects, call `prepare_extraction()`, then pass its configuration to
+`extract_text()`. Preparation chooses OCR/audio models from file extensions and the
+pattern language. Connected preparation downloads pinned models when local paths are
+unset; disconnected preparation validates mounted bundles. Extraction uses one worker
+in these notebooks. See [Text Extraction](../user-guide/pipeline-components.md#text-extraction).
+
 ### Chunking
 
 The configured chunker (`DoclingChunker` or `LangChainChunker`) splits `DoclingDocument` objects into `AI4RAGChunk` instances. Both chunkers use a character-based token approximation (4 characters = 1 token) for token counting.
@@ -238,6 +245,11 @@ template, see [AgenticRAG](rag-components.md#agenticrag)) starts with the same i
 retrieval but then lets an agent loop through further `retriever`/`rewrite_query` tool calls,
 bounded by `max_retrieval_steps`, before generating the final answer.
 
+When the retrieval budget is exhausted, or after `2 * max_retrieval_steps` agent
+model calls, middleware removes tools from the next model call and requests a final
+answer using the existing evidence and response-language instructions. A provider
+that still returns tool calls raises `RuntimeError` rather than continuing the loop.
+
 `AgenticRAG.generate()` also returns a JSON-safe `conversation` record containing the
 initial retrieval, agent messages, and rewrite/retrieval tool activity. The experiment
 collects these records separately from evaluation data and forwards them on pattern
@@ -252,6 +264,13 @@ also compressed during that retry. The successful run's retained context becomes
 retrieval and adds compression statistics. See
 [Context-overflow fallback](rag-components.md#context-overflow-fallback) for limits
 and how to disable it.
+
+After initial retrieval succeeds, unrecovered agent and compression errors emit one
+`RAG_FAILURE_TRACE` warning before propagating. Invocation-scoped counts span both
+attempts, while recent events and retrieval results are bounded to 32 each. This
+record excludes prompts, document content, tool arguments, and exception messages;
+successful runs continue to use conversation artifacts. See
+[Failed-agent diagnostics](../user-guide/event-handlers.md#failed-agent-diagnostics).
 
 ```mermaid
 sequenceDiagram

@@ -18,9 +18,17 @@ PDF extraction uses Docling's `PyPdfiumDocumentBackend` to preserve text that th
 native parser can emit as NUL characters. OCR and table processing remain controlled
 by `DoclingExtractionConfig`.
 
+`prepare_extraction()` selects OCR and audio models from discovered document types
+before extraction. It returns a `PreparedExtraction` with `config`, `artifacts_path`,
+`needs_ocr`, and `needs_asr`. Connected preparation can download pinned models;
+disconnected preparation validates local bundles. See
+[Text Extraction](../../user-guide/pipeline-components.md#text-extraction) for an example.
+
 ::: ai4rag.utils.data.text_extraction
     options:
       members:
+        - prepare_extraction
+        - PreparedExtraction
         - extract_text
         - DoclingExtractionConfig
         - ExtractionResult

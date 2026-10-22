@@ -29,6 +29,10 @@ This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
 
+The core package and `text-extraction` extra require `docling-slim>=2.132.0,<3.0.0`.
+This floor includes upstream security fixes absent from the former 2.121.0 pin;
+refresh offline package mirrors when upgrading.
+
 Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, `asyncpg`, `neo4j`, and `neo4j-graphrag` — are core dependencies and install automatically. There is no separate vector-store extra to install.
 No extra step is needed to use a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j as a vector store.
 
@@ -42,7 +46,7 @@ before graph extraction.
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
     Scanned PDFs/images (via RapidOCR) and audio transcription (via a local Hugging Face Whisper model)
     additionally require the `text-extraction` extra, which pulls in `torch`, `docling-ibm-models`,
-    `rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, and the audio dependencies:
+    `rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, `huggingface-hub>=0.30,<2`, and the audio dependencies:
 
     ```bash
     pip install "ai4rag[text-extraction] @ git+https://github.com/IBM/ai4rag.git@main"
@@ -51,6 +55,14 @@ before graph extraction.
     RapidOCR and ONNX Runtime are declared directly by this extra. Generated MaaS
     indexing notebooks install them through `ai4rag[text-extraction]` without separate
     OCR package installation commands.
+
+    Both indexing notebooks default to connected mode. Set
+    `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` for a disconnected workbench, or
+    `NOTEBOOK_CLUSTER_MODE=disconnected` for an AutoX Job override. After discovery,
+    `prepare_extraction()` downloads pinned PP-OCRv4 files for PDF/image inputs when
+    no local artifacts path is configured. Disconnected runs instead require the
+    approved Docling/RapidOCR bundle through `DOCLING_ARTIFACTS_PATH`, including the
+    recognition dictionary. Text-only corpora need neither OCR nor Whisper models.
 
     Audio extraction requires the system `ffmpeg` executable on `PATH`, with decoders
     for the input audio formats. Generated indexing notebooks use `prepare_extraction()`
@@ -101,7 +113,7 @@ uv sync --extra docs        # documentation tools only
 
 | Extra | Dependencies | Purpose |
 |-------|-------------|---------|
-| `text-extraction` | Docling conversion and audio dependencies, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
+| `text-extraction` | `docling-slim>=2.132.0,<3.0.0` conversion/audio extras, `huggingface-hub>=0.30,<2`, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
 | `test` | `pytest`, `pytest-cov`, `pytest-mock` | Testing tools |
 | `code_check` | `black`, `pylint`, `isort` | Code quality tools |
 | `docs` | `mkdocs`, `mkdocs-material` | Documentation tools |

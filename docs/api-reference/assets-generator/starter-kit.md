@@ -57,13 +57,17 @@ text for the agent. Use `MILVUS_CA_CERT` in place of the obsolete `MILVUS_SERVER
 For Neo4j, use a verified TLS URI such as `neo4j+s://host:7687`; egress setup reads
 the host and port from that URI, defaulting to port `7687` when it is omitted.
 
-For pgvector, the generated OpenShell image includes `proxychains4` and an entrypoint
-that tunnels native TCP connections through OpenShell's HTTP CONNECT proxy. When
-`PGVECTOR_HOST` is set, startup requires a proxy supplied through `grpc_proxy`,
+For pgvector and Neo4j, the generated OpenShell image includes `proxychains4` and an
+entrypoint that tunnels native TCP connections through OpenShell's HTTP CONNECT proxy.
+When either `PGVECTOR_HOST` or `NEO4J_URI` is set, startup requires a proxy supplied through `grpc_proxy`,
 `GRPC_PROXY`, `https_proxy`, `HTTPS_PROXY`, `http_proxy`, or `HTTP_PROXY` (first
 non-empty value wins). The proxy must use HTTP, have no authentication, and resolve
-to an IPv4 address. If `PGVECTOR_HOST` is unset, the entrypoint launches the agent
-directly.
+to an IPv4 address. If both database variables are unset, the entrypoint launches
+the agent directly.
+
+For production deployments, the generated README recommends
+`registry.redhat.io/rhoai/odh-openshell-sandbox-rhel9` as the `BASE_IMAGE` in
+`Containerfile.openshell`, with a tag or digest appropriate for your environment.
 
 Run these commands from the extracted starter-kit directory:
 
