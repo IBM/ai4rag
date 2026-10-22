@@ -145,6 +145,8 @@ graph TB
 - `ai4rag.rag.template.registry` maps persisted template IDs to allowed classes and import paths; generated inference notebooks use the selected template
 - `AgenticRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
 - Context compression is enabled by default for `AgenticRAG`; a recognized context overflow triggers one retry, with retained context and compression statistics recorded in the result
+- Budget middleware removes tools for a final answer once the retrieval or agent model-call budget is exhausted
+- `ai4rag.rag.template.agent_trace.AgentTrace` keeps invocation-scoped counts and bounded events, emitting a content-free failure record for unrecovered errors after initial retrieval
 
 ### 4. Evaluation Layer
 
@@ -165,6 +167,7 @@ graph TB
 - Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
 - Provider-agnostic — accepts injected S3 clients and OpenAI-compatible model clients
+- `prepare_extraction()` returns a `PreparedExtraction` configuration based on discovered file types, downloading pinned OCR/Whisper models for connected runs or validating local bundles for disconnected runs
 - `LocalHuggingFaceAsrPipeline` extends Docling's ASR pipeline for local Transformers-format Whisper models, preserving segment timestamps without runtime model downloads
 
 **RAG Optimization Orchestration** (`pipelines-components` repo)

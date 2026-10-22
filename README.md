@@ -69,8 +69,11 @@ Each config is a frozen dataclass with a `.from_env()` constructor and an `env_v
 ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, `langchain`/`langchain-openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
 
 For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra includes
-`rapidocr~=3.9.2` and `onnxruntime~=1.25.0` along with Docling's conversion and audio
-dependencies. Generated MaaS indexing notebooks install OCR packages through this extra.
+`rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, and `huggingface-hub>=0.30,<2` along with
+Docling's conversion and audio dependencies. Both the core package and this extra
+require `docling-slim>=2.132.0,<3.0.0` to include upstream security fixes. Generated
+indexing notebooks install OCR packages through this extra. Audio extraction also
+requires the system `ffmpeg` executable on `PATH` with support for the input codec.
 
 `extract_text()` and the repository's development-only `FileStore` helper parse PDFs
 with PDFium to recover text that the native parser can emit as NUL characters.
@@ -115,41 +118,48 @@ ai4rag depends on models from two sources:
 |-----------|------|---------|----------------------|
 | **Docling artifacts** | ~300-400 MB | Document text extraction and optional OCR | `DOCLING_ARTIFACTS_PATH` |
 | **Whisper ASR model** | ~150 MB | Offline audio transcription | `HF_MODEL_DIR` |
-| **HuggingFace models** | Variable | Embeddings and foundation models | `HF_HOME` |
 
 ### Setup Instructions
 
-For the MaaS indexing notebook, use the approved Docling artifact bundle from
+For the MaaS and knowledge-graph indexing notebooks, use the approved Docling artifact bundle from
 the documents-indexing pipeline image. A generic Docling download alone does
-not provide the pinned PP-OCRv4 files required for OCR parity.
+not provide the pinned PP-OCRv4 files required for OCR parity. The selected OCR
+bundle must include detection, classification, recognition, and matching dictionary
+files under `RapidOcr/`. Only stage bundles needed by your corpus: PDF/image inputs
+need Docling/RapidOCR, audio needs Whisper, and text-only inputs need neither.
 
-1. **On an internet-connected machine**, download the artifacts:
+1. **On an internet-connected machine**, stage the approved Docling/RapidOCR bundle
+   under `./offline/docling/` for PDF/image inputs. For audio, download the pinned
+   Transformers-format Whisper Tiny snapshot:
    ```bash
    pip install 'ai4rag[text-extraction]'
-
-   # Trigger Docling model download
-   python -c "from docling.document_converter import DocumentConverter; \
-             converter = DocumentConverter(); \
-             converter.convert_document_string('/tmp/test.txt')"
-
-   # Pre-download HuggingFace models
-   export HF_HOME=/path/to/hf_cache
-   python -c "from transformers import AutoTokenizer; \
-             AutoTokenizer.from_pretrained('BAAI/bge-m3')"
    ```
 
-2. **Transfer the artifacts to your disconnected cluster:**
+   ```python
+   from huggingface_hub import snapshot_download
+
+   snapshot_download(
+       repo_id="openai/whisper-tiny",
+       revision="169d4a4341b33bc18d8881c4b69c2e104e1cc0af",
+       allow_patterns=["*.json", "*.txt", "*.safetensors"],
+       local_dir="./offline/models/whisper-tiny",
+   )
+   ```
+
+2. **Transfer the required artifacts to your disconnected cluster:**
    ```bash
-   rsync -av ~/.cache/docling/ cluster:/offline/docling/
-   rsync -av /path/to/hf_cache/ cluster:/offline/hf_cache/
+   # Copy only the bundles required by your corpus.
+   rsync -av ./offline/docling/ cluster:/offline/docling/
+   rsync -av ./offline/models/whisper-tiny/ cluster:/offline/models/whisper-tiny/
    ```
 
 3. **On the disconnected cluster, set environment variables:**
    ```bash
    export DOCLING_ARTIFACTS_PATH=/offline/docling
    export HF_MODEL_DIR=/offline/models/whisper-tiny
-   export HF_HOME=/offline/hf_cache
    export HF_HUB_OFFLINE=1  # Enforce offline mode
+   export TRANSFORMERS_OFFLINE=1
+   export RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected
    ```
 
    `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model
@@ -157,6 +167,8 @@ not provide the pinned PP-OCRv4 files required for OCR parity.
    Whisper model when no local model is configured.
    You can override the environment setting with
    `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
+   Provide `ffmpeg` in the workbench image for audio, and mirror the current
+   `ai4rag[text-extraction]` dependencies in the disconnected environment.
 
 ### Indexing Notebooks
 
@@ -166,7 +178,9 @@ offline. Set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in the workbench, or pas
 `NOTEBOOK_CLUSTER_MODE=disconnected` to an AutoX Job. There are no environment
 tags or cells to skip; Jupyter **Run All** uses the same mode setting.
 
-After document discovery, `prepare_extraction()` checks the selected file types.
+After document discovery, `prepare_extraction()` from
+`ai4rag.utils.data.text_extraction` checks the selected file types and returns a
+`PreparedExtraction` with `config`, `artifacts_path`, `needs_ocr`, and `needs_asr`.
 PDFs and images need the pipeline-compatible PP-OCRv4 bundle; audio needs a
 Whisper model. Text-only corpora need neither. Connected runs download pinned
 OCR or Whisper files only when no local model path is configured. Disconnected
@@ -175,6 +189,10 @@ audio, a complete Whisper model under `HF_MODEL_DIR`.
 The pattern's selected language chooses
 English or Chinese OCR automatically. Each notebook uses one extraction worker
 so a small workbench can process scanned PDFs and audio without exhausting memory.
+For direct Python use, pass `disconnected=True` to `prepare_extraction()` and
+forward its `config` and `artifacts_path` to `extract_text()`; notebook mode
+variables apply only to the generated notebooks. `extract_text()` itself does not
+download Whisper weights.
 
 
 ## Quick start
