@@ -20,11 +20,12 @@ def _documents(*keys: str) -> list[dict]:
     return [{"key": key, "size_bytes": 1} for key in keys]
 
 
-def test_text_only_needs_no_models(monkeypatch):
+@pytest.mark.parametrize("disconnected", [False, True])
+def test_text_only_needs_no_models(monkeypatch, disconnected):
     """Text-only corpora must not require local bundles or downloads."""
     monkeypatch.delenv("DOCLING_ARTIFACTS_PATH", raising=False)
     monkeypatch.delenv("HF_MODEL_DIR", raising=False)
-    prepared = extraction.prepare_extraction(_documents("report.txt", "notes.md"), disconnected=True)
+    prepared = extraction.prepare_extraction(_documents("report.txt", "notes.md"), disconnected=disconnected)
     assert not prepared.config.do_ocr
     assert not prepared.needs_asr
     assert prepared.artifacts_path is None
@@ -95,9 +96,6 @@ def test_connected_ocr_downloads_only_selected_bundle(tmp_path, monkeypatch):
 def test_audio_reuses_local_whisper_validation(tmp_path, monkeypatch, disconnected):
     """Audio needs a complete local Whisper model, including in mixed corpora."""
     monkeypatch.delenv("HF_MODEL_DIR", raising=False)
-    with pytest.raises(FileNotFoundError, match="HF_MODEL_DIR"):
-        extraction.prepare_extraction(_documents("voice.mp3"), disconnected=disconnected)
-
     (tmp_path / "config.json").write_text(json.dumps({"model_type": "whisper"}), encoding="utf-8")
     for name in ("preprocessor_config.json", "tokenizer_config.json", "model.safetensors"):
         (tmp_path / name).touch()
@@ -106,6 +104,57 @@ def test_audio_reuses_local_whisper_validation(tmp_path, monkeypatch, disconnect
     )
     assert prepared.needs_asr
     assert not prepared.needs_ocr
+    assert prepared.config.asr_model_path == str(tmp_path)
+
+
+def test_disconnected_audio_requires_local_whisper(monkeypatch):
+    """Offline audio fails before extraction when no model is mounted."""
+    monkeypatch.delenv("HF_MODEL_DIR", raising=False)
+    with pytest.raises(FileNotFoundError, match="HF_MODEL_DIR"):
+        extraction.prepare_extraction(_documents("voice.mp3"), disconnected=True)
+
+
+def test_connected_audio_downloads_pinned_whisper(tmp_path, monkeypatch):
+    """Connected audio downloads and validates the pinned Whisper snapshot."""
+    monkeypatch.delenv("HF_MODEL_DIR", raising=False)
+    (tmp_path / "config.json").write_text(json.dumps({"model_type": "whisper"}), encoding="utf-8")
+    for name in ("preprocessor_config.json", "tokenizer_config.json", "model.safetensors"):
+        (tmp_path / name).touch()
+    calls = []
+    hub = ModuleType("huggingface_hub")
+
+    def fake_snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(tmp_path)
+
+    hub.snapshot_download = fake_snapshot_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    prepared = extraction.prepare_extraction(_documents("voice.wav"))
+    assert prepared.needs_asr
+    assert prepared.config.asr_model_path == str(tmp_path)
+    assert calls == [
+        {
+            "repo_id": extraction._ASR_MODEL_REPO,
+            "revision": extraction._ASR_MODEL_REVISION,
+            "allow_patterns": ["*.json", "*.txt", "*.safetensors"],
+        }
+    ]
+
+
+def test_connected_audio_prefers_env_model_without_download(tmp_path, monkeypatch):
+    """An existing local model takes priority over a connected download."""
+    (tmp_path / "config.json").write_text(json.dumps({"model_type": "whisper"}), encoding="utf-8")
+    for name in ("preprocessor_config.json", "tokenizer_config.json", "model.safetensors"):
+        (tmp_path / name).touch()
+    monkeypatch.setenv("HF_MODEL_DIR", str(tmp_path))
+    hub = ModuleType("huggingface_hub")
+
+    def unexpected_download(**_kwargs):
+        pytest.fail("Local Whisper models must not trigger a download")
+
+    hub.snapshot_download = unexpected_download
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub)
+    prepared = extraction.prepare_extraction(_documents("voice.wav"))
     assert prepared.config.asr_model_path == str(tmp_path)
 
 

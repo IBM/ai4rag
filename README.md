@@ -152,8 +152,9 @@ not provide the pinned PP-OCRv4 files required for OCR parity.
    export HF_HUB_OFFLINE=1  # Enforce offline mode
    ```
 
-   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model.
-   Neither `extract_text()` nor the indexing notebooks download ASR weights.
+   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model
+   on disconnected clusters. Connected indexing notebooks can download the pinned
+   Whisper model when no local model is configured.
    You can override the environment setting with
    `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
 
@@ -168,9 +169,9 @@ tags or cells to skip; Jupyter **Run All** uses the same mode setting.
 After document discovery, `prepare_extraction()` checks the selected file types.
 PDFs and images need the pipeline-compatible PP-OCRv4 bundle; audio needs a
 Whisper model. Text-only corpora need neither. Connected runs download pinned
-OCR files only when no local Docling path is configured. Disconnected runs must
-mount the approved OCR bundle under `DOCLING_ARTIFACTS_PATH`. Audio always needs
-a complete Whisper model under `HF_MODEL_DIR` or an explicit model path.
+OCR or Whisper files only when no local model path is configured. Disconnected
+runs must mount the approved OCR bundle under `DOCLING_ARTIFACTS_PATH` and, for
+audio, a complete Whisper model under `HF_MODEL_DIR`.
 The pattern's selected language chooses
 English or Chinese OCR automatically. Each notebook uses one extraction worker
 so a small workbench can process scanned PDFs and audio without exhausting memory.

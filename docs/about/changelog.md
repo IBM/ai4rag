@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Indexing notebooks** — connected runs download the pinned Whisper Tiny model when audio is present and no local ASR model is configured; disconnected runs still require a local model
+
 ### Fixed
 
 - **Text extraction** — local Whisper ASR decodes audio from seekable file paths with FFmpeg before transcription, fixing M4A files with trailing metadata that failed when piped through Transformers; decoding failures now include actionable diagnostics
