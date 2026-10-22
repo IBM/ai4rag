@@ -513,14 +513,17 @@ class TestBuildDoclingFormatOptions:
         from docling.datamodel.base_models import InputFormat
         from docling.datamodel.pipeline_options import RapidOcrOptions
 
-        from ai4rag.utils.data.text_extraction import DoclingExtractionConfig
+        from ai4rag.utils.data import text_extraction as te
 
         artifacts = tmp_path / "docling-artifacts"
-        artifacts.mkdir()
-        (artifacts / "placeholder").write_text("x", encoding="utf-8")
+        for rel in te._RAPIDOCR_BUNDLES["english"].values():
+            path = artifacts / "RapidOcr" / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.touch()
         monkeypatch.setenv("DOCLING_ARTIFACTS_PATH", str(artifacts))
+        monkeypatch.setattr(te, "_try_resolve_wheel_rapidocr_model_paths", lambda: None)
         options = _build_docling_format_options(
-            config=DoclingExtractionConfig(do_ocr=True),
+            config=te.DoclingExtractionConfig(do_ocr=True),
         )
         pdf_option = options[InputFormat.PDF]
         assert pdf_option.pipeline_options.do_ocr is True
@@ -599,7 +602,7 @@ class TestBuildDoclingFormatOptions:
         from ai4rag.utils.data import text_extraction as te
 
         artifacts = tmp_path / "models"
-        for rel in te._ARTIFACTS_RAPIDOCR_ENGLISH:
+        for rel in te._RAPIDOCR_BUNDLES["english"].values():
             path = artifacts / "RapidOcr" / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(b"onnx")

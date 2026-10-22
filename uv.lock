@@ -63,6 +63,7 @@ dev = [
     { name = "black" },
     { name = "docling-slim", extra = ["format-audio", "format-opendocument", "standard"] },
     { name = "dotenv" },
+    { name = "huggingface-hub" },
     { name = "ipykernel" },
     { name = "isort" },
     { name = "mkdocs" },
@@ -89,6 +90,7 @@ docs = [
 ]
 test = [
     { name = "docling-slim", extra = ["format-audio", "format-opendocument", "standard"] },
+    { name = "huggingface-hub" },
     { name = "nbformat" },
     { name = "onnxruntime" },
     { name = "psutil" },
@@ -99,6 +101,7 @@ test = [
 ]
 text-extraction = [
     { name = "docling-slim", extra = ["format-audio", "format-opendocument", "standard"] },
+    { name = "huggingface-hub" },
     { name = "onnxruntime" },
     { name = "rapidocr" },
 ]
@@ -117,6 +120,7 @@ requires-dist = [
     { name = "docling-slim", extras = ["feat-chunking"], specifier = "~=2.121.0" },
     { name = "docling-slim", extras = ["format-audio", "format-opendocument", "standard"], marker = "extra == 'text-extraction'", specifier = "~=2.121.0" },
     { name = "dotenv", marker = "extra == 'dev'" },
+    { name = "huggingface-hub", marker = "extra == 'text-extraction'", specifier = ">=0.30,<2" },
     { name = "ipykernel", marker = "extra == 'dev'" },
     { name = "isort", marker = "extra == 'code-check'" },
     { name = "langchain", specifier = ">=1.4,<2" },
