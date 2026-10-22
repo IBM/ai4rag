@@ -3,11 +3,12 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from threading import Lock
-from typing import Any
+from typing import Any, Callable
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.tools import ToolRuntime
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -23,6 +24,7 @@ from ..foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ..foundation_models.openai_model import OpenAIFoundationModel
 from ..retrieval.document_compressor import LLMDocumentCompressor
 from ..retrieval.retriever import Retriever
+from .agent_trace import AgentTrace
 from .base_template import BaseRAGTemplate
 
 _AGENT_INSTRUCTIONS = (
@@ -45,7 +47,7 @@ _REWRITE_INSTRUCTIONS = (
 
 
 @dataclass
-class _AgentRunContext:
+class _AgentRunContext:  # pylint: disable=too-many-instance-attributes
     """Mutable state scoped to one agent invocation."""
 
     question: str
@@ -60,6 +62,36 @@ class _AgentRunContext:
     # ``threading.Lock`` is a factory function in Python 3.12, not a type.
     # The lock is invocation-scoped runtime state, not input to validate.
     state_lock: Any
+    model_calls: int = 0
+    trace: AgentTrace = field(default_factory=AgentTrace)
+
+
+@wrap_model_call
+def _enforce_agent_budget(
+    request: ModelRequest[_AgentRunContext], handler: Callable[[ModelRequest], ModelResponse]
+) -> ModelResponse:
+    """Reserve a tool-free final answer before the graph can exhaust its steps."""
+    context = request.runtime.context
+    with context.state_lock:
+        finalize = (
+            context.tool_counts["retriever"] >= context.max_retrieval_steps
+            or context.model_calls >= 2 * context.max_retrieval_steps
+        )
+        context.model_calls += 1
+    if not finalize:
+        return handler(request)
+    instructions = (
+        "The tool budget is exhausted. Answer the original question now using the evidence already retrieved. "
+        "If the evidence is insufficient, say that you could not produce an answer from the retrieved evidence. "
+        "Follow the response-language instructions already provided. Do not request any tools."
+    )
+    system_message = SystemMessage(content=f"{request.system_message.text}\n\n{instructions}")
+    response = handler(request.override(tools=[], tool_choice=None, system_message=system_message))
+    # A provider may return tool calls even when no tools are offered. Never
+    # route those calls back into the graph and restart the exhausted loop.
+    if any(message.tool_calls for message in response.result if isinstance(message, AIMessage)):
+        raise RuntimeError("Model returned tool calls after the tool budget was exhausted")
+    return response
 
 
 class AgenticRAG(BaseRAGTemplate):
@@ -91,6 +123,7 @@ class AgenticRAG(BaseRAGTemplate):
             tools=self._create_agent_tools(chat_model),
             system_prompt=f"{self.foundation_model.system_message_text}\n\n{_AGENT_INSTRUCTIONS}",
             context_schema=_AgentRunContext,
+            middleware=[_enforce_agent_budget],
         )
 
     @property
@@ -227,6 +260,7 @@ class AgenticRAG(BaseRAGTemplate):
                     return "Retrieval limit reached. Answer using the documents already found."
                 run_context.tool_counts["retriever"] += 1
             retrieved = self.retriever.retrieve(query, **run_context.retrieval_kwargs)
+            retrieved_chunk_count = len(retrieved)
             compressed = run_context.use_compressed_retriever_tool
             if compressed:
                 compressor = LLMDocumentCompressor(chat_model)
@@ -237,6 +271,7 @@ class AgenticRAG(BaseRAGTemplate):
                 new_documents = [chunk for chunk in retrieved if self._chunk_key(chunk) not in run_context.seen]
                 run_context.documents.extend(new_documents)
                 run_context.seen.update(self._chunk_key(chunk) for chunk in new_documents)
+            run_context.trace.record_retrieval(retrieved_chunk_count, len(retrieved), len(new_documents))
             if not new_documents:
                 output = (
                     "No new relevant excerpts were found for this query."
@@ -309,7 +344,7 @@ class AgenticRAG(BaseRAGTemplate):
         run_context: _AgentRunContext,
     ) -> list[Any]:
         """Invoke the agent using the supplied invocation-scoped context."""
-        config = {"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3)}
+        config = {"recursion_limit": max(15, self.max_retrieval_steps * 4 + 3), "callbacks": [run_context.trace]}
         result = self.agent.invoke(
             self._agent_input(messages, question, initial_documents, enriched_message, run_context.documents),
             config=config,
@@ -324,10 +359,12 @@ class AgenticRAG(BaseRAGTemplate):
         initial_documents: list[AI4RAGChunk],
         enriched_message: str,
         retrieval_kwargs: dict[str, Any],
+        trace: AgentTrace,
     ) -> tuple[list[Any], _AgentRunContext]:
         """Compress initial context and replay the agent after a context-window overflow."""
+        trace.compression_retry = True
         compressor = LLMDocumentCompressor(self.chat_model)
-        compressed_documents = compressor.compress(question, initial_documents)
+        compressed_documents = compressor.compress(question, initial_documents, config={"callbacks": [trace]})
         compression = {
             "initial": compressor.compression_stats(initial_documents, compressed_documents),
             "retriever_tool_calls": [],
@@ -339,6 +376,7 @@ class AgenticRAG(BaseRAGTemplate):
             use_compressed_retriever_tool=True,
             compression=compression,
         )
+        run_context.trace = trace
         return (
             self._invoke_agent(messages, question, initial_documents, enriched_message, run_context),
             run_context,
@@ -352,19 +390,26 @@ class AgenticRAG(BaseRAGTemplate):
         documents, enriched_message = self._build_enriched_user_message(question, **kwargs)
         initial_documents = list(documents)
         run_context = self._new_run_context(question, initial_documents, kwargs, use_compressed_retriever_tool=False)
+        trace = run_context.trace
         context_compression_fallback = False
         try:
-            agent_messages = self._invoke_agent(messages, question, initial_documents, enriched_message, run_context)
-        except BadRequestError as error:
-            if not self.enable_context_compression or not self._is_context_overflow(error):
-                raise
-            context_compression_fallback = True
-            agent_messages, run_context = self._retry_with_compressed_context(
-                messages, question, initial_documents, enriched_message, kwargs
-            )
-        final_message = agent_messages[-1]
-        if not isinstance(final_message, AIMessage):
-            raise ValueError("Agent did not return an assistant response")
+            try:
+                agent_messages = self._invoke_agent(
+                    messages, question, initial_documents, enriched_message, run_context
+                )
+            except BadRequestError as error:
+                if not self.enable_context_compression or not self._is_context_overflow(error):
+                    raise
+                context_compression_fallback = True
+                agent_messages, run_context = self._retry_with_compressed_context(
+                    messages, question, initial_documents, enriched_message, kwargs, trace
+                )
+            final_message = agent_messages[-1]
+            if not isinstance(final_message, AIMessage):
+                raise ValueError("Agent did not return an assistant response")
+        except Exception as error:
+            trace.log_failure(error, len(initial_documents))
+            raise
         conversation = {
             "question": question,
             "initial_retrieval": {

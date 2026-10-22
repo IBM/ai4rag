@@ -5,7 +5,7 @@
 
 import httpx
 import pytest
-from openai import BadRequestError
+from openai import APITimeoutError, BadRequestError
 
 from ai4rag.rag.embedding.openai_model import (
     _TRUNCATION_MARGINS,
@@ -56,6 +56,29 @@ class TestOpenAIEmbeddingModel:
         assert model.params.embedding_dimension == 768
         assert model.params.context_length == 1024
         mock_openai_client.embeddings.create.assert_not_called()
+
+    @pytest.mark.parametrize("operation", ["embed_documents", "embed_query"])
+    def test_timeout_fallback_disables_sdk_retries(self, mock_openai_client, mocker, operation):
+        """A timed-out request gets one longer attempt with retries disabled and the same input."""
+        mock_openai_client.embeddings.create.side_effect = APITimeoutError(
+            request=httpx.Request("POST", "https://test/v1/embeddings")
+        )
+        fallback_client = mock_openai_client.with_options.return_value
+        fallback_client.embeddings.create.return_value = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2]])
+        model = OpenAIEmbeddingModel(
+            client=mock_openai_client,
+            model_id="test-model",
+            params=OpenAIEmbeddingParams(embedding_dimension=2, context_length=1024),
+        )
+
+        result = getattr(model, operation)(["text"] if operation == "embed_documents" else "text")
+
+        assert result == ([[0.1, 0.2]] if operation == "embed_documents" else [0.1, 0.2])
+        mock_openai_client.with_options.assert_called_once_with(timeout=1200.0, max_retries=0)
+        mock_openai_client.embeddings.create.assert_called_once()
+        fallback_client.embeddings.create.assert_called_once_with(
+            **mock_openai_client.embeddings.create.call_args.kwargs
+        )
 
     def test_init_with_dict_params_with_dimension(self, mock_openai_client):
         """Test initialization with dict params containing embedding_dimension and context_length."""

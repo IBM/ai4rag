@@ -208,6 +208,24 @@ The selected warm-start pattern retains its trajectories when it is published as
 Non-agentic publication omits the `conversations` keyword. Custom handlers used with
 agentic experiments must accept it explicitly or through `**kwargs`.
 
+### Failed-agent diagnostics
+
+When an agent ultimately fails, ai4rag logs one `RAG_FAILURE_TRACE` JSON record
+before re-raising the original exception. It contains a generated diagnostic ID,
+error category, initial chunk count, model/tool call counts and the last 32 events.
+The last 32 completed retrieval-tool calls report retrieved chunks before
+compression, retained chunks after compression and new chunks added to context.
+Omitted event/result counts are explicit. Counts span both attempts when context
+compression is retried; a retry flag identifies that case.
+
+These diagnostics contain only counts and fixed labels. Prompts, questions,
+responses, tool arguments, chunk text/IDs/metadata and exception messages are
+excluded. Unknown tool/error labels become `other`/`OtherError`. Successful runs,
+including successful compression retries, do not emit failure diagnostics and
+continue to use the existing conversation artifacts. Each failed agent invocation
+logs independently, including when all benchmark questions fail. Other application
+and provider logs are not redacted by this mechanism.
+
 ---
 
 ## Built-in Handlers

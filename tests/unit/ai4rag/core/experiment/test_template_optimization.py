@@ -6,9 +6,12 @@
 
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
+from openai import InternalServerError
 from pydantic import ValidationError
 
+from ai4rag.core.experiment.exception_handler import IndexingError
 from ai4rag.core.experiment.experiment import AI4RAGExperiment
 from ai4rag.core.hpo.random_opt import RandomOptimizer, RandomOptSettings
 from ai4rag.evaluator.metric import Metrics
@@ -132,6 +135,27 @@ def test_templates_have_distinct_cache_entries_and_reuse_index(mocker):
     assert [
         call.kwargs["payload"]["template_id"] for call in experiment.event_handler.on_pattern_creation.call_args_list
     ] == ["agentic_rag", "sequential_rag"]
+
+
+def test_failed_indexing_never_constructs_or_invokes_agent(mocker):
+    """An exhausted embedding failure stays an indexing error before generation."""
+    experiment = make_experiment(make_space())
+    store, retriever, query = mock_execution(mocker, experiment)
+    agent_init = mocker.patch.object(AgenticRAG, "__init__", return_value=None)
+    failure = InternalServerError(
+        "Embedding service unavailable",
+        response=httpx.Response(500, request=httpx.Request("POST", "https://maas.example/v1/embeddings")),
+        body=None,
+    )
+    store.add_documents.side_effect = failure
+
+    with pytest.raises(IndexingError) as error:
+        experiment.run_single_evaluation(experiment.search_space.combinations[0])
+
+    assert error.value.__cause__ is failure
+    agent_init.assert_not_called()
+    retriever.assert_not_called()
+    query.assert_not_called()
 
 
 @pytest.mark.parametrize("config", [None, {"route_k": 4, "include_entity_neighbors": False}])
