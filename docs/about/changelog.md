@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Dependencies** — relaxed `docling-slim` from the `~=2.121.0` micro-pin (which froze the whole docling stack on the vulnerable 2.121.0) to `>=2.132.0,<3.0.0` (base and `text-extraction` extras), clearing PYSEC-2026-4208/4209/4210/4211/4213/4214/4216, CVE-2026-105744, and related findings fixed upstream in docling-slim 2.131.0/2.132.0 (METS tar memory exhaustion, plugin entrypoint import, rowspan/colspan exhaustion, local file read via embedded images, auth-header forwarding to remote image hosts, DNS-rebinding/private-IP bypass, Tectonic TikZ arbitrary file read/write). The `feat-chunking`, `standard`, `format-opendocument`, and `format-audio` extras are unchanged and verified present through 2.140.0. The full runtime dependency closure was additionally verified to resolve against the RHOAI package index (`cpu-torch2.13-el9.8-test`), which picks docling-slim 2.140.0, docling-core 2.102.0, docling-ibm-models 4.0.3, and docling-parse 7.22.3 there — matching the locked docling-slim and docling-ibm-models exactly, with docling-core differing only by a patch release (2.101.1 locked) that still postdates the `audio/m4a`/`audio/mp4` MIME addition in 2.99.0
+
 ### Fixed
 
 - **Text extraction** — local Whisper ASR decodes audio from seekable file paths with FFmpeg before transcription, fixing M4A files with trailing metadata that failed when piped through Transformers; decoding failures now include actionable diagnostics
