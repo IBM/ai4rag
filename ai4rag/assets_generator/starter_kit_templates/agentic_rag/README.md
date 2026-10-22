@@ -38,6 +38,11 @@ and answer using the evidence found.
   index documents.
 - The Red Hat build of the Agent Sandbox operator installed in the cluster.
 
+> **Hint:** For production deployments, we recommend using the Red Hat OpenShell
+> sandbox image `registry.redhat.io/rhoai/odh-openshell-sandbox-rhel9` as the
+> `BASE_IMAGE` in `Containerfile.openshell`, with a tag or digest appropriate for
+> your environment.
+
 ### Commands
 
 Run the following commands from the starter-kit root directory:
