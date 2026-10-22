@@ -2,156 +2,127 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Test that indexing notebook includes disconnected cluster documentation."""
+"""Checks for the simple MaaS indexing notebook flow."""
 
 import json
+import os
+import string
 import tomllib
 from pathlib import Path
 
 import pytest
 
+ROOT = Path(__file__).parents[4]
+
 
 @pytest.fixture
 def indexing_notebook() -> dict:
-    """Load the MaaS indexing template notebook."""
-    notebook_path = (
-        Path(__file__).parents[4] / "ai4rag/assets_generator/notebook_templates/maas_indexing_template.ipynb"
+    """Load the MaaS indexing notebook template."""
+    path = ROOT / "ai4rag/assets_generator/notebook_templates/maas_indexing_template.ipynb"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _source(cell: dict) -> str:
+    """Return a notebook cell's text."""
+    value = cell["source"]
+    return "".join(value) if isinstance(value, list) else value
+
+
+def test_maas_notebook_uses_one_mode_setting_and_no_tags(indexing_notebook, monkeypatch):
+    """Run All should follow one explicit mode, without tag filtering."""
+    cells = indexing_notebook["cells"]
+    assert all(not cell["metadata"].get("tags") for cell in cells)
+    mode_cells = [cell for cell in cells if "cluster_mode = " in _source(cell)]
+    assert len(mode_cells) == 1
+    source = _source(mode_cells[0]).format()
+
+    for mode in ("connected", "disconnected"):
+        monkeypatch.delenv("NOTEBOOK_CLUSTER_MODE", raising=False)
+        monkeypatch.delenv("RHOAI_NOTEBOOK_CLUSTER_MODE", raising=False)
+        monkeypatch.setenv("RHOAI_NOTEBOOK_CLUSTER_MODE", mode)
+        namespace = {"os": os}
+        exec(source, namespace)
+        assert namespace["cluster_mode"] == mode
+        assert (os.getenv("HF_HUB_OFFLINE") == "1") is (mode == "disconnected")
+
+
+def test_notebook_prepares_extraction_after_discovery(indexing_notebook):
+    """Model details stay in ai4rag, not in notebook cells."""
+    code = "\n".join(_source(cell) for cell in indexing_notebook["cells"] if cell["cell_type"] == "code")
+    assert code.index("result = discover_documents(") < code.index("extraction = prepare_extraction(")
+    assert "docling_config=extraction.config" in code
+    assert "docling_artifacts_path=extraction.artifacts_path" in code
+    assert "hf_hub_download" not in code
+    assert "rapidocr_bundles" not in code
+    assert "ocr_language =" not in code
+    assert "inspect.signature" not in code
+
+
+def test_disconnected_instructions_are_in_one_early_cell(indexing_notebook):
+    """Offline prerequisites appear before document discovery."""
+    cells = indexing_notebook["cells"]
+    instruction_cells = [cell for cell in cells if "### Disconnected cluster setup" in _source(cell)]
+    assert len(instruction_cells) == 1
+    instructions = _source(instruction_cells[0])
+    assert "DOCLING_ARTIFACTS_PATH" in instructions
+    assert "HF_MODEL_DIR" in instructions
+    assert "package mirror" in instructions
+    assert cells.index(instruction_cells[0]) < next(
+        index for index, cell in enumerate(cells) if "result = discover_documents(" in _source(cell)
     )
-    with open(notebook_path) as f:
-        return json.load(f)
 
 
-class TestDisconnectedClusterDocumentation:
-    """Verify disconnected cluster support is documented in indexing notebook."""
+def test_text_extraction_extra_has_ocr_dependencies(indexing_notebook):
+    """The installed extra provides the notebook helper's dependencies."""
+    code = "\n".join(_source(cell) for cell in indexing_notebook["cells"] if cell["cell_type"] == "code")
+    assert "ai4rag[text-extraction]" in code
+    project_config = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = project_config["project"]["optional-dependencies"]["text-extraction"]
+    assert "rapidocr~=3.9.2" in dependencies
+    assert "onnxruntime~=1.25.0" in dependencies
+    assert "huggingface-hub>=0.30,<2" in dependencies
 
-    def test_notebook_installs_compatible_text_extraction_dependencies(self, indexing_notebook):
-        """The text-extraction extra carries compatible OCR dependency constraints for the notebook."""
-        install_cell = next(
-            "".join(cell["source"])
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "code" and "ai4rag[text-extraction]" in "".join(cell["source"])
-        )
 
-        assert "ai4rag[text-extraction]" in install_cell
+@pytest.mark.parametrize("template", ["maas_indexing", "mass_creating_knowledge_graph"])
+def test_generated_code_cells_render_and_compile(template):
+    """Template replacement leaves ordinary Python cells syntactically valid."""
+    path = ROOT / f"ai4rag/assets_generator/notebook_templates/{template}_template.ipynb"
+    notebook = json.loads(path.read_text(encoding="utf-8"))
+    formatter = string.Formatter()
+    fields = {field for cell in notebook["cells"] for _, field, _, _ in formatter.parse(_source(cell)) if field}
+    values = {field: "1" for field in fields}
+    values.update(
+        LANGUAGE='{"code": "en"}',
+        INPUT_DATA_KEYS='["docs/"]',
+        EMBEDDING_PARAMS="{}",
+        AI4RAG_VERSION="0.24.0",
+    )
+    for cell in notebook["cells"]:
+        if cell["cell_type"] != "code":
+            continue
+        rendered = _source(cell).format(**values)
+        if not rendered.startswith("%"):
+            compile(rendered, "<generated notebook cell>", "exec")
 
-        pyproject_path = Path(__file__).parents[4] / "pyproject.toml"
-        project_config = tomllib.loads(pyproject_path.read_text(encoding="utf-8"))
-        text_extraction_dependencies = project_config["project"]["optional-dependencies"]["text-extraction"]
-        assert "rapidocr~=3.9.2" in text_extraction_dependencies
-        assert "onnxruntime~=1.25.0" in text_extraction_dependencies
 
-    def test_notebook_has_disconnected_cluster_prerequisites_section(self, indexing_notebook):
-        """Notebook must include a 'Prerequisites for Disconnected Clusters' section."""
-        sources = [
-            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "markdown"
-        ]
-
-        assert any(
-            "Prerequisites for Disconnected Clusters" in s for s in sources
-        ), "Notebook missing 'Prerequisites for Disconnected Clusters' section"
-
-    def test_notebook_explains_model_requirements(self, indexing_notebook):
-        """Notebook must explain which models are required offline."""
-        sources = [
-            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "markdown"
-        ]
-        full_text = "\n".join(sources)
-
-        assert "Docling" in full_text, "Notebook must mention Docling artifacts"
-        assert "DOCLING_ARTIFACTS_PATH" in full_text, "Notebook must mention DOCLING_ARTIFACTS_PATH env var"
-
-    def test_notebook_includes_environment_setup_code(self, indexing_notebook):
-        """Notebook must include code cells to set environment variables."""
-        code_sources = [
-            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "code"
-        ]
-        full_code = "\n".join(code_sources)
-
-        assert "DOCLING_ARTIFACTS_PATH" in full_code, "Notebook must include code to configure DOCLING_ARTIFACTS_PATH"
-
-    def test_notebook_selects_artifacts_after_data_discovery(self, indexing_notebook):
-        """Only the models required by the discovered corpus are validated."""
-        code_sources = [
-            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "code"
-        ]
-        full_code = "\n".join(code_sources)
-
-        assert full_code.index("result = discover_documents") < full_code.index("needs_ocr =")
-        assert 'ocr_extensions = {{".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"}}' in full_code
-        assert 'audio_extensions = {{".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"}}' in full_code
-        assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in full_code
-        assert "Audio data requires HF_MODEL_DIR" in full_code
-        assert "model_config = json.load(config_file)" in full_code
-        assert 'model_type != "whisper"' in full_code
-        assert "Audio data supports only Hugging Face Whisper models" in full_code
-        assert "Use a workbench image with the Docling artifacts bundle" in full_code
-
-    def test_offline_docling_validation_is_a_dedicated_cell(self, indexing_notebook):
-        """Connected runners can skip only offline Docling validation."""
-        cells = indexing_notebook["cells"]
-        validation_heading_index = next(
-            index
-            for index, cell in enumerate(cells)
-            if cell["cell_type"] == "markdown" and "### Validate Offline Configuration" in "".join(cell["source"])
-        )
-        validation_cell = cells[validation_heading_index + 1]
-        validation_source = "".join(validation_cell["source"])
-
-        assert validation_cell["cell_type"] == "code"
-        assert "PDF or image data requires DOCLING_ARTIFACTS_PATH" in validation_source
-        assert "RapidOCR models are missing" in validation_source
-
-        shared_cell = cells[validation_heading_index - 1]
-        shared_source = "".join(shared_cell["source"])
-        assert shared_cell["cell_type"] == "code"
-        assert "needs_ocr =" in shared_source
-        assert "DoclingExtractionConfig" in shared_source
-        assert "RapidOCR models are missing" not in shared_source
-
-    def test_extract_text_includes_docling_artifacts_path(self, indexing_notebook):
-        """The extract_text() call must include docling_artifacts_path parameter."""
-        code_sources = [
-            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "code"
-        ]
-
-        extract_text_calls = [s for s in code_sources if "extract_text(" in s]
-        assert len(extract_text_calls) > 0, "Notebook must include an extract_text() call"
-
-        assert any(
-            "docling_artifacts_path" in call for call in extract_text_calls
-        ), "extract_text() call must include docling_artifacts_path parameter"
-        assert any("docling_config=docling_config" in call for call in extract_text_calls)
-
-    def test_notebook_includes_appendix_with_download_instructions(self, indexing_notebook):
-        """Notebook must include appendix with offline download instructions."""
-        sources = [
-            "".join(cell["source"]) if isinstance(cell["source"], list) else cell["source"]
-            for cell in indexing_notebook["cells"]
-            if cell["cell_type"] == "markdown"
-        ]
-        full_text = "\n".join(sources)
-
-        assert "Appendix" in full_text, "Notebook must include an appendix section"
-        assert "Download" in full_text, "Appendix must include download instructions"
-
-    def test_notebook_cells_are_valid_json(self, indexing_notebook):
-        """All cells must be valid JSON with required fields."""
-        for i, cell in enumerate(indexing_notebook["cells"]):
-            assert "cell_type" in cell, f"Cell {i} missing cell_type"
-            assert cell["cell_type"] in ("code", "markdown"), f"Cell {i} has invalid type: {cell['cell_type']}"
-            assert "source" in cell, f"Cell {i} missing source"
-            assert "metadata" in cell, f"Cell {i} missing metadata"
-
-            if cell["cell_type"] == "code":
-                assert "execution_count" in cell, f"Code cell {i} missing execution_count"
-                assert "outputs" in cell, f"Code cell {i} missing outputs"
+def test_graph_notebook_uses_shared_extraction_and_one_mode_setting(monkeypatch):
+    """The graph notebook follows the same connected and offline flow."""
+    path = ROOT / "ai4rag/assets_generator/notebook_templates/mass_creating_knowledge_graph_template.ipynb"
+    notebook = json.loads(path.read_text(encoding="utf-8"))
+    cells = notebook["cells"]
+    assert all(not cell["metadata"].get("tags") for cell in cells)
+    code = "\n".join(_source(cell) for cell in cells if cell["cell_type"] == "code")
+    assert code.count("cluster_mode = ") == 1
+    assert code.index("result = discover_documents(") < code.index("extraction = prepare_extraction(")
+    assert "docling_config=extraction.config" in code
+    assert "docling_artifacts_path=extraction.artifacts_path" in code
+    assert "hf_hub_download" not in code
+    assert "rapidocr_bundles" not in code
+    assert "ocr_language =" not in code
+    assert "max_extraction_workers=1" in code
+    mode_cell = next(cell for cell in cells if "cluster_mode = " in _source(cell))
+    for mode in ("connected", "disconnected"):
+        monkeypatch.setenv("NOTEBOOK_CLUSTER_MODE", mode)
+        namespace = {"os": os}
+        exec(_source(mode_cell).format(), namespace)
+        assert namespace["cluster_mode"] == mode

@@ -41,7 +41,11 @@ from ai4rag import handler
 from ai4rag.utils.clients.s3 import create_s3_client
 
 from .constants import SUPPORTED_EXTENSIONS
-from .local_hf_asr_pipeline import LocalHuggingFaceAsrPipeline, LocalHuggingFaceAsrPipelineOptions
+from .local_hf_asr_pipeline import (
+    LocalHuggingFaceAsrPipeline,
+    LocalHuggingFaceAsrPipelineOptions,
+    _validate_model_directory,
+)
 
 _logger = logging.getLogger("text-extraction")
 _logger.addHandler(handler)
@@ -58,21 +62,32 @@ DOWNLOAD_MAX_THREADS = 8
 # the English models, so passing e.g. ``"french"`` still resolves to the English
 # bundle; only Chinese switches to the dedicated Chinese models.
 DEFAULT_OCR_LANG: tuple[str, ...] = ("english",)
+OCR_EXTENSIONS = frozenset({".pdf", ".jpg", ".jpeg", ".png", ".tif", ".tiff"})
+AUDIO_EXTENSIONS = frozenset({".wav", ".mp3", ".m4a", ".aac", ".ogg", ".flac"})
+_CHINESE_OCR_LANGS = frozenset({"chinese", "ch", "zh", "zho", "chi", "zh-cn", "zh-tw"})
+_OCR_ARTIFACT_REPO = "superlinked/docling-artifacts"
+_OCR_ARTIFACT_REVISION = "310479be56f3a99a0fea75d930e11eea38bf5ef7"
+_ASR_MODEL_REPO = "openai/whisper-tiny"
+_ASR_MODEL_REVISION = "169d4a4341b33bc18d8881c4b69c2e104e1cc0af"
 
 # Relative paths Docling expects under ``$DOCLING_ARTIFACTS_PATH/RapidOcr/`` for
 # the onnxruntime backend (see docling.models.stages.ocr.rapid_ocr_model).  These
 # mirror Docling's own on-disk layout, so they live here alongside the code that
 # resolves them rather than in ``pipelines-components``.
-_ARTIFACTS_RAPIDOCR_ENGLISH = (
-    "onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx",
-    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
-    "onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx",
-)
-_ARTIFACTS_RAPIDOCR_CHINESE = (
-    "onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
-    "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
-    "onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
-)
+_RAPIDOCR_BUNDLES = {
+    "english": {
+        "ocr_det_model_path": "onnx/PP-OCRv4/det/en_PP-OCRv3_det_mobile.onnx",
+        "ocr_cls_model_path": "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+        "ocr_rec_model_path": "onnx/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile.onnx",
+        "ocr_rec_keys_path": "paddle/PP-OCRv4/rec/en_PP-OCRv4_rec_mobile/en_dict.txt",
+    },
+    "chinese": {
+        "ocr_det_model_path": "onnx/PP-OCRv4/det/ch_PP-OCRv4_det_mobile.onnx",
+        "ocr_cls_model_path": "onnx/PP-OCRv4/cls/ch_ppocr_mobile_v2.0_cls_mobile.onnx",
+        "ocr_rec_model_path": "onnx/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile.onnx",
+        "ocr_rec_keys_path": "paddle/PP-OCRv4/rec/ch_PP-OCRv4_rec_mobile/ppocr_keys_v1.txt",
+    },
+}
 # Optional small models that some rapidocr wheels still ship under ``rapidocr/models/``.
 _BUNDLED_RAPIDOCR_DET = "PP-OCRv6_det_small.onnx"
 _BUNDLED_RAPIDOCR_CLS = "ch_ppocr_mobile_v2.0_cls_mobile.onnx"
@@ -176,6 +191,127 @@ class DoclingExtractionConfig:
         # Normalize ``ocr_lang`` in one place so callers may pass a single
         # string or any sequence and always end up with a non-empty tuple.
         object.__setattr__(self, "ocr_lang", _normalize_ocr_lang(self.ocr_lang))
+
+
+@dataclass(frozen=True)
+class PreparedExtraction:
+    """Validated model settings for one discovered corpus.
+
+    Attributes
+    ----------
+    config
+        Configuration to pass to :func:`extract_text`.
+    artifacts_path
+        Local Docling artifacts directory, when one is configured.
+    needs_ocr
+        Whether the selected documents include a PDF or image.
+    needs_asr
+        Whether the selected documents include audio.
+    """
+
+    config: DoclingExtractionConfig
+    artifacts_path: str | None
+    needs_ocr: bool
+    needs_asr: bool
+
+
+def prepare_extraction(
+    documents: list[dict],
+    language: str | None = None,
+    *,
+    disconnected: bool = False,
+    docling_artifacts_path: str | None = None,
+    asr_model_path: str | None = None,
+) -> PreparedExtraction:
+    """Select and validate extraction models for discovered documents.
+
+    Connected runs download the pinned PP-OCRv4 files when no local artifacts
+    directory is configured. Disconnected runs require those files locally.
+    Audio uses a local Whisper model when configured. Connected runs download
+    the pinned Whisper snapshot when no local model is configured.
+    Text-only runs require neither model bundle.
+
+    Parameters
+    ----------
+    documents
+        Selected document descriptors containing a ``key``.
+    language
+        Document language or pattern language code. Chinese selects the Chinese
+        OCR bundle; every other value selects English.
+    disconnected
+        Whether downloads are unavailable.
+    docling_artifacts_path
+        Local Docling artifacts directory. Defaults to ``DOCLING_ARTIFACTS_PATH``.
+    asr_model_path
+        Local Whisper directory. Defaults to ``HF_MODEL_DIR`` when set.
+
+    Returns
+    -------
+    PreparedExtraction
+        The validated configuration and local artifacts path for extraction.
+    """
+    extensions = {Path(document["key"]).suffix.lower() for document in documents}
+    needs_ocr = bool(extensions & OCR_EXTENSIONS)
+    needs_asr = bool(extensions & AUDIO_EXTENSIONS)
+    bundle = "chinese" if (language or "").strip().lower() in _CHINESE_OCR_LANGS else "english"
+    model_paths, local_path = (
+        _prepare_ocr_model_paths(bundle, disconnected, docling_artifacts_path) if needs_ocr else ({}, None)
+    )
+    local_asr_path = _prepare_asr_model_path(asr_model_path, disconnected) if needs_asr else None
+    config = DoclingExtractionConfig(do_ocr=needs_ocr, ocr_lang=bundle, asr_model_path=local_asr_path, **model_paths)
+    return PreparedExtraction(
+        config=config,
+        artifacts_path=local_path,
+        needs_ocr=needs_ocr,
+        needs_asr=needs_asr,
+    )
+
+
+def _prepare_ocr_model_paths(
+    bundle: str, disconnected: bool, docling_artifacts_path: str | None
+) -> tuple[dict[str, str], str | None]:
+    """Resolve and validate the selected RapidOCR files."""
+    local_path = docling_artifacts_path or os.getenv("DOCLING_ARTIFACTS_PATH")
+    relative_paths = _RAPIDOCR_BUNDLES[bundle]
+    if local_path:
+        root = Path(local_path).expanduser().resolve()
+        model_paths = {name: str(root / "RapidOcr" / relative) for name, relative in relative_paths.items()}
+        local_path = str(root)
+    elif disconnected:
+        raise FileNotFoundError(
+            "PDF or image documents need DOCLING_ARTIFACTS_PATH on a disconnected cluster. "
+            "Mount the approved Docling/RapidOCR bundle before running the notebook."
+        )
+    else:
+        from huggingface_hub import hf_hub_download
+
+        model_paths = {
+            name: hf_hub_download(
+                repo_id=_OCR_ARTIFACT_REPO,
+                filename=f"RapidOcr/{relative}",
+                revision=_OCR_ARTIFACT_REVISION,
+            )
+            for name, relative in relative_paths.items()
+        }
+    missing = sorted(path for path in model_paths.values() if not Path(path).is_file())
+    if missing:
+        source = "RapidOCR" if local_path else "Downloaded RapidOCR"
+        raise FileNotFoundError(f"{source} {bundle} models are missing:\n  - " + "\n  - ".join(missing))
+    return model_paths, local_path
+
+
+def _prepare_asr_model_path(asr_model_path: str | None, disconnected: bool) -> str:
+    """Use a local Whisper model or download the pinned connected snapshot."""
+    local_path = asr_model_path or os.getenv("HF_MODEL_DIR")
+    if not local_path and not disconnected:
+        from huggingface_hub import snapshot_download
+
+        local_path = snapshot_download(
+            repo_id=_ASR_MODEL_REPO,
+            revision=_ASR_MODEL_REVISION,
+            allow_patterns=["*.json", "*.txt", "*.safetensors"],
+        )
+    return _validate_model_directory(local_path)
 
 
 def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many-positional-arguments,too-many-statements
@@ -511,9 +647,11 @@ def _normalize_ocr_lang(ocr_lang: Sequence[str] | str | None) -> tuple[str, ...]
 def _rapidocr_artifacts_rel_paths(ocr_lang: tuple[str, ...]) -> tuple[str, ...]:
     """Pick Docling artifact-relative OCR model paths for the requested language."""
     normalized = {lang.strip().lower() for lang in ocr_lang}
-    if normalized & {"chinese", "ch", "zh", "zho", "chi"} and not (normalized & {"english", "en", "eng", "latin"}):
-        return _ARTIFACTS_RAPIDOCR_CHINESE
-    return _ARTIFACTS_RAPIDOCR_ENGLISH
+    has_chinese = bool(normalized & _CHINESE_OCR_LANGS)
+    has_english = bool(normalized & {"english", "en", "eng", "latin"})
+    bundle = "chinese" if has_chinese and not has_english else "english"
+    model_names = ("ocr_det_model_path", "ocr_cls_model_path", "ocr_rec_model_path")
+    return tuple(_RAPIDOCR_BUNDLES[bundle][name] for name in model_names)
 
 
 def _try_resolve_wheel_rapidocr_model_paths() -> dict[str, str] | None:

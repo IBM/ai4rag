@@ -119,6 +119,10 @@ ai4rag depends on models from two sources:
 
 ### Setup Instructions
 
+For the MaaS indexing notebook, use the approved Docling artifact bundle from
+the documents-indexing pipeline image. A generic Docling download alone does
+not provide the pinned PP-OCRv4 files required for OCR parity.
+
 1. **On an internet-connected machine**, download the artifacts:
    ```bash
    pip install 'ai4rag[text-extraction]'
@@ -148,21 +152,29 @@ ai4rag depends on models from two sources:
    export HF_HUB_OFFLINE=1  # Enforce offline mode
    ```
 
-   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model. AI4RAG does not
-   download audio-transcription weights at runtime. You can override the environment
-   setting with `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
+   `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model
+   on disconnected clusters. Connected indexing notebooks can download the pinned
+   Whisper model when no local model is configured.
+   You can override the environment setting with
+   `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
 
 ### Indexing Notebooks
 
-The provided `maas_indexing_template.ipynb` includes a **"Prerequisites for Disconnected Clusters"** section with:
-- Validation cells to verify artifact availability
-- Configuration examples for custom model paths
-- Step-by-step download instructions in the appendix
+Both indexing notebooks default to connected mode. Their early
+**Disconnected cluster setup** cell lists everything to prepare before running
+offline. Set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in the workbench, or pass
+`NOTEBOOK_CLUSTER_MODE=disconnected` to an AutoX Job. There are no environment
+tags or cells to skip; Jupyter **Run All** uses the same mode setting.
 
-The MaaS indexing notebook selects model requirements after document discovery:
-PDF/image inputs require `DOCLING_ARTIFACTS_PATH`, audio inputs require `HF_MODEL_DIR`,
-and text-only corpora require neither. The knowledge-graph indexing notebook also
-includes S3 discovery and extraction, and retains its Docling artifact prerequisite.
+After document discovery, `prepare_extraction()` checks the selected file types.
+PDFs and images need the pipeline-compatible PP-OCRv4 bundle; audio needs a
+Whisper model. Text-only corpora need neither. Connected runs download pinned
+OCR or Whisper files only when no local model path is configured. Disconnected
+runs must mount the approved OCR bundle under `DOCLING_ARTIFACTS_PATH` and, for
+audio, a complete Whisper model under `HF_MODEL_DIR`.
+The pattern's selected language chooses
+English or Chinese OCR automatically. Each notebook uses one extraction worker
+so a small workbench can process scanned PDFs and audio without exhausting memory.
 
 
 ## Quick start

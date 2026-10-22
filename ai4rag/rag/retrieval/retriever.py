@@ -35,7 +35,7 @@ class Retriever:
         Alpha parameter for weighted ranking strategy.
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=too-many-arguments,too-many-positional-arguments
         self,
         vector_store: BaseVectorStore,
         number_of_chunks: int,
