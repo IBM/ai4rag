@@ -147,6 +147,13 @@ def _decode_audio(audio: Path, sampling_rate: int) -> "np.ndarray":
         raise RuntimeError("Audio extraction requires the ffmpeg executable on PATH.") from exc
     except subprocess.CalledProcessError as exc:
         details = exc.stderr.decode("utf-8", errors="replace").strip()
+        if "Unsupported 'chnl' box" in details:
+            raise RuntimeError(
+                f"Cannot decode '{audio.name}': this M4A uses a version-1 'chnl' "
+                "channel-layout box that the installed FFmpeg does not support. "
+                "Convert the file to standard AAC-LC M4A, MP3, or WAV, or upgrade "
+                "the runtime image to FFmpeg 8.1.2 or newer."
+            ) from exc
         raise RuntimeError(f"FFmpeg failed to decode audio file '{audio}': {details}") from exc
 
     waveform = np.frombuffer(result.stdout, dtype="<f4")
