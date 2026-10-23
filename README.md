@@ -71,8 +71,8 @@ ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) fo
 For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra includes
 `rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, and `huggingface-hub>=0.30,<2` along with
 Docling's conversion and audio dependencies. Both the core package and this extra
-require `docling-slim>=2.132.0,<3.0.0` to include upstream security fixes. Generated
-indexing notebooks install OCR packages through this extra. Audio extraction also
+require `docling-slim~=2.121.0` for ai4rag and Kubeflow Pipelines compatibility.
+Generated indexing notebooks install OCR packages through this extra. Audio extraction also
 requires the system `ffmpeg` executable on `PATH` with support for the input codec.
 
 `extract_text()` and the repository's development-only `FileStore` helper parse PDFs

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.25.1](https://github.com/IBM/ai4rag/releases/tag/v0.25.1)
+
+### Changed
+
+- **Dependencies** — restored the base and `text-extraction` extra's `docling-slim~=2.121.0` requirement for ai4rag and Kubeflow Pipelines compatibility, reverting the `>=2.132.0,<3.0.0` requirement introduced in 0.25.0
+- **Dependencies** — refreshed the lockfile with Docling Core 2.96.0, Docling IBM Models 3.15.0, Docling Parse 7.21.0, and macOS-specific Transformers 5.8.1 and Tokenizers 0.22.2; updated pypdf from 6.20.0 to 6.21.1 and GitPython from 3.2.0 to 3.2.1
+- **Development workflow** — replaced `@MichalSteczko` with `@dryszka` among the default pull-request review owners
+
+### Fixed
+
+- **Text extraction** — unsupported version-1 M4A `chnl` channel-layout boxes now produce an actionable error recommending conversion to standard AAC-LC M4A, MP3, or WAV, or a runtime upgrade to FFmpeg 8.1.2 or newer
+
+---
+
 ## [0.25.0](https://github.com/IBM/ai4rag/releases/tag/v0.25.0)
 
 ### Added

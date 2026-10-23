@@ -29,9 +29,10 @@ This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
 
-The core package and `text-extraction` extra require `docling-slim>=2.132.0,<3.0.0`.
-This floor includes upstream security fixes absent from the former 2.121.0 pin;
-refresh offline package mirrors when upgrading.
+The core package and `text-extraction` extra require `docling-slim~=2.121.0`
+(`>=2.121.0,<2.122.0`) for ai4rag and Kubeflow Pipelines compatibility. This restores
+the compatibility pin and reverts the Docling upgrade for security fixes documented
+for 0.25.0. Refresh dependency environments and offline package mirrors when upgrading.
 
 Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, `asyncpg`, `neo4j`, and `neo4j-graphrag` — are core dependencies and install automatically. There is no separate vector-store extra to install.
 No extra step is needed to use a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j as a vector store.
@@ -113,7 +114,7 @@ uv sync --extra docs        # documentation tools only
 
 | Extra | Dependencies | Purpose |
 |-------|-------------|---------|
-| `text-extraction` | `docling-slim>=2.132.0,<3.0.0` conversion/audio extras, `huggingface-hub>=0.30,<2`, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
+| `text-extraction` | `docling-slim~=2.121.0` conversion/audio extras, `huggingface-hub>=0.30,<2`, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
 | `test` | `pytest`, `pytest-cov`, `pytest-mock` | Testing tools |
 | `code_check` | `black`, `pylint`, `isort` | Code quality tools |
 | `docs` | `mkdocs`, `mkdocs-material` | Documentation tools |
