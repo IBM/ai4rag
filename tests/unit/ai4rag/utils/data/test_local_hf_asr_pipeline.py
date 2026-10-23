@@ -166,6 +166,30 @@ def test_decode_audio_preserves_ffmpeg_error(monkeypatch, tmp_path):
     assert exc_info.value.__cause__ is error
 
 
+def test_decode_audio_reports_chnl_limitation(monkeypatch, tmp_path):
+    """Unsupported M4A channel boxes produce an actionable conversion message."""
+    error = subprocess.CalledProcessError(
+        183,
+        ["ffmpeg"],
+        stderr=b"Unsupported 'chnl' box with version 1, flags: 0error reading header\n",
+    )
+    run = mock.MagicMock(side_effect=error)
+    monkeypatch.setattr("ai4rag.utils.data.local_hf_asr_pipeline.subprocess.run", run)
+
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Cannot decode 'recording.m4a': this M4A uses a version-1 'chnl' "
+            "channel-layout box that the installed FFmpeg does not support. "
+            "Convert the file to standard AAC-LC M4A, MP3, or WAV, or upgrade "
+            "the runtime image to FFmpeg 8.1.2 or newer."
+        ),
+    ) as exc_info:
+        _decode_audio(tmp_path / "recording.m4a", 16000)
+
+    assert exc_info.value.__cause__ is error
+
+
 def test_decode_audio_rejects_empty_output(monkeypatch, tmp_path):
     """FFmpeg can exit successfully yet produce no samples for an unreadable file."""
     run = mock.MagicMock(return_value=SimpleNamespace(stdout=b""))
