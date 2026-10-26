@@ -5,7 +5,7 @@
 import logging
 import os
 
-__version__ = "0.25.1"
+__version__ = "0.25.2"
 
 logger = logging.getLogger("ai4rag")
 logger.setLevel(os.getenv("LOG_LEVEL", "INFO"))

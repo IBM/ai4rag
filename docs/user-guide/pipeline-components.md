@@ -281,7 +281,7 @@ decoding an empty waveform raises `ValueError`.
 If FFmpeg reports `Unsupported 'chnl' box`, the pipeline raises `RuntimeError`
 explaining that the installed decoder cannot read the M4A file's version-1
 channel-layout box. Convert the affected file to standard AAC-LC M4A, MP3, or WAV,
-or upgrade the runtime image to FFmpeg 8.1.2 or newer, as recommended by the error.
+as recommended by the error.
 
 The directory must contain `config.json` with `model_type="whisper"`,
 `preprocessor_config.json`, `tokenizer_config.json`, model weights (or a sharded-weight
