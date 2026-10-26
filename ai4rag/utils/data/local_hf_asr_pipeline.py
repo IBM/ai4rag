@@ -151,8 +151,7 @@ def _decode_audio(audio: Path, sampling_rate: int) -> "np.ndarray":
             raise RuntimeError(
                 f"Cannot decode '{audio.name}': this M4A uses a version-1 'chnl' "
                 "channel-layout box that the installed FFmpeg does not support. "
-                "Convert the file to standard AAC-LC M4A, MP3, or WAV, or upgrade "
-                "the runtime image to FFmpeg 8.1.2 or newer."
+                "Convert the file to standard AAC-LC M4A, MP3, or WAV."
             ) from exc
         raise RuntimeError(f"FFmpeg failed to decode audio file '{audio}': {details}") from exc
 

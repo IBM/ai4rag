@@ -181,8 +181,7 @@ def test_decode_audio_reports_chnl_limitation(monkeypatch, tmp_path):
         match=(
             "Cannot decode 'recording.m4a': this M4A uses a version-1 'chnl' "
             "channel-layout box that the installed FFmpeg does not support. "
-            "Convert the file to standard AAC-LC M4A, MP3, or WAV, or upgrade "
-            "the runtime image to FFmpeg 8.1.2 or newer."
+            "Convert the file to standard AAC-LC M4A, MP3, or WAV."
         ),
     ) as exc_info:
         _decode_audio(tmp_path / "recording.m4a", 16000)
