@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.25.2](https://github.com/IBM/ai4rag/releases/tag/v0.25.2)
+
+### Fixed
+
+- **Text extraction** — corrected guidance for unsupported version-1 M4A `chnl` channel-layout boxes to recommend conversion to standard AAC-LC M4A, MP3, or WAV, removing the FFmpeg upgrade recommendation
+
+---
+
 ## [0.25.1](https://github.com/IBM/ai4rag/releases/tag/v0.25.1)
 
 ### Changed
