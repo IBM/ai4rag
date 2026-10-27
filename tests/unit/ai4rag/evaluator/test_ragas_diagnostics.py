@@ -61,7 +61,7 @@ def test_failed_metrics_are_reported_without_compression_or_sample_retries(mocke
     assert result["question_scores"][0]["metrics"] == [{"name": "context_recall", "evaluator": "ragas", "value": 0.8}]
     assert [m["value"] for m in result["question_scores"][1]["metrics"]] == [0.9, 0.7]
     detail = result["diagnostics"][0]
-    assert detail["evaluated_contexts"] == samples[0].contexts
+    assert "evaluated_contexts" not in detail
     assert detail["failures"][0]["reason"] == reason
     assert detail["missing_metrics"] == ["faithfulness"]
     assert detail["complete"] is False
@@ -225,7 +225,7 @@ def test_single_32k_endpoint_reuses_generation_evidence_without_judge_compressio
         assert not any(kind == "compression" for kind, _, _, _ in calls)
         assert result["question_scores"][0]["metrics"] == []
         detail = result["diagnostics"][0]
-        assert detail["evaluated_contexts"] == [evidence]
+        assert "evaluated_contexts" not in detail
         assert detail["missing_metrics"] == ["faithfulness", "context_recall"]
         assert {failure["reason"] for failure in detail["failures"]} == {"context_overflow"}
 

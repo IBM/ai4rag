@@ -8,6 +8,7 @@ Provides LLM-based RAG metrics (faithfulness, answer relevancy, context
 precision/recall) as an independent alternative to the in-house LLM judge.
 """
 
+import logging
 import math
 from copy import deepcopy
 from typing import Any, Sequence
@@ -32,6 +33,8 @@ from ai4rag.evaluator.ragas_adapters import (
 from ai4rag.evaluator.ragas_diagnostics import RagasFailureTrace
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+
+logger = logging.getLogger(__name__)
 
 
 class RagasEvaluator(BaseEvaluator):
@@ -103,11 +106,12 @@ class RagasEvaluator(BaseEvaluator):
             ragas_metrics, columns = self._build_ragas_metrics(supported)
             result_df = self._run_ragas(dataset=self._build_dataset(evaluation_data), ragas_metrics=ragas_metrics)
             per_metric_scores = self._extract_scores(result_df=result_df, columns=columns, question_ids=question_ids)
-            diagnostics = self._failure_diagnostics(
-                evaluation_data, question_ids, columns, result_df, per_metric_scores
-            )
+            diagnostics = self._failure_diagnostics(question_ids, columns, result_df, per_metric_scores)
         except Exception as exc:
             raise EvaluationError(exc) from exc
+
+        if diagnostics:
+            logger.warning("RAGAS evaluation incomplete for %d sample(s): %s", len(diagnostics), diagnostics)
 
         aggregate_metrics = self._build_aggregate_metrics(supported=supported, per_metric_scores=per_metric_scores)
         question_scores = self._build_question_scores(
@@ -230,22 +234,20 @@ class RagasEvaluator(BaseEvaluator):
 
     @staticmethod
     def _failure_diagnostics(
-        evaluation_data: list[EvaluationData],
         question_ids: list[str],
         columns: dict[str, str],
         frame: Any,
         scores: dict[str, dict[str, float | None]],
     ) -> list[dict[str, Any]]:
-        """Report missing scores without changing or recompressing generation evidence."""
+        """Report missing scores without retaining or republishing generation evidence."""
         diagnostics = []
-        for index, (sample, qid) in enumerate(zip(evaluation_data, question_ids)):
+        for index, qid in enumerate(question_ids):
             missing_metrics = [name for name in columns if scores[name][qid] is None]
             if missing_metrics:
                 diagnostics.append(
                     {
                         "evaluator": RagasEvaluator.EVALUATOR_TYPE,
                         "question_id": qid,
-                        "evaluated_contexts": list(sample.contexts or []),
                         "failures": [
                             failure for failure in frame.attrs.get("failures", []) if failure["row_index"] == index
                         ],
