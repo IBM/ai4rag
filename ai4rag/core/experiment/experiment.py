@@ -933,7 +933,14 @@ class AI4RAGExperiment:
             "name": pattern_name or evaluation_result.pattern_name,
             "template_id": evaluation_result.rag_params["template_id"],
             "max_combinations": self.search_space.max_combinations,
-            "evaluation": {"metrics": metrics_payload},
+            "evaluation": {
+                "metrics": metrics_payload,
+                **(
+                    {"diagnostics": evaluation_result.scores["diagnostics"]}
+                    if evaluation_result.scores.get("diagnostics")
+                    else {}
+                ),
+            },
             "duration_seconds": int(evaluation_result.execution_time),
             "settings": {
                 "store_binding": vector_store_payload,

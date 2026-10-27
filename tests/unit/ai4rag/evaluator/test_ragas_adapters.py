@@ -14,7 +14,10 @@ mocked ai4rag model.
 import asyncio
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
+from openai import BadRequestError
+from ragas.run_config import RunConfig
 
 from ai4rag.evaluator.ragas_adapters import AI4RAGRagasEmbeddings, AI4RAGRagasLLM
 
@@ -28,6 +31,34 @@ def _make_chat_model(content: str = "hello") -> MagicMock:
 
 
 class TestAI4RAGRagasLLM:
+    @pytest.mark.parametrize("overflow", [True, False])
+    def test_context_overflow_bypasses_identical_request_retries(self, overflow):
+        model = _make_chat_model()
+        error = BadRequestError(
+            "maximum context length exceeded" if overflow else "unsupported parameter",
+            response=httpx.Response(400, request=httpx.Request("POST", "https://example.test")),
+            body=None,
+        )
+        model.chat.side_effect = error
+        llm = AI4RAGRagasLLM(model)
+        llm.set_run_config(RunConfig(max_retries=2, max_wait=0))
+
+        with pytest.raises(BadRequestError):
+            asyncio.run(llm.generate(MagicMock()))
+
+        assert model.chat.call_count == (1 if overflow else 2)
+
+    def test_transient_failure_keeps_existing_retries(self):
+        model = _make_chat_model("recovered")
+        model.chat.side_effect = [ConnectionError("temporary"), model.chat.return_value]
+        llm = AI4RAGRagasLLM(model)
+        llm.set_run_config(RunConfig(max_retries=2, max_wait=0))
+
+        result = asyncio.run(llm.generate(MagicMock(), temperature=None))
+
+        assert result.generations[0][0].text == "recovered"
+        assert model.chat.call_count == 2
+
     def test_generate_text_delegates_with_token_cap(self):
         model = _make_chat_model("hi there")
         llm = AI4RAGRagasLLM(model, max_completion_tokens=512)

@@ -208,7 +208,7 @@ class TestExperimentMilvusLiteWithKnownObservations:
             {
                 "foundation_model": foundation_model,
                 "embedding_model": embedding_model,
-                "chunk_size": 2048,
+                "chunk_size": 512,
                 "chunk_overlap": 128,
                 "chunking_method": "recursive",
                 "retrieval_method": "simple",
@@ -221,7 +221,7 @@ class TestExperimentMilvusLiteWithKnownObservations:
             {
                 "foundation_model": foundation_model,
                 "embedding_model": embedding_model,
-                "chunk_size": 2048,
+                "chunk_size": 1024,
                 "chunk_overlap": 256,
                 "chunking_method": "recursive",
                 "retrieval_method": "simple",

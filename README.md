@@ -328,7 +328,7 @@ search_space = AI4RAGSearchSpace(
         Parameter(
             name="chunk_size",
             param_type="C",
-            values=[512, 1024, 2048],
+            values=[512, 1024],
         ),
         Parameter(
             name="chunk_overlap",

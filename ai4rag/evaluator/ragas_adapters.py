@@ -17,8 +17,11 @@ from typing import Any
 from langchain_core.outputs import Generation, LLMResult
 from langchain_core.prompt_values import PromptValue
 from ragas.embeddings.base import BaseRagasEmbeddings
+from ragas.exceptions import LLMDidNotFinishException
 from ragas.llms.base import BaseRagasLLM
+from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait_random_exponential
 
+from ai4rag.evaluator.ragas_diagnostics import failure_reason
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
@@ -49,6 +52,57 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         super().__init__()
         self._model = foundation_model
         self._max_completion_tokens = max_completion_tokens
+
+    async def generate(  # type: ignore[override]
+        self,
+        prompt: PromptValue,
+        n: int = 1,
+        temperature: float | None = 1e-2,
+        stop: list[str] | None = None,
+        callbacks: Any = None,
+    ) -> LLMResult:
+        """Apply RAGAS retries except for context overflow, which needs smaller evidence.
+
+        Transient failures retain the configured RAGAS attempt and wait limits.
+
+        Parameters
+        ----------
+        prompt : PromptValue
+            The RAGAS prompt to complete.
+        n : int, default=1
+            Number of completions to generate.
+        temperature : float | None, default=1e-2
+            Sampling temperature; ``None`` uses RAGAS's default for ``n``.
+        stop : list[str] | None, default=None
+            Optional stop sequences.
+        callbacks : Any, default=None
+            Callback handles forwarded to the asynchronous adapter.
+
+        Returns
+        -------
+        LLMResult
+            The generated completions.
+        """
+        retrying = AsyncRetrying(
+            wait=wait_random_exponential(multiplier=1, max=self.run_config.max_wait),
+            stop=stop_after_attempt(self.run_config.max_retries),
+            retry=retry_if_exception(
+                lambda error: isinstance(error, self.run_config.exception_types)
+                and failure_reason(error) != "context_overflow"
+            ),
+            reraise=True,
+        )
+        result = await retrying(
+            self.agenerate_text,
+            prompt=prompt,
+            n=n,
+            temperature=self.get_temperature(n) if temperature is None else temperature,
+            stop=stop,
+            callbacks=callbacks,
+        )
+        if not self.is_finished(result):
+            raise LLMDidNotFinishException()
+        return result
 
     def _generate(self, prompt: PromptValue, n: int, temperature: float, stop: list[str] | None) -> LLMResult:
         """Generate ``n`` completions for ``prompt`` via the foundation model.

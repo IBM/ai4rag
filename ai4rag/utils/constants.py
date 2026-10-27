@@ -110,7 +110,7 @@ class ChunkingConstraints(metaclass=ConstantMeta):
     """Constants used to define chunking constraints on what below parameters can be."""
 
     MIN_CHUNK_SIZE = 128
-    MAX_CHUNK_SIZE = 2048
+    MAX_CHUNK_SIZE = 1024
     MIN_CHUNK_OVERLAP = 0
     MAX_CHUNK_OVERLAP = 256
     METHODS = ("recursive", "hybrid")

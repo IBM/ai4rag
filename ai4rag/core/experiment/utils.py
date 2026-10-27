@@ -324,7 +324,11 @@ def merge_evaluation_results(results: list[EvaluationMetricsResult]) -> Evaluati
         for qs in result["question_scores"]:
             scores_by_qid.setdefault(qs["question_id"], []).extend(qs["metrics"])
 
-    return EvaluationMetricsResult(
+    merged = EvaluationMetricsResult(
         metrics=all_metrics,
         question_scores=[{"question_id": qid, "metrics": qmetrics} for qid, qmetrics in scores_by_qid.items()],
     )
+    diagnostics = [detail for result in results for detail in result.get("diagnostics", [])]
+    if diagnostics:
+        merged["diagnostics"] = diagnostics
+    return merged

@@ -101,6 +101,7 @@ class EvaluationMetricsResult(TypedDict):
 
     metrics: list[AggregateMetric]
     question_scores: list[QuestionScore]
+    diagnostics: NotRequired[list[dict[str, Any]]]
 
 
 def build_aggregate_metric(

@@ -9,6 +9,7 @@ precision/recall) as an independent alternative to the in-house LLM judge.
 """
 
 import math
+from copy import deepcopy
 from typing import Any, Sequence
 
 from ai4rag.core.experiment.exception_handler import EvaluationError
@@ -23,7 +24,12 @@ from ai4rag.evaluator.base_evaluator import (
 )
 from ai4rag.evaluator.llmaj_evaluator import compute_confidence_interval
 from ai4rag.evaluator.metric import Metrics, RAGMetric
-from ai4rag.evaluator.ragas_adapters import AI4RAGRagasEmbeddings, AI4RAGRagasLLM
+from ai4rag.evaluator.ragas_adapters import (
+    DEFAULT_MAX_COMPLETION_TOKENS,
+    AI4RAGRagasEmbeddings,
+    AI4RAGRagasLLM,
+)
+from ai4rag.evaluator.ragas_diagnostics import RagasFailureTrace
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
@@ -73,7 +79,7 @@ class RagasEvaluator(BaseEvaluator):
         *,
         timeout: int = 1200,
         max_workers: int = 4,
-        max_completion_tokens: int = 1024,
+        max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
     ) -> None:
         self.model = model
         self.embedding_model = embedding_model
@@ -87,7 +93,7 @@ class RagasEvaluator(BaseEvaluator):
         metrics: Sequence[RAGMetric],
     ) -> EvaluationMetricsResult:
         """Evaluate responses with the configured RAGAS metrics."""
-        supported = [m for m in metrics if m.name in self._METRIC_SPECS]
+        supported = [m for m in metrics if m.evaluator == self.EVALUATOR_TYPE and m.name in self._METRIC_SPECS]
         if not supported or not evaluation_data:
             return EvaluationMetricsResult(metrics=[], question_scores=[])
 
@@ -95,9 +101,11 @@ class RagasEvaluator(BaseEvaluator):
 
         try:
             ragas_metrics, columns = self._build_ragas_metrics(supported)
-            dataset = self._build_dataset(evaluation_data)
-            result_df = self._run_ragas(dataset=dataset, ragas_metrics=ragas_metrics)
+            result_df = self._run_ragas(dataset=self._build_dataset(evaluation_data), ragas_metrics=ragas_metrics)
             per_metric_scores = self._extract_scores(result_df=result_df, columns=columns, question_ids=question_ids)
+            diagnostics = self._failure_diagnostics(
+                evaluation_data, question_ids, columns, result_df, per_metric_scores
+            )
         except Exception as exc:
             raise EvaluationError(exc) from exc
 
@@ -105,7 +113,11 @@ class RagasEvaluator(BaseEvaluator):
         question_scores = self._build_question_scores(
             supported=supported, per_metric_scores=per_metric_scores, question_ids=question_ids
         )
-        return EvaluationMetricsResult(metrics=aggregate_metrics, question_scores=question_scores)
+        return EvaluationMetricsResult(
+            metrics=aggregate_metrics,
+            question_scores=question_scores,
+            diagnostics=diagnostics,
+        )
 
     def _build_ragas_metrics(self, supported: list[RAGMetric]) -> tuple[list[Any], dict[str, str]]:
         """Resolve ai4rag metrics to RAGAS metric objects and result columns.
@@ -140,7 +152,8 @@ class RagasEvaluator(BaseEvaluator):
         columns: dict[str, str] = {}
         for metric in supported:
             ragas_key, column = self._METRIC_SPECS[metric.name]
-            ragas_metrics.append(registry[ragas_key])
+            instance = deepcopy(registry[ragas_key])
+            ragas_metrics.append(instance)
             columns[metric.name] = column
         return ragas_metrics, columns
 
@@ -200,6 +213,7 @@ class RagasEvaluator(BaseEvaluator):
         from ragas.run_config import RunConfig
 
         run_config = RunConfig(timeout=self.timeout, max_workers=self.max_workers)
+        failures = RagasFailureTrace()
         result = evaluate(
             dataset=dataset,
             metrics=ragas_metrics,
@@ -208,8 +222,38 @@ class RagasEvaluator(BaseEvaluator):
             run_config=run_config,
             raise_exceptions=False,
             show_progress=False,
+            callbacks=[failures],
         )
-        return result.to_pandas()
+        frame = result.to_pandas()
+        frame.attrs["failures"] = failures.failures
+        return frame
+
+    @staticmethod
+    def _failure_diagnostics(
+        evaluation_data: list[EvaluationData],
+        question_ids: list[str],
+        columns: dict[str, str],
+        frame: Any,
+        scores: dict[str, dict[str, float | None]],
+    ) -> list[dict[str, Any]]:
+        """Report missing scores without changing or recompressing generation evidence."""
+        diagnostics = []
+        for index, (sample, qid) in enumerate(zip(evaluation_data, question_ids)):
+            missing_metrics = [name for name in columns if scores[name][qid] is None]
+            if missing_metrics:
+                diagnostics.append(
+                    {
+                        "evaluator": RagasEvaluator.EVALUATOR_TYPE,
+                        "question_id": qid,
+                        "evaluated_contexts": list(sample.contexts or []),
+                        "failures": [
+                            failure for failure in frame.attrs.get("failures", []) if failure["row_index"] == index
+                        ],
+                        "missing_metrics": missing_metrics,
+                        "complete": False,
+                    }
+                )
+        return diagnostics
 
     @staticmethod
     def _extract_scores(

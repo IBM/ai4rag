@@ -217,7 +217,7 @@ Use `@pytest.mark.parametrize` to run the same test with different inputs:
 @pytest.mark.parametrize(
     "combination, expected_value",
     (
-        ({"chunk_size": 2048, "chunk_overlap": 512}, True),
+        ({"chunk_size": 1024, "chunk_overlap": 256}, True),
         ({"chunk_size": 512, "chunk_overlap": 512}, False),
         ({"chunk_size": 256, "chunk_overlap": 512}, False),
     ),

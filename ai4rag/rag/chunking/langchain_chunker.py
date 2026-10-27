@@ -37,7 +37,7 @@ class LangChainChunker(BaseChunker):
     method : Literal["recursive", "character", "token"], default="recursive"
         Describes the type of TextSplitter as the main instance performing the chunking.
 
-    chunk_size : int, default=2048
+    chunk_size : int, default=1024
         Maximum number of tokens per chunk.
 
     chunk_overlap : int, default=256
@@ -54,7 +54,7 @@ class LangChainChunker(BaseChunker):
     def __init__(
         self,
         method: Literal["recursive", "character", "token"] = "recursive",
-        chunk_size: int = 2048,
+        chunk_size: int = 1024,
         chunk_overlap: int = 256,
         **kwargs: Any,
     ) -> None:

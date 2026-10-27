@@ -15,7 +15,7 @@ from ai4rag.search_space.src.parameter import Parameter
 
 search_space = AI4RAGSearchSpace(
     params=[
-        Parameter(name="chunk_size", param_type="C", values=[512, 1024, 2048]),
+        Parameter(name="chunk_size", param_type="C", values=[512, 1024]),
         Parameter(name="chunk_overlap", param_type="C", values=[64, 128, 256]),
         Parameter(name="retrieval_method", param_type="C", values=["simple", "window"]),
     ]
@@ -269,7 +269,7 @@ search_space = AI4RAGSearchSpace(params=[...], vector_store_type="milvus")  # or
 |-----------|----------------------|------|
 | `template_id` | `("agentic_rag",)` | Categorical |
 | `chunking_method` | `("recursive", "hybrid")` | Categorical |
-| `chunk_size` | `(512, 1024, 2048)` | Categorical |
+| `chunk_size` | `(512, 1024)` | Categorical |
 | `chunk_overlap` | `(0, 128, 256)` | Categorical |
 | `retrieval_method` | `("simple",)` | Categorical |
 | `window_size` | `(0,)` | Categorical |
@@ -603,7 +603,7 @@ The `max_combinations` property tells you how many valid configurations exist:
 ```python
 search_space = AI4RAGSearchSpace(
     params=[
-        Parameter(name="chunk_size", param_type="C", values=[512, 1024, 2048]),
+        Parameter(name="chunk_size", param_type="C", values=[512, 1024]),
         Parameter(name="chunk_overlap", param_type="C", values=[64, 128, 256]),
         Parameter(name="retrieval_method", param_type="C", values=["simple", "window"]),
         # ... other params
@@ -655,7 +655,7 @@ search_space = AI4RAGSearchSpace(
         ),
 
         # Optimize chunking
-        Parameter(name="chunk_size", param_type="C", values=[512, 1024, 2048]),
+        Parameter(name="chunk_size", param_type="C", values=[512, 1024]),
         Parameter(name="chunk_overlap", param_type="C", values=[64, 128, 256]),
 
         # Optimize retrieval
@@ -790,7 +790,7 @@ Once you understand which parameters matter, expand:
 search_space = AI4RAGSearchSpace(
     params=[
         # ... models
-        Parameter(name="chunk_size", param_type="C", values=[512, 1024, 2048]),  # Now optimize
+        Parameter(name="chunk_size", param_type="C", values=[512, 1024]),  # Now optimize
         Parameter(name="chunk_overlap", param_type="C", values=[64, 128]),  # Add overlap
         Parameter(name="number_of_chunks", param_type="C", values=[5, 7, 10]),  # Expand
     ]

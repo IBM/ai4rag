@@ -28,7 +28,7 @@ class TestLangChainChunkerInitialization:
     def test_init_with_defaults(self):
         chunker = LangChainChunker()
         assert chunker.method == "recursive"
-        assert chunker.chunk_size == 2048
+        assert chunker.chunk_size == 1024
         assert chunker.chunk_overlap == 256
         assert chunker.separators == ["\n\n", "(?<=\. )", "\n", " ", ""]
 
@@ -185,8 +185,8 @@ class TestLangChainChunkerEquality:
         assert c1 == c2
 
     def test_neq_different_chunk_size(self):
-        c1 = LangChainChunker(chunk_size=1024)
-        c2 = LangChainChunker(chunk_size=2048)
+        c1 = LangChainChunker(chunk_size=512)
+        c2 = LangChainChunker(chunk_size=1024)
         assert c1 != c2
 
     def test_eq_with_non_chunker(self):
