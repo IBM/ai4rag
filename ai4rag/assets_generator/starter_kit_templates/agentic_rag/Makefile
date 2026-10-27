@@ -2,7 +2,7 @@ SHELL          := bash
 OPENSHELL_SANDBOX ?= $(shell if [ -f .env ]; then . ./.env; fi; echo $${OPENSHELL_SANDBOX_NAME:-rag-sandbox})
 OPENSHELL_IMAGE   := openshell-agentic-rag
 
-.PHONY: env run-app run-cli refresh-certs setup-gateway teardown-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
+.PHONY: env run-app run-cli refresh-certs setup-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -88,17 +88,6 @@ setup-gateway: ## Install openShell gateway, create Route, register CLI (one-tim
 	  openshell status && \
 	  echo "" && \
 	  echo "Gateway ready. Next: make build-openshell"
-
-teardown-gateway: ## Uninstall openShell gateway and clean up
-	@openshell gateway remove openshift 2>/dev/null || true && \
-	  helm uninstall openshell -n openshell 2>/dev/null || true && \
-	  oc -n openshell delete pvc --all 2>/dev/null || true && \
-	  oc -n openshell delete secret openshell-server-tls openshell-client-tls openshell-jwt-keys 2>/dev/null || true && \
-	  oc -n openshell delete route --all 2>/dev/null || true && \
-	  oc delete clusterrolebinding openshell-tokenreview 2>/dev/null || true && \
-	  oc adm policy remove-scc-from-user privileged -z openshell-sandbox -n openshell 2>/dev/null || true && \
-	  oc adm policy remove-scc-from-user privileged -z openshell -n openshell 2>/dev/null || true && \
-	  echo "Gateway removed."
 
 _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export OPENSHELL_GATEWAY_INSECURE=true && \
 	SANDBOX=$${OPENSHELL_SANDBOX_NAME:-rag-sandbox} && \
