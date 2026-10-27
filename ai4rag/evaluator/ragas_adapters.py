@@ -61,9 +61,10 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         stop: list[str] | None = None,
         callbacks: Any = None,
     ) -> LLMResult:
-        """Apply RAGAS retries except for context overflow, which needs smaller evidence.
+        """Apply RAGAS retries except for confirmed context overflow.
 
-        Transient failures retain the configured RAGAS attempt and wait limits.
+        Context-overflow failures are not retried with the same prompt. Transient
+        failures retain the configured RAGAS attempt and wait limits.
 
         Parameters
         ----------

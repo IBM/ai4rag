@@ -164,7 +164,7 @@ RAGAS does not run another compression pass or retry samples with shorter eviden
 Confirmed context-overflow requests bypass internal retries of the identical
 request. Other errors retain their existing retry handling. Evaluation
 `diagnostics`, also included in published pattern evaluation metadata, record the
-question, evaluated contexts, structured failure reasons, and missing metrics.
+`question_id`, evaluated contexts, structured failure reasons, and missing metrics.
 
 The default chunk-size choices are 512 and 1,024 tokens. Smaller chunks reduce
 context pressure, but do not guarantee that judge prompts fit: retrievals can
