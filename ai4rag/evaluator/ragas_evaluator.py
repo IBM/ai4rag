@@ -10,7 +10,6 @@ precision/recall) as an independent alternative to the in-house LLM judge.
 
 import logging
 import math
-from copy import deepcopy
 from typing import Any, Sequence
 
 from ai4rag.core.experiment.exception_handler import EvaluationError
@@ -30,7 +29,6 @@ from ai4rag.evaluator.ragas_adapters import (
     AI4RAGRagasEmbeddings,
     AI4RAGRagasLLM,
 )
-from ai4rag.evaluator.ragas_diagnostics import RagasFailureTrace
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
@@ -106,22 +104,22 @@ class RagasEvaluator(BaseEvaluator):
             ragas_metrics, columns = self._build_ragas_metrics(supported)
             result_df = self._run_ragas(dataset=self._build_dataset(evaluation_data), ragas_metrics=ragas_metrics)
             per_metric_scores = self._extract_scores(result_df=result_df, columns=columns, question_ids=question_ids)
-            diagnostics = self._failure_diagnostics(question_ids, columns, result_df, per_metric_scores)
         except Exception as exc:
             raise EvaluationError(exc) from exc
 
-        if diagnostics:
-            logger.warning("RAGAS evaluation incomplete for %d sample(s): %s", len(diagnostics), diagnostics)
+        incomplete = [
+            {"question_id": qid, "missing_metrics": [name for name in columns if per_metric_scores[name][qid] is None]}
+            for qid in question_ids
+            if any(per_metric_scores[name][qid] is None for name in columns)
+        ]
+        if incomplete:
+            logger.warning("RAGAS evaluation incomplete for %d sample(s): %s", len(incomplete), incomplete)
 
         aggregate_metrics = self._build_aggregate_metrics(supported=supported, per_metric_scores=per_metric_scores)
         question_scores = self._build_question_scores(
             supported=supported, per_metric_scores=per_metric_scores, question_ids=question_ids
         )
-        return EvaluationMetricsResult(
-            metrics=aggregate_metrics,
-            question_scores=question_scores,
-            diagnostics=diagnostics,
-        )
+        return EvaluationMetricsResult(metrics=aggregate_metrics, question_scores=question_scores)
 
     def _build_ragas_metrics(self, supported: list[RAGMetric]) -> tuple[list[Any], dict[str, str]]:
         """Resolve ai4rag metrics to RAGAS metric objects and result columns.
@@ -156,8 +154,7 @@ class RagasEvaluator(BaseEvaluator):
         columns: dict[str, str] = {}
         for metric in supported:
             ragas_key, column = self._METRIC_SPECS[metric.name]
-            instance = deepcopy(registry[ragas_key])
-            ragas_metrics.append(instance)
+            ragas_metrics.append(registry[ragas_key])
             columns[metric.name] = column
         return ragas_metrics, columns
 
@@ -217,7 +214,6 @@ class RagasEvaluator(BaseEvaluator):
         from ragas.run_config import RunConfig
 
         run_config = RunConfig(timeout=self.timeout, max_workers=self.max_workers)
-        failures = RagasFailureTrace()
         result = evaluate(
             dataset=dataset,
             metrics=ragas_metrics,
@@ -226,36 +222,8 @@ class RagasEvaluator(BaseEvaluator):
             run_config=run_config,
             raise_exceptions=False,
             show_progress=False,
-            callbacks=[failures],
         )
-        frame = result.to_pandas()
-        frame.attrs["failures"] = failures.failures
-        return frame
-
-    @staticmethod
-    def _failure_diagnostics(
-        question_ids: list[str],
-        columns: dict[str, str],
-        frame: Any,
-        scores: dict[str, dict[str, float | None]],
-    ) -> list[dict[str, Any]]:
-        """Report missing scores without retaining or republishing generation evidence."""
-        diagnostics = []
-        for index, qid in enumerate(question_ids):
-            missing_metrics = [name for name in columns if scores[name][qid] is None]
-            if missing_metrics:
-                diagnostics.append(
-                    {
-                        "evaluator": RagasEvaluator.EVALUATOR_TYPE,
-                        "question_id": qid,
-                        "failures": [
-                            failure for failure in frame.attrs.get("failures", []) if failure["row_index"] == index
-                        ],
-                        "missing_metrics": missing_metrics,
-                        "complete": False,
-                    }
-                )
-        return diagnostics
+        return result.to_pandas()
 
     @staticmethod
     def _extract_scores(

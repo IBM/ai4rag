@@ -5,22 +5,21 @@
 """Generation evidence reuse and context-overflow reporting without judge compression."""
 
 import json
+import logging
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-from uuid import uuid4
 
 import httpx
 import pandas as pd
 import pytest
 from langchain_openai import ChatOpenAI
 from openai import BadRequestError, OpenAI
-from ragas.callbacks import ChainType
 
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
 from ai4rag.core.experiment.utils import build_evaluation_data
 from ai4rag.evaluator.base_evaluator import EvaluationData
 from ai4rag.evaluator.metric import Metrics
-from ai4rag.evaluator.ragas_diagnostics import RagasFailureTrace, failure_reason
+from ai4rag.evaluator.ragas_diagnostics import failure_reason
 from ai4rag.evaluator.ragas_evaluator import RagasEvaluator
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
@@ -30,18 +29,11 @@ from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 METRICS = [Metrics.RAGAS_FAITHFULNESS, Metrics.RAGAS_CONTEXT_RECALL]
 
 
-def scores(values, reason=None):
-    frame = pd.DataFrame(values)
-    frame.attrs["failures"] = (
-        [{"row_index": 0, "metric": "faithfulness", "reason": reason, "error_type": "BadRequestError"}]
-        if reason
-        else []
-    )
-    return frame
+def scores(values):
+    return pd.DataFrame(values)
 
 
-@pytest.mark.parametrize("reason", ["context_overflow", "bad_request", "parse_error", "timeout"])
-def test_failed_metrics_are_reported_without_compression_or_sample_retries(mocker, reason):
+def test_failed_metrics_are_logged_without_compression_or_sample_retries(mocker, caplog):
     evaluator = RagasEvaluator(MagicMock(), MagicMock())
     samples = [
         EvaluationData(question="q", answer="a", contexts=["evidence " * 100], question_id="q1"),
@@ -50,48 +42,35 @@ def test_failed_metrics_are_reported_without_compression_or_sample_retries(mocke
     run = mocker.patch.object(
         evaluator,
         "_run_ragas",
-        return_value=scores({"faithfulness": [float("nan"), 0.9], "context_recall": [0.8, 0.7]}, reason),
+        return_value=scores({"faithfulness": [float("nan"), 0.9], "context_recall": [0.8, 0.7]}),
     )
     compress = mocker.spy(LLMDocumentCompressor, "compress")
 
-    result = evaluator.evaluate_metrics(samples, METRICS)
+    with caplog.at_level(logging.WARNING, logger="ai4rag.evaluator.ragas_evaluator"):
+        result = evaluator.evaluate_metrics(samples, METRICS)
 
     run.assert_called_once()
     compress.assert_not_called()
+    assert "diagnostics" not in result
     assert result["question_scores"][0]["metrics"] == [{"name": "context_recall", "evaluator": "ragas", "value": 0.8}]
     assert [m["value"] for m in result["question_scores"][1]["metrics"]] == [0.9, 0.7]
-    detail = result["diagnostics"][0]
-    assert "evaluated_contexts" not in detail
-    assert detail["failures"][0]["reason"] == reason
-    assert detail["missing_metrics"] == ["faithfulness"]
-    assert detail["complete"] is False
+    assert "RAGAS evaluation incomplete for 1 sample(s)" in caplog.text
+    assert "q1" in caplog.text
+    assert "faithfulness" in caplog.text
 
 
-def test_failure_trace_attributes_suppressed_errors_without_content():
-    trace = RagasFailureTrace()
-    row, metric, prompt = uuid4(), uuid4(), uuid4()
-    trace.on_chain_start({"name": "row 2"}, {}, run_id=row, metadata={"type": ChainType.ROW, "row_index": 2})
-    trace.on_chain_start(
-        {"name": "faithfulness"}, {}, run_id=metric, parent_run_id=row, metadata={"type": ChainType.METRIC}
-    )
-    trace.on_chain_start({"name": "prompt"}, {}, run_id=prompt, parent_run_id=metric)
+def test_failure_reason_classifies_overflow_without_response_content():
     error = BadRequestError(
         "maximum context length: private response",
         response=httpx.Response(400, request=httpx.Request("POST", "https://example.test")),
         body=None,
     )
-    trace.on_chain_error(error, run_id=prompt)
-    trace.on_chain_error(error, run_id=metric)
-    assert trace.failures == [
-        {"row_index": 2, "metric": "faithfulness", "reason": "context_overflow", "error_type": "BadRequestError"}
-    ]
-    assert "private" not in json.dumps(trace.failures)
-    unrelated = BadRequestError("unsupported max_tokens", response=error.response, body=None)
-    assert failure_reason(unrelated) == "bad_request"
+    assert failure_reason(error) == "context_overflow"
+    assert failure_reason(BadRequestError("unsupported max_tokens", response=error.response, body=None)) == "bad_request"
 
 
 @pytest.mark.parametrize("generation_compressed", [True, False])
-def test_single_32k_endpoint_reuses_generation_evidence_without_judge_compression(generation_compressed):
+def test_single_32k_endpoint_reuses_generation_evidence_without_judge_compression(generation_compressed, caplog):
     """Reuse generation excerpts; report judge-only overflow without another extraction pass."""
     calls = []
     evaluating = False
@@ -207,8 +186,10 @@ def test_single_32k_endpoint_reuses_generation_evidence_without_judge_compressio
     contexts = [chunk.text for chunk in generation["reference_documents"]]
     assert samples[0].contexts == contexts
     evaluating = True
-    result = RagasEvaluator(model, MagicMock(), max_workers=1).evaluate_metrics(samples, METRICS)
+    with caplog.at_level(logging.WARNING, logger="ai4rag.evaluator.ragas_evaluator"):
+        result = RagasEvaluator(model, MagicMock(), max_workers=1).evaluate_metrics(samples, METRICS)
 
+    assert "diagnostics" not in result
     assert not any(kind == "compression" and judging for kind, _, _, judging in calls)
     for metric in ("faithfulness", "context_recall"):
         metric_calls = [(overflow, text) for kind, overflow, text, _ in calls if kind == metric]
@@ -218,19 +199,18 @@ def test_single_32k_endpoint_reuses_generation_evidence_without_judge_compressio
     if generation_compressed:
         assert contexts == ["The claim is supported."] * len(documents)
         assert sum(kind == "compression" for kind, _, _, _ in calls) == len(documents)
-        assert result["diagnostics"] == []
         assert [metric["value"] for metric in result["question_scores"][0]["metrics"]] == [1.0, 1.0]
+        assert "RAGAS evaluation incomplete" not in caplog.text
     else:
         assert contexts == [evidence]
         assert not any(kind == "compression" for kind, _, _, _ in calls)
         assert result["question_scores"][0]["metrics"] == []
-        detail = result["diagnostics"][0]
-        assert "evaluated_contexts" not in detail
-        assert detail["missing_metrics"] == ["faithfulness", "context_recall"]
-        assert {failure["reason"] for failure in detail["failures"]} == {"context_overflow"}
+        assert "RAGAS evaluation incomplete for 1 sample(s)" in caplog.text
+        assert "faithfulness" in caplog.text
+        assert "context_recall" in caplog.text
 
 
-def test_parser_failure_keeps_existing_repairs_and_does_not_trigger_compression():
+def test_parser_failure_keeps_existing_repairs_and_does_not_trigger_compression(caplog):
     calls = []
 
     def respond(request):
@@ -256,9 +236,12 @@ def test_parser_failure_keeps_existing_repairs_and_does_not_trigger_compression(
         ),
         model_id="test",
     )
-    result = RagasEvaluator(model, MagicMock()).evaluate_metrics(
-        [EvaluationData(question="q", answer="a", contexts=["evidence"], question_id="q")], [Metrics.RAGAS_FAITHFULNESS]
-    )
+    with caplog.at_level(logging.WARNING, logger="ai4rag.evaluator.ragas_evaluator"):
+        result = RagasEvaluator(model, MagicMock()).evaluate_metrics(
+            [EvaluationData(question="q", answer="a", contexts=["evidence"], question_id="q")],
+            [Metrics.RAGAS_FAITHFULNESS],
+        )
     assert len(calls) > 1
-    assert result["diagnostics"][0]["failures"][0]["reason"] == "parse_error"
-    assert result["diagnostics"][0]["complete"] is False
+    assert "diagnostics" not in result
+    assert result["question_scores"][0]["metrics"] == []
+    assert "RAGAS evaluation incomplete for 1 sample(s)" in caplog.text

@@ -163,8 +163,8 @@ retrievals remain available in the generation conversation artifacts.
 RAGAS does not run another compression pass or retry samples with shorter evidence.
 Confirmed context-overflow requests bypass internal retries of the identical
 request. Other errors retain their existing retry handling. Incomplete scores are
-logged with `question_id`, structured failure reasons, and missing metrics; they
-are not written into published pattern evaluation metadata.
+logged with `question_id` and missing metric names; they are not written into
+published pattern evaluation metadata.
 
 The default chunk-size choices are 512 and 1,024 tokens. Smaller chunks reduce
 context pressure, but do not guarantee that judge prompts fit: retrievals can
