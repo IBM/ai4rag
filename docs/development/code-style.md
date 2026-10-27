@@ -160,7 +160,7 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
 # Generic types
 def chunk_documents(
     documents: list[Document | tuple[str, str]],
-    chunk_size: int = 2048
+    chunk_size: int = 1024
 ) -> list[Document]:
     return []
 

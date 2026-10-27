@@ -12,7 +12,7 @@ __all__ = [
 
 # Note: "" and 0 are sentinels for unused params; ranker_alpha uses 1 as sentinel (0 means 100% sparse)
 _default_chunking_methods = ("recursive", "hybrid")
-_default_chunk_sizes = (512, 1024, 2048)
+_default_chunk_sizes = (512, 1024)
 _default_chunk_overlaps = (0, 128, 256)
 # Neo4j: chunk size and overlap are fixed so the optimizer focuses on chunking
 # method. Neo4j supports graph retrieval only.

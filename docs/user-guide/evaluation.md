@@ -153,6 +153,27 @@ source chunks. Omitted chunks are excluded; retained metadata preserves source
 document IDs for context-correctness scoring. The conversation record retains the
 original initial retrieval and compression statistics for inspection.
 
+#### RAGAS evidence and context-overflow reporting
+
+RAGAS receives the document texts returned by generation unchanged. If AgenticRAG
+used its context-overflow compression fallback, these are the retained excerpts
+from the successful generation attempt, including tool retrievals. The original
+retrievals remain available in the generation conversation artifacts.
+
+RAGAS does not run another compression pass or retry samples with shorter evidence.
+Confirmed context-overflow requests bypass internal retries of the identical
+request. Other errors retain their existing retry handling. Incomplete scores are
+logged with `question_id` and missing metric names; they are not written into
+published pattern evaluation metadata.
+
+The default chunk-size choices are 512 and 1,024 tokens. Smaller chunks reduce
+context pressure, but do not guarantee that judge prompts fit: retrievals can
+accumulate, custom search spaces can use larger chunks, and RAGAS adds its own
+instructions, examples, schemas, and metric-specific inputs. Generation only
+compresses after its own context overflow, so generation success does not guarantee
+RAGAS success. Overall-score aggregation is unchanged and can still include partial
+metric coverage; reliable-score rules remain a separate concern.
+
 ### EvaluationData Structure
 
 Each question's data is packaged as an `EvaluationData` instance:

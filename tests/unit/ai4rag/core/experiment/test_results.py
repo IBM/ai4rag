@@ -501,6 +501,29 @@ class TestExperimentResultsGetBestEvaluations:
 
         assert best == ()
 
+    def test_get_best_evaluations_ranks_none_scores_last(self, mocker):
+        """Unscored patterns must not crash ranking and sort after finite scores."""
+        mocker.patch("ai4rag.core.experiment.results.logger")
+        results = ExperimentResults()
+        for i, score in enumerate([0.4, None, 0.9, None, 0.1]):
+            results.add_evaluation(
+                [],
+                EvaluationResult(
+                    pattern_name=f"Pattern{i}",
+                    collection=f"collection_{i}",
+                    indexing_params={"chunk_size": 512},
+                    rag_params={"retrieval_method": "simple"},
+                    scores={"scores": {}, "question_scores": {}},
+                    execution_time=10.0,
+                    final_score=score,
+                ),
+            )
+
+        best = results.get_best_evaluations(k=None)
+
+        assert [ev.final_score for ev in best] == [0.9, 0.4, 0.1, None, None]
+        assert results.get_best_evaluations(k=1)[0].final_score == 0.9
+
 
 class TestExperimentResultsCreateEvaluationResultsJson:
     """Test suite for ExperimentResults.create_evaluation_results_json static method."""

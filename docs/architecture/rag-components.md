@@ -971,7 +971,7 @@ class LangChainChunker(BaseChunker):
     def __init__(
         self,
         method: Literal["recursive"] = "recursive",
-        chunk_size: int = 2048,
+        chunk_size: int = 1024,
         chunk_overlap: int = 256,
         **kwargs
     ):
@@ -1622,7 +1622,7 @@ class CustomRAG(BaseRAGTemplate):
 **Chunking:**
 
 1. **Smaller chunks** (256-512) for precise Q&A
-2. **Larger chunks** (1024-2048) for broader context
+2. **Larger chunks** (up to 1024) for broader context
 3. **Adjust chunk_overlap** (25-50% of chunk_size) to maintain coherence
 4. **Ensure chunk_size < embedding context_length**
 

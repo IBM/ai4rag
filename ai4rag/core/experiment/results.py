@@ -197,7 +197,13 @@ class ExperimentResults:
             the best evaluations from the AutoRAG experiment
         """
         evaluations = list(self.evaluations)
-        sorted_evs = tuple(sorted(evaluations, key=lambda x: x.final_score, reverse=True))
+        sorted_evs = tuple(
+            sorted(
+                evaluations,
+                key=lambda x: float("-inf") if x.final_score is None else x.final_score,
+                reverse=True,
+            )
+        )
         return sorted_evs[:k]
 
     @staticmethod

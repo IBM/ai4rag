@@ -8,6 +8,7 @@ Provides LLM-based RAG metrics (faithfulness, answer relevancy, context
 precision/recall) as an independent alternative to the in-house LLM judge.
 """
 
+import logging
 import math
 from typing import Any, Sequence
 
@@ -23,9 +24,15 @@ from ai4rag.evaluator.base_evaluator import (
 )
 from ai4rag.evaluator.llmaj_evaluator import compute_confidence_interval
 from ai4rag.evaluator.metric import Metrics, RAGMetric
-from ai4rag.evaluator.ragas_adapters import AI4RAGRagasEmbeddings, AI4RAGRagasLLM
+from ai4rag.evaluator.ragas_adapters import (
+    DEFAULT_MAX_COMPLETION_TOKENS,
+    AI4RAGRagasEmbeddings,
+    AI4RAGRagasLLM,
+)
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
+
+logger = logging.getLogger(__name__)
 
 
 class RagasEvaluator(BaseEvaluator):
@@ -73,7 +80,7 @@ class RagasEvaluator(BaseEvaluator):
         *,
         timeout: int = 1200,
         max_workers: int = 4,
-        max_completion_tokens: int = 1024,
+        max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
     ) -> None:
         self.model = model
         self.embedding_model = embedding_model
@@ -87,7 +94,7 @@ class RagasEvaluator(BaseEvaluator):
         metrics: Sequence[RAGMetric],
     ) -> EvaluationMetricsResult:
         """Evaluate responses with the configured RAGAS metrics."""
-        supported = [m for m in metrics if m.name in self._METRIC_SPECS]
+        supported = [m for m in metrics if m.evaluator == self.EVALUATOR_TYPE and m.name in self._METRIC_SPECS]
         if not supported or not evaluation_data:
             return EvaluationMetricsResult(metrics=[], question_scores=[])
 
@@ -95,11 +102,18 @@ class RagasEvaluator(BaseEvaluator):
 
         try:
             ragas_metrics, columns = self._build_ragas_metrics(supported)
-            dataset = self._build_dataset(evaluation_data)
-            result_df = self._run_ragas(dataset=dataset, ragas_metrics=ragas_metrics)
+            result_df = self._run_ragas(dataset=self._build_dataset(evaluation_data), ragas_metrics=ragas_metrics)
             per_metric_scores = self._extract_scores(result_df=result_df, columns=columns, question_ids=question_ids)
         except Exception as exc:
             raise EvaluationError(exc) from exc
+
+        incomplete = [
+            {"question_id": qid, "missing_metrics": [name for name in columns if per_metric_scores[name][qid] is None]}
+            for qid in question_ids
+            if any(per_metric_scores[name][qid] is None for name in columns)
+        ]
+        if incomplete:
+            logger.warning("RAGAS evaluation incomplete for %d sample(s): %s", len(incomplete), incomplete)
 
         aggregate_metrics = self._build_aggregate_metrics(supported=supported, per_metric_scores=per_metric_scores)
         question_scores = self._build_question_scores(
