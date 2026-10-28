@@ -155,6 +155,8 @@ graph TB
 - Multi-evaluator architecture with dispatch by metric type
 - `UnitxtEvaluator` — wraps the `unitxt` library for reference-based metrics (`faithfulness`, `answer_correctness`, `context_correctness`)
 - `LLMaJEvaluator` — LLM-as-a-Judge for `answer_relevance` scoring with structured output
+- `RagasEvaluator` — optional RAGAS metrics (`faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`) using the configured foundation and embedding models
+- `ragas_adapters` delegates RAGAS calls to those models; `ragas_diagnostics` classifies failures so confirmed context overflows bypass retries of the identical request
 - `custom_metrics` — derived metrics such as `overall_score` (mean of all other metrics)
 - `RAGMetric` dataclass and `Metrics` registry for typed metric definitions
 - Automatic judge model selection via calibration when multiple generation models are available
@@ -241,7 +243,8 @@ Ground Truth Documents
     ↓
 Multi-Evaluator Dispatch
   ├─ UnitxtEvaluator → faithfulness, answer_correctness, context_correctness
-  └─ LLMaJEvaluator  → answer_relevance
+  ├─ LLMaJEvaluator  → answer_relevance
+  └─ RagasEvaluator → faithfulness, answer_relevancy, context_precision, context_recall (optional)
     ↓
 Custom Metrics (overall_score = mean of all)
     ↓

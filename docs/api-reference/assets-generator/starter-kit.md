@@ -42,6 +42,18 @@ Setting up the gateway is a one-time cluster prerequisite and is not part of the
 generated starter kit. MaaS must provide reachable chat and embedding models, and
 agentic templates require a chat model that supports tool calling.
 
+Cluster administrators can use the repository's
+[`scripts/setup-openshell-gateway.sh`](https://github.com/IBM/ai4rag/blob/main/scripts/setup-openshell-gateway.sh)
+for one-time gateway provisioning. Run it from an ai4rag checkout with `oc`,
+Helm, `jq`, and the `openshell` CLI installed and the required cluster permissions:
+
+```bash
+bash scripts/setup-openshell-gateway.sh
+```
+
+The generated Makefile has no `setup-gateway` or `teardown-gateway` targets.
+Manage the shared cluster gateway separately from starter-kit deployment.
+
 Set database credentials in `.env` or the Kubernetes secret referenced by
 `db_secret_name` in `values.yaml`. Non-empty environment settings take precedence
 over database secret values. The secret referenced by `maas_secret_name` supplies
