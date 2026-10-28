@@ -37,7 +37,9 @@ def rag(mocker):
     foundation_model.context_template_text = "{document}"
     retriever = mocker.MagicMock()
     retriever.retrieve.return_value = []
-    rag_template = AgenticRAG(foundation_model=foundation_model, retriever=retriever, chat_model=mocker.MagicMock())
+    rag_template = AgenticRAG(
+        foundation_model=foundation_model, retriever=retriever, max_retrieval_steps=2, chat_model=mocker.MagicMock()
+    )
     rag_template._create_agent_mock = create_agent
     return rag_template
 
@@ -129,6 +131,44 @@ def test_real_agent_graph_rewrites_then_retrieves(mocker, caplog):
     }
     assert [call.args[0] for call in retriever.retrieve.call_args_list] == ["question", "focused search"]
     assert "RAG_FAILURE" not in caplog.text
+
+
+def test_default_budget_allows_two_rewrite_and_retrieval_cycles(mocker):
+    """Both follow-up searches complete before the default budget forces an answer."""
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    chunks = [AI4RAGChunk(text=text, metadata={}) for text in ("initial evidence", "first fact", "second fact")]
+    retriever.retrieve.side_effect = [[chunk] for chunk in chunks]
+    responses = []
+    for index, query in enumerate(("first fact", "second fact")):
+        responses.extend(
+            [
+                AIMessage(
+                    content="",
+                    tool_calls=[
+                        {"name": "rewrite_query", "args": {"missing_information": query}, "id": f"rewrite_{index}"}
+                    ],
+                ),
+                AIMessage(content=query),
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "retriever", "args": {"query": query}, "id": f"search_{index}"}],
+                ),
+            ]
+        )
+    responses.append(AIMessage(content="grounded answer"))
+    agent = AgenticRAG(foundation, retriever, chat_model=ToolCallingFake(responses=responses))
+
+    result = agent.generate("question")
+
+    assert result["answer"] == "grounded answer"
+    assert result["reference_documents"] == chunks
+    assert [call.args[0] for call in retriever.retrieve.call_args_list] == ["question", "first fact", "second fact"]
+    assert len(result["conversation"]["tool_execution"]["rewrite_query"]) == 2
+    assert len(result["conversation"]["tool_execution"]["retriever"]) == 2
 
 
 def test_agent_initialization_does_not_emit_lock_schema_warning(mocker):
@@ -299,7 +339,7 @@ def test_chat_completions_executes_retriever_tool(mocker):
     follow_up = AI4RAGChunk(text="follow-up evidence", metadata={})
     retriever.retrieve.side_effect = [[initial], [follow_up]]
 
-    result = AgenticRAG(foundation_model, retriever, chat_model=chat_model).generate("question")
+    result = AgenticRAG(foundation_model, retriever, max_retrieval_steps=2, chat_model=chat_model).generate("question")
 
     assert result["answer"] == "grounded answer"
     assert result["reference_documents"] == [initial, follow_up]
@@ -396,7 +436,7 @@ def test_real_graph_bounds_calls_without_retrieval_progress(mocker, tool_name):
         ]
     )
     generate = mocker.spy(model, "_generate")
-    agent = AgenticRAG(foundation, retriever, chat_model=model)
+    agent = AgenticRAG(foundation, retriever, max_retrieval_steps=2, chat_model=model)
 
     with pytest.raises(RuntimeError, match="Model returned tool calls after the tool budget was exhausted"):
         agent.generate("question")
@@ -420,7 +460,7 @@ def test_real_graph_keeps_concurrent_budgets_independent(mocker, caplog):
             AIMessage(content="", tool_calls=[{"name": "retriever", "args": {"query": "again"}, "id": "search"}])
         ]
     )
-    agent = AgenticRAG(foundation, retriever, chat_model=model)
+    agent = AgenticRAG(foundation, retriever, max_retrieval_steps=2, chat_model=model)
 
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(agent.generate, f"question {index}") for index in range(4)]

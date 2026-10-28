@@ -1339,14 +1339,14 @@ class AgenticRAG(BaseRAGTemplate):
         self,
         foundation_model: BaseFoundationModel,
         retriever: Retriever,
-        max_retrieval_steps: int = 2,
+        max_retrieval_steps: int = 3,
         chat_model: BaseChatModel | None = None,
         enable_context_compression: bool = True,
     ):
 ```
 
 - `max_retrieval_steps` caps retrieval actions including the initial retrieval,
-  so the default of `2` allows one additional search through the `retriever` tool.
+  so the default of `3` allows two additional searches through the `retriever` tool.
   Independently, it caps the number of `rewrite_query` tool calls. Once a budget
   is exhausted, the corresponding tool tells the agent to use the evidence found.
   Before each agent model call, budget middleware also checks the retrieval count
