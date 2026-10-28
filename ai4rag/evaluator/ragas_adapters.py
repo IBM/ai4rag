@@ -25,11 +25,11 @@ from ai4rag.evaluator.ragas_diagnostics import failure_reason
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
-# RAGAS metric prompts emit structured JSON (statement lists, verdicts).  The
-# ai4rag model's default ``max_completion_tokens`` can be small enough to
-# truncate that JSON, which RAGAS then fails to parse -> NaN scores.  Cap the
-# completion generously so evaluation prompts are not cut off.
-DEFAULT_MAX_COMPLETION_TOKENS = 1024
+# RAGAS faithfulness NLI emits one {statement, reason, verdict} object per
+# claim. Long answers (10–16+ statements) routinely need >1k completion tokens;
+# truncating mid-JSON surfaces as OutputParserException / NaN faithfulness.
+# Keep this above that envelope while staying well under typical 32k windows.
+DEFAULT_MAX_COMPLETION_TOKENS = 2048
 
 
 class AI4RAGRagasLLM(BaseRagasLLM):
