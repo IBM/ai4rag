@@ -17,7 +17,9 @@ and answer using the evidence found.
 
 - An OpenShift cluster with `oc` logged in and permission to create the required
   resources.
-- The `openshell` CLI and Helm 3 installed locally.
+- An OpenShell gateway installed on the cluster and registered in the `openshell`
+  CLI as gateway `openshift` (once per cluster).
+- The `openshell` CLI installed locally.
 - `uv` installed locally to update the dependency lockfile.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together
   with credentials. The chat model must support tool calling so the agent can
@@ -50,9 +52,6 @@ Run the following commands from the starter-kit root directory:
 ```bash
 # Generate the lockfile to the latest ai4rag release before building.
 uv lock --upgrade-package ai4rag
-
-# Run once per cluster.
-make setup-gateway
 
 make build-openshell
 make deploy-openshell

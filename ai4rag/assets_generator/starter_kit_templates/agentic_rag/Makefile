@@ -2,7 +2,7 @@ SHELL          := bash
 OPENSHELL_SANDBOX ?= $(shell if [ -f .env ]; then . ./.env; fi; echo $${OPENSHELL_SANDBOX_NAME:-rag-sandbox})
 OPENSHELL_IMAGE   := openshell-agentic-rag
 
-.PHONY: env run-app run-cli refresh-certs setup-gateway teardown-gateway build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
+.PHONY: env run-app run-cli refresh-certs build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-22s %s\n", $$1, $$2}'
@@ -32,8 +32,6 @@ test: ## Run unit tests
 
 ## ── openShell sandbox targets ─────────────────────────────────────────────────
 
-OPENSHELL_VERSION ?= 0.0.99
-
 refresh-certs: ## Refresh openShell client certificates from cluster
 	@echo "==> Refreshing openShell client certificates..." && \
 	  MTLS_DIR=~/.config/openshell/gateways/openshift/mtls && mkdir -p $$MTLS_DIR && \
@@ -41,64 +39,6 @@ refresh-certs: ## Refresh openShell client certificates from cluster
 	  oc -n openshell get secret openshell-client-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > $$MTLS_DIR/tls.crt && \
 	  oc -n openshell get secret openshell-client-tls -o jsonpath='{.data.tls\.key}' | base64 -d > $$MTLS_DIR/tls.key && \
 	  echo "    Certificates refreshed."
-
-setup-gateway: ## Install openShell gateway, create Route, register CLI (one-time)
-	@set -e && \
-	  APPS_DOMAIN=$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}') && \
-	  echo "==> Detected apps domain: $$APPS_DOMAIN" && \
-	  echo "==> Ensuring openshell namespace and SCCs..." && \
-	  oc create ns openshell 2>/dev/null || true && \
-	  oc adm policy add-scc-to-user privileged -z openshell-sandbox -n openshell 2>/dev/null || true && \
-	  oc adm policy add-scc-to-user privileged -z openshell -n openshell 2>/dev/null || true && \
-	  echo "==> Granting TokenReview RBAC to sandbox SA..." && \
-	  oc create clusterrolebinding openshell-tokenreview \
-	    --clusterrole=system:auth-delegator \
-	    --serviceaccount=openshell:openshell-sandbox 2>/dev/null || true && \
-	  echo "==> Installing openShell gateway $(OPENSHELL_VERSION)..." && \
-	  helm upgrade --install openshell oci://ghcr.io/nvidia/openshell/helm-chart \
-	    --version $(OPENSHELL_VERSION) \
-	    --namespace openshell \
-	    --set securityContext.runAsUser=null \
-	    --set securityContext.runAsNonRoot=false \
-	    --set securityContext.allowPrivilegeEscalation=true \
-	    --set securityContext.capabilities=null \
-	    --set server.auth.allowUnauthenticatedUsers=true \
-	    --set "pkiInitJob.serverDnsNames={*.openshell.$$APPS_DOMAIN,openshell.$$APPS_DOMAIN,openshell-gateway-openshell.$$APPS_DOMAIN}" && \
-	  echo "==> Waiting for gateway to be ready..." && \
-	  oc -n openshell rollout status statefulset/openshell --timeout=120s && \
-	  echo "==> Disabling mTLS client cert requirement..." && \
-	  TOML=$$(oc -n openshell get configmap openshell-config -o jsonpath='{.data.gateway\.toml}' | sed '/^client_ca_path/d') && \
-	  oc -n openshell patch configmap openshell-config --type merge \
-	    -p "$$(printf '{"data":{"gateway.toml":%s}}' "$$(printf '%s' "$$TOML" | jq -Rs .)")" && \
-	  oc -n openshell delete pod openshell-0 && \
-	  oc -n openshell rollout status statefulset/openshell --timeout=120s && \
-	  echo "==> Creating gateway Route..." && \
-	  oc -n openshell create route passthrough openshell-gateway \
-	    --service=openshell --port=8080 2>/dev/null || true && \
-	  GATEWAY_URL="https://openshell-gateway-openshell.$$APPS_DOMAIN" && \
-	  echo "==> Registering gateway in CLI..." && \
-	  openshell gateway remove openshift 2>/dev/null || true && \
-	  MTLS_DIR=~/.config/openshell/gateways/openshift/mtls && mkdir -p $$MTLS_DIR && \
-	  oc -n openshell get secret openshell-client-tls -o jsonpath='{.data.ca\.crt}'  | base64 -d > $$MTLS_DIR/ca.crt && \
-	  oc -n openshell get secret openshell-client-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > $$MTLS_DIR/tls.crt && \
-	  oc -n openshell get secret openshell-client-tls -o jsonpath='{.data.tls\.key}' | base64 -d > $$MTLS_DIR/tls.key && \
-	  openshell gateway add "$$GATEWAY_URL" --local --name openshift && \
-	  echo "==> Verifying connection..." && \
-	  export OPENSHELL_GATEWAY_INSECURE=true && \
-	  openshell status && \
-	  echo "" && \
-	  echo "Gateway ready. Next: make build-openshell"
-
-teardown-gateway: ## Uninstall openShell gateway and clean up
-	@openshell gateway remove openshift 2>/dev/null || true && \
-	  helm uninstall openshell -n openshell 2>/dev/null || true && \
-	  oc -n openshell delete pvc --all 2>/dev/null || true && \
-	  oc -n openshell delete secret openshell-server-tls openshell-client-tls openshell-jwt-keys 2>/dev/null || true && \
-	  oc -n openshell delete route --all 2>/dev/null || true && \
-	  oc delete clusterrolebinding openshell-tokenreview 2>/dev/null || true && \
-	  oc adm policy remove-scc-from-user privileged -z openshell-sandbox -n openshell 2>/dev/null || true && \
-	  oc adm policy remove-scc-from-user privileged -z openshell -n openshell 2>/dev/null || true && \
-	  echo "Gateway removed."
 
 _openshell-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && export OPENSHELL_GATEWAY_INSECURE=true && \
 	SANDBOX=$${OPENSHELL_SANDBOX_NAME:-rag-sandbox} && \
