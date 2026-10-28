@@ -36,8 +36,11 @@ require a collection that has already been indexed; document indexing is a separ
 pipeline step.
 
 Deployment requires an OpenShift cluster with the Agent Sandbox operator, a logged-in
-`oc` client, the `openshell` CLI, Helm 3, and `uv`. MaaS must provide reachable chat
-and embedding models, and agentic templates require a chat model that supports tool calling.
+`oc` client, the `openshell` CLI, and `uv`. It also requires an OpenShell gateway that
+is already installed on the cluster and registered in the CLI as gateway `openshift`.
+Setting up the gateway is a one-time cluster prerequisite and is not part of the
+generated starter kit. MaaS must provide reachable chat and embedding models, and
+agentic templates require a chat model that supports tool calling.
 
 Set database credentials in `.env` or the Kubernetes secret referenced by
 `db_secret_name` in `values.yaml`. Non-empty environment settings take precedence
@@ -73,7 +76,6 @@ Run these commands from the extracted starter-kit directory:
 
 ```bash
 uv lock --upgrade-package ai4rag
-make setup-gateway  # Once per cluster
 make build-openshell
 make deploy-openshell
 ```
