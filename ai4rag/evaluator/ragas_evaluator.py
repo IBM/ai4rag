@@ -57,10 +57,10 @@ class RagasEvaluator(BaseEvaluator):
     max_workers : int, default=4
         Maximum concurrent RAGAS workers.  Kept low so a small evaluating model
         is not overwhelmed and the async adapter's thread pool is not starved.
-    max_completion_tokens : int, default=1024
-        Upper bound on tokens per RAGAS evaluation call.  Kept generous so the
-        structured JSON that RAGAS metrics emit is not truncated (which would
-        otherwise surface as unparseable responses / ``NaN`` scores).
+    max_completion_tokens : int, default=2048
+        Upper bound on tokens per RAGAS evaluation call.  Kept generous so
+        faithfulness NLI JSON (per-statement reasons/verdicts) is not truncated
+        into unparseable responses / ``NaN`` scores.
     """
 
     EVALUATOR_TYPE = "ragas"
