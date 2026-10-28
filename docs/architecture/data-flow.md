@@ -516,6 +516,7 @@ sequenceDiagram
     participant Builder as build_evaluation_data()
     participant UE as UnitxtEvaluator
     participant JE as LLMaJEvaluator
+    participant RE as RagasEvaluator
     participant CM as custom_metrics
 
     Exp->>Builder: build_evaluation_data(benchmark_data, inference_response)
@@ -535,10 +536,19 @@ sequenceDiagram
     UE-->>Exp: EvaluationMetricsResult (faithfulness, answer_correctness, ...)
     deactivate UE
 
-    Exp->>JE: evaluate_metrics(eval_data, judge_metrics)
-    activate JE
-    JE-->>Exp: EvaluationMetricsResult (answer_relevance)
-    deactivate JE
+    opt LLM judge configured
+        Exp->>JE: evaluate_metrics(eval_data, judge_metrics)
+        activate JE
+        JE-->>Exp: EvaluationMetricsResult (answer_relevance)
+        deactivate JE
+    end
+
+    opt RAGAS configured
+        Exp->>RE: evaluate_metrics(eval_data, ragas_metrics)
+        activate RE
+        RE-->>Exp: EvaluationMetricsResult (RAGAS metrics)
+        deactivate RE
+    end
 
     Exp->>Exp: merge_evaluation_results(partial_results)
 
@@ -551,6 +561,13 @@ sequenceDiagram
 ### EvaluationData Assembly
 
 **build_evaluation_data()** combines inference results with benchmark data:
+
+Contexts come from the `reference_documents` returned by the successful generation
+attempt, including retained excerpts when `AgenticRAG` used its context-overflow
+fallback. RAGAS evaluates those texts unchanged, without another compression pass.
+Its adapter skips identical-request retries for confirmed context overflows, and
+the evaluator logs question IDs and missing metric names for incomplete scores.
+See [RAGAS evidence and context-overflow reporting](../user-guide/evaluation.md#ragas-evidence-and-context-overflow-reporting).
 
 **Input: inference_response**
 

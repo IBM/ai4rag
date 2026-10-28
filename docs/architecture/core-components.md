@@ -17,7 +17,7 @@ graph TB
     D[Documents]
     E[Benchmark Data]
     F[RAG Components]
-    G[Evaluators<br/>Unitxt + LLM Judge]
+    G[Evaluators<br/>Unitxt + LLM Judge + optional RAGAS]
 
     D --> A
     E --> A
@@ -86,6 +86,11 @@ when the best warm-start candidate is renamed to `Pattern1`. Neo4j patterns publ
 their extraction policy as `settings.graph_extraction`, replacing the previous
 `settings.knowledge_graph` block. See [Event Handlers](../user-guide/event-handlers.md).
 
+`ExperimentResults.get_best_evaluations()` sorts results by descending
+`final_score`, placing `None` scores last. Its `k` argument limits the returned
+tuple; `k=None` returns every result. An experiment with only unscored patterns
+still returns those patterns, so callers should check the selected result's score.
+
 ### search() Method
 
 The `search()` method is the main entry point that executes the optimization loop:
@@ -147,7 +152,7 @@ sequenceDiagram
         deactivate RAG
 
         Note over Exp: Multi-evaluator dispatch
-        Exp->>Eval: evaluate responses (Unitxt + LLM Judge)
+        Exp->>Eval: evaluate responses (configured Unitxt, LLM Judge, RAGAS)
         activate Eval
         Eval-->>Exp: EvaluationMetricsResult
         deactivate Eval
