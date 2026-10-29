@@ -363,6 +363,11 @@ search_space = prepare_search_space_with_maas(
 build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
+Payload `chunk_sizes` accepts values from 128 through 1,024 tokens inclusive.
+Values outside this range raise a Pydantic `ValidationError` before model
+discovery. Omitting `chunk_sizes` uses the backend defaults: 512 and 1,024 for
+vector backends, or 1,024 for Neo4j.
+
 !!! note "Neo4j search space defaults"
     For Neo4j, set `vector_store_type="neo4j"` and omit `template_ids` (or use
     `["agentic_graph_rag"]`); the vector-template IDs in the example above are incompatible.

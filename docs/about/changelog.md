@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.25.3](https://github.com/IBM/ai4rag/releases/tag/v0.25.3)
+
+### Changed
+
+- **Evaluator** — increased the default RAGAS judge completion limit from 1,024 to 2,048 tokens to reduce truncated faithfulness JSON and missing scores for longer answers
+- **Chunker** — reduced `LangChainChunker`'s default chunk size and the maximum `chunk_sizes` value accepted by MaaS search-space preparation from 2,048 to 1,024 tokens; default chunk-size choices are now 512 and 1,024
+- **Assets generator** — moved one-time OpenShell gateway setup to the repository's `scripts/setup-openshell-gateway.sh`; generated starter kits require an existing gateway registered as `openshift`
+
+### Fixed
+
+- **Evaluator** — confirmed RAGAS context-overflow requests skip retries with the identical prompt, while other failures retain existing retry handling; incomplete evaluations log question IDs and missing metric names
+- **Evaluator** — RAGAS metric selection now checks the evaluator as well as the metric name, avoiding collisions with metrics from other evaluators
+- **Experiment** — result ranking places patterns with no final score after scored patterns instead of failing when comparing scores with `None`
+
+### Removed
+
+- **Assets generator** — removed the `setup-gateway` and `teardown-gateway` Makefile targets from generated starter kits
+
+---
+
 ## [0.25.2](https://github.com/IBM/ai4rag/releases/tag/v0.25.2)
 
 ### Fixed

@@ -162,17 +162,19 @@ retrievals remain available in the generation conversation artifacts.
 
 RAGAS does not run another compression pass or retry samples with shorter evidence.
 Confirmed context-overflow requests bypass internal retries of the identical
-request. Other errors retain their existing retry handling. Incomplete scores are
-logged with `question_id` and missing metric names; they are not written into
-published pattern evaluation metadata.
+request. Other errors retain their existing retry handling. Incomplete evaluations
+produce warnings with `question_id` and missing metric names. These diagnostics
+are not added to published pattern evaluation metadata; unavailable per-question
+metric values are omitted from the results.
 
 The default chunk-size choices are 512 and 1,024 tokens. Smaller chunks reduce
 context pressure, but do not guarantee that judge prompts fit: retrievals can
 accumulate, custom search spaces can use larger chunks, and RAGAS adds its own
 instructions, examples, schemas, and metric-specific inputs. Generation only
 compresses after its own context overflow, so generation success does not guarantee
-RAGAS success. Overall-score aggregation is unchanged and can still include partial
-metric coverage; reliable-score rules remain a separate concern.
+RAGAS success. Overall-score aggregation uses available metric scores and can
+still include partial metric coverage. Review missing-metric warnings when
+comparing patterns evaluated on different subsets of questions or metrics.
 
 ### EvaluationData Structure
 
@@ -213,6 +215,12 @@ counts match and the conversation has an ID. Full conversations are saved separa
 by `LocalEventHandler` in `conversations.json`. See
 [Event Handlers](event-handlers.md#evaluation_results-per-question-breakdown) for the
 linking rules and output schema.
+
+`experiment.results.get_best_evaluations(k=1)` returns the highest-scoring result.
+With `k=None`, it returns all results in descending `final_score` order. Patterns
+whose `final_score` is `None` sort after scored patterns; if every pattern is
+unscored, the returned results still have no final score. Check `final_score`
+before using a returned pattern as the best result.
 
 ### Aggregate Metrics
 
@@ -526,6 +534,23 @@ experiment = AI4RAGExperiment(
 ```
 
 When a `RagasEvaluator` is present, the default metrics list is extended with the four RAGAS metrics. RAGAS is a regular dependency of ai4rag, so no optional extra is required.
+
+Each RAGAS judge call allows up to 2,048 completion tokens by default. This limit
+applies independently of the generation model's completion setting and helps
+avoid truncating the structured faithfulness JSON for longer answers. Set
+`max_completion_tokens` explicitly to use a different limit:
+
+```python
+ragas_evaluator = RagasEvaluator(
+    model=ragas_model,
+    embedding_model=ragas_embeddings,
+    max_completion_tokens=4096,
+)
+```
+
+The judge's input and allowed completion must fit the serving model's context
+window. Increasing the completion limit leaves less room for input and can
+increase evaluation cost. See [RAGAS evidence and context-overflow reporting](#ragas-evidence-and-context-overflow-reporting).
 
 In the high-level `run_rag_optimization` pipeline, the LLM-as-a-judge evaluators are selected via the `llm_judge_mode` parameter (`"base"`, `"ragas"`, `"all"`, or `"none"`; default `"base"`). The reference-based `UnitxtEvaluator` always runs; `llm_judge_mode` controls whether the in-house LLM judge, RAGAS, both, or neither are added on top. Any mode other than `"none"` requires at least one foundation model and one embedding model, and RAGAS runs on the first configured foundation and embedding models.
 

@@ -22,7 +22,8 @@ search_space = AI4RAGSearchSpace(
 )
 ```
 
-This search space has **3 × 3 × 2 = 18 possible combinations** (before validation rules).
+These three dimensions contribute **2 × 3 × 2 = 12 combinations** before validation
+rules and expansion by the other search-space parameters.
 
 The optimizer explores this space to find the combination that maximizes your chosen evaluation metric.
 
@@ -310,6 +311,13 @@ retrieval is tuned instead through `Neo4jGraphRetrievalConfig`, passed to `AI4RA
 ### Overriding Defaults
 
 User-provided parameters always override defaults:
+
+The default chunk-size choices are 512 and 1,024 tokens. When using
+`prepare_search_space_with_maas()`, payload `chunk_sizes` must be between 128 and
+1,024 tokens inclusive; values outside this range raise a Pydantic
+`ValidationError` before model discovery. Direct `AI4RAGSearchSpace` construction
+with `Parameter` objects can use larger chunks, subject to the embedding-context
+and other combination validation rules.
 
 ```python
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -611,7 +619,7 @@ search_space = AI4RAGSearchSpace(
 )
 
 print(f"Search space size: {search_space.max_combinations}")
-# Output: Search space size: 42 (after validation rules filter invalid combos)
+# Includes other parameter defaults and filters invalid combinations.
 ```
 
 !!! tip "Estimating Optimizer Settings"
