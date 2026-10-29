@@ -71,6 +71,10 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
 
         processor = AutoProcessor.from_pretrained(model_dir, local_files_only=True)
         model = AutoModelForSpeechSeq2Seq.from_pretrained(model_dir, local_files_only=True)
+        if getattr(model.generation_config, "is_multilingual", False):
+            # Request transcription explicitly instead of interpreting legacy
+            # forced_decoder_ids. Leave language unset for automatic detection.
+            model.generation_config.task = "transcribe"
         model.eval()
         self._transcriber = pipeline(
             task="automatic-speech-recognition",
@@ -78,7 +82,6 @@ class LocalHuggingFaceAsrPipeline(AsrPipeline):  # pylint: disable=super-init-no
             tokenizer=processor.tokenizer,
             feature_extractor=processor.feature_extractor,
             device=-1,
-            chunk_length_s=30,
         )
         return self._transcriber
 
