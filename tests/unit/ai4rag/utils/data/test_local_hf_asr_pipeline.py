@@ -70,11 +70,13 @@ def test_validate_model_directory_rejects_invalid_model_config(tmp_path):
         _validate_model_directory(str(model_dir))
 
 
-def test_load_transcriber_uses_local_files_only(monkeypatch, tmp_path):
+@pytest.mark.parametrize("multilingual", [True, False])
+def test_load_transcriber_uses_local_files_only(monkeypatch, tmp_path, multilingual):
     """The adapter must pass local-only loading to both Transformers loaders."""
     model_dir = _model_directory(tmp_path)
     processor = SimpleNamespace(tokenizer=object(), feature_extractor=object())
     model = mock.MagicMock()
+    model.generation_config = SimpleNamespace(is_multilingual=multilingual, language=None, task=None)
     transcriber = mock.MagicMock()
     transformers = SimpleNamespace(
         AutoProcessor=SimpleNamespace(from_pretrained=mock.MagicMock(return_value=processor)),
@@ -90,6 +92,9 @@ def test_load_transcriber_uses_local_files_only(monkeypatch, tmp_path):
         str(model_dir.resolve()), local_files_only=True
     )
     model.eval.assert_called_once_with()
+    assert model.generation_config.task == ("transcribe" if multilingual else None)
+    assert model.generation_config.language is None
+    assert "chunk_length_s" not in transformers.pipeline.call_args.kwargs
 
 
 def test_build_document_preserves_timestamped_transcript(monkeypatch, tmp_path):
@@ -121,6 +126,63 @@ def test_build_document_preserves_timestamped_transcript(monkeypatch, tmp_path):
     assert result.document.texts[0].text == "First segment"
     source = result.document.texts[0].source[0]
     assert (source.start_time, source.end_time) == (1.0, 2.0)
+
+
+def test_long_audio_reaches_whisper_generation_without_truncation(monkeypatch, tmp_path):
+    """Real ASR preprocessing retains audio beyond 30 seconds and requests timestamps."""
+    import torch
+    from transformers import (
+        AutoModelForSpeechSeq2Seq,
+        AutoProcessor,
+        WhisperConfig,
+        WhisperFeatureExtractor,
+        WhisperForConditionalGeneration,
+    )
+
+    model_dir = _model_directory(tmp_path)
+    model = WhisperForConditionalGeneration(
+        WhisperConfig(
+            vocab_size=64,
+            d_model=8,
+            encoder_layers=1,
+            decoder_layers=1,
+            encoder_attention_heads=1,
+            decoder_attention_heads=1,
+            encoder_ffn_dim=16,
+            decoder_ffn_dim=16,
+            pad_token_id=0,
+            bos_token_id=1,
+            eos_token_id=2,
+            decoder_start_token_id=1,
+        )
+    )
+    model.generation_config.is_multilingual = True
+    tokenizer = mock.MagicMock()
+    tokenizer._decode_asr.return_value = (  # pylint: disable=protected-access
+        "Final segment",
+        {"chunks": [{"text": "Final segment", "timestamp": (30.0, 31.0)}]},
+    )
+    processor = SimpleNamespace(tokenizer=tokenizer, feature_extractor=WhisperFeatureExtractor())
+    monkeypatch.setattr(AutoProcessor, "from_pretrained", mock.MagicMock(return_value=processor))
+    monkeypatch.setattr(AutoModelForSpeechSeq2Seq, "from_pretrained", mock.MagicMock(return_value=model))
+    # Acoustic quality is outside this test; exercise real pipeline preprocessing and forwarding.
+    monkeypatch.setattr(model, "generate", mock.MagicMock(return_value=torch.tensor([[1, 3, 2]])))
+    monkeypatch.setattr(
+        "ai4rag.utils.data.local_hf_asr_pipeline._decode_audio",
+        mock.MagicMock(return_value=np.zeros(31 * 16000, dtype=np.float32)),
+    )
+    adapter = LocalHuggingFaceAsrPipeline(LocalHuggingFaceAsrPipelineOptions(asr_model_path=str(model_dir)))
+    result = SimpleNamespace(input=SimpleNamespace(file=tmp_path / "long.wav", document_hash="0" * 64))
+
+    adapter._build_document(result)  # pylint: disable=protected-access
+
+    kwargs = model.generate.call_args.kwargs
+    assert kwargs["input_features"].shape[-1] > 3000
+    assert kwargs["attention_mask"] is not None
+    assert kwargs["return_timestamps"] is True
+    assert model.generation_config.task == "transcribe"
+    source = result.document.texts[0].source[0]
+    assert (source.start_time, source.end_time) == (30.0, 31.0)
 
 
 @pytest.mark.parametrize("sampling_rate", [16000, 22050])

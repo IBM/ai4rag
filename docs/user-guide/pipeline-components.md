@@ -304,8 +304,15 @@ result = extract_text(
 For an AutoRAG product deployment, `HF_MODEL_DIR` must be supplied by the approved Whisper modelcar.
 For other deployments, mount an equivalent locally verified model directory and make it read-only.
 
-ASR currently runs on CPU in 30-second windows. `DoclingExtractionConfig.device`
+ASR runs on CPU using Whisper's native timestamp-aware long-form generation rather
+than fixed pipeline-level windows. Multilingual models explicitly transcribe the
+source language with automatic language detection unless a language is configured
+in the local model's generation configuration. `DoclingExtractionConfig.device`
 controls document/OCR pipelines and does not change the audio backend's device.
+
+Some Transformers versions emit a deprecation warning mentioning `suppress_tokens`
+and `begin_suppress_tokens` from inside Whisper's generation implementation. AI4RAG
+does not pass these overrides or disable the model's token-suppression rules.
 
 When using the hybrid/Docling chunker, chunks produced from ASR transcript
 segments also carry `audio_start_seconds` and `audio_end_seconds` in their
