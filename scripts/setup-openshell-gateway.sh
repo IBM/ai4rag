@@ -10,12 +10,17 @@
 set -euo pipefail
 
 OPENSHELL_NAMESPACE="${OPENSHELL_NAMESPACE:-openshell}"
+OPENSHELL_GATEWAY_NAME="${OPENSHELL_GATEWAY_NAME:-openshift}"
 RHOAI_CSV_NAMESPACE="${RHOAI_CSV_NAMESPACE:-redhat-ods-operator}"
 OPENSHELL_IMAGE_REGISTRY="${OPENSHELL_IMAGE_REGISTRY:-}"
 OPENSHELL_FALLBACK_REGISTRY="${OPENSHELL_FALLBACK_REGISTRY:-quay.io/rhoai}"
 OPENSHELL_CHART_REPO="${OPENSHELL_CHART_REPO:-https://github.com/red-hat-data-services/openshell}"
 OPENSHELL_CHART_REF="${OPENSHELL_CHART_REF:-2aea2c5375cf9a4a284f79c4b97f9ab6aba439bc}"
 OPENSHELL_CLI_IMAGE="${OPENSHELL_CLI_IMAGE:-}"
+OPENSHELL_CLI_STATE="${OPENSHELL_CLI_STATE:-${HOME}/.config/openshell}"
+if [[ -z "${OPENSHELL_PODMAN_USERNS:-}" ]]; then
+  OPENSHELL_PODMAN_USERNS="--userns=keep-id"
+fi
 OPENSHELL_RESET="${OPENSHELL_RESET:-false}"
 
 usage() {
@@ -34,6 +39,7 @@ Options:
 
 Environment variables:
   OPENSHELL_NAMESPACE               Gateway namespace (default: ${OPENSHELL_NAMESPACE})
+  OPENSHELL_GATEWAY_NAME            Name used to register the gateway in the CLI (default: ${OPENSHELL_GATEWAY_NAME})
   RHOAI_CSV_NAMESPACE               Namespace containing the installed RHOAI CSV (default: ${RHOAI_CSV_NAMESPACE})
   OPENSHELL_IMAGE_REGISTRY          Optional registry override (default: full CSV references)
   OPENSHELL_FALLBACK_REGISTRY       Registry prefix for CLI fallback (default: ${OPENSHELL_FALLBACK_REGISTRY})
@@ -41,6 +47,8 @@ Environment variables:
   OPENSHELL_CHART_REF               Chart commit (default: ${OPENSHELL_CHART_REF})
   OPENSHELL_RESET                   Same as --reset (default: ${OPENSHELL_RESET})
   OPENSHELL_CLI_IMAGE               Optional CLI image override (default: from the RHOAI CSV)
+  OPENSHELL_CLI_STATE               CLI state directory holding the gateway registration (default: ${OPENSHELL_CLI_STATE})
+  OPENSHELL_PODMAN_USERNS           Extra `podman run` flags for the CLI container (default: ${OPENSHELL_PODMAN_USERNS})
 
 Image references, including registry and digest, are read from the installed
 RHOAI CSV. Override OPENSHELL_IMAGE_REGISTRY to select another registry while
@@ -154,8 +162,7 @@ helm upgrade --install openshell "${CHART_DIR}/deploy/helm/openshell" \
   --set securityContext.runAsNonRoot=false \
   --set securityContext.allowPrivilegeEscalation=true \
   --set securityContext.capabilities=null \
-  --set server.auth.allowUnauthenticatedUsers=true \
-  --set server.tls.enableMtls=false \
+  --set server.auth.allowUnauthenticatedUsers=false \
   --set "pkiInitJob.serverDnsNames={*.openshell.${APPS_DOMAIN},openshell.${APPS_DOMAIN},openshell-gateway-openshell.${APPS_DOMAIN}}"
 
 echo "==> Waiting for gateway to be ready..."
@@ -185,7 +192,7 @@ oc -n "${OPENSHELL_NAMESPACE}" create route passthrough openshell-gateway \
 
 GATEWAY_URL="https://openshell-gateway-${OPENSHELL_NAMESPACE}.${APPS_DOMAIN}"
 
-echo "==> Verifying gateway connection..."
+echo "==> Verifying gateway connection with mTLS..."
 if ! podman image exists "${OPENSHELL_CLI_IMAGE}"; then
   if ! podman pull "${OPENSHELL_CLI_IMAGE}"; then
     echo "    CSV CLI image pull failed; retrying ${QUAY_CLI_REF}..."
@@ -193,9 +200,33 @@ if ! podman image exists "${OPENSHELL_CLI_IMAGE}"; then
     OPENSHELL_CLI_IMAGE="${QUAY_CLI_REF}"
   fi
 fi
-podman run --rm "${OPENSHELL_CLI_IMAGE}" \
-  --gateway-endpoint "${GATEWAY_URL}" --gateway-insecure status
+# The gateway requires a client certificate. Store it in the CLI state directory
+# and register the gateway there, so starter kits only consume the registration.
+CLI_MTLS_DIR="${OPENSHELL_CLI_STATE}/gateways/${OPENSHELL_GATEWAY_NAME}/mtls"
+mkdir -p "${CLI_MTLS_DIR}"
+for key in ca.crt tls.crt tls.key; do
+  oc -n "${OPENSHELL_NAMESPACE}" get secret openshell-client-tls \
+    -o jsonpath="{.data.${key//./\\.}}" | base64 -d >"${CLI_MTLS_DIR}/${key}"
+done
+chmod 600 "${CLI_MTLS_DIR}/tls.key"
+
+openshell_cli() {
+  podman run --rm ${OPENSHELL_PODMAN_USERNS} -e XDG_CONFIG_HOME=/cli -e HOME=/cli \
+    -v "${OPENSHELL_CLI_STATE}:/cli/openshell" "${OPENSHELL_CLI_IMAGE}" "$@"
+}
+
+echo "==> Registering gateway '${OPENSHELL_GATEWAY_NAME}' in ${OPENSHELL_CLI_STATE}..."
+openshell_cli gateway remove "${OPENSHELL_GATEWAY_NAME}" >/dev/null 2>&1 || true
+openshell_cli gateway add "${GATEWAY_URL}" --local --name "${OPENSHELL_GATEWAY_NAME}"
+CLI_STATUS=$(openshell_cli -g "${OPENSHELL_GATEWAY_NAME}" status 2>&1) || true
+printf '%s\n' "${CLI_STATUS}"
+if ! grep -q "Connected" <<<"${CLI_STATUS}"; then
+  echo "ERROR: the OpenShell CLI could not authenticate to the gateway over mTLS." >&2
+  exit 1
+fi
 
 echo ""
 echo "Gateway ready at ${GATEWAY_URL}."
 echo "Deploy a starter kit with 'make build-openshell' and 'make deploy-openshell'."
+echo "The starter-kit Makefile reads the same client certificate secret, so no local"
+echo "OpenShell CLI or certificate files are required."

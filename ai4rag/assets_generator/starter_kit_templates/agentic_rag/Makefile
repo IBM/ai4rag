@@ -36,9 +36,16 @@ test: ## Run unit tests
 
 # The default CLI comes from the RHOAI CSV, with a same-digest Quay fallback.
 # Set OPENSHELL_CLI=openshell to use a compatible local CLI.
-# Container runs mount the kit at /work for policy files.
-OPENSHELL_CLI ?= openshell_cli
-OPENSHELL ?= $(OPENSHELL_CLI) --gateway-endpoint "$${OPENSHELL_GATEWAY_URL}" --gateway-insecure
+# Container runs mount the kit at /work for policy files and the CLI state
+# directory at /cli, which holds the gateway registration and the mTLS client
+# certificates written by `make refresh-certs`.
+OPENSHELL_CLI          ?= openshell_cli
+OPENSHELL_CLI_STATE    ?= $(HOME)/.config/openshell
+OPENSHELL_GATEWAY_NAME ?= openshift
+OPENSHELL_PODMAN_USERNS ?= --userns=keep-id
+OPENSHELL ?= $(OPENSHELL_CLI) -g $(OPENSHELL_GATEWAY_NAME)
+
+SANDBOX_CREATE_ATTEMPTS ?= 3
 
 _openshell-cli := openshell_cli() { \
 	local csv_json image fallback_registry fallback_path fallback_namespace fallback_image; \
@@ -59,23 +66,31 @@ _openshell-cli := openshell_cli() { \
 	  echo "OpenShell CLI image pull failed; retrying $$fallback_image..." >&2; \
 	  image="$$fallback_image" && podman pull "$$image" || return 1; \
 	fi; \
-	podman run --rm -v "$$(pwd):/work:ro" "$$image" "$$@"; \
+	podman run --rm -i $(OPENSHELL_PODMAN_USERNS) -e XDG_CONFIG_HOME=/cli -e HOME=/cli \
+	  -v "$(OPENSHELL_CLI_STATE):/cli/openshell" -v "$$(pwd):/work:ro" "$$image" "$$@"; \
 }
 
-refresh-certs: ## Refresh openShell client certificates from cluster
-	@echo "==> Refreshing openShell client certificates..." && \
-	  MTLS_DIR=~/.config/openshell/gateways/openshift/mtls && mkdir -p $$MTLS_DIR && \
-	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.ca\.crt}'  | base64 -d > $$MTLS_DIR/ca.crt && \
-	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > $$MTLS_DIR/tls.crt && \
-	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.tls\.key}' | base64 -d > $$MTLS_DIR/tls.key && \
+refresh-certs: ## Refresh openShell mTLS client certificates from the cluster
+	@$(_openshell-cli) && \
+	  echo "==> Refreshing openShell client certificates..." && \
+	  MTLS_DIR="$(OPENSHELL_CLI_STATE)/gateways/$(OPENSHELL_GATEWAY_NAME)/mtls" && mkdir -p "$$MTLS_DIR" && \
+	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.ca\.crt}'  | base64 -d > "$$MTLS_DIR/ca.crt" && \
+	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.tls\.crt}' | base64 -d > "$$MTLS_DIR/tls.crt" && \
+	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.tls\.key}' | base64 -d > "$$MTLS_DIR/tls.key" && \
+	  chmod 600 "$$MTLS_DIR/tls.key" && \
 	  echo "    Certificates refreshed."
+	@$(_openshell-cli) && \
+	  if ! $(OPENSHELL) status 2>/dev/null | grep -q "Connected"; then \
+	    echo "ERROR: gateway '$(OPENSHELL_GATEWAY_NAME)' is not registered or not reachable over mTLS." >&2; \
+	    echo "       The gateway is a cluster prerequisite: run scripts/setup-openshell-gateway.sh." >&2; \
+	    exit 1; \
+	  fi
 
-_openshell-env = $(_openshell-cli) && set -a && if [ -f .env ]; then . ./.env; fi && set +a && export OPENSHELL_GATEWAY_INSECURE=true && \
+_openshell-env = $(_openshell-cli) && set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
 	SANDBOX=$${OPENSHELL_SANDBOX_NAME:-rag-sandbox} && \
 	NS=$$(oc project -q) && \
 	IMAGE="image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
 	APPS_DOMAIN=$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}') && \
-	OPENSHELL_GATEWAY_URL="https://openshell-gateway-$(OPENSHELL_NAMESPACE).$$APPS_DOMAIN" && \
 	[ -f agent_config.json ] || { echo "ERROR: agent_config.json not found."; exit 1; } && \
 	AGENT_CONFIG_B64=$$(base64 < agent_config.json | tr -d '\n') && \
 	VECTOR_STORE_PROVIDER=$$(python3 -c 'import json; print(json.load(open("agent_config.json"))["vector_store"]["provider_type"])') && \
@@ -105,7 +120,7 @@ _openshell-env = $(_openshell-cli) && set -a && if [ -f .env ]; then . ./.env; f
 	  NEO4J_USERNAME=$${NEO4J_USERNAME:-neo4j}; \
 	  NEO4J_DATABASE=$${NEO4J_DATABASE:-neo4j}; \
 	fi && \
-	export OPENSHELL_GATEWAY_URL MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT
+	export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT
 
 build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	@set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
@@ -159,30 +174,65 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	  echo "==> Deleting old sandbox $$SANDBOX..." && \
 	  $(OPENSHELL) sandbox delete "$$SANDBOX" 2>/dev/null || true
 	@$(_openshell-env) && \
+	  wait_gone() { \
+	    i=0; while [ $$i -lt 30 ]; do \
+	      sandbox_present=0; pod_present=0; \
+	      oc -n $(OPENSHELL_NAMESPACE) get sandbox "default--$$SANDBOX" >/dev/null 2>&1 && sandbox_present=1; \
+	      oc -n "$$NS" get pod "$$SANDBOX" >/dev/null 2>&1 && pod_present=1; \
+	      [ $$sandbox_present -eq 0 ] && [ $$pod_present -eq 0 ] && return 0; \
+	      i=$$((i+1)); sleep 2; \
+	    done; \
+	    return 0; \
+	  } && \
+	  echo "==> Waiting for the previous sandbox to be removed..." && \
+	  wait_gone && \
 	  echo "==> Creating sandbox $$SANDBOX from $$IMAGE..." && \
 	  echo "    (timeout 120s — this may take a minute while the image is pulled)..." && \
-	  $(OPENSHELL) sandbox create --name "$$SANDBOX" --from "$$IMAGE" \
-	    --env "MAAS_BASE_URL=$$MAAS_BASE_URL" \
-	    --env "MAAS_API_KEY=$$MAAS_API_KEY" \
-	    --env "AGENT_CONFIG_B64=$$AGENT_CONFIG_B64" \
-	    --env "MILVUS_URI=$$MILVUS_URI" \
-	    --env "MILVUS_TOKEN=$$MILVUS_TOKEN" \
-	    --env "MILVUS_CA_CERT=$$MILVUS_CA_CERT" \
-	    --env "PGVECTOR_HOST=$$PGVECTOR_HOST" \
-	    --env "PGVECTOR_PORT=$$PGVECTOR_PORT" \
-	    --env "PGVECTOR_DB=$$PGVECTOR_DB" \
-	    --env "PGVECTOR_USER=$$PGVECTOR_USER" \
-	    --env "PGVECTOR_PASSWORD=$$PGVECTOR_PASSWORD" \
-	    --env "PGVECTOR_CA_CERT=$$PGVECTOR_CA_CERT" \
-	    --env "NEO4J_URI=$$NEO4J_URI" \
-	    --env "NEO4J_USERNAME=$$NEO4J_USERNAME" \
-	    --env "NEO4J_PASSWORD=$$NEO4J_PASSWORD" \
-	    --env "NEO4J_DATABASE=$$NEO4J_DATABASE" \
-	    --env "NEO4J_CA_CERT=$$NEO4J_CA_CERT" \
-	    --env "PORT=8080" </dev/null & \
-	  CPID=$$!; ( sleep 80 && kill $$CPID 2>/dev/null ) & TPID=$$!; \
-	  wait $$CPID 2>/dev/null; RC=$$?; kill $$TPID 2>/dev/null; wait $$TPID 2>/dev/null; \
-	  if [ $$RC -ne 0 ]; then echo "    sandbox create exited with $$RC (may still be starting — wait-sandbox will poll)"; fi; true
+	  CREATE_LOG=$$(mktemp /tmp/openshell-create.XXXXXX) && \
+	  run_create() { \
+	    $(OPENSHELL) sandbox create --name "$$SANDBOX" --from "$$IMAGE" \
+	      --env "MAAS_BASE_URL=$$MAAS_BASE_URL" \
+	      --env "MAAS_API_KEY=$$MAAS_API_KEY" \
+	      --env "AGENT_CONFIG_B64=$$AGENT_CONFIG_B64" \
+	      --env "MILVUS_URI=$$MILVUS_URI" \
+	      --env "MILVUS_TOKEN=$$MILVUS_TOKEN" \
+	      --env "MILVUS_CA_CERT=$$MILVUS_CA_CERT" \
+	      --env "PGVECTOR_HOST=$$PGVECTOR_HOST" \
+	      --env "PGVECTOR_PORT=$$PGVECTOR_PORT" \
+	      --env "PGVECTOR_DB=$$PGVECTOR_DB" \
+	      --env "PGVECTOR_USER=$$PGVECTOR_USER" \
+	      --env "PGVECTOR_PASSWORD=$$PGVECTOR_PASSWORD" \
+	      --env "PGVECTOR_CA_CERT=$$PGVECTOR_CA_CERT" \
+	      --env "NEO4J_URI=$$NEO4J_URI" \
+	      --env "NEO4J_USERNAME=$$NEO4J_USERNAME" \
+	      --env "NEO4J_PASSWORD=$$NEO4J_PASSWORD" \
+	      --env "NEO4J_DATABASE=$$NEO4J_DATABASE" \
+	      --env "NEO4J_CA_CERT=$$NEO4J_CA_CERT" \
+	      --env "PORT=8080" </dev/null >"$$CREATE_LOG" 2>&1 & \
+	    CPID=$$!; ( sleep 80 && kill $$CPID 2>/dev/null ) >/dev/null 2>&1 & TPID=$$!; \
+	    wait $$CPID 2>/dev/null; RC=$$?; kill $$TPID 2>/dev/null; wait $$TPID 2>/dev/null; \
+	    return $$RC; \
+	  } && \
+	  attempt=1; RC=0; \
+	  while :; do \
+	    echo "    Attempt $$attempt/$(SANDBOX_CREATE_ATTEMPTS)..." && \
+	    run_create; RC=$$?; \
+	    [ $$RC -eq 0 ] && break; \
+	    if ! grep -q "pod updates may not change fields" "$$CREATE_LOG"; then break; fi; \
+	    if [ $$attempt -ge $(SANDBOX_CREATE_ATTEMPTS) ]; then break; fi; \
+	    echo "    Sandbox Pod update was rejected by the cluster Kyverno imagePullSecrets policy" && \
+	    echo "    (duplicate pull secret). Recreating the sandbox and retrying..." && \
+	    $(OPENSHELL) sandbox delete "$$SANDBOX" >/dev/null 2>&1 || true; \
+	    wait_gone; sleep 5; \
+	    attempt=$$((attempt+1)); \
+	  done; \
+	  if [ $$RC -ne 0 ]; then cat "$$CREATE_LOG"; fi; \
+	  rm -f "$$CREATE_LOG"; \
+	  if [ $$RC -ne 0 ]; then \
+	    echo "    sandbox create exited with $$RC (may still be starting — wait-sandbox will poll)"; \
+	  else \
+	    echo "    Sandbox created."; \
+	  fi; true
 
 wait-sandbox: ## Poll until sandbox phase is Ready (max 300s)
 	@$(_openshell-env) && \
@@ -241,11 +291,20 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  echo "==> Generating sandbox reviewer token..." && \
 	  K8S_API_URL=$$(oc whoami --show-server) && \
 	  K8S_REVIEWER_TOKEN=$$(oc create token openshell-sandbox -n $(OPENSHELL_NAMESPACE) --duration=168h) && \
-	  K8S_CA_PATH=/etc/pki/tls/certs/ca-bundle.crt && \
+	  if oc -n openshift-config-managed get configmap trusted-ca-bundle >/dev/null 2>&1; then K8S_CA_SOURCE=trusted-ca-bundle; \
+	  elif oc get configmap kube-root-ca.crt -n "$$NS" >/dev/null 2>&1; then K8S_CA_SOURCE=kube-root-ca.crt; \
+	  else echo "ERROR: Kubernetes API CA certificate not found." >&2; exit 1; fi && \
+	  K8S_CA_PATH=/sandbox/k8s-ca.crt && \
 	  ALLOWED_SA_USERNAME="system:serviceaccount:$${NS}:agent-client" && \
 	  echo "==> Stopping any running agent..." && \
 	  $(OPENSHELL) sandbox exec -n "$$SANDBOX" -- /usr/bin/python3.12 -c "import os,signal; from pathlib import Path; pid=Path('/sandbox/agent.pid'); os.kill(int(pid.read_text().strip()),signal.SIGTERM) if pid.is_file() else None" 2>/dev/null || true && \
 	  sleep 5 && \
+	  echo "==> Uploading the cluster API CA ($$K8S_CA_SOURCE)..." && \
+	  if [ "$$K8S_CA_SOURCE" = "trusted-ca-bundle" ]; then \
+	    oc -n openshift-config-managed get configmap trusted-ca-bundle -o jsonpath='{.data.ca-bundle\.crt}'; \
+	  else \
+	    oc get configmap kube-root-ca.crt -n "$$NS" -o jsonpath='{.data.ca\.crt}'; \
+	  fi | $(OPENSHELL) sandbox exec -n "$$SANDBOX" -- bash -c 'cat > /sandbox/k8s-ca.crt' && \
 	  PGVECTOR_PASSWORD_B64=$$(printf '%s' "$$PGVECTOR_PASSWORD" | base64 | tr -d '\n') && \
 	  NEO4J_URI_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_URI") && \
 	  NEO4J_USERNAME_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_USERNAME") && \
@@ -310,10 +369,7 @@ expose-agent: ## Expose agent service and create Route
 deploy-openshell: create-sandbox wait-sandbox setup-egress start-agent expose-agent ## Full sandbox deploy: create, start, expose
 
 undeploy-openshell: ## Remove openShell sandbox and route
-	@$(_openshell-cli) && set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
-	  export OPENSHELL_GATEWAY_INSECURE=true && \
-	  OPENSHELL_GATEWAY_URL="https://openshell-gateway-$(OPENSHELL_NAMESPACE).$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}')" && \
-	  export OPENSHELL_GATEWAY_URL && \
+	@$(_openshell-cli) && \
 	  ($(OPENSHELL) sandbox delete $(OPENSHELL_SANDBOX) 2>/dev/null || true) && \
 	  oc -n $(OPENSHELL_NAMESPACE) delete route openshell-rag-agent 2>/dev/null || true && \
 	  echo "Sandbox $(OPENSHELL_SANDBOX) and route removed." && \

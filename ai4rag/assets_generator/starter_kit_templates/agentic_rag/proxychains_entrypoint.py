@@ -42,19 +42,21 @@ PROXY_ENV_VARS = (
 NATIVE_DATABASE_ENV_VARS = ("PGVECTOR_HOST", "NEO4J_URI")
 GRPC_PROXY_PORT_ENV = "OPENSHELL_GRPC_PROXY_PORT"
 CONNECT_PROXY_MODE = "--openshell-connect-proxy"
+CONNECT_HEADER_LIMIT = 8192
 
 
-def _read_request_line(connection: socket.socket) -> bytes:
-    """Read an HTTP CONNECT request line."""
+def _read_connect_request(connection: socket.socket) -> tuple[bytes, bytes]:
+    """Read a CONNECT request line and headers, returning any bytes that follow them."""
     buffer = b""
-    while b"\r\n" not in buffer:
+    while b"\r\n\r\n" not in buffer:
         chunk = connection.recv(1024)
         if not chunk:
-            raise ValueError("client closed the connection before sending a request")
+            raise ValueError("client closed the connection before sending a complete request")
         buffer += chunk
-        if len(buffer) > 8192:
-            raise ValueError("request line too long")
-    return buffer.split(b"\r\n", 1)[0]
+        if len(buffer) > CONNECT_HEADER_LIMIT:
+            raise ValueError("request headers too long")
+    request, _, leftover = buffer.partition(b"\r\n\r\n")
+    return request.split(b"\r\n", 1)[0], leftover
 
 
 def _pipe(source: socket.socket, destination: socket.socket) -> None:
@@ -79,7 +81,7 @@ class ConnectHandler(socketserver.BaseRequestHandler):
 
     def handle(self) -> None:
         try:
-            line = _read_request_line(self.request)
+            line, leftover = _read_connect_request(self.request)
             method, target = line.decode("ascii", "replace").split(" ")[:2]
         except (ValueError, IndexError):
             self.request.sendall(b"HTTP/1.1 400 Bad Request\r\n\r\n")
@@ -93,13 +95,15 @@ class ConnectHandler(socketserver.BaseRequestHandler):
         try:
             address = socket.gethostbyname(host)
             upstream = socket.create_connection((address, int(port)), timeout=CONNECT_TIMEOUT_SECONDS)
-        except OSError:
+        except (OSError, ValueError):
             self.request.sendall(b"HTTP/1.1 502 Bad Gateway\r\n\r\n")
             return
 
         self.request.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
         self.request.settimeout(None)
         upstream.settimeout(None)
+        if leftover:
+            upstream.sendall(leftover)
         reverse = threading.Thread(target=_pipe, args=(upstream, self.request), daemon=True)
         reverse.start()
         try:
@@ -194,7 +198,8 @@ def write_loopback_proxychains_config(port: int) -> str:
 
 def start_loopback_proxy(port: int) -> None:
     """Start this module's CONNECT proxy mode and wait until it listens."""
-    subprocess.Popen(
+    # The proxy intentionally outlives this call, so it is not a context manager.
+    subprocess.Popen(  # pylint: disable=consider-using-with
         [sys.executable, os.path.abspath(__file__), CONNECT_PROXY_MODE, LOCAL_PROXY_HOST, str(port)],
         stdin=subprocess.DEVNULL,
         stdout=sys.stderr,
