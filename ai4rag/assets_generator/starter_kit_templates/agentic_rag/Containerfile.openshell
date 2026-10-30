@@ -1,42 +1,93 @@
-# openShell sandbox flavor for agentic_rag
-#
-# Usage:
-#   podman build -f Containerfile.openshell -t quay.io/<org>/openshell-agentic-rag:latest .
-#   podman push quay.io/<org>/openshell-agentic-rag:latest
-#   openshell sandbox create --name rag-sandbox --from quay.io/<org>/openshell-agentic-rag:latest
+# OpenShell sandbox for Agentic RAG. The sandbox base lacks Python, so the
+# Python runtime and app are assembled on UBI and copied into it.
+# The Makefile overrides BASE_IMAGE from the active RHOAI CSV.
+ARG BASE_IMAGE=registry.redhat.io/rhoai/odh-openshell-sandbox-rhel9@sha256:3fbc5782b155995b0690fc937fa40d0a313f9537b35dcf07376f66b3252eb0d6
+ARG PYTHON_IMAGE=registry.redhat.io/ubi9/python-312@sha256:ff373f4b42b662e99954adea770ca87b4ea963186cc752174ccb94aa08fa702d
 
-ARG BASE_IMAGE=ghcr.io/nvidia/openshell-community/sandboxes/base@sha256:aeef1c63f00e2913ea002ccb3aaf925f338b5c5d70e63576f0d95c16a138044e
-FROM ${BASE_IMAGE}
+# Reference copy of the sandbox base, used to skip libraries it already ships.
+FROM ${BASE_IMAGE} AS sandbox-base
+
+# Python 3.12 runtime and application payload.
+FROM ${PYTHON_IMAGE} AS builder
 
 USER 0
 
+ARG PROXYCHAINS_VERSION=4.17
+ARG PROXYCHAINS_SHA256=36ddc7f64cb3df2ca4170627c6e0f0dea33d1a6d0730629dff6f5c633f2006f9
+
+COPY --from=sandbox-base /usr/lib64 /tmp/sandbox-libs
+
 WORKDIR /sandbox
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends proxychains4 && \
-    rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /sandbox && chown 1001:0 /sandbox
+
+# proxychains4 tunnels the agent's native TCP sockets (asyncpg, Neo4j) through
+# OpenShell's HTTP CONNECT proxy.
+RUN set -eu && \
+    curl -fsSL -o /tmp/proxychains-ng.tar.xz \
+        "https://github.com/rofl0r/proxychains-ng/releases/download/v${PROXYCHAINS_VERSION}/proxychains-ng-${PROXYCHAINS_VERSION}.tar.xz" && \
+    echo "${PROXYCHAINS_SHA256}  /tmp/proxychains-ng.tar.xz" | sha256sum -c - && \
+    mkdir -p /tmp/proxychains-ng && \
+    tar -xJf /tmp/proxychains-ng.tar.xz -C /tmp/proxychains-ng --strip-components=1 && \
+    cd /tmp/proxychains-ng && \
+    ./configure --prefix=/usr --libdir=/usr/lib64 --sysconfdir=/etc && \
+    make -j"$(nproc)" && \
+    make install && \
+    cd / && rm -rf /tmp/proxychains-ng /tmp/proxychains-ng.tar.xz
 
 # Install uv for fast dependency installation
 COPY --from=ghcr.io/astral-sh/uv@sha256:fc93e9ecd7218e9ec8fba117af89348eef8fd2463c50c13347478769aaedd0ce /uv /usr/local/bin/uv
 
 COPY --chown=1001:0 pyproject.toml uv.lock ./
 COPY --chown=1001:0 src/ ./src/
-
-# Use system Python 3.12 for compatibility (base image has both 3.12 and 3.14)
 RUN uv export --locked --no-dev --no-emit-project --no-hashes > requirements.txt && \
     uv pip install --python /usr/bin/python3.12 --prefix /sandbox/.local --no-cache -r requirements.txt && \
     uv pip install --python /usr/bin/python3.12 --prefix /sandbox/.local --no-cache --no-deps .
 
-# Make Python find packages in /sandbox/.local
-ENV PYTHONPATH="/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib64/python3.12/site-packages:$PYTHONPATH"
-
 # Application code and assets
-COPY --chown=1001:0 main.py auth_wrapper.py proxychains_entrypoint.py .
+COPY --chown=1001:0 main.py auth_wrapper.py proxychains_entrypoint.py ./
 
-# Set granular permissions
 RUN chmod -R 755 /sandbox && \
     chmod -R 775 /sandbox/.local && \
     find /sandbox -type f -name "*.py" -exec chmod 644 {} \;
+
+# Copy the Python and proxychains runtime into the sandbox base.
+RUN set -eu; \
+    mkdir -p /payload/usr/bin /payload/usr/lib /payload/usr/lib64 \
+             /payload/usr/local/bin \
+             /payload/etc/pki/tls/certs /payload/etc/pki/ca-trust; \
+    ldd /usr/bin/python3.12 /usr/bin/proxychains4 \
+        $(find /usr/lib64/python3.12/lib-dynload /sandbox/.local \
+            -type f \( -name '*.so' -o -name '*.so.*' \)) 2>/dev/null \
+        | awk '/=> \// {print $3}' | sort -u > /tmp/runtime-libs.txt; \
+    while IFS= read -r lib; do \
+        name="$(basename "$lib")"; \
+        if [ ! -e "/tmp/sandbox-libs/$name" ] && [ ! -e "/payload/usr/lib64/$name" ]; then \
+            cp -L "$lib" "/payload/usr/lib64/$name"; \
+        fi; \
+    done < /tmp/runtime-libs.txt; \
+    cp -a /usr/lib64/python3.12 /payload/usr/lib64/; \
+    if [ -d /usr/lib/python3.12 ]; then cp -a /usr/lib/python3.12 /payload/usr/lib/; fi; \
+    cp -a /usr/bin/python3.12 /usr/bin/proxychains4 /payload/usr/bin/; \
+    cp -a /usr/lib64/libpython3.12.so* /usr/lib64/libproxychains4.so /payload/usr/lib64/; \
+    cp -a /usr/local/bin/uv /payload/usr/local/bin/; \
+    cp -a /etc/pki/tls/openssl.cnf /payload/etc/pki/tls/openssl.cnf 2>/dev/null || true; \
+    cp -a /etc/pki/ca-trust/extracted /payload/etc/pki/ca-trust/extracted; \
+    cp -a /etc/pki/tls/cert.pem /payload/etc/pki/tls/cert.pem; \
+    cp -L /etc/pki/tls/certs/ca-bundle.crt /payload/etc/pki/tls/certs/ca-bundle.crt; \
+    rm -rf /tmp/sandbox-libs /tmp/runtime-libs.txt
+
+# Final image: the downstream OpenShell sandbox runtime image.
+FROM ${BASE_IMAGE}
+
+USER 0
+
+COPY --from=builder /payload/ /
+COPY --from=builder /sandbox /sandbox
+
+ENV HOME=/sandbox
+ENV PATH="/sandbox/.local/bin:/usr/local/bin:/usr/bin:/bin"
+ENV PYTHONPATH="/sandbox/.local/lib/python3.12/site-packages:/sandbox/.local/lib64/python3.12/site-packages"
 
 # Default user (OpenShell will override this)
 USER 1001

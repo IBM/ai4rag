@@ -17,9 +17,12 @@ and answer using the evidence found.
 
 - An OpenShift cluster with `oc` logged in and permission to create the required
   resources.
-- An OpenShell gateway installed on the cluster and registered in the `openshell`
+- An OpenShell gateway installed on the cluster and registered in the OpenShell
   CLI as gateway `openshift` (once per cluster).
-- The `openshell` CLI installed locally.
+- `podman` installed locally. The Makefile runs the OpenShell CLI from the RHOAI
+  image in a container and reads the gateway registration from
+  `~/.config/openshell` (`OPENSHELL_CLI_STATE`), so no local OpenShell CLI
+  installation is required.
 - `uv` installed locally to update the dependency lockfile.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together
   with credentials. The chat model must support tool calling so the agent can
