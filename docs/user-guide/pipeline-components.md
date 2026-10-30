@@ -87,6 +87,14 @@ The MaaS client (`create_maas_client()`) honors the same pattern via `MAAS_CA_BU
 os.environ.setdefault("MAAS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
 ```
 
+When no explicit CA is set, `create_maas_client()` also accepts a plain
+`ca.crt` under `SSL_CERT_DIR` (DSP task pods) and adds it to public trust.
+Missing mounts leave defaults unchanged; invalid bundles raise.
+Existing hashed certificate directories remain trusted alongside the plain bundle.
+When per-client CA trust is configured, agent chat requests reuse the MaaS client
+for synchronous calls and retain the same CA configuration for asynchronous calls.
+Without per-client CA settings, agent client construction remains unchanged.
+
 ## Data Components
 
 ### Document Discovery

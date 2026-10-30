@@ -32,6 +32,7 @@ source = { editable = "." }
 dependencies = [
     { name = "asyncpg" },
     { name = "boto3" },
+    { name = "certifi" },
     { name = "docling-slim", extra = ["feat-chunking"] },
     { name = "langchain" },
     { name = "langchain-community" },
@@ -117,6 +118,7 @@ requires-dist = [
     { name = "black", marker = "extra == 'code-check'" },
     { name = "black", marker = "extra == 'docs'" },
     { name = "boto3", specifier = ">=1.28" },
+    { name = "certifi", specifier = ">=2026.7.22,<2027" },
     { name = "docling-slim", extras = ["feat-chunking"], specifier = "~=2.121.0" },
     { name = "docling-slim", extras = ["format-audio", "format-opendocument", "standard"], marker = "extra == 'text-extraction'", specifier = "~=2.121.0" },
     { name = "dotenv", marker = "extra == 'dev'" },

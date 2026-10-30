@@ -5,9 +5,11 @@
 import logging
 import os
 import ssl
+from pathlib import Path
 
+import certifi
 import httpx
-from openai import APIConnectionError, OpenAI
+from openai import APIConnectionError, DefaultHttpxClient, OpenAI
 
 from ai4rag import handler
 from ai4rag.utils.network import ensure_safe_url
@@ -29,6 +31,28 @@ def is_ssl_error(exc: BaseException) -> bool:
     return False
 
 
+def _get_maas_tls_verify(ca_bundle: str | None) -> ssl.SSLContext | str | None:
+    """Return explicit CA settings, else certifi plus ``SSL_CERT_DIR``/``ca.crt`` if mounted."""
+    explicit_bundle = ca_bundle or os.environ.get("MAAS_CA_BUNDLE")
+    if explicit_bundle:
+        return explicit_bundle
+    if os.environ.get("SSL_CERT_FILE"):
+        return None
+
+    directories = [Path(value) for value in os.environ.get("SSL_CERT_DIR", "").split(os.pathsep) if value]
+    bundles = [directory / "ca.crt" for directory in directories if (directory / "ca.crt").is_file()]
+    if not bundles:
+        return None
+
+    context = ssl.create_default_context(cafile=certifi.where())
+    # Keep hashed-directory trust too: loading plain PEMs must only add roots.
+    for directory in directories:
+        context.load_verify_locations(capath=str(directory))
+    for bundle in bundles:
+        context.load_verify_locations(cafile=str(bundle))
+    return context
+
+
 def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None) -> OpenAI:
     """Create the MaaS client with certificate verification always enforced.
 
@@ -40,6 +64,8 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     never falls back to unverified TLS: if the endpoint presents a certificate
     signed by a private or self-signed CA, pass *ca_bundle* (or set the
     ``MAAS_CA_BUNDLE`` environment variable) with that CA's PEM bundle path.
+    If neither is set and ``SSL_CERT_FILE`` is unset, a mounted
+    ``SSL_CERT_DIR``/``ca.crt`` is added to public trust when present.
 
     Parameters
     ----------
@@ -51,7 +77,8 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     ca_bundle
         Path to a PEM CA bundle used to verify *base_url*'s certificate. Falls
         back to the ``MAAS_CA_BUNDLE`` environment variable; when neither is
-        set, the system's default trusted CA store is used.
+        set, certifi's public roots are used (plus any mounted
+        ``SSL_CERT_DIR``/``ca.crt`` fallback).
 
     Returns
     -------
@@ -70,12 +97,15 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     if not base_url.endswith("/v1"):
         base_url += "/v1"
 
-    effective_ca_bundle = ca_bundle or os.environ.get("MAAS_CA_BUNDLE")
+    verify = _get_maas_tls_verify(ca_bundle)
     client_kwargs: dict = {"base_url": base_url, "api_key": api_key}
-    if effective_ca_bundle:
-        client_kwargs["http_client"] = httpx.Client(verify=effective_ca_bundle)
+    if verify is not None:
+        client_kwargs["http_client"] = DefaultHttpxClient(verify=verify)
 
     client = OpenAI(**client_kwargs)
+    if verify is not None:
+        # The agent reuses this client for sync calls and shares its trust with async calls.
+        setattr(client, "_ai4rag_tls_verify", verify)
     try:
         client.models.list()
     except (ssl.SSLCertVerificationError, httpx.ConnectError, APIConnectionError) as exc:
