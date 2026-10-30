@@ -71,6 +71,7 @@ _openshell-cli := openshell_cli() { \
 	  echo "OpenShell CLI: $$image is not pullable here; using $$fallback_image..." >&2; \
 	  image="$$fallback_image" && podman pull "$$image" >/dev/null 2>&1 || return 1; \
 	fi; \
+	mkdir -p "$(OPENSHELL_CLI_STATE)" && \
 	podman run --rm -i $(OPENSHELL_PODMAN_USERNS) -e XDG_CONFIG_HOME=/cli -e HOME=/cli \
 	  -v "$(OPENSHELL_CLI_STATE):/cli/openshell" -v "$$(pwd):/work:ro" "$$image" "$$@"; \
 }
@@ -84,6 +85,16 @@ refresh-certs: ## Refresh openShell mTLS client certificates from the cluster
 	  oc -n $(OPENSHELL_NAMESPACE) get secret openshell-client-tls -o jsonpath='{.data.tls\.key}' | base64 -d > "$$MTLS_DIR/tls.key" && \
 	  chmod 600 "$$MTLS_DIR/tls.key" && \
 	  echo "    Certificates refreshed."
+	@$(_openshell-cli) && \
+	  gateway_status() { $(OPENSHELL) status 2>/dev/null | grep -q "Connected"; } && \
+	  if ! gateway_status; then \
+	    ROUTE_HOST=$$(oc -n $(OPENSHELL_NAMESPACE) get route openshell-gateway -o jsonpath='{.spec.host}' 2>/dev/null); \
+	    if [ -n "$$ROUTE_HOST" ]; then \
+	      echo "==> Registering gateway '$(OPENSHELL_GATEWAY_NAME)' at https://$$ROUTE_HOST..." && \
+	      $(OPENSHELL_CLI) gateway remove "$(OPENSHELL_GATEWAY_NAME)" >/dev/null 2>&1 || true && \
+	      $(OPENSHELL_CLI) gateway add "https://$$ROUTE_HOST" --local --name "$(OPENSHELL_GATEWAY_NAME)"; \
+	    fi; \
+	  fi
 	@$(_openshell-cli) && \
 	  if ! $(OPENSHELL) status 2>/dev/null | grep -q "Connected"; then \
 	    echo "ERROR: gateway '$(OPENSHELL_GATEWAY_NAME)' is not registered or not reachable over mTLS." >&2; \
@@ -178,6 +189,13 @@ build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	  echo "Next: make deploy-openshell"
 
 create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeout)
+	@$(_openshell-cli) && \
+	  if ! $(OPENSHELL) status 2>/dev/null | grep -q "Connected"; then \
+	    echo "ERROR: OpenShell gateway '$(OPENSHELL_GATEWAY_NAME)' is not available from this machine." >&2; \
+	    echo "       Run 'make refresh-certs' to fetch the mTLS client certificates and register" >&2; \
+	    echo "       the cluster gateway, or ask an administrator to run scripts/setup-openshell-gateway.sh." >&2; \
+	    exit 1; \
+	  fi
 	@$(_openshell-env) && \
 	  echo "==> Granting image-pull to $(OPENSHELL_NAMESPACE) namespace..." && \
 	  oc policy add-role-to-user system:image-puller "system:serviceaccount:$(OPENSHELL_NAMESPACE):openshell-sandbox" -n "$$NS" 2>/dev/null || true

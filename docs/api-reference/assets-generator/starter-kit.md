@@ -37,12 +37,18 @@ pipeline step.
 
 Deployment requires an OpenShift cluster with the Agent Sandbox operator, a logged-in
 `oc` client, `podman`, and `uv`. The generated Makefile runs the OpenShell CLI from the
-RHOAI image in a container, so no local OpenShell CLI installation is needed. It also
-requires an OpenShell gateway that is already installed on the cluster and registered
-in the CLI as gateway `openshift`.
+RHOAI image in a container and keeps the gateway registration and the mTLS client
+certificates in `~/.config/openshell`, so no local OpenShell CLI installation is needed.
+It also requires an OpenShell gateway that is already installed on the cluster.
 Setting up the gateway is a one-time cluster prerequisite and is not part of the
 generated starter kit. MaaS must provide reachable chat and embedding models, and
 agentic templates require a chat model that supports tool calling.
+
+The generated Makefile registers the `openshell-gateway` route as gateway `openshift`
+and stores the mTLS client certificates from the `openshell-client-tls` secret when
+you run `make refresh-certs`. Run it when a command reports `Unknown gateway
+'openshift'` or that the gateway is not registered or reachable, and after the cluster
+gateway is recreated or its certificates are rotated.
 
 Cluster administrators can use the repository's
 [`scripts/setup-openshell-gateway.sh`](https://github.com/IBM/ai4rag/blob/main/scripts/setup-openshell-gateway.sh)
@@ -93,5 +99,8 @@ uv lock --upgrade-package ai4rag
 make build-openshell
 make deploy-openshell
 ```
+
+Run `make refresh-certs` if the gateway registration or the mTLS client certificates
+are missing or stale.
 
 Regenerate older starter kits to obtain the updated Makefile and deployment guidance.
