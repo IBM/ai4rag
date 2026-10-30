@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **MaaS TLS** — fall back to a mounted `SSL_CERT_DIR`/`ca.crt` when no explicit CA is configured; defaults unchanged if the mount is absent
+- **MaaS TLS** — preserve hashed certificate-directory trust when adding plain bundles and retain configured CA trust in synchronous and asynchronous agent chat clients
 
 ## [0.25.3](https://github.com/IBM/ai4rag/releases/tag/v0.25.3)
 

@@ -45,6 +45,8 @@ def _get_maas_tls_verify(ca_bundle: str | None) -> ssl.SSLContext | str | None:
         return None
 
     context = ssl.create_default_context(cafile=certifi.where())
+    for directory in directories:
+        context.load_verify_locations(capath=str(directory))
     for bundle in bundles:
         context.load_verify_locations(cafile=str(bundle))
     return context
@@ -100,6 +102,9 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
         client_kwargs["http_client"] = httpx.Client(verify=verify)
 
     client = OpenAI(**client_kwargs)
+    if verify is not None:
+        # The agent's independent async client must retain the same per-client trust.
+        setattr(client, "_ai4rag_tls_verify", verify)
     try:
         client.models.list()
     except (ssl.SSLCertVerificationError, httpx.ConnectError, APIConnectionError) as exc:
