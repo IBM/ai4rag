@@ -17,12 +17,12 @@ and answer using the evidence found.
 
 - An OpenShift cluster with `oc` logged in and permission to create the required
   resources.
-- An OpenShell gateway installed on the cluster and registered in the OpenShell
-  CLI as gateway `openshift` (once per cluster).
+- An OpenShell gateway installed on the cluster by an administrator (one-time
+  cluster prerequisite, not part of this starter kit).
 - `podman` installed locally. The Makefile runs the OpenShell CLI from the RHOAI
-  image in a container and reads the gateway registration from
-  `~/.config/openshell` (`OPENSHELL_CLI_STATE`), so no local OpenShell CLI
-  installation is required.
+  image in a container and stores the registration and the mTLS client
+  certificates in `~/.config/openshell` (`OPENSHELL_CLI_STATE`), so no local
+  OpenShell CLI installation is required.
 - `uv` installed locally to update the dependency lockfile.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together
   with credentials. The chat model must support tool calling so the agent can
@@ -60,8 +60,26 @@ make build-openshell
 make deploy-openshell
 ```
 
+### Gateway registration and certificates
+
+`make deploy-openshell` needs a working mTLS connection to the cluster gateway.
+If a command reports `Unknown gateway 'openshift'` or that the gateway is not
+registered or reachable, refresh the client certificates and the registration:
+
+```bash
+make refresh-certs
+```
+
+This target pulls the client certificates from the `openshell-client-tls` secret
+and registers the `openshell-gateway` route as gateway `openshift`. Re-run it
+after the cluster gateway is recreated or the certificates are rotated.
+
 `make deploy-openshell` creates and configures the sandbox, starts the agent,
 and exposes it through an OpenShift route.
+
+To remove the sandbox and the agent route, run `make undeploy-openshell`. The
+cluster gateway, the images, and the other cluster prerequisites are left
+untouched.
 
 The generated `agent_config.json` stays in the starter kit and is injected into
 the sandbox during deployment. You can edit values such as `temperature` or
