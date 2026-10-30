@@ -19,6 +19,7 @@ from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
+from ai4rag.utils.clients.maas_client import get_maas_chat_client_kwargs
 
 from ..foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ..foundation_models.openai_model import OpenAIFoundationModel
@@ -216,6 +217,7 @@ class AgenticRAG(BaseRAGTemplate):
             temperature=self.foundation_model.params.temperature,
             max_completion_tokens=self.foundation_model.params.max_completion_tokens,
             use_responses_api=False,
+            **get_maas_chat_client_kwargs(self.foundation_model.client),
         )
         return self.chat_model
 

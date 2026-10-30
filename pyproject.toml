@@ -29,6 +29,7 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
+  "certifi",
   "docling-slim[feat-chunking]~=2.121.0",
   "langchain>=1.4,<2",
   "langchain-openai>=1.6,<2",

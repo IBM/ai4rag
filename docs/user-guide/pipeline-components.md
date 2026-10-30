@@ -87,6 +87,15 @@ The MaaS client (`create_maas_client()`) honors the same pattern via `MAAS_CA_BU
 os.environ.setdefault("MAAS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
 ```
 
+In DSP task pods, ai4rag also recognizes a `ca.crt` bundle inside directories
+listed in the existing `SSL_CERT_DIR` environment variable. When no explicit
+`ca_bundle`, `MAAS_CA_BUNDLE`, or `SSL_CERT_FILE` is configured, it adds these
+certificates to certifi's public roots and the configured OpenSSL certificate
+directories. No fixed mount directory or additional Secret key is required.
+If the bundle is absent, existing HTTPX defaults remain in effect. An invalid
+or unreadable mounted bundle raises an error; verification is never disabled.
+The agent's synchronous and asynchronous clients retain the selected trust.
+
 ## Data Components
 
 ### Document Discovery

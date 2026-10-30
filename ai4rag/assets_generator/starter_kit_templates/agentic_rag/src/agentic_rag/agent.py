@@ -6,12 +6,11 @@
 from os import getenv
 from urllib.parse import urlsplit
 
-from openai import OpenAI
-
 from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.rag.template.registry import get_template_spec
+from ai4rag.utils.clients import build_maas_client
 
 from .config import AgentConfig
 from .tools import initialize_retriever
@@ -65,7 +64,7 @@ def create_rag(
     if not is_local and not api_key:
         raise ValueError("MAAS_API_KEY is required for non-local environments.")
 
-    client = OpenAI(api_key=api_key or "not-needed-for-local-development", base_url=maas_base_url)
+    client = build_maas_client(api_key=api_key or "not-needed-for-local-development", base_url=maas_base_url)
     foundation_model = OpenAIFoundationModel(
         client=client,
         model_id=model_id,

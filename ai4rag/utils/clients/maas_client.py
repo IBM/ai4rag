@@ -3,13 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import logging
-import os
 import ssl
 
 import httpx
 from openai import APIConnectionError, OpenAI
 
 from ai4rag import handler
+from ai4rag.utils.clients.maas_tls import get_maas_tls_verify
 from ai4rag.utils.network import ensure_safe_url
 
 _logger = logging.getLogger("maas-client")
@@ -29,6 +29,44 @@ def is_ssl_error(exc: BaseException) -> bool:
     return False
 
 
+def build_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None) -> OpenAI:
+    """Construct a MaaS client with the shared URL and certificate trust policy.
+
+    Unlike ``create_maas_client``, this does not make a model-discovery request.
+    Generated inference applications use it to retain their lazy startup behavior.
+
+    Parameters
+    ----------
+    base_url
+        OpenAI-compatible MaaS endpoint, normalized to end in ``/v1``.
+    api_key
+        API key for authentication.
+    ca_bundle
+        Explicit PEM bundle path; see ``get_maas_tls_verify`` for precedence.
+
+    Returns
+    -------
+    OpenAI
+        A configured client without a connection probe.
+    """
+    ensure_safe_url(base_url, context="MaaS base_url")
+
+    base_url = base_url.rstrip("/")
+    if not base_url.endswith("/v1"):
+        base_url += "/v1"
+
+    verify = get_maas_tls_verify(ca_bundle)
+    client_kwargs: dict = {"base_url": base_url, "api_key": api_key}
+    if verify is not None:
+        client_kwargs["http_client"] = httpx.Client(verify=verify)
+
+    client = OpenAI(**client_kwargs)
+    if verify is not None:
+        # Retain per-client trust for the independently constructed async agent client.
+        setattr(client, "_ai4rag_tls_verify", verify)
+    return client
+
+
 def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None) -> OpenAI:
     """Create the MaaS client with certificate verification always enforced.
 
@@ -40,6 +78,8 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     never falls back to unverified TLS: if the endpoint presents a certificate
     signed by a private or self-signed CA, pass *ca_bundle* (or set the
     ``MAAS_CA_BUNDLE`` environment variable) with that CA's PEM bundle path.
+    Deployment-mounted ``ca.crt`` bundles in ``SSL_CERT_DIR`` supplement public
+    trust when no explicit bundle or ``SSL_CERT_FILE`` is configured.
 
     Parameters
     ----------
@@ -51,7 +91,8 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     ca_bundle
         Path to a PEM CA bundle used to verify *base_url*'s certificate. Falls
         back to the ``MAAS_CA_BUNDLE`` environment variable; when neither is
-        set, the system's default trusted CA store is used.
+        set, HTTPX's default trust is used, supplemented by any ``ca.crt``
+        bundles mounted in ``SSL_CERT_DIR`` unless ``SSL_CERT_FILE`` is set.
 
     Returns
     -------
@@ -64,18 +105,7 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
         If *base_url* uses plaintext ``http://`` against a non-local,
         non-cluster host.
     """
-    ensure_safe_url(base_url, context="MaaS base_url")
-
-    base_url = base_url.rstrip("/")
-    if not base_url.endswith("/v1"):
-        base_url += "/v1"
-
-    effective_ca_bundle = ca_bundle or os.environ.get("MAAS_CA_BUNDLE")
-    client_kwargs: dict = {"base_url": base_url, "api_key": api_key}
-    if effective_ca_bundle:
-        client_kwargs["http_client"] = httpx.Client(verify=effective_ca_bundle)
-
-    client = OpenAI(**client_kwargs)
+    client = build_maas_client(base_url, api_key, ca_bundle)
     try:
         client.models.list()
     except (ssl.SSLCertVerificationError, httpx.ConnectError, APIConnectionError) as exc:
@@ -88,3 +118,24 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
             )
         raise
     return client
+
+
+def get_maas_chat_client_kwargs(client: OpenAI) -> dict:
+    """Reuse the MaaS client and retain its trust for asynchronous LangChain calls.
+
+    Parameters
+    ----------
+    client
+        OpenAI client used by the ai4rag foundation model.
+
+    Returns
+    -------
+    dict
+        LangChain client arguments preserving synchronous transport configuration
+        and the explicit or augmented CA trust selected by ``create_maas_client``.
+    """
+    kwargs = {"client": client.chat.completions, "root_client": client}
+    verify = vars(client).get("_ai4rag_tls_verify")
+    if verify is not None:
+        kwargs["http_async_client"] = httpx.AsyncClient(verify=verify)
+    return kwargs
