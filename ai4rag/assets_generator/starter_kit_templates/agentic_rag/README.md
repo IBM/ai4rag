@@ -77,6 +77,10 @@ after the cluster gateway is recreated or the certificates are rotated.
 `make deploy-openshell` creates and configures the sandbox, starts the agent,
 and exposes it through an OpenShift route.
 
+To remove the sandbox and the agent route, run `make undeploy-openshell`. The
+cluster gateway, the images, and the other cluster prerequisites are left
+untouched.
+
 The generated `agent_config.json` stays in the starter kit and is injected into
 the sandbox during deployment. You can edit values such as `temperature` or
 `system_message` and rerun `make deploy-openshell` without rebuilding the image.
