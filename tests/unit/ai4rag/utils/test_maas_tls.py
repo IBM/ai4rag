@@ -17,6 +17,7 @@ from unittest.mock import MagicMock
 import certifi
 import httpx
 import pytest
+from openai import OpenAI
 
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
@@ -180,7 +181,11 @@ def test_agent_preserves_sync_and_async_trust(https_maas, mounted_bundle, monkey
         foundation = OpenAIFoundationModel(client=client, model_id="test-model")
         agent = AgenticRAG(foundation_model=foundation, retriever=MagicMock())
         chat_model = agent._chat_model()  # pylint: disable=protected-access
-        assert chat_model.root_client is client
+        if configuration == "ssl_file":
+            # Global trust already reaches LangChain; keep its original client construction.
+            assert chat_model.root_client is not client
+        else:
+            assert chat_model.root_client is client
         assert chat_model.invoke("test").content == "trusted"
         if configuration != "ssl_file":
             assert chat_model.http_async_client.timeout.read == 600.0
@@ -192,3 +197,30 @@ def test_agent_preserves_sync_and_async_trust(https_maas, mounted_bundle, monkey
                 await chat_model.root_async_client.close()
 
         assert asyncio.run(invoke()).content == "trusted"
+        if configuration == "ssl_file":
+            chat_model.root_client.close()
+
+
+@pytest.mark.parametrize("directory", ["unset", "empty", "hashed"])
+def test_agent_without_per_client_ca_keeps_default_clients(tmp_path, monkeypatch, directory):
+    """No plain CA fallback means foundation timeouts/retries must not leak into agent calls."""
+    if directory != "unset":
+        monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path))
+    if directory == "hashed":
+        shutil.copyfile(_FIXTURES / "ca.pem", tmp_path / "07039359.0")
+    assert _get_maas_tls_verify(None) is None
+
+    with OpenAI(api_key="test-key", base_url="https://maas.example.com/v1", timeout=17.0, max_retries=0) as client:
+        foundation = OpenAIFoundationModel(client=client, model_id="test-model")
+        agent = AgenticRAG(foundation_model=foundation, retriever=MagicMock())
+        chat_model = agent._chat_model()  # pylint: disable=protected-access
+        try:
+            assert chat_model.root_client is not client
+            assert chat_model.root_client.timeout is None
+            assert chat_model.root_async_client.timeout is None
+            assert chat_model.root_client.max_retries == 2
+            assert chat_model.root_async_client.max_retries == 2
+            assert chat_model.http_async_client is None
+        finally:
+            chat_model.root_client.close()
+            asyncio.run(chat_model.root_async_client.close())

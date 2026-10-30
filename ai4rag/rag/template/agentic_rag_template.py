@@ -211,6 +211,13 @@ class AgenticRAG(BaseRAGTemplate):
             raise TypeError("A non-OpenAI foundation model requires a LangChain chat_model")
         client = self.foundation_model.client
         verify = vars(client).get("_ai4rag_tls_verify")
+        tls_kwargs: dict[str, Any] = {}
+        if verify is not None:
+            tls_kwargs = {
+                "client": client.chat.completions,
+                "root_client": client,
+                "http_async_client": DefaultAsyncHttpxClient(verify=verify),
+            }
         self.chat_model = ChatOpenAI(
             model=self.foundation_model.model_id,
             api_key=self.foundation_model.client.api_key,
@@ -218,9 +225,7 @@ class AgenticRAG(BaseRAGTemplate):
             temperature=self.foundation_model.params.temperature,
             max_completion_tokens=self.foundation_model.params.max_completion_tokens,
             use_responses_api=False,
-            client=client.chat.completions,
-            root_client=client,
-            http_async_client=DefaultAsyncHttpxClient(verify=verify) if verify is not None else None,
+            **tls_kwargs,
         )
         return self.chat_model
 
