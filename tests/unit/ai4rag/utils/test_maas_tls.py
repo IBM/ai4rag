@@ -149,6 +149,23 @@ def test_private_endpoint_requires_mounted_ca(https_maas, mounted_bundle, monkey
         assert client.chat.completions.create(model="test-model", messages=[]).choices[0].message.content == "trusted"
 
 
+@pytest.mark.parametrize("separate_directories", [False, True])
+def test_plain_bundle_preserves_hashed_directory_trust(https_maas, tmp_path, monkeypatch, separate_directories):
+    """Loading a plain public bundle must retain a distinct root in the hashed CA store."""
+    hashed_directory = tmp_path / "hashed"
+    hashed_directory.mkdir()
+    # OpenSSL subject hash of fixtures/maas_tls/ca.pem; capath roots load lazily on handshake.
+    shutil.copyfile(_FIXTURES / "ca.pem", hashed_directory / "07039359.0")
+    plain_directory = tmp_path / "plain" if separate_directories else hashed_directory
+    plain_directory.mkdir(exist_ok=True)
+    shutil.copyfile(certifi.where(), plain_directory / "ca.crt")
+    directories = [hashed_directory, plain_directory] if separate_directories else [hashed_directory]
+    monkeypatch.setenv("SSL_CERT_DIR", os.pathsep.join(map(str, directories)))
+
+    with create_maas_client(https_maas, "test-key") as client:
+        assert client.chat.completions.create(model="test-model", messages=[]).choices[0].message.content == "trusted"
+
+
 @pytest.mark.parametrize("configuration", ["mounted", "argument", "maas_env", "ssl_file"])
 def test_agent_preserves_sync_and_async_trust(https_maas, mounted_bundle, monkeypatch, configuration):
     """Agent requests retain both inferred and explicitly supplied per-client CA configuration."""

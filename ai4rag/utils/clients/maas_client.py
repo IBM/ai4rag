@@ -45,6 +45,7 @@ def _get_maas_tls_verify(ca_bundle: str | None) -> ssl.SSLContext | str | None:
         return None
 
     context = ssl.create_default_context(cafile=certifi.where())
+    # Keep hashed-directory trust too: loading plain PEMs must only add roots.
     for directory in directories:
         context.load_verify_locations(capath=str(directory))
     for bundle in bundles:
@@ -103,7 +104,7 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
 
     client = OpenAI(**client_kwargs)
     if verify is not None:
-        # The agent's independent async client must retain the same per-client trust.
+        # The agent reuses this client for sync calls and shares its trust with async calls.
         setattr(client, "_ai4rag_tls_verify", verify)
     try:
         client.models.list()
