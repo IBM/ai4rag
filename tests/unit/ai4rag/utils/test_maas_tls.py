@@ -173,6 +173,9 @@ def test_agent_preserves_sync_and_async_trust(https_maas, mounted_bundle, monkey
         chat_model = agent._chat_model()  # pylint: disable=protected-access
         assert chat_model.root_client is client
         assert chat_model.invoke("test").content == "trusted"
+        if configuration != "ssl_file":
+            # Custom trust must keep OpenAI's long read timeout, not httpx's 5s default.
+            assert chat_model.http_async_client.timeout.read == 600.0
 
         async def invoke():
             try:

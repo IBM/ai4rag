@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Callable
 
-import httpx
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.tools import ToolRuntime
@@ -15,7 +14,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from openai import BadRequestError
+from openai import BadRequestError, DefaultAsyncHttpxClient
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
@@ -221,7 +220,7 @@ class AgenticRAG(BaseRAGTemplate):
             use_responses_api=False,
             client=client.chat.completions,
             root_client=client,
-            http_async_client=httpx.AsyncClient(verify=verify) if verify is not None else None,
+            http_async_client=DefaultAsyncHttpxClient(verify=verify) if verify is not None else None,
         )
         return self.chat_model
 
