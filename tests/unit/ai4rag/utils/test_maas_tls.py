@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 import ssl
+import subprocess
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -23,7 +24,37 @@ from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
 from ai4rag.utils.clients.maas_client import _get_maas_tls_verify, create_maas_client
 
-_FIXTURES = Path(__file__).with_name("fixtures") / "maas_tls"
+
+@pytest.fixture(scope="session")
+def tls_material(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Generate a short-lived, test-only certificate and private key for each test run."""
+    directory = tmp_path_factory.mktemp("maas_tls")
+    subprocess.run(
+        [
+            "openssl",
+            "req",
+            "-x509",
+            "-newkey",
+            "rsa:2048",
+            "-nodes",
+            "-sha256",
+            "-days",
+            "2",
+            "-subj",
+            "/CN=ai4rag-test-ca",
+            "-addext",
+            "subjectAltName=IP:127.0.0.1",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-keyout",
+            str(directory / "key.pem"),
+            "-out",
+            str(directory / "ca.pem"),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return directory
 
 
 @pytest.fixture(autouse=True)
@@ -35,10 +66,10 @@ def clean_ca_environment(monkeypatch):
 
 
 @pytest.fixture
-def mounted_bundle(tmp_path, monkeypatch):
+def mounted_bundle(tmp_path, monkeypatch, tls_material):
     """Emulate DSP's plain PEM bundle in an otherwise unhashed directory."""
     bundle = tmp_path / "ca.crt"
-    shutil.copyfile(_FIXTURES / "ca.pem", bundle)
+    shutil.copyfile(tls_material / "ca.pem", bundle)
     monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path))
     return bundle
 
@@ -89,7 +120,7 @@ def test_invalid_mounted_bundle_fails_closed(mounted_bundle):
 
 
 @pytest.fixture
-def https_maas():
+def https_maas(tls_material):
     """Serve an OpenAI-compatible endpoint signed by a test-only private CA."""
 
     class Handler(BaseHTTPRequestHandler):
@@ -134,7 +165,7 @@ def https_maas():
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-    context.load_cert_chain(_FIXTURES / "ca.pem", _FIXTURES / "key.pem")
+    context.load_cert_chain(tls_material / "ca.pem", tls_material / "key.pem")
     server.socket = context.wrap_socket(server.socket, server_side=True)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -169,12 +200,20 @@ def test_private_endpoint_requires_mounted_ca(https_maas, mounted_bundle, monkey
 
 
 @pytest.mark.parametrize("separate_directories", [False, True])
-def test_plain_bundle_preserves_hashed_directory_trust(https_maas, tmp_path, monkeypatch, separate_directories):
+def test_plain_bundle_preserves_hashed_directory_trust(
+    https_maas, tmp_path, monkeypatch, separate_directories, tls_material
+):
     """Loading a plain public bundle must retain a distinct root in the hashed CA store."""
     hashed_directory = tmp_path / "hashed"
     hashed_directory.mkdir()
-    # OpenSSL subject hash of fixtures/maas_tls/ca.pem; capath roots load lazily on handshake.
-    shutil.copyfile(_FIXTURES / "ca.pem", hashed_directory / "07039359.0")
+    # capath roots load lazily on handshake and require an OpenSSL subject-hash filename.
+    subject_hash = subprocess.run(
+        ["openssl", "x509", "-in", str(tls_material / "ca.pem"), "-subject_hash", "-noout"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    shutil.copyfile(tls_material / "ca.pem", hashed_directory / f"{subject_hash}.0")
     plain_directory = tmp_path / "plain" if separate_directories else hashed_directory
     plain_directory.mkdir(exist_ok=True)
     shutil.copyfile(certifi.where(), plain_directory / "ca.crt")
@@ -220,12 +259,12 @@ def test_agent_preserves_sync_and_async_trust(https_maas, mounted_bundle, monkey
 
 
 @pytest.mark.parametrize("directory", ["unset", "empty", "hashed"])
-def test_agent_without_per_client_ca_keeps_default_clients(tmp_path, monkeypatch, directory):
+def test_agent_without_per_client_ca_keeps_default_clients(tmp_path, monkeypatch, directory, tls_material):
     """No plain CA fallback means foundation timeouts/retries must not leak into agent calls."""
     if directory != "unset":
         monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path))
     if directory == "hashed":
-        shutil.copyfile(_FIXTURES / "ca.pem", tmp_path / "07039359.0")
+        shutil.copyfile(tls_material / "ca.pem", tmp_path / "07039359.0")
     assert _get_maas_tls_verify(None) is None
 
     with OpenAI(api_key="test-key", base_url="https://maas.example.com/v1", timeout=17.0, max_retries=0) as client:
