@@ -77,7 +77,7 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     ca_bundle
         Path to a PEM CA bundle used to verify *base_url*'s certificate. Falls
         back to the ``MAAS_CA_BUNDLE`` environment variable; when neither is
-        set, the system's default trusted CA store is used (plus any mounted
+        set, certifi's public roots are used (plus any mounted
         ``SSL_CERT_DIR``/``ca.crt`` fallback).
 
     Returns
