@@ -36,7 +36,7 @@ require a collection that has already been indexed; document indexing is a separ
 pipeline step.
 
 Deployment requires an OpenShift cluster with the Agent Sandbox operator, a logged-in
-`oc` client, `podman`, and `uv`. The generated Makefile runs the OpenShell CLI from the
+`oc` client, `podman`, `uv`, `python3`, and `curl`. The generated Makefile runs the OpenShell CLI from the
 RHOAI image in a container and keeps the gateway registration and the mTLS client
 certificates in `~/.config/openshell`, so no local OpenShell CLI installation is needed.
 It also requires an OpenShell gateway that is already installed on the cluster.
@@ -59,6 +59,26 @@ Helm, `curl`, `jq`, and `podman` installed and the required cluster permissions:
 bash scripts/setup-openshell-gateway.sh
 ```
 
+The script installs the downstream Red Hat OpenShell 3.6 gateway with mTLS
+authentication. It reads gateway, sandbox runtime, supervisor, and CLI image
+references from the installed RHOAI ClusterServiceVersion (CSV), preserving image
+digests. The Helm chart is pinned by `OPENSHELL_CHART_REPO` and
+`OPENSHELL_CHART_REF`; these replace the former `OPENSHELL_VERSION` setting.
+Run `bash scripts/setup-openshell-gateway.sh --help` for all setup overrides.
+
+!!! warning "Migrating an upstream 0.0.99 gateway"
+    The downstream 3.6 gateway cannot read the upstream 0.0.99 gateway database.
+    A cluster administrator must reset that database during migration with
+    `bash scripts/setup-openshell-gateway.sh --reset` (or `OPENSHELL_RESET=true`).
+    This deletes gateway records for sandboxes, policies, and stored credentials;
+    workspace PVCs are preserved. Recreate the required sandbox deployments afterward.
+
+Gateway setup automatically mirrors sandbox runtime and supervisor images into the
+cluster registry when the `add-imagepullsecrets` Kyverno policy is installed.
+`OPENSHELL_MIRROR_RUNTIME_IMAGES=true` or `false` overrides this detection. Sandbox
+creation also retries the specific Pod-update failure caused by duplicated pull
+secrets, with `SANDBOX_CREATE_ATTEMPTS=3` by default.
+
 The generated Makefile has no `setup-gateway` or `teardown-gateway` targets.
 Manage the shared cluster gateway separately from starter-kit deployment.
 
@@ -80,27 +100,56 @@ text for the agent. Use `MILVUS_CA_CERT` in place of the obsolete `MILVUS_SERVER
 For Neo4j, use a verified TLS URI such as `neo4j+s://host:7687`; egress setup reads
 the host and port from that URI, defaulting to port `7687` when it is omitted.
 
-For pgvector and Neo4j, the generated OpenShell image includes `proxychains4` and an
-entrypoint that tunnels native TCP connections through OpenShell's HTTP CONNECT proxy.
-When either `PGVECTOR_HOST` or `NEO4J_URI` is set, startup requires a proxy supplied through `grpc_proxy`,
-`GRPC_PROXY`, `https_proxy`, `HTTPS_PROXY`, `http_proxy`, or `HTTP_PROXY` (first
-non-empty value wins). The proxy must use HTTP, have no authentication, and resolve
-to an IPv4 address. If both database variables are unset, the entrypoint launches
-the agent directly.
+The generated OpenShell image includes Python 3.12 and `proxychains4`. The Makefile
+sets `OPENSHELL_GRPC_PROXY_PORT=18080` when starting the agent, enabling a local
+IPv4 HTTP CONNECT proxy for Milvus gRPC and native pgvector/Neo4j TCP traffic
+under OpenShell's egress policies. For Kubernetes service-account authentication,
+deployment uses the API endpoint reported by `oc whoami --show-server` and selects
+CA material from the cluster trust bundles.
 
-For production deployments, the generated README recommends
-`registry.redhat.io/rhoai/odh-openshell-sandbox-rhel9` as the `BASE_IMAGE` in
-`Containerfile.openshell`, with a tag or digest appropriate for your environment.
+If the entrypoint is used without `OPENSHELL_GRPC_PROXY_PORT`, setting
+`PGVECTOR_HOST` or `NEO4J_URI` selects the direct OpenShell proxy mode. That mode
+reads `grpc_proxy`, `GRPC_PROXY`, `https_proxy`, `HTTPS_PROXY`, `http_proxy`, or
+`HTTP_PROXY` (first non-empty value wins); the proxy must use HTTP, have no
+authentication, and resolve to IPv4. With neither a local-proxy setting nor a
+native database host, the entrypoint launches the agent directly.
+
+`make build-openshell` selects the Red Hat sandbox base image from the latest
+succeeded RHOAI CSV and assembles its Python runtime using UBI Python 3.12.
+Set `OPENSHELL_BASE_IMAGE` to override the build's base image; editing the
+Containerfile's default `BASE_IMAGE` alone does not override the Makefile.
+The CLI can fall back to a matching image under `quay.io/rhoai`, and failed
+`registry.redhat.io` sandbox-image pulls are retried through `quay.io`.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `RHOAI_CSV_NAMESPACE` | `redhat-ods-operator` | Namespace queried for the installed RHOAI CSV |
+| `OPENSHELL_CLI_IMAGE` | RHOAI CSV CLI image | Override the containerized CLI image |
+| `OPENSHELL_BASE_IMAGE` | RHOAI CSV sandbox image | Override the sandbox build's base image |
+| `OPENSHELL_FALLBACK_REGISTRY` | `quay.io/rhoai` | Registry prefix used for CLI image fallback |
+| `OPENSHELL_NAMESPACE` | `openshell` | Namespace of the gateway, certificates, and agent route |
+| `OPENSHELL_GATEWAY_NAME` | `openshift` | Gateway registration selected by the CLI |
+| `OPENSHELL_CLI_STATE` | `~/.config/openshell` | Host directory holding gateway registration and mTLS credentials |
+| `OPENSHELL_PODMAN_USERNS` | `--userns=keep-id` | User-namespace flags for the CLI container |
+
+Export environment settings before running `make`. Make variables such as
+`OPENSHELL_GATEWAY_NAME` and `OPENSHELL_CLI_STATE` can also be passed on its command
+line. To use a compatible locally installed CLI, pass `OPENSHELL_CLI=openshell`.
 
 Run these commands from the extracted starter-kit directory:
 
 ```bash
 uv lock --upgrade-package ai4rag
 make build-openshell
+make refresh-certs
 make deploy-openshell
 ```
 
 Run `make refresh-certs` if the gateway registration or the mTLS client certificates
 are missing or stale.
+
+Sandbox creation checks gateway connectivity before replacing an existing sandbox.
+Run `make undeploy-openshell` to remove the sandbox and agent route; shared gateway
+resources and built images remain available.
 
 Regenerate older starter kits to obtain the updated Makefile and deployment guidance.

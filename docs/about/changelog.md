@@ -7,12 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## Unreleased
+## [0.25.4](https://github.com/IBM/ai4rag/releases/tag/v0.25.4)
+
+### Changed
+
+- **Assets generator** — generated starter kits run the RHOAI OpenShell CLI through Podman and build a Python 3.12 runtime on the Red Hat sandbox base; CLI and sandbox image selection follows the installed RHOAI CSV, with registry fallbacks
+- **OpenShell gateway** — setup provisions the downstream Red Hat OpenShell 3.6 gateway with mTLS authentication and RHOAI image references; an explicit `--reset` option supports migration from the incompatible upstream 0.0.99 gateway database
+- **Dependencies** — added an explicit `certifi>=2026.7.22,<2027` dependency for public CA roots used alongside mounted MaaS certificates
 
 ### Fixed
 
-- **MaaS TLS** — fall back to a mounted `SSL_CERT_DIR`/`ca.crt` when no explicit CA is configured; defaults unchanged if the mount is absent
+- **Text extraction** — local Whisper ASR uses native timestamp-aware long-form generation instead of fixed 30-second pipeline windows; multilingual models explicitly transcribe the source language while retaining automatic detection unless the model config specifies a language
+- **MaaS TLS** — add mounted `SSL_CERT_DIR`/`ca.crt` bundles to public trust when `ca_bundle`, `MAAS_CA_BUNDLE`, and `SSL_CERT_FILE` are unset; defaults remain unchanged when the mount is absent
 - **MaaS TLS** — preserve hashed certificate-directory trust when adding plain bundles and retain configured CA trust in synchronous and asynchronous agent chat clients
+- **Assets generator** — OpenShell starter kits route Milvus gRPC through a local CONNECT proxy, retain native database tunneling, and use the cluster API endpoint with a CA bundle checked against that endpoint for service-account authentication
+- **Assets generator** — OpenShell deployment respects the gateway namespace, handles Kyverno pull-secret conflicts with runtime-image mirroring and sandbox retries, and improves build completion checks and agent startup recovery
+- **Assets generator** — `make refresh-certs` registers the cluster gateway and refreshes mTLS credentials; sandbox creation checks gateway connectivity before replacing an existing sandbox and reports recovery instructions when unavailable
+
+---
 
 ## [0.25.3](https://github.com/IBM/ai4rag/releases/tag/v0.25.3)
 
