@@ -43,6 +43,10 @@ No extra step is needed to use a remote Milvus server, embedded Milvus Lite, Pos
 compatibility. Generated knowledge-graph indexing notebooks call `nest_asyncio.apply()`
 before graph extraction.
 
+`certifi>=2026.7.22,<2027` is installed as a core dependency to supply public CA
+roots alongside deployment-mounted MaaS certificates. Include it in offline package
+mirrors when upgrading.
+
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
     Scanned PDFs/images (via RapidOCR) and audio transcription (via a local Hugging Face Whisper model)
@@ -222,6 +226,13 @@ Store your MaaS credentials securely in a `.env` file:
 MAAS_BASE_URL="<maas_endpoint_url>"
 MAAS_API_KEY="<maas_api_key>"
 ```
+
+!!! note "Private CA certificates for MaaS"
+    Pass a PEM bundle path as `ca_bundle=` to `create_maas_client()`, or set
+    `MAAS_CA_BUNDLE`. When both are unset and `SSL_CERT_FILE` is also unset, the
+    factory adds a mounted `ca.crt` under `SSL_CERT_DIR` to certifi's public trust.
+    See [Private CA certificates on OpenShift AI](../user-guide/pipeline-components.md#private-ca-certificates-on-openshift-ai)
+    for precedence and platform configuration.
 
 !!! warning "Security"
     **Never commit your `.env` file to version control.** Add it to `.gitignore`.
