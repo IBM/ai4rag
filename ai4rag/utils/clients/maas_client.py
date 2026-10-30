@@ -9,7 +9,7 @@ from pathlib import Path
 
 import certifi
 import httpx
-from openai import APIConnectionError, OpenAI
+from openai import APIConnectionError, DefaultHttpxClient, OpenAI
 
 from ai4rag import handler
 from ai4rag.utils.network import ensure_safe_url
@@ -100,7 +100,7 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     verify = _get_maas_tls_verify(ca_bundle)
     client_kwargs: dict = {"base_url": base_url, "api_key": api_key}
     if verify is not None:
-        client_kwargs["http_client"] = httpx.Client(verify=verify)
+        client_kwargs["http_client"] = DefaultHttpxClient(verify=verify)
 
     client = OpenAI(**client_kwargs)
     if verify is not None:

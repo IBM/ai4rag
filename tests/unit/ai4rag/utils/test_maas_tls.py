@@ -96,7 +96,13 @@ def https_maas():
         """Return local model listings and chat completions without external services."""
 
         def do_GET(self):  # pylint: disable=invalid-name
-            """List the endpoint's models."""
+            """Redirect model listings to the canonical trailing-slash URL."""
+            if self.path == "/v1/models":
+                self.send_response(307)
+                self.send_header("Location", "/v1/models/")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
             self.reply({"object": "list", "data": []})
 
         def do_POST(self):  # pylint: disable=invalid-name
@@ -138,6 +144,18 @@ def https_maas():
         server.shutdown()
         server.server_close()
         thread.join(timeout=5)
+
+
+@pytest.mark.parametrize("configuration", ["mounted", "argument", "maas_env"])
+def test_private_endpoint_follows_redirects_with_custom_ca(https_maas, mounted_bundle, monkeypatch, configuration):
+    """Custom trust preserves SDK redirect handling during the initial model listing."""
+    if configuration != "mounted":
+        monkeypatch.delenv("SSL_CERT_DIR")
+    if configuration == "maas_env":
+        monkeypatch.setenv("MAAS_CA_BUNDLE", str(mounted_bundle))
+    ca_bundle = str(mounted_bundle) if configuration == "argument" else None
+    with create_maas_client(https_maas, "test-key", ca_bundle=ca_bundle) as client:
+        assert client.models.list().data == []
 
 
 def test_private_endpoint_requires_mounted_ca(https_maas, mounted_bundle, monkeypatch):

@@ -192,10 +192,10 @@ class TestCreateMaasClient:
         assert "MAAS_CA_BUNDLE" in mock_logger.error.call_args[0][0]
 
     def test_uses_explicit_ca_bundle(self, mocker):
-        """An explicit ca_bundle is used to build the httpx.Client that verifies the connection."""
+        """An explicit ca_bundle configures trust while preserving SDK HTTP defaults."""
         mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
         mock_openai_cls.return_value = mocker.MagicMock()
-        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
+        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.DefaultHttpxClient")
 
         from ai4rag.utils.clients.maas_client import create_maas_client
 
@@ -209,7 +209,7 @@ class TestCreateMaasClient:
         monkeypatch.setenv("MAAS_CA_BUNDLE", "/etc/env-ca.pem")
         mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
         mock_openai_cls.return_value = mocker.MagicMock()
-        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
+        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.DefaultHttpxClient")
 
         from ai4rag.utils.clients.maas_client import create_maas_client
 
@@ -222,7 +222,7 @@ class TestCreateMaasClient:
         monkeypatch.setenv("MAAS_CA_BUNDLE", "/etc/env-ca.pem")
         mock_openai_cls = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
         mock_openai_cls.return_value = mocker.MagicMock()
-        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.httpx.Client")
+        mock_httpx_client = mocker.patch("ai4rag.utils.clients.maas_client.DefaultHttpxClient")
 
         from ai4rag.utils.clients.maas_client import create_maas_client
 
