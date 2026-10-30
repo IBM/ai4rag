@@ -48,7 +48,7 @@ def test_create_rag_reuses_one_maas_client(agent_module, mocker):
     client = mocker.sentinel.client
     rag = mocker.sentinel.rag
     retriever = mocker.sentinel.retriever
-    openai = mocker.patch.object(agent_module, "build_maas_client", return_value=client)
+    openai = mocker.patch.object(agent_module, "create_maas_client", return_value=client)
     foundation_model = mocker.patch.object(agent_module, "OpenAIFoundationModel")
     initialize_retriever = mocker.patch.object(agent_module, "initialize_retriever", return_value=retriever)
     rag_class = mocker.Mock(return_value=rag)
@@ -57,7 +57,7 @@ def test_create_rag_reuses_one_maas_client(agent_module, mocker):
     result = agent_module.create_rag(base_url="https://maas.example/v1/", api_key="secret")
 
     assert result is rag
-    openai.assert_called_once_with(api_key="secret", base_url="https://maas.example/v1")
+    openai.assert_called_once_with(api_key="secret", base_url="https://maas.example/v1", validate_connection=False)
     assert foundation_model.call_args.kwargs["client"] is client
     assert initialize_retriever.call_args.kwargs["client"] is client
     assert initialize_retriever.call_args.kwargs["config"].model_id == "test-model"
@@ -83,7 +83,7 @@ def test_rrf_ranker_k_reaches_retriever(agent_module, mocker):
 
 def test_create_rag_rejects_remote_http(agent_module, mocker):
     """Credentials must not be sent to a remote plaintext MaaS endpoint."""
-    openai = mocker.patch.object(agent_module, "build_maas_client")
+    openai = mocker.patch.object(agent_module, "create_maas_client")
 
     with pytest.raises(ValueError, match="HTTPS"):
         agent_module.create_rag(base_url="http://maas.example", api_key="secret")
@@ -93,7 +93,7 @@ def test_create_rag_rejects_remote_http(agent_module, mocker):
 
 def test_create_rag_rejects_url_without_host(agent_module, mocker):
     """A URL scheme without a host cannot identify a MaaS endpoint."""
-    openai = mocker.patch.object(agent_module, "build_maas_client")
+    openai = mocker.patch.object(agent_module, "create_maas_client")
 
     with pytest.raises(ValueError, match="host"):
         agent_module.create_rag(base_url="https://", api_key="secret")
@@ -103,11 +103,13 @@ def test_create_rag_rejects_url_without_host(agent_module, mocker):
 
 def test_create_rag_allows_local_http(agent_module, mocker):
     """Local development can use HTTP without an API key."""
-    openai = mocker.patch.object(agent_module, "build_maas_client", return_value=mocker.sentinel.client)
+    openai = mocker.patch.object(agent_module, "create_maas_client", return_value=mocker.sentinel.client)
     mocker.patch.object(agent_module, "OpenAIFoundationModel")
     mocker.patch.object(agent_module, "initialize_retriever")
     mocker.patch.object(agent_module, "get_template_spec")
 
     agent_module.create_rag(base_url="http://localhost:8000")
 
-    openai.assert_called_once_with(api_key="not-needed-for-local-development", base_url="http://localhost:8000/v1")
+    openai.assert_called_once_with(
+        api_key="not-needed-for-local-development", base_url="http://localhost:8000/v1", validate_connection=False
+    )

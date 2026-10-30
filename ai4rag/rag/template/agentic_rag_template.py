@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any, Callable
 
+import httpx
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.tools import ToolRuntime
@@ -19,7 +20,6 @@ from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
-from ai4rag.utils.clients.maas_client import get_maas_chat_client_kwargs
 
 from ..foundation_models.base_model import BaseFoundationModel, MessageTyped
 from ..foundation_models.openai_model import OpenAIFoundationModel
@@ -210,6 +210,8 @@ class AgenticRAG(BaseRAGTemplate):
             return self.chat_model
         if not isinstance(self.foundation_model, OpenAIFoundationModel):
             raise TypeError("A non-OpenAI foundation model requires a LangChain chat_model")
+        client = self.foundation_model.client
+        verify = vars(client).get("_ai4rag_tls_verify")
         self.chat_model = ChatOpenAI(
             model=self.foundation_model.model_id,
             api_key=self.foundation_model.client.api_key,
@@ -217,7 +219,9 @@ class AgenticRAG(BaseRAGTemplate):
             temperature=self.foundation_model.params.temperature,
             max_completion_tokens=self.foundation_model.params.max_completion_tokens,
             use_responses_api=False,
-            **get_maas_chat_client_kwargs(self.foundation_model.client),
+            client=client.chat.completions,
+            root_client=client,
+            http_async_client=httpx.AsyncClient(verify=verify) if verify is not None else None,
         )
         return self.chat_model
 

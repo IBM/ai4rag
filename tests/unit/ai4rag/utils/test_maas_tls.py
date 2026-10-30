@@ -20,8 +20,7 @@ import pytest
 
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
-from ai4rag.utils.clients.maas_client import build_maas_client, create_maas_client
-from ai4rag.utils.clients.maas_tls import get_maas_tls_verify
+from ai4rag.utils.clients.maas_client import _get_maas_tls_verify, create_maas_client
 
 _FIXTURES = Path(__file__).with_name("fixtures") / "maas_tls"
 
@@ -45,17 +44,17 @@ def mounted_bundle(tmp_path, monkeypatch):
 
 def test_no_mount_keeps_httpx_defaults(monkeypatch, tmp_path):
     """Neither an absent directory nor a directory without ca.crt overrides trust."""
-    assert get_maas_tls_verify() is None
+    assert _get_maas_tls_verify(None) is None
     monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path / "absent"))
-    assert get_maas_tls_verify() is None
+    assert _get_maas_tls_verify(None) is None
     monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path))
-    assert get_maas_tls_verify() is None
+    assert _get_maas_tls_verify(None) is None
 
 
 def test_mounted_ca_supplements_public_roots(mounted_bundle):
     """The private root is added without dropping any default public roots."""
     default_roots = set(ssl.create_default_context(cafile=certifi.where()).get_ca_certs(binary_form=True))
-    context = get_maas_tls_verify()
+    context = _get_maas_tls_verify(None)
     mounted_root = ssl.PEM_cert_to_DER_cert(mounted_bundle.read_text())
     assert set(context.get_ca_certs(binary_form=True)) == default_roots | {mounted_root}
     assert context.check_hostname is True
@@ -66,30 +65,32 @@ def test_mounted_ca_supplements_public_roots(mounted_bundle):
 def test_multiple_directories_find_the_mounted_bundle(mounted_bundle, monkeypatch, tmp_path):
     """Directory lists preserve discovery even when the first entry has no bundle."""
     monkeypatch.setenv("SSL_CERT_DIR", os.pathsep.join((str(tmp_path / "missing"), str(mounted_bundle.parent))))
-    assert ssl.PEM_cert_to_DER_cert(mounted_bundle.read_text()) in get_maas_tls_verify().get_ca_certs(binary_form=True)
+    assert ssl.PEM_cert_to_DER_cert(mounted_bundle.read_text()) in _get_maas_tls_verify(None).get_ca_certs(
+        binary_form=True
+    )
 
 
 def test_explicit_settings_take_precedence(mounted_bundle, monkeypatch):
     """A mounted bundle never replaces explicitly selected trust."""
     mounted_bundle.write_text("invalid mounted certificate")
     monkeypatch.setenv("SSL_CERT_FILE", "/configured/global.pem")
-    assert get_maas_tls_verify() is None
+    assert _get_maas_tls_verify(None) is None
     monkeypatch.setenv("MAAS_CA_BUNDLE", "/configured/maas.pem")
-    assert get_maas_tls_verify() == "/configured/maas.pem"
-    assert get_maas_tls_verify("/explicit.pem") == "/explicit.pem"
+    assert _get_maas_tls_verify(None) == "/configured/maas.pem"
+    assert _get_maas_tls_verify("/explicit.pem") == "/explicit.pem"
 
 
 def test_invalid_mounted_bundle_fails_closed(mounted_bundle):
     """A malformed configured bundle is surfaced rather than ignored or retried insecurely."""
     mounted_bundle.write_text("not a PEM certificate")
     with pytest.raises(ssl.SSLError):
-        get_maas_tls_verify()
+        _get_maas_tls_verify(None)
 
 
-def test_build_client_does_not_probe_models(mocker):
+def test_connection_validation_can_be_disabled(mocker):
     """Generated applications can configure trust without adding a startup request."""
     openai = mocker.patch("ai4rag.utils.clients.maas_client.OpenAI")
-    client = build_maas_client("https://maas.example.com", "test-key")
+    client = create_maas_client("https://maas.example.com", "test-key", validate_connection=False)
     openai.assert_called_once_with(base_url="https://maas.example.com/v1", api_key="test-key")
     client.models.list.assert_not_called()
 
