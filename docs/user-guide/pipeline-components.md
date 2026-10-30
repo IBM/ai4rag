@@ -87,11 +87,9 @@ The MaaS client (`create_maas_client()`) honors the same pattern via `MAAS_CA_BU
 os.environ.setdefault("MAAS_CA_BUNDLE", "/etc/pki/tls/custom-certs/ca-bundle.crt")
 ```
 
-In DSP task pods, when no explicit `ca_bundle`, `MAAS_CA_BUNDLE`, or
-`SSL_CERT_FILE` is configured, `create_maas_client()` also treats a plain
-`ca.crt` under the existing `SSL_CERT_DIR` as a safe fallback and adds it to
-certifi's public roots. If that mount is absent, HTTPX defaults are unchanged.
-An invalid or unreadable mounted bundle raises; verification is never disabled.
+When no explicit CA is set, `create_maas_client()` also accepts a plain
+`ca.crt` under `SSL_CERT_DIR` (DSP task pods) and adds it to public trust.
+Missing mounts leave defaults unchanged; invalid bundles raise.
 
 ## Data Components
 

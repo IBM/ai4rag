@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""DSP-mounted CA fallback for MaaS clients without changing explicit trust settings."""
+"""Tests for the DSP-mounted ``SSL_CERT_DIR``/``ca.crt`` MaaS trust fallback."""
 
 import json
 import os
@@ -23,7 +23,7 @@ _FIXTURES = Path(__file__).with_name("fixtures") / "maas_tls"
 
 @pytest.fixture(autouse=True)
 def clean_ca_environment(monkeypatch):
-    """Keep trust-policy tests independent of the invoking machine."""
+    """Clear CA-related env vars for each test."""
     for key in ("MAAS_CA_BUNDLE", "SSL_CERT_FILE", "SSL_CERT_DIR"):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
@@ -31,7 +31,7 @@ def clean_ca_environment(monkeypatch):
 
 @pytest.fixture
 def mounted_bundle(tmp_path, monkeypatch):
-    """Emulate DSP's plain PEM bundle in an otherwise unhashed directory."""
+    """Install a test ``ca.crt`` and point ``SSL_CERT_DIR`` at it."""
     bundle = tmp_path / "ca.crt"
     shutil.copyfile(_FIXTURES / "ca.pem", bundle)
     monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path))
@@ -39,7 +39,7 @@ def mounted_bundle(tmp_path, monkeypatch):
 
 
 def test_no_mount_keeps_httpx_defaults(monkeypatch, tmp_path):
-    """Neither an absent directory nor a directory without ca.crt overrides trust."""
+    """Absent or empty ``SSL_CERT_DIR`` leaves verify unset."""
     assert _get_maas_tls_verify(None) is None
     monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path / "absent"))
     assert _get_maas_tls_verify(None) is None
@@ -48,7 +48,7 @@ def test_no_mount_keeps_httpx_defaults(monkeypatch, tmp_path):
 
 
 def test_mounted_ca_supplements_public_roots(mounted_bundle):
-    """The private root is added without dropping any default public roots."""
+    """Mounted ``ca.crt`` is added while keeping certifi roots and verify-on."""
     default_roots = set(ssl.create_default_context(cafile=certifi.where()).get_ca_certs(binary_form=True))
     context = _get_maas_tls_verify(None)
     mounted_root = ssl.PEM_cert_to_DER_cert(mounted_bundle.read_text())
@@ -59,7 +59,7 @@ def test_mounted_ca_supplements_public_roots(mounted_bundle):
 
 
 def test_multiple_directories_find_the_mounted_bundle(mounted_bundle, monkeypatch, tmp_path):
-    """Directory lists preserve discovery even when the first entry has no bundle."""
+    """``SSL_CERT_DIR`` path lists still discover a later ``ca.crt``."""
     monkeypatch.setenv("SSL_CERT_DIR", os.pathsep.join((str(tmp_path / "missing"), str(mounted_bundle.parent))))
     assert ssl.PEM_cert_to_DER_cert(mounted_bundle.read_text()) in _get_maas_tls_verify(None).get_ca_certs(
         binary_form=True
@@ -67,7 +67,7 @@ def test_multiple_directories_find_the_mounted_bundle(mounted_bundle, monkeypatc
 
 
 def test_explicit_settings_take_precedence(mounted_bundle, monkeypatch):
-    """A mounted bundle never replaces explicitly selected trust."""
+    """Explicit CA settings win over a mounted ``ca.crt``."""
     mounted_bundle.write_text("invalid mounted certificate")
     monkeypatch.setenv("SSL_CERT_FILE", "/configured/global.pem")
     assert _get_maas_tls_verify(None) is None
@@ -77,7 +77,7 @@ def test_explicit_settings_take_precedence(mounted_bundle, monkeypatch):
 
 
 def test_invalid_mounted_bundle_fails_closed(mounted_bundle):
-    """A malformed configured bundle is surfaced rather than ignored or retried insecurely."""
+    """Invalid mounted PEM raises instead of disabling verification."""
     mounted_bundle.write_text("not a PEM certificate")
     with pytest.raises(ssl.SSLError):
         _get_maas_tls_verify(None)
@@ -85,17 +85,13 @@ def test_invalid_mounted_bundle_fails_closed(mounted_bundle):
 
 @pytest.fixture
 def https_maas():
-    """Serve an OpenAI-compatible endpoint signed by a test-only private CA."""
+    """Local HTTPS OpenAI-compatible endpoint signed by the fixture CA."""
 
     class Handler(BaseHTTPRequestHandler):
-        """Return local model listings and chat completions without external services."""
-
         def do_GET(self):  # pylint: disable=invalid-name
-            """List the endpoint's models."""
             self.reply({"object": "list", "data": []})
 
         def do_POST(self):  # pylint: disable=invalid-name
-            """Return a fixed chat completion."""
             self.rfile.read(int(self.headers["Content-Length"]))
             self.reply(
                 {
@@ -110,7 +106,6 @@ def https_maas():
             )
 
         def reply(self, body):
-            """Write one JSON response."""
             payload = json.dumps(body).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -119,7 +114,7 @@ def https_maas():
             self.wfile.write(payload)
 
         def log_message(self, *_args):
-            """Keep test output free of request logs."""
+            return
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -136,7 +131,7 @@ def https_maas():
 
 
 def test_private_endpoint_requires_mounted_ca(https_maas, mounted_bundle, monkeypatch):
-    """A real TLS handshake fails with default trust and succeeds with the mounted root."""
+    """Private MaaS TLS fails without the mount and succeeds with ``ca.crt``."""
     monkeypatch.delenv("SSL_CERT_DIR")
     with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED"):
         httpx.get(https_maas, trust_env=False)

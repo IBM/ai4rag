@@ -32,12 +32,7 @@ def is_ssl_error(exc: BaseException) -> bool:
 
 
 def _get_maas_tls_verify(ca_bundle: str | None) -> ssl.SSLContext | str | None:
-    """Resolve TLS verify settings without changing existing explicit configuration.
-
-    Explicit ``ca_bundle``, ``MAAS_CA_BUNDLE``, and ``SSL_CERT_FILE`` keep their
-    previous behavior. Only when none of those are set, a plain ``ca.crt`` under
-    ``SSL_CERT_DIR`` (DSP's unhashed mount) is added to certifi's public roots.
-    """
+    """Return explicit CA settings, else certifi plus ``SSL_CERT_DIR``/``ca.crt`` if mounted."""
     explicit_bundle = ca_bundle or os.environ.get("MAAS_CA_BUNDLE")
     if explicit_bundle:
         return explicit_bundle
@@ -66,8 +61,8 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     never falls back to unverified TLS: if the endpoint presents a certificate
     signed by a private or self-signed CA, pass *ca_bundle* (or set the
     ``MAAS_CA_BUNDLE`` environment variable) with that CA's PEM bundle path.
-    Otherwise, when no ``SSL_CERT_FILE`` is set, a mounted ``ca.crt`` under
-    ``SSL_CERT_DIR`` is added to public trust as a safe fallback for DSP pods.
+    If neither is set and ``SSL_CERT_FILE`` is unset, a mounted
+    ``SSL_CERT_DIR``/``ca.crt`` is added to public trust when present.
 
     Parameters
     ----------
@@ -79,8 +74,8 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
     ca_bundle
         Path to a PEM CA bundle used to verify *base_url*'s certificate. Falls
         back to the ``MAAS_CA_BUNDLE`` environment variable; when neither is
-        set, default trust is used unless a mounted ``SSL_CERT_DIR``/``ca.crt``
-        fallback applies.
+        set, the system's default trusted CA store is used (plus any mounted
+        ``SSL_CERT_DIR``/``ca.crt`` fallback).
 
     Returns
     -------
