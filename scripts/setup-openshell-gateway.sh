@@ -234,7 +234,7 @@ helm upgrade --install openshell "${CHART_DIR}/deploy/helm/openshell" \
   --set securityContext.allowPrivilegeEscalation=true \
   --set securityContext.capabilities=null \
   --set server.auth.allowUnauthenticatedUsers=false \
-  --set "pkiInitJob.serverDnsNames={*.openshell.${APPS_DOMAIN},openshell.${APPS_DOMAIN},openshell-gateway-openshell.${APPS_DOMAIN}}"
+  --set "pkiInitJob.serverDnsNames={*.${OPENSHELL_NAMESPACE}.${APPS_DOMAIN},${OPENSHELL_NAMESPACE}.${APPS_DOMAIN},openshell-gateway-${OPENSHELL_NAMESPACE}.${APPS_DOMAIN}}"
 
 echo "==> Waiting for gateway to be ready..."
 if ! oc -n "${OPENSHELL_NAMESPACE}" rollout status statefulset/openshell --timeout=180s; then
@@ -263,7 +263,8 @@ echo "==> Creating gateway Route..."
 oc -n "${OPENSHELL_NAMESPACE}" create route passthrough openshell-gateway \
   --service=openshell --port=8080 2>/dev/null || true
 
-GATEWAY_URL="https://openshell-gateway-${OPENSHELL_NAMESPACE}.${APPS_DOMAIN}"
+ROUTE_HOST=$(oc -n "${OPENSHELL_NAMESPACE}" get route openshell-gateway -o jsonpath='{.spec.host}' 2>/dev/null)
+GATEWAY_URL="https://${ROUTE_HOST:-openshell-gateway-${OPENSHELL_NAMESPACE}.${APPS_DOMAIN}}"
 
 echo "==> Verifying gateway connection with mTLS..."
 if podman image exists "${OPENSHELL_CLI_IMAGE}"; then :

@@ -151,19 +151,27 @@ build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	    BUILD_NAME=$$(oc get builds -l build=$(OPENSHELL_IMAGE) --sort-by=.metadata.creationTimestamp -o name | tail -n1) || return 1; \
 	    [ -n "$$BUILD_NAME" ] || return 1; \
 	    [ "$$BUILD_NAME" != "$$BUILD_BEFORE" ] || { echo "ERROR: OpenShift did not create a new build."; return 1; }; \
-	    BUILD_PHASE=$$(oc get "$$BUILD_NAME" -o jsonpath='{.status.phase}') || return 1; \
-	    echo "    Build $$BUILD_NAME finished with phase $$BUILD_PHASE."; \
+	    BUILD_PHASE=""; \
+	    i=0; while [ $$i -lt 120 ]; do \
+	      BUILD_PHASE=$$(oc get "$$BUILD_NAME" -o jsonpath='{.status.phase}' 2>/dev/null); \
+	      case "$$BUILD_PHASE" in Complete|Failed|Cancelled|Error) break;; esac; \
+	      i=$$((i+1)); sleep 5; \
+	    done; \
+	    BUILD_REASON=$$(oc get "$$BUILD_NAME" -o jsonpath='{.status.reason}' 2>/dev/null); \
+	    echo "    Build $$BUILD_NAME finished with phase $${BUILD_PHASE:-Unknown}$${BUILD_REASON:+ ($$BUILD_REASON)}."; \
 	  } && \
 	  set_base_image "$$BASE_IMAGE" && run_build && \
-	  if [ "$$BUILD_PHASE" != "Complete" ]; then \
-	    FALLBACK_BASE_IMAGE="$${BASE_IMAGE/registry.redhat.io/quay.io}"; \
-	    if [ "$$FALLBACK_BASE_IMAGE" = "$$BASE_IMAGE" ]; then \
-	      echo "ERROR: build failed and no registry.redhat.io to quay.io fallback applies."; exit 1; \
-	    fi; \
-	    echo "    Build failed; retrying with $$FALLBACK_BASE_IMAGE"; \
-	    BASE_IMAGE="$$FALLBACK_BASE_IMAGE" && set_base_image "$$BASE_IMAGE" && run_build; \
+	  if [ "$$BUILD_PHASE" = "Failed" ]; then \
+	    case "$$BUILD_REASON" in \
+	      *Pull*) \
+	        FALLBACK_BASE_IMAGE="$${BASE_IMAGE/registry.redhat.io/quay.io}"; \
+	        if [ "$$FALLBACK_BASE_IMAGE" != "$$BASE_IMAGE" ]; then \
+	          echo "    Base image pull failed; retrying with $$FALLBACK_BASE_IMAGE"; \
+	          BASE_IMAGE="$$FALLBACK_BASE_IMAGE" && set_base_image "$$BASE_IMAGE" && run_build; \
+	        fi;; \
+	    esac; \
 	  fi && \
-	  if [ "$$BUILD_PHASE" != "Complete" ]; then echo "ERROR: OpenShift image build did not complete."; exit 1; fi && \
+	  if [ "$$BUILD_PHASE" != "Complete" ]; then echo "ERROR: OpenShift image build did not complete (phase $${BUILD_PHASE:-unknown}$${BUILD_REASON:+, reason $$BUILD_REASON})."; exit 1; fi && \
 	  NS=$$(oc project -q) && \
 	  echo "" && \
 	  echo "Image ready: image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
@@ -296,20 +304,34 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	  echo "==> Generating sandbox reviewer token..." && \
 	  K8S_API_URL=$$(oc whoami --show-server) && \
 	  K8S_REVIEWER_TOKEN=$$(oc create token openshell-sandbox -n $(OPENSHELL_NAMESPACE) --duration=168h) && \
-	  if oc -n openshift-config-managed get configmap trusted-ca-bundle >/dev/null 2>&1; then K8S_CA_SOURCE=trusted-ca-bundle; \
-	  elif oc get configmap kube-root-ca.crt -n "$$NS" >/dev/null 2>&1; then K8S_CA_SOURCE=kube-root-ca.crt; \
-	  else echo "ERROR: Kubernetes API CA certificate not found." >&2; exit 1; fi && \
+	  K8S_CA_DIR=$$(mktemp -d) && \
+	  ca_bundle() { \
+	    case "$$1" in \
+	      trusted-ca-bundle) oc -n openshift-config-managed get configmap trusted-ca-bundle -o jsonpath='{.data.ca-bundle\.crt}' 2>/dev/null;; \
+	      kube-root-ca) oc get configmap kube-root-ca.crt -n "$$NS" -o jsonpath='{.data.ca\.crt}' 2>/dev/null;; \
+	    esac; \
+	  } && \
+	  ca_validates_api() { curl -sS --max-time 10 --cacert "$$1" -o /dev/null "$$K8S_API_URL/healthz" >/dev/null 2>&1; } && \
+	  K8S_CA_SOURCE="" && K8S_CA_FILE="" && \
+	  for source in trusted-ca-bundle kube-root-ca; do \
+	    ca_bundle "$$source" > "$$K8S_CA_DIR/$$source.crt"; \
+	    [ -s "$$K8S_CA_DIR/$$source.crt" ] || continue; \
+	    if ca_validates_api "$$K8S_CA_DIR/$$source.crt"; then K8S_CA_SOURCE=$$source; K8S_CA_FILE="$$K8S_CA_DIR/$$source.crt"; break; fi; \
+	  done; \
+	  if [ -z "$$K8S_CA_FILE" ]; then \
+	    cat "$$K8S_CA_DIR/trusted-ca-bundle.crt" "$$K8S_CA_DIR/kube-root-ca.crt" > "$$K8S_CA_DIR/combined.crt" 2>/dev/null; \
+	    if [ -s "$$K8S_CA_DIR/combined.crt" ]; then \
+	      K8S_CA_SOURCE="combined bundles, none validated $$K8S_API_URL"; K8S_CA_FILE="$$K8S_CA_DIR/combined.crt"; \
+	    else echo "ERROR: Kubernetes API CA certificate not found." >&2; exit 1; fi; \
+	  fi && \
 	  K8S_CA_PATH=/sandbox/k8s-ca.crt && \
 	  ALLOWED_SA_USERNAME="system:serviceaccount:$${NS}:agent-client" && \
 	  echo "==> Stopping any running agent..." && \
 	  $(OPENSHELL) sandbox exec -n "$$SANDBOX" -- /usr/bin/python3.12 -c "import os,signal; from pathlib import Path; pid=Path('/sandbox/agent.pid'); os.kill(int(pid.read_text().strip()),signal.SIGTERM) if pid.is_file() else None" 2>/dev/null || true && \
 	  sleep 5 && \
 	  echo "==> Uploading the cluster API CA ($$K8S_CA_SOURCE)..." && \
-	  if [ "$$K8S_CA_SOURCE" = "trusted-ca-bundle" ]; then \
-	    oc -n openshift-config-managed get configmap trusted-ca-bundle -o jsonpath='{.data.ca-bundle\.crt}'; \
-	  else \
-	    oc get configmap kube-root-ca.crt -n "$$NS" -o jsonpath='{.data.ca\.crt}'; \
-	  fi | $(OPENSHELL) sandbox exec -n "$$SANDBOX" -- bash -c 'cat > /sandbox/k8s-ca.crt' && \
+	  cat "$$K8S_CA_FILE" | $(OPENSHELL) sandbox exec -n "$$SANDBOX" -- bash -c 'cat > /sandbox/k8s-ca.crt' && \
+	  rm -rf "$$K8S_CA_DIR" && \
 	  PGVECTOR_PASSWORD_B64=$$(printf '%s' "$$PGVECTOR_PASSWORD" | base64 | tr -d '\n') && \
 	  NEO4J_URI_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_URI") && \
 	  NEO4J_USERNAME_QUOTED=$$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$$NEO4J_USERNAME") && \
