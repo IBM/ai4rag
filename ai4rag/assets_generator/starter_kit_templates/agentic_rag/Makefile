@@ -45,6 +45,8 @@ OPENSHELL_GATEWAY_NAME ?= openshift
 OPENSHELL_PODMAN_USERNS ?= --userns=keep-id
 OPENSHELL ?= $(OPENSHELL_CLI) -g $(OPENSHELL_GATEWAY_NAME)
 
+# Retries create-sandbox when a Kyverno policy duplicates pull secrets on the
+# driver's post-create Pod update ("pod updates may not change fields").
 SANDBOX_CREATE_ATTEMPTS ?= 3
 
 _openshell-cli := openshell_cli() { \
@@ -61,10 +63,13 @@ _openshell-cli := openshell_cli() { \
 	case "$$fallback_path" in "$$fallback_namespace"/*) fallback_path=$$(printf '%s\n' "$$fallback_path" | cut -d/ -f2-);; esac; \
 	fallback_registry=$$(printf '%s\n' "$$fallback_registry" | sed 's|/*$$||'); \
 	fallback_image="$$fallback_registry/$$fallback_path"; \
-	if ! podman image exists "$$image" && ! podman pull "$$image"; then \
+	if podman image exists "$$image"; then :; \
+	elif [ "$$image" != "$$fallback_image" ] && podman image exists "$$fallback_image"; then \
+	  image="$$fallback_image"; \
+	elif ! podman pull "$$image" >/dev/null 2>&1; then \
 	  if [ "$$image" = "$$fallback_image" ]; then echo "ERROR: unable to pull OpenShell CLI image $$image." >&2; return 1; fi; \
-	  echo "OpenShell CLI image pull failed; retrying $$fallback_image..." >&2; \
-	  image="$$fallback_image" && podman pull "$$image" || return 1; \
+	  echo "OpenShell CLI: $$image is not pullable here; using $$fallback_image..." >&2; \
+	  image="$$fallback_image" && podman pull "$$image" >/dev/null 2>&1 || return 1; \
 	fi; \
 	podman run --rm -i $(OPENSHELL_PODMAN_USERNS) -e XDG_CONFIG_HOME=/cli -e HOME=/cli \
 	  -v "$(OPENSHELL_CLI_STATE):/cli/openshell" -v "$$(pwd):/work:ro" "$$image" "$$@"; \
