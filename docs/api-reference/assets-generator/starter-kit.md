@@ -36,8 +36,10 @@ require a collection that has already been indexed; document indexing is a separ
 pipeline step.
 
 Deployment requires an OpenShift cluster with the Agent Sandbox operator, a logged-in
-`oc` client, the `openshell` CLI, and `uv`. It also requires an OpenShell gateway that
-is already installed on the cluster and registered in the CLI as gateway `openshift`.
+`oc` client, `podman`, and `uv`. The generated Makefile runs the OpenShell CLI from the
+RHOAI image in a container, so no local OpenShell CLI installation is needed. It also
+requires an OpenShell gateway that is already installed on the cluster and registered
+in the CLI as gateway `openshift`.
 Setting up the gateway is a one-time cluster prerequisite and is not part of the
 generated starter kit. MaaS must provide reachable chat and embedding models, and
 agentic templates require a chat model that supports tool calling.
@@ -45,7 +47,7 @@ agentic templates require a chat model that supports tool calling.
 Cluster administrators can use the repository's
 [`scripts/setup-openshell-gateway.sh`](https://github.com/IBM/ai4rag/blob/main/scripts/setup-openshell-gateway.sh)
 for one-time gateway provisioning. Run it from an ai4rag checkout with `oc`,
-Helm, `jq`, and the `openshell` CLI installed and the required cluster permissions:
+Helm, `curl`, `jq`, and `podman` installed and the required cluster permissions:
 
 ```bash
 bash scripts/setup-openshell-gateway.sh
