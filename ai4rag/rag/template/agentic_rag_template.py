@@ -14,7 +14,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from openai import BadRequestError, DefaultAsyncHttpxClient
+from openai import BadRequestError
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
 
@@ -209,8 +209,6 @@ class AgenticRAG(BaseRAGTemplate):
             return self.chat_model
         if not isinstance(self.foundation_model, OpenAIFoundationModel):
             raise TypeError("A non-OpenAI foundation model requires a LangChain chat_model")
-        client = self.foundation_model.client
-        verify = vars(client).get("_ai4rag_tls_verify")
         self.chat_model = ChatOpenAI(
             model=self.foundation_model.model_id,
             api_key=self.foundation_model.client.api_key,
@@ -218,9 +216,6 @@ class AgenticRAG(BaseRAGTemplate):
             temperature=self.foundation_model.params.temperature,
             max_completion_tokens=self.foundation_model.params.max_completion_tokens,
             use_responses_api=False,
-            client=client.chat.completions,
-            root_client=client,
-            http_async_client=DefaultAsyncHttpxClient(verify=verify) if verify is not None else None,
         )
         return self.chat_model
 

@@ -32,10 +32,11 @@ def is_ssl_error(exc: BaseException) -> bool:
 
 
 def _get_maas_tls_verify(ca_bundle: str | None) -> ssl.SSLContext | str | None:
-    """Keep explicit CA settings; otherwise supplement public roots with mounted PEMs.
+    """Resolve TLS verify settings without changing existing explicit configuration.
 
-    DSP's plain ``ca.crt`` files in ``SSL_CERT_DIR`` need explicit loading because
-    OpenSSL expects a hashed directory. Missing bundles retain HTTPX defaults.
+    Explicit ``ca_bundle``, ``MAAS_CA_BUNDLE``, and ``SSL_CERT_FILE`` keep their
+    previous behavior. Only when none of those are set, a plain ``ca.crt`` under
+    ``SSL_CERT_DIR`` (DSP's unhashed mount) is added to certifi's public roots.
     """
     explicit_bundle = ca_bundle or os.environ.get("MAAS_CA_BUNDLE")
     if explicit_bundle:
@@ -49,16 +50,12 @@ def _get_maas_tls_verify(ca_bundle: str | None) -> ssl.SSLContext | str | None:
         return None
 
     context = ssl.create_default_context(cafile=certifi.where())
-    for directory in directories:
-        context.load_verify_locations(capath=str(directory))
     for bundle in bundles:
         context.load_verify_locations(cafile=str(bundle))
     return context
 
 
-def create_maas_client(
-    base_url: str, api_key: str, ca_bundle: str | None = None, *, validate_connection: bool = True
-) -> OpenAI:
+def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None) -> OpenAI:
     """Create the MaaS client with certificate verification always enforced.
 
     A single client serves everything: it lists models via ``models.list()`` and
@@ -69,8 +66,8 @@ def create_maas_client(
     never falls back to unverified TLS: if the endpoint presents a certificate
     signed by a private or self-signed CA, pass *ca_bundle* (or set the
     ``MAAS_CA_BUNDLE`` environment variable) with that CA's PEM bundle path.
-    Otherwise, mounted ``ca.crt`` files in ``SSL_CERT_DIR`` supplement public
-    roots unless ``SSL_CERT_FILE`` is explicitly configured.
+    Otherwise, when no ``SSL_CERT_FILE`` is set, a mounted ``ca.crt`` under
+    ``SSL_CERT_DIR`` is added to public trust as a safe fallback for DSP pods.
 
     Parameters
     ----------
@@ -82,16 +79,13 @@ def create_maas_client(
     ca_bundle
         Path to a PEM CA bundle used to verify *base_url*'s certificate. Falls
         back to the ``MAAS_CA_BUNDLE`` environment variable; when neither is
-        set, default trust is supplemented by mounted bundles in ``SSL_CERT_DIR``
-        unless ``SSL_CERT_FILE`` is configured.
-    validate_connection
-        Whether to probe ``models.list()`` before returning. Defaults to ``True``;
-        generated inference applications disable the probe to keep lazy startup.
+        set, default trust is used unless a mounted ``SSL_CERT_DIR``/``ca.crt``
+        fallback applies.
 
     Returns
     -------
     OpenAI
-        A configured client, validated with a model-list request unless disabled.
+        A connected client instance.
 
     Raises
     ------
@@ -111,11 +105,6 @@ def create_maas_client(
         client_kwargs["http_client"] = httpx.Client(verify=verify)
 
     client = OpenAI(**client_kwargs)
-    if verify is not None:
-        # The agent's independent async client must retain the same per-client trust.
-        setattr(client, "_ai4rag_tls_verify", verify)
-    if not validate_connection:
-        return client
     try:
         client.models.list()
     except (ssl.SSLCertVerificationError, httpx.ConnectError, APIConnectionError) as exc:

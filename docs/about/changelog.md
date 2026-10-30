@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **MaaS TLS** — add DSP's plain `ca.crt` bundles from `SSL_CERT_DIR` to public trust when no explicit CA file is configured; preserve default behavior when mounts are absent and retain TLS configuration in synchronous and asynchronous agent clients and generated starter kits
+- **MaaS TLS** — when no explicit CA file is configured, add a DSP-mounted plain `ca.crt` from `SSL_CERT_DIR` to public trust as a safe fallback; leave defaults unchanged when that mount is absent
 
 ## [0.25.3](https://github.com/IBM/ai4rag/releases/tag/v0.25.3)
 
