@@ -318,7 +318,11 @@ class MilvusVectorStore(BaseVectorStore):
         embedding = self.embedding_model.embed_query(query)
 
         dense_req = AnnSearchRequest(data=[embedding], anns_field="vector", param={"nprobe": 10}, limit=k)
-        sparse_req = AnnSearchRequest(data=[query], anns_field="sparse", param={"drop_ratio_search": 0.2}, limit=k)
+        # Milvus Lite only supports sparse search without dropping query terms.
+        drop_ratio_search = 0.0 if isinstance(self._config, MilvusLiteConfig) else 0.2
+        sparse_req = AnnSearchRequest(
+            data=[query], anns_field="sparse", param={"drop_ratio_search": drop_ratio_search}, limit=k
+        )
 
         if ranker_strategy == "weighted":
             alpha = ranker_alpha if ranker_alpha is not None and ranker_alpha != 1 else 0.5
