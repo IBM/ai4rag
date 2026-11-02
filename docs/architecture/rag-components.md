@@ -1365,6 +1365,14 @@ class AgenticRAG(BaseRAGTemplate):
 - `enable_context_compression` enables one retry after a recognized context
   overflow. It must be a boolean and defaults to `True`.
 
+When `create_maas_client()` configures per-client CA trust through `ca_bundle`,
+`MAAS_CA_BUNDLE`, or the mounted `SSL_CERT_DIR`/`ca.crt` fallback, the automatically
+constructed chat model reuses that client's synchronous completions interface and
+applies the same trust to its asynchronous HTTP client. Both retain the OpenAI
+SDK's HTTP client defaults. A supplied `chat_model` is used as configured. See
+[Private CA certificates on OpenShift AI](../user-guide/pipeline-components.md#private-ca-certificates-on-openshift-ai)
+for CA selection and precedence.
+
 **How it works:**
 
 1. An initial retrieval (via the inherited `_build_enriched_user_message`)

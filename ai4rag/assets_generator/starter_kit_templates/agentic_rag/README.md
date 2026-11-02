@@ -24,6 +24,7 @@ and answer using the evidence found.
   certificates in `~/.config/openshell` (`OPENSHELL_CLI_STATE`), so no local
   OpenShell CLI installation is required.
 - `uv` installed locally to update the dependency lockfile.
+- `python3` and `curl` installed locally for image discovery and API CA checks.
 - An OpenShift AI MaaS deployment exposing chat and embedding models, together
   with credentials. The chat model must support tool calling so the agent can
   invoke the retriever.
@@ -43,10 +44,14 @@ and answer using the evidence found.
   index documents.
 - The Red Hat build of the Agent Sandbox operator installed in the cluster.
 
-> **Hint:** For production deployments, we recommend using the Red Hat OpenShell
-> sandbox image `registry.redhat.io/rhoai/odh-openshell-sandbox-rhel9` as the
-> `BASE_IMAGE` in `Containerfile.openshell`, with a tag or digest appropriate for
-> your environment.
+`make build-openshell` selects the Red Hat OpenShell sandbox base from the latest
+succeeded RHOAI ClusterServiceVersion (CSV), and builds its Python 3.12 runtime
+using UBI. The containerized CLI also uses the RHOAI CSV image, with a matching
+`quay.io/rhoai` fallback when needed. The CSV namespace defaults to
+`redhat-ods-operator`; export `RHOAI_CSV_NAMESPACE` to select another namespace.
+Export `OPENSHELL_BASE_IMAGE` or `OPENSHELL_CLI_IMAGE` to override image selection.
+Editing only the Containerfile's `BASE_IMAGE` default does not override the
+Makefile's build selection.
 
 ### Commands
 
@@ -57,6 +62,7 @@ Run the following commands from the starter-kit root directory:
 uv lock --upgrade-package ai4rag
 
 make build-openshell
+make refresh-certs
 make deploy-openshell
 ```
 
@@ -73,9 +79,17 @@ make refresh-certs
 This target pulls the client certificates from the `openshell-client-tls` secret
 and registers the `openshell-gateway` route as gateway `openshift`. Re-run it
 after the cluster gateway is recreated or the certificates are rotated.
+For another gateway namespace, export `OPENSHELL_NAMESPACE` (default `openshell`).
+Pass `OPENSHELL_GATEWAY_NAME=<name>` or `OPENSHELL_CLI_STATE=<directory>` to `make`
+when using another registration name or host state directory. Use the same settings
+as the administrator's gateway setup. The gateway must be compatible with the
+downstream RHOAI CLI; an upstream 0.0.99 gateway needs migration by its administrator.
 
 `make deploy-openshell` creates and configures the sandbox, starts the agent,
 and exposes it through an OpenShift route.
+It checks gateway connectivity before replacing an existing sandbox. The generated
+agent startup enables a local CONNECT proxy for Milvus gRPC and native database
+connections under OpenShell's egress policies.
 
 To remove the sandbox and the agent route, run `make undeploy-openshell`. The
 cluster gateway, the images, and the other cluster prerequisites are left
