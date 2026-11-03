@@ -29,8 +29,8 @@ dynamic = ["version"]
 
 dependencies = [
   "boto3>=1.28",
-  "certifi>=2026.7.22,<2027",
-  "docling-slim[feat-chunking]~=2.121.0",
+  "certifi",
+  "docling-slim[feat-chunking]~=2.145.0",
   "langchain>=1.4,<2",
   "langchain-openai>=1.6,<2",
   "neo4j~=6.3.0",
@@ -81,7 +81,7 @@ test = [
 code_check = ["pylint", "black", "isort"]
 
 text-extraction = [
-  "docling-slim[standard,format-opendocument,format-audio]~=2.121.0",
+  "docling-slim[standard,format-opendocument,format-audio]~=2.145.0",
   "huggingface-hub>=0.30,<2",
   "rapidocr~=3.9.2",
   "onnxruntime~=1.25.0",
