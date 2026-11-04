@@ -2,6 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import logging
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -432,7 +433,7 @@ class TestMetricEvaluatorValidation:
 class TestGAMPatternPublication:
     """Final GAM reporting publishes only the selected warm-start result."""
 
-    def test_publishes_best_experiment_results_in_score_order(self, mocker):
+    def test_publishes_best_experiment_results_in_score_order(self, mocker, caplog):
         experiment = _build_experiment()
         for index, (name, score) in enumerate(
             (
@@ -456,11 +457,13 @@ class TestGAMPatternPublication:
             )
         publish = mocker.patch.object(experiment, "_stream_finished_pattern")
 
-        experiment._publish_best_warm_start_pattern()
+        with caplog.at_level(logging.INFO, logger="ai4rag"):
+            experiment._publish_best_warm_start_pattern()
 
         assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9]
         assert publish.call_args_list[0].kwargs["pattern_name"] == "Pattern1"
         assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0]
+        assert "Publishing best warm-start pattern 'Pattern2-warm-start' as 'Pattern1' (score=0.9)." in caplog.text
         published_patterns = pd.DataFrame(
             [
                 {

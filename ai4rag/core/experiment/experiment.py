@@ -832,6 +832,11 @@ class AI4RAGExperiment:
             return
 
         result, evaluation_data = max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score)
+        logger.info(
+            "Publishing best warm-start pattern '%s' as 'Pattern1' (score=%s).",
+            result.pattern_name,
+            result.final_score,
+        )
         if evaluation_data and self.optimization_metric != Metrics.OVERALL_SCORE and len(self.metrics) > 1:
             scored_metrics = {(metric["evaluator"], metric["name"]) for metric in result.scores["metrics"]}
             missing_metrics = [
