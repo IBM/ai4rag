@@ -53,6 +53,33 @@ Export `OPENSHELL_BASE_IMAGE` or `OPENSHELL_CLI_IMAGE` to override image selecti
 Editing only the Containerfile's `BASE_IMAGE` default does not override the
 Makefile's build selection.
 
+### Deployment inputs
+
+Deployment settings live under `deployment:` in `values.yaml`. Resolution order
+is environment or `.env` first, then `values.yaml`, then the built-in default.
+Every resource name derives from the application name, so several starter kits
+can share a cluster and namespace.
+
+| Input | values.yaml key | Environment | Default |
+| --- | --- | --- | --- |
+| Application name | `app_name` | `APP_NAME` | `nameOverride` slug |
+| Agent namespace | `namespace` | `APP_NAMESPACE` | current `oc project` |
+| OpenShell workspace | `workspace` | `OPENSHELL_WORKSPACE` | `default` |
+| Gateway alias | `gateway_name` | `OPENSHELL_GATEWAY_NAME` | `openshift` |
+| Gateway namespace | `gateway_namespace` | `OPENSHELL_NAMESPACE` | `openshell` |
+| Prebuilt image reference | `image` | `OPENSHELL_IMAGE_REF` | build from this kit |
+| Build image name | `image_name` | `OPENSHELL_IMAGE_NAME` | application name |
+| Sandbox name | `sandbox_name` | `OPENSHELL_SANDBOX_NAME` | application name |
+| Route name | `route_name` | `OPENSHELL_ROUTE_NAME` | application name |
+| API ServiceAccount | `service_account_name` | `AGENT_SA_NAME` | application name |
+| Platform ServiceAccount | `sandbox_service_account` | `OPENSHELL_SANDBOX_SA` | `openshell-sandbox` |
+
+The sandbox, image, route, ServiceAccount (`<app>-token` secret included), and
+service hostname prefix all follow the application name. Set `deployment.image`
+to a prebuilt reference to skip `make build-openshell` and deploy that image
+directly. Keep `deployment.workspace` in sync with the workspace configured in
+the OpenShell CLI; it is used to compute the exposed service hostname.
+
 ### Commands
 
 Run the following commands from the starter-kit root directory:

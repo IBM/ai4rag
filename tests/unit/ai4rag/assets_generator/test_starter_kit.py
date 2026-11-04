@@ -133,6 +133,24 @@ class TestGenerateStarterKit:
             assert 'maas_secret_name: "maas-connection"' in values_content
             assert 'db_secret_name: "vector-db-connection"' in values_content
 
+    def test_values_yaml_exposes_deployment_inputs(self, tmp_path):
+        zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, tmp_path)
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            values_content = zf.read("starter_kit/values.yaml").decode("utf-8")
+        for key in (
+            "app_name",
+            "namespace",
+            "workspace",
+            "gateway_name",
+            "gateway_namespace",
+            "image",
+            "image_name",
+            "sandbox_name",
+            "route_name",
+            "service_account_name",
+        ):
+            assert f"  {key}:" in values_content
+
     def test_creates_output_dir_if_needed(self, tmp_path):
         out = tmp_path / "nested" / "dir"
         zip_path = generate_starter_kit(_SAMPLE_PATTERN_DATA, out)
