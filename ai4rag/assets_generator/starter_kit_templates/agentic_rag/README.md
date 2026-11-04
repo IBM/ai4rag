@@ -55,10 +55,7 @@ Makefile's build selection.
 
 ### Deployment inputs
 
-Deployment settings live under `deployment:` in `values.yaml`. Resolution order
-is environment or `.env` first, then `values.yaml`, then the built-in default.
-Every resource name derives from the application name, so several starter kits
-can share a cluster and namespace.
+Deployment settings live under `deployment:` in `values.yaml`. 
 
 | Input | values.yaml key | Environment | Default |
 | --- | --- | --- | --- |
@@ -73,12 +70,6 @@ can share a cluster and namespace.
 | Route name | `route_name` | `OPENSHELL_ROUTE_NAME` | application name |
 | API ServiceAccount | `service_account_name` | `AGENT_SA_NAME` | application name |
 | Platform ServiceAccount | `sandbox_service_account` | `OPENSHELL_SANDBOX_SA` | `openshell-sandbox` |
-
-The sandbox, image, route, ServiceAccount (`<app>-token` secret included), and
-service hostname prefix all follow the application name. Set `deployment.image`
-to a prebuilt reference to skip `make build-openshell` and deploy that image
-directly. Keep `deployment.workspace` in sync with the workspace configured in
-the OpenShell CLI; it is used to compute the exposed service hostname.
 
 ### Commands
 
