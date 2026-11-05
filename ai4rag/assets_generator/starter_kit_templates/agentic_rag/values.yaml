@@ -1,5 +1,14 @@
 nameOverride: "__PATTERN_NAME__"
 
+# Resolution order: environment or .env > this file > built-in default.
+deployment:
+  app_name: ""
+  namespace: ""
+  workspace: "default"
+  gateway_name: "openshift"
+  image: ""
+  sandbox_name: ""
+
 secrets:
   maas_secret_name: "__MAAS_SECRET_NAME__"
   db_secret_name: "__DB_SECRET_NAME__"

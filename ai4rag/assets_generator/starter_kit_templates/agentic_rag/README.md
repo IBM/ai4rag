@@ -53,6 +53,23 @@ Export `OPENSHELL_BASE_IMAGE` or `OPENSHELL_CLI_IMAGE` to override image selecti
 Editing only the Containerfile's `BASE_IMAGE` default does not override the
 Makefile's build selection.
 
+### Deployment inputs
+
+Deployment settings live under `deployment:` in `values.yaml`. 
+
+| Input | values.yaml key | Environment | Default |
+| --- | --- | --- | --- |
+| Application name | `app_name` | `APP_NAME` | `nameOverride` slug |
+| Agent namespace | `namespace` | `APP_NAMESPACE` | current `oc project` |
+| OpenShell workspace | `workspace` | `OPENSHELL_WORKSPACE` | `default` |
+| Gateway alias | `gateway_name` | `OPENSHELL_GATEWAY_NAME` | `openshift` |
+| Prebuilt image reference | `image` | `OPENSHELL_IMAGE_REF` | build from this kit |
+| Sandbox name | `sandbox_name` | `OPENSHELL_SANDBOX_NAME` | application name |
+
+The build image, Route, API ServiceAccount, token secret, and platform
+ServiceAccount names derive from the application name; the gateway namespace
+stays an environment-only setting (`OPENSHELL_NAMESPACE`, default `openshell`).
+
 ### Commands
 
 Run the following commands from the starter-kit root directory:

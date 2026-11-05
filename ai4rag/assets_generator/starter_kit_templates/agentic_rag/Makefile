@@ -1,8 +1,46 @@
 
-SHELL          := bash
-OPENSHELL_SANDBOX   ?= $(shell if [ -f .env ]; then . ./.env; fi; echo $${OPENSHELL_SANDBOX_NAME:-rag-sandbox})
-OPENSHELL_NAMESPACE ?= $(shell if [ -f .env ]; then . ./.env; fi; echo $${OPENSHELL_NAMESPACE:-openshell})
-OPENSHELL_IMAGE     := openshell-agentic-rag
+SHELL := bash
+
+# Read a scalar from a values.yaml section: $(call _kit_yaml,deployment,workspace)
+_kit_yaml = $(shell awk -v section='$(1)' -v key='$(2)' ' \
+	/^[[:space:]]*\#/ { next } \
+	/^[^[:space:]][^:]*:[[:space:]]*$$/ { sec = $$1; sub(/:$$/, "", sec); next } \
+	sec == section { \
+		line = $$0; sub(/^[[:space:]]+/, "", line); \
+		if (index(line, key ":") == 1) { \
+			value = substr(line, length(key) + 2); \
+			sub(/[[:space:]]*\#.*$$/, "", value); \
+			gsub(/^[[:space:]]+|[[:space:]]+$$/, "", value); \
+			gsub(/^"|"$$/, "", value); \
+			print value; exit \
+		} \
+	}' values.yaml 2>/dev/null)
+
+# Normalize a value into a DNS-1123 label usable for images, routes, and SAs.
+_kit_slug = $(shell printf '%s' '$(1)' | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$$//' | cut -c1-63)
+
+# Resolve one input: $1 env var, $2 yaml section, $3 yaml key, $4 default.
+_kit_value = $(shell if [ -f .env ]; then . ./.env; fi; value="$${$(1):-$(call _kit_yaml,$(2),$(3))}"; [ -n "$$value" ] || value='$(4)'; printf '%s' "$$value")
+
+_APP_NAME_RAW := $(shell if [ -f .env ]; then . ./.env; fi; \
+	value="$${APP_NAME:-$(call _kit_yaml,deployment,app_name)}"; \
+	[ -n "$$value" ] || value=$$(sed -n 's/^nameOverride:[[:space:]]*"\(.*\)".*/\1/p' values.yaml); \
+	[ -n "$$value" ] || value=$$(basename "$$(pwd)"); \
+	printf '%s' "$$value")
+
+# Application name and every resource derived from it.
+APP_NAME               ?= $(call _kit_slug,$(_APP_NAME_RAW))
+APP_NAMESPACE          ?= $(call _kit_value,APP_NAMESPACE,deployment,namespace,)
+OPENSHELL_WORKSPACE    ?= $(call _kit_value,OPENSHELL_WORKSPACE,deployment,workspace,default)
+OPENSHELL_GATEWAY_NAME ?= $(call _kit_value,OPENSHELL_GATEWAY_NAME,deployment,gateway_name,openshift)
+OPENSHELL_NAMESPACE    ?= openshell
+OPENSHELL_IMAGE        ?= $(call _kit_slug,$(APP_NAME))
+OPENSHELL_IMAGE_REF    ?= $(call _kit_value,OPENSHELL_IMAGE_REF,deployment,image,)
+OPENSHELL_SANDBOX      ?= $(call _kit_slug,$(call _kit_value,OPENSHELL_SANDBOX_NAME,deployment,sandbox_name,$(APP_NAME)))
+OPENSHELL_ROUTE_NAME   ?= $(call _kit_slug,$(APP_NAME))
+AGENT_SA_NAME          ?= $(call _kit_slug,$(APP_NAME))
+AGENT_TOKEN_SECRET     := $(AGENT_SA_NAME)-token
+OPENSHELL_SANDBOX_SA   ?= openshell-sandbox
 
 .PHONY: env run-app run-cli refresh-certs build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
 
@@ -102,10 +140,28 @@ refresh-certs: ## Refresh openShell mTLS client certificates from the cluster
 	    exit 1; \
 	  fi
 
-_openshell-env = $(_openshell-cli) && set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
-	SANDBOX=$${OPENSHELL_SANDBOX_NAME:-rag-sandbox} && \
-	NS=$$(oc project -q) && \
-	IMAGE="image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
+_kit-env = set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
+	APP_NAME="$${APP_NAME:-$(APP_NAME)}" && \
+	APP_NAMESPACE="$${APP_NAMESPACE:-$(APP_NAMESPACE)}" && \
+	APP_NAMESPACE="$${APP_NAMESPACE:-$$(oc project -q)}" && \
+	OPENSHELL_NAMESPACE="$${OPENSHELL_NAMESPACE:-$(OPENSHELL_NAMESPACE)}" && \
+	OPENSHELL_WORKSPACE="$${OPENSHELL_WORKSPACE:-$(OPENSHELL_WORKSPACE)}" && \
+	OPENSHELL_GATEWAY_NAME="$${OPENSHELL_GATEWAY_NAME:-$(OPENSHELL_GATEWAY_NAME)}" && \
+	OPENSHELL_IMAGE="$${OPENSHELL_IMAGE:-$(OPENSHELL_IMAGE)}" && \
+	OPENSHELL_IMAGE_REF="$${OPENSHELL_IMAGE_REF:-$(OPENSHELL_IMAGE_REF)}" && \
+	OPENSHELL_SANDBOX="$${OPENSHELL_SANDBOX_NAME:-$(OPENSHELL_SANDBOX)}" && \
+	OPENSHELL_ROUTE_NAME="$${OPENSHELL_ROUTE_NAME:-$(OPENSHELL_ROUTE_NAME)}" && \
+	AGENT_SA_NAME="$${AGENT_SA_NAME:-$(AGENT_SA_NAME)}" && \
+	AGENT_TOKEN_SECRET="$${AGENT_TOKEN_SECRET:-$(AGENT_TOKEN_SECRET)}" && \
+	OPENSHELL_SANDBOX_SA="$${OPENSHELL_SANDBOX_SA:-$(OPENSHELL_SANDBOX_SA)}" && \
+	SANDBOX="$$OPENSHELL_SANDBOX" && \
+	NS="$$APP_NAMESPACE" && \
+	IMAGE="$${OPENSHELL_IMAGE_REF:-image-registry.openshift-image-registry.svc:5000/$$APP_NAMESPACE/$$OPENSHELL_IMAGE:latest}" && \
+	export APP_NAME APP_NAMESPACE NS OPENSHELL_NAMESPACE OPENSHELL_WORKSPACE OPENSHELL_GATEWAY_NAME \
+	  OPENSHELL_IMAGE OPENSHELL_IMAGE_REF OPENSHELL_SANDBOX SANDBOX OPENSHELL_ROUTE_NAME AGENT_SA_NAME \
+	  AGENT_TOKEN_SECRET OPENSHELL_SANDBOX_SA IMAGE
+
+_openshell-env = $(_openshell-cli) && $(_kit-env) && \
 	APPS_DOMAIN=$$(oc get ingresses.config cluster -o jsonpath='{.spec.domain}') && \
 	[ -f agent_config.json ] || { echo "ERROR: agent_config.json not found."; exit 1; } && \
 	AGENT_CONFIG_B64=$$(base64 < agent_config.json | tr -d '\n') && \
@@ -136,13 +192,13 @@ _openshell-env = $(_openshell-cli) && set -a && if [ -f .env ]; then . ./.env; f
 	  NEO4J_USERNAME=$${NEO4J_USERNAME:-neo4j}; \
 	  NEO4J_DATABASE=$${NEO4J_DATABASE:-neo4j}; \
 	fi && \
-	export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT
+	export MAAS_BASE_URL MAAS_API_KEY MILVUS_URI MILVUS_TOKEN MILVUS_CA_CERT PGVECTOR_HOST PGVECTOR_PORT PGVECTOR_DB PGVECTOR_USER PGVECTOR_PASSWORD PGVECTOR_CA_CERT NEO4J_URI NEO4J_USERNAME NEO4J_PASSWORD NEO4J_DATABASE NEO4J_CA_CERT APPS_DOMAIN
 
 build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
-	@set -a && if [ -f .env ]; then . ./.env; fi && set +a && \
-	  oc new-build --strategy=docker --binary \
-	    --name=$(OPENSHELL_IMAGE) --to=$(OPENSHELL_IMAGE):latest 2>/dev/null || true && \
-	  oc patch bc $(OPENSHELL_IMAGE) \
+	@$(_kit-env) && \
+	  oc new-build -n "$$APP_NAMESPACE" --strategy=docker --binary \
+	    --name="$$OPENSHELL_IMAGE" --to="$$OPENSHELL_IMAGE:latest" 2>/dev/null || true && \
+	  oc patch bc "$$OPENSHELL_IMAGE" -n "$$APP_NAMESPACE" \
 	    -p '{"spec":{"strategy":{"dockerStrategy":{"dockerfilePath":"Containerfile.openshell"}}}}' && \
 	  CSV_JSON=$$(oc -n "$${RHOAI_CSV_NAMESPACE:-redhat-ods-operator}" get csv -o json 2>/dev/null || printf '{"items":[]}') && \
 	  BASE_IMAGE=$${OPENSHELL_BASE_IMAGE:-$$(python3 -c 'import json,sys; d=json.load(sys.stdin); c=[x for x in d.get("items",[]) if x.get("status",{}).get("phase")=="Succeeded" and x.get("metadata",{}).get("name","").startswith("rhods-operator.")]; c.sort(key=lambda x:x.get("metadata",{}).get("creationTimestamp","")); r=c[-1].get("spec",{}).get("relatedImages",[]) if c else []; print(next((x.get("image","") for x in r if x.get("name")=="odh_openshell_sandbox_image"),""))' <<< "$$CSV_JSON")} && \
@@ -154,21 +210,21 @@ build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	  fi && \
 	  set_base_image() { \
 	    BUILD_ARGS_JSON=$$(python3 -c 'import json,sys; print(json.dumps({"spec":{"strategy":{"dockerStrategy":{"buildArgs":[{"name":"BASE_IMAGE","value":sys.argv[1]}]}}}}))' "$$1") && \
-	    oc patch bc $(OPENSHELL_IMAGE) --type=merge -p "$$BUILD_ARGS_JSON"; \
+	    oc patch bc "$$OPENSHELL_IMAGE" -n "$$APP_NAMESPACE" --type=merge -p "$$BUILD_ARGS_JSON"; \
 	  } && \
 	  run_build() { \
-	    BUILD_BEFORE=$$(oc get builds -l build=$(OPENSHELL_IMAGE) --sort-by=.metadata.creationTimestamp -o name | tail -n1) || return 1; \
-	    oc start-build $(OPENSHELL_IMAGE) --from-dir=. --follow || true; \
-	    BUILD_NAME=$$(oc get builds -l build=$(OPENSHELL_IMAGE) --sort-by=.metadata.creationTimestamp -o name | tail -n1) || return 1; \
+	    BUILD_BEFORE=$$(oc get builds -n "$$APP_NAMESPACE" -l build="$$OPENSHELL_IMAGE" --sort-by=.metadata.creationTimestamp -o name | tail -n1) || return 1; \
+	    oc start-build "$$OPENSHELL_IMAGE" -n "$$APP_NAMESPACE" --from-dir=. --follow || true; \
+	    BUILD_NAME=$$(oc get builds -n "$$APP_NAMESPACE" -l build="$$OPENSHELL_IMAGE" --sort-by=.metadata.creationTimestamp -o name | tail -n1) || return 1; \
 	    [ -n "$$BUILD_NAME" ] || return 1; \
 	    [ "$$BUILD_NAME" != "$$BUILD_BEFORE" ] || { echo "ERROR: OpenShift did not create a new build."; return 1; }; \
 	    BUILD_PHASE=""; \
 	    i=0; while [ $$i -lt 120 ]; do \
-	      BUILD_PHASE=$$(oc get "$$BUILD_NAME" -o jsonpath='{.status.phase}' 2>/dev/null); \
+	      BUILD_PHASE=$$(oc get "$$BUILD_NAME" -n "$$APP_NAMESPACE" -o jsonpath='{.status.phase}' 2>/dev/null); \
 	      case "$$BUILD_PHASE" in Complete|Failed|Cancelled|Error) break;; esac; \
 	      i=$$((i+1)); sleep 5; \
 	    done; \
-	    BUILD_REASON=$$(oc get "$$BUILD_NAME" -o jsonpath='{.status.reason}' 2>/dev/null); \
+	    BUILD_REASON=$$(oc get "$$BUILD_NAME" -n "$$APP_NAMESPACE" -o jsonpath='{.status.reason}' 2>/dev/null); \
 	    echo "    Build $$BUILD_NAME finished with phase $${BUILD_PHASE:-Unknown}$${BUILD_REASON:+ ($$BUILD_REASON)}."; \
 	  } && \
 	  set_base_image "$$BASE_IMAGE" && run_build && \
@@ -183,9 +239,8 @@ build-openshell: ## Build openShell sandbox image via OpenShift BuildConfig
 	    esac; \
 	  fi && \
 	  if [ "$$BUILD_PHASE" != "Complete" ]; then echo "ERROR: OpenShift image build did not complete (phase $${BUILD_PHASE:-unknown}$${BUILD_REASON:+, reason $$BUILD_REASON})."; exit 1; fi && \
-	  NS=$$(oc project -q) && \
 	  echo "" && \
-	  echo "Image ready: image-registry.openshift-image-registry.svc:5000/$$NS/$(OPENSHELL_IMAGE):latest" && \
+	  echo "Image ready: image-registry.openshift-image-registry.svc:5000/$$APP_NAMESPACE/$$OPENSHELL_IMAGE:latest" && \
 	  echo "Next: make deploy-openshell"
 
 create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeout)
@@ -197,10 +252,10 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	    exit 1; \
 	  fi
 	@$(_openshell-env) && \
-	  echo "==> Granting image-pull to $(OPENSHELL_NAMESPACE) namespace..." && \
-	  oc policy add-role-to-user system:image-puller "system:serviceaccount:$(OPENSHELL_NAMESPACE):openshell-sandbox" -n "$$NS" 2>/dev/null || true
+	  echo "==> Granting image-pull to $$OPENSHELL_NAMESPACE namespace..." && \
+	  oc policy add-role-to-user system:image-puller "system:serviceaccount:$$OPENSHELL_NAMESPACE:$$OPENSHELL_SANDBOX_SA" -n "$$NS" 2>/dev/null || true
 	@$(_openshell-env) && \
-	  oc policy add-role-to-user system:image-puller "system:serviceaccount:$(OPENSHELL_NAMESPACE):default" -n "$$NS" 2>/dev/null || true
+	  oc policy add-role-to-user system:image-puller "system:serviceaccount:$$OPENSHELL_NAMESPACE:default" -n "$$NS" 2>/dev/null || true
 	@$(_openshell-env) && \
 	  echo "==> Deleting old sandbox $$SANDBOX..." && \
 	  $(OPENSHELL) sandbox delete "$$SANDBOX" 2>/dev/null || true
@@ -208,7 +263,7 @@ create-sandbox: ## Delete existing sandbox and create a new one (with 120s timeo
 	  wait_gone() { \
 	    i=0; while [ $$i -lt 30 ]; do \
 	      sandbox_present=0; pod_present=0; \
-	      oc -n $(OPENSHELL_NAMESPACE) get sandbox "default--$$SANDBOX" >/dev/null 2>&1 && sandbox_present=1; \
+	      oc -n "$$OPENSHELL_NAMESPACE" get sandbox "$$OPENSHELL_WORKSPACE--$$SANDBOX" >/dev/null 2>&1 && sandbox_present=1; \
 	      oc -n "$$NS" get pod "$$SANDBOX" >/dev/null 2>&1 && pod_present=1; \
 	      [ $$sandbox_present -eq 0 ] && [ $$pod_present -eq 0 ] && return 0; \
 	      i=$$((i+1)); sleep 2; \
@@ -314,14 +369,14 @@ setup-egress: ## Add MaaS + vector database egress policies for agent Python bin
 
 start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sandbox
 	@$(_openshell-env) && \
-	  echo "==> Creating agent-client ServiceAccount and token..." && \
-	  oc create sa agent-client 2>/dev/null || true && \
-	  CLIENT_TOKEN=$$(oc create token agent-client --duration=168h) && \
-	  oc delete secret agent-client-token 2>/dev/null || true && \
-	  oc create secret generic agent-client-token --from-literal=token="$$CLIENT_TOKEN" && \
+	  echo "==> Creating $$AGENT_SA_NAME ServiceAccount and token..." && \
+	  oc create sa "$$AGENT_SA_NAME" -n "$$APP_NAMESPACE" 2>/dev/null || true && \
+	  CLIENT_TOKEN=$$(oc create token "$$AGENT_SA_NAME" -n "$$APP_NAMESPACE" --duration=168h) && \
+	  oc delete secret "$$AGENT_TOKEN_SECRET" -n "$$APP_NAMESPACE" 2>/dev/null || true && \
+	  oc create secret generic "$$AGENT_TOKEN_SECRET" -n "$$APP_NAMESPACE" --from-literal=token="$$CLIENT_TOKEN" && \
 	  echo "==> Generating sandbox reviewer token..." && \
 	  K8S_API_URL=$$(oc whoami --show-server) && \
-	  K8S_REVIEWER_TOKEN=$$(oc create token openshell-sandbox -n $(OPENSHELL_NAMESPACE) --duration=168h) && \
+	  K8S_REVIEWER_TOKEN=$$(oc create token "$$OPENSHELL_SANDBOX_SA" -n "$$OPENSHELL_NAMESPACE" --duration=168h) && \
 	  K8S_CA_DIR=$$(mktemp -d) && \
 	  ca_bundle() { \
 	    case "$$1" in \
@@ -343,7 +398,7 @@ start-agent: refresh-certs ## Start agent with K8s ServiceAccount auth inside sa
 	    else echo "ERROR: Kubernetes API CA certificate not found." >&2; exit 1; fi; \
 	  fi && \
 	  K8S_CA_PATH=/sandbox/k8s-ca.crt && \
-	  ALLOWED_SA_USERNAME="system:serviceaccount:$${NS}:agent-client" && \
+	  ALLOWED_SA_USERNAME="system:serviceaccount:$${APP_NAMESPACE}:$${AGENT_SA_NAME}" && \
 	  echo "==> Stopping any running agent..." && \
 	  $(OPENSHELL) sandbox exec -n "$$SANDBOX" -- /usr/bin/python3.12 -c "import os,signal; from pathlib import Path; pid=Path('/sandbox/agent.pid'); os.kill(int(pid.read_text().strip()),signal.SIGTERM) if pid.is_file() else None" 2>/dev/null || true && \
 	  sleep 5 && \
@@ -393,8 +448,8 @@ expose-agent: ## Expose agent service and create Route
 	  echo "==> Exposing service URL..." && \
 	  $(OPENSHELL) service expose "$$SANDBOX" 8080 agent 2>/dev/null || true && \
 	  sleep 2 && \
-	  SVC_HOST="default--$$SANDBOX--agent.$(OPENSHELL_NAMESPACE).$$APPS_DOMAIN" && \
-	  printf 'apiVersion: route.openshift.io/v1\nkind: Route\nmetadata:\n  name: openshell-rag-agent\n  namespace: $(OPENSHELL_NAMESPACE)\nspec:\n  host: "%s"\n  to:\n    kind: Service\n    name: openshell\n  port:\n    targetPort: grpc\n  tls:\n    termination: passthrough\n' "$$SVC_HOST" | oc apply -f - && \
+	  SVC_HOST="$$OPENSHELL_WORKSPACE--$$SANDBOX--agent.$$OPENSHELL_NAMESPACE.$$APPS_DOMAIN" && \
+	  printf 'apiVersion: route.openshift.io/v1\nkind: Route\nmetadata:\n  name: %s\n  namespace: %s\nspec:\n  host: "%s"\n  to:\n    kind: Service\n    name: openshell\n  port:\n    targetPort: grpc\n  tls:\n    termination: passthrough\n' "$$OPENSHELL_ROUTE_NAME" "$$OPENSHELL_NAMESPACE" "$$SVC_HOST" | oc apply -f - && \
 	  echo "==> Waiting for agent to initialize (10s)..." && \
 	  sleep 10 && \
 	  echo "==> Checking agent health..." && \
@@ -403,7 +458,7 @@ expose-agent: ## Expose agent service and create Route
 	  echo "Agent URL: https://$$SVC_HOST" && \
 	  echo "" && \
 	  echo "Get token:" && \
-	  echo "  TOKEN=\$$(oc get secret agent-client-token -o jsonpath='{.data.token}' | base64 -d)" && \
+	  echo "  TOKEN=\$$(oc get secret $$AGENT_TOKEN_SECRET -n $$APP_NAMESPACE -o jsonpath='{.data.token}' | base64 -d)" && \
 	  echo "" && \
 	  echo "Query:" && \
 	  echo "  curl -sk https://$$SVC_HOST/v1/responses \\" && \
@@ -415,7 +470,8 @@ deploy-openshell: create-sandbox wait-sandbox setup-egress start-agent expose-ag
 
 undeploy-openshell: ## Remove openShell sandbox and route
 	@$(_openshell-cli) && \
-	  ($(OPENSHELL) sandbox delete $(OPENSHELL_SANDBOX) 2>/dev/null || true) && \
-	  oc -n $(OPENSHELL_NAMESPACE) delete route openshell-rag-agent 2>/dev/null || true && \
-	  echo "Sandbox $(OPENSHELL_SANDBOX) and route removed." && \
+	  $(_kit-env) && \
+	  ($(OPENSHELL) sandbox delete "$$OPENSHELL_SANDBOX" 2>/dev/null || true) && \
+	  oc -n "$$OPENSHELL_NAMESPACE" delete route "$$OPENSHELL_ROUTE_NAME" 2>/dev/null || true && \
+	  echo "Sandbox $$OPENSHELL_SANDBOX and route $$OPENSHELL_ROUTE_NAME removed." && \
 	  sleep 10 2>/dev/null || true
