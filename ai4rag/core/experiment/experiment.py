@@ -821,7 +821,7 @@ class AI4RAGExperiment:
         )
 
     def _publish_best_warm_start_pattern(self) -> None:
-        """Publish only the best successful warm-start candidate as final ``Pattern1``."""
+        """Publish only the best successful warm-start candidate as final ``PatternA``."""
         evaluations = list(zip(self.results.evaluations, self.results.evaluation_data))
         warm_start_evaluations = [
             evaluation
@@ -869,7 +869,7 @@ class AI4RAGExperiment:
         self._stream_finished_pattern(
             evaluation_result=result,
             evaluation_results_json=evaluation_results_json,
-            pattern_name="Pattern1",
+            pattern_name="PatternA",
             iteration=0,
         )
 
@@ -1067,17 +1067,26 @@ class AI4RAGExperiment:
         Returns
         -------
         str
-            Pattern name, for example "Pattern7" or "Pattern7-warm-start".
+            Pattern name, for example "PatternG" or "PatternG-warm-start".
         """
         if self._optimization_phase == "warm_start":
             warm_start_count = sum(result.pattern_name.endswith("-warm-start") for result in self.results)
-            return f"Pattern{warm_start_count + 1}-warm-start"
+            return f"Pattern{self._pattern_suffix(warm_start_count + 1)}-warm-start"
         if self._optimization_phase == "gam":
             gam_count = sum(not result.pattern_name.endswith("-warm-start") for result in self.results)
             has_successful_warm_start = any(
                 result.pattern_name.endswith("-warm-start") and result.final_score is not None
                 for result in self.results
             )
-            return f"Pattern{gam_count + 1 + int(has_successful_warm_start)}"
+            return f"Pattern{self._pattern_suffix(gam_count + 1 + int(has_successful_warm_start))}"
         n_known = len(self.known_observations) if self.known_observations else 0
-        return f"Pattern{n_known + len(self.results) + 1}"
+        return f"Pattern{self._pattern_suffix(n_known + len(self.results) + 1)}"
+
+    @staticmethod
+    def _pattern_suffix(index: int) -> str:
+        """Return the one-based spreadsheet-style alphabetic suffix for a pattern."""
+        suffix: list[str] = []
+        while index:
+            index, remainder = divmod(index - 1, 26)
+            suffix.append(chr(ord("A") + remainder))
+        return "".join(reversed(suffix))

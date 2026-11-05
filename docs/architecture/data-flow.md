@@ -254,7 +254,7 @@ that still returns tool calls raises `RuntimeError` rather than continuing the l
 initial retrieval, agent messages, and rewrite/retrieval tool activity. The experiment
 collects these records separately from evaluation data and forwards them on pattern
 publication; the selected warm-start candidate retains its trajectories when published
-as `Pattern1`.
+as `PatternA`.
 
 When an agent invocation raises `BadRequestError` containing `maximum context length`,
 the default compression fallback extracts query-relevant excerpts from the initial
@@ -854,7 +854,7 @@ event_handler.on_status_change(
 # Evaluation
 event_handler.on_status_change(
     level=LogLevel.INFO,
-    message="Evaluating RAG Pattern 'Pattern5'...",
+    message="Evaluating RAG Pattern 'PatternE'...",
     step="evaluation"
 )
 ```
@@ -867,7 +867,7 @@ warm-start candidate is published from that phase):
 ```python
 event_handler.on_pattern_creation(
     payload={
-        "name": "Pattern5",
+        "name": "PatternE",
         "template_id": "agentic_rag",
         "iteration": 4,
         "max_combinations": 24,

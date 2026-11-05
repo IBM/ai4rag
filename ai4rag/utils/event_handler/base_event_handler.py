@@ -191,7 +191,7 @@ class BaseEventHandler(ABC):
             Example content:
 
             {
-                'name': 'Pattern1',
+                'name': 'PatternA',
                 'max_combinations': 24,
                 'evaluation': {
                     'metrics': [

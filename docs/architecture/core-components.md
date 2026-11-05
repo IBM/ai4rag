@@ -82,7 +82,7 @@ When inference returns agent conversations, each `EvaluationResult` retains them
 its optional `conversations` field alongside evaluation scores. They are available
 through `experiment.results` and `EvaluationResult.to_dict()`. Pattern publication
 reads them from that result and forwards them to the event handler, including
-when the best warm-start candidate is renamed to `Pattern1`. Neo4j patterns publish
+when the best warm-start candidate is renamed to `PatternA`. Neo4j patterns publish
 their extraction policy as `settings.graph_extraction`, replacing the previous
 `settings.knowledge_graph` block. See [Event Handlers](../user-guide/event-handlers.md).
 
@@ -255,7 +255,7 @@ The **Generalized Additive Models (GAM)** optimizer is the recommended algorithm
 - Evaluates `n_random_nodes` configurations from the search space, ordered by `warm_start_strategy` (`"random"` — shuffle only; `"greedy"` — maximize coverage of every discrete value; `"balanced"` — round-robin over `fields_to_balance` combinations)
 - Builds initial understanding of the objective function landscape
 - Excludes already-evaluated combinations (important for warm-start via `known_observations`)
-- Only the best successful evaluation from this phase is published as a result pattern (`Pattern1`); the rest remain internal
+- Only the best successful evaluation from this phase is published as a result pattern (`PatternA`); the rest remain internal
 
 **Phase 2: GAM-Guided Search**
 
