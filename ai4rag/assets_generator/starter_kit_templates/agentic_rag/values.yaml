@@ -6,13 +6,8 @@ deployment:
   namespace: ""
   workspace: "default"
   gateway_name: "openshift"
-  gateway_namespace: "openshell"
   image: ""
-  image_name: ""
   sandbox_name: ""
-  route_name: ""
-  service_account_name: ""
-  sandbox_service_account: "openshell-sandbox"
 
 secrets:
   maas_secret_name: "__MAAS_SECRET_NAME__"

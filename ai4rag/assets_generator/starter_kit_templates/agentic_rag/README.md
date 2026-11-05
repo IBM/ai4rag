@@ -63,13 +63,12 @@ Deployment settings live under `deployment:` in `values.yaml`.
 | Agent namespace | `namespace` | `APP_NAMESPACE` | current `oc project` |
 | OpenShell workspace | `workspace` | `OPENSHELL_WORKSPACE` | `default` |
 | Gateway alias | `gateway_name` | `OPENSHELL_GATEWAY_NAME` | `openshift` |
-| Gateway namespace | `gateway_namespace` | `OPENSHELL_NAMESPACE` | `openshell` |
 | Prebuilt image reference | `image` | `OPENSHELL_IMAGE_REF` | build from this kit |
-| Build image name | `image_name` | `OPENSHELL_IMAGE_NAME` | application name |
 | Sandbox name | `sandbox_name` | `OPENSHELL_SANDBOX_NAME` | application name |
-| Route name | `route_name` | `OPENSHELL_ROUTE_NAME` | application name |
-| API ServiceAccount | `service_account_name` | `AGENT_SA_NAME` | application name |
-| Platform ServiceAccount | `sandbox_service_account` | `OPENSHELL_SANDBOX_SA` | `openshell-sandbox` |
+
+The build image, Route, API ServiceAccount, token secret, and platform
+ServiceAccount names derive from the application name; the gateway namespace
+stays an environment-only setting (`OPENSHELL_NAMESPACE`, default `openshell`).
 
 ### Commands
 

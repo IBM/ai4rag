@@ -33,14 +33,14 @@ APP_NAME               ?= $(call _kit_slug,$(_APP_NAME_RAW))
 APP_NAMESPACE          ?= $(call _kit_value,APP_NAMESPACE,deployment,namespace,)
 OPENSHELL_WORKSPACE    ?= $(call _kit_value,OPENSHELL_WORKSPACE,deployment,workspace,default)
 OPENSHELL_GATEWAY_NAME ?= $(call _kit_value,OPENSHELL_GATEWAY_NAME,deployment,gateway_name,openshift)
-OPENSHELL_NAMESPACE    ?= $(call _kit_value,OPENSHELL_NAMESPACE,deployment,gateway_namespace,openshell)
-OPENSHELL_IMAGE        ?= $(call _kit_slug,$(call _kit_value,OPENSHELL_IMAGE_NAME,deployment,image_name,$(APP_NAME)))
+OPENSHELL_NAMESPACE    ?= openshell
+OPENSHELL_IMAGE        ?= $(call _kit_slug,$(APP_NAME))
 OPENSHELL_IMAGE_REF    ?= $(call _kit_value,OPENSHELL_IMAGE_REF,deployment,image,)
 OPENSHELL_SANDBOX      ?= $(call _kit_slug,$(call _kit_value,OPENSHELL_SANDBOX_NAME,deployment,sandbox_name,$(APP_NAME)))
-OPENSHELL_ROUTE_NAME   ?= $(call _kit_slug,$(call _kit_value,OPENSHELL_ROUTE_NAME,deployment,route_name,$(APP_NAME)))
-AGENT_SA_NAME          ?= $(call _kit_slug,$(call _kit_value,AGENT_SA_NAME,deployment,service_account_name,$(APP_NAME)))
-AGENT_TOKEN_SECRET     ?= $(AGENT_SA_NAME)-token
-OPENSHELL_SANDBOX_SA   ?= $(call _kit_value,OPENSHELL_SANDBOX_SA,deployment,sandbox_service_account,openshell-sandbox)
+OPENSHELL_ROUTE_NAME   ?= $(call _kit_slug,$(APP_NAME))
+AGENT_SA_NAME          ?= $(call _kit_slug,$(APP_NAME))
+AGENT_TOKEN_SECRET     := $(AGENT_SA_NAME)-token
+OPENSHELL_SANDBOX_SA   ?= openshell-sandbox
 
 .PHONY: env run-app run-cli refresh-certs build-openshell create-sandbox wait-sandbox setup-egress start-agent expose-agent deploy-openshell undeploy-openshell test help
 
