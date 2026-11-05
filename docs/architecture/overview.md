@@ -179,11 +179,11 @@ graph TB
 - Language detection for multilingual benchmark support
 - Built on top of `ai4rag.search_space` and `ai4rag.core`; not part of this repo
 
-**Assets Generator** (`ai4rag/assets_generator/`)
+**Assets Generator** ([pipelines-components](https://github.com/kubeflow/pipelines-components/tree/main/components/training/autorag/shared/assets_generator))
 
 - Programmatic Jupyter notebook generation from templates
 - HTML leaderboard rendering from pattern evaluations
-- RAG pattern JSON building from experiment results
+- Deployable starter-kit generation from published patterns
 - Bundled notebook templates via `importlib.resources`
 
 ### 6. Utilities Layer

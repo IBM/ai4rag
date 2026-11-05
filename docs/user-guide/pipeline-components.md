@@ -1,9 +1,12 @@
 # Pipeline Components
 
-`ai4rag.utils.data` and `ai4rag.assets_generator` provide reusable building blocks for RAG
+`ai4rag.utils.data` provides reusable building blocks for RAG
 pipeline workflows. These functions encapsulate the business logic that was previously inlined in
 Kubeflow Pipeline components, making it available for use in any context — KFP pipelines, standalone
 scripts, notebooks, or tests.
+
+Asset generation is owned by [pipelines-components](https://github.com/kubeflow/pipelines-components/tree/main/components/training/autorag/shared/assets_generator).
+See the [migration guide](../api-reference/assets-generator/notebooks.md) for the new import path and runtime requirements.
 
 ## Architecture
 
@@ -24,8 +27,6 @@ scripts, notebooks, or tests.
 │  │ utils/                                    │ │
 │  │  data/                                    │ │
 │  │  clients/ — s3, maas_client               │ │
-│  │ assets_generator/                         │ │
-│  │  notebook, leaderboard, templates         │ │
 │  └───────────────────────────────────────────┘ │
 │  ┌──────────────────────────────────────────┐ │
 │  │ core/ — experiment, HPO                  │ │

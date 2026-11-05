@@ -1167,7 +1167,7 @@ Neo4j requires `agentic_graph_rag` (also implemented by `AgenticRAG`) and graph 
 Generated inference notebooks instantiate the resolved class. Patterns without an ID
 warn and use `SequentialRAG`; explicit unsupported IDs raise `ValueError`.
 
-See the [registry API](../api-reference/assets-generator/notebooks.md#rag-template-registry).
+See the [registry API](https://github.com/kubeflow/pipelines-components/blob/main/components/training/autorag/shared/assets_generator/docs/notebooks.md#rag-template-registry).
 
 ### BaseRAGTemplate
 
