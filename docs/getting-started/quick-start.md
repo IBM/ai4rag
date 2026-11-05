@@ -301,7 +301,7 @@ After completion, check the `output_path` directory for:
 - **`<pattern_name>/evaluation_results.json`**: Per-question answers, retrieved contexts, scores, and optional `conversation_id` links to full conversations
 - **`<pattern_name>/conversations.json`**: Agent messages, retrievals, and tool activity when the template emits trajectories
 
-Only the best successful warm-start candidate is published as `Pattern1`; other
+Only the best successful warm-start candidate is published as `PatternA`; other
 warm-start candidates do not get output directories. See
 [Event Handlers](../user-guide/event-handlers.md) for the artifact schema.
 
