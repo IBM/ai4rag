@@ -833,7 +833,7 @@ class AI4RAGExperiment:
 
         result, evaluation_data = max(warm_start_evaluations, key=lambda evaluation: evaluation[0].final_score)
         logger.info(
-            "Publishing best warm-start pattern '%s' as 'Pattern1' (score=%s).",
+            "Publishing best warm-start pattern '%s' as 'PatternA' (score=%s).",
             result.pattern_name,
             result.final_score,
         )

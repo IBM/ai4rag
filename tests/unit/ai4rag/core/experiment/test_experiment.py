@@ -463,7 +463,7 @@ class TestGAMPatternPublication:
         assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9]
         assert publish.call_args_list[0].kwargs["pattern_name"] == "PatternA"
         assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0]
-        assert "Publishing best warm-start pattern 'Pattern2-warm-start' as 'Pattern1' (score=0.9)." in caplog.text
+        assert "Publishing best warm-start pattern 'PatternB-warm-start' as 'PatternA' (score=0.9)." in caplog.text
         published_patterns = pd.DataFrame(
             [
                 {
