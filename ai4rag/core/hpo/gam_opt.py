@@ -23,6 +23,14 @@ from ai4rag.search_space.src.search_space import SearchSpace
 __all__ = ["GAMOptSettings", "GAMOptimizer"]
 
 
+def _is_finite_score(score: object) -> bool:
+    """Return whether an optimization score is a finite numeric value."""
+    try:
+        return bool(np.isfinite(score))
+    except TypeError:
+        return False
+
+
 def _serialize_dict_col(series: pd.Series) -> pd.Series:
     """Serialize model-valued cells to their model_id string.
 
@@ -276,7 +284,9 @@ class GAMOptimizer(BaseOptimizer):
 
         self.current_phase = "complete"
 
-        successful_evaluations = [evaluation for evaluation in self.evaluations if evaluation["score"] is not None]
+        successful_evaluations = [
+            evaluation for evaluation in self.evaluations if _is_finite_score(evaluation["score"])
+        ]
         if not successful_evaluations:
             raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
 
@@ -304,7 +314,7 @@ class GAMOptimizer(BaseOptimizer):
     def warm_start_output_count(self) -> int:
         """Return one slot only when this run produced a publishable warm-start result."""
         warm_start_evaluations = self.evaluations[self._known_observation_count : self.warm_start_evaluation_count]
-        return int(any(evaluation.get("score") is not None for evaluation in warm_start_evaluations))
+        return int(any(_is_finite_score(evaluation.get("score")) for evaluation in warm_start_evaluations))
 
     def _validate_n_random_nodes(self) -> None:
         """Log a warning when n_random_nodes is below the required minimum for the strategy.
@@ -327,7 +337,7 @@ class GAMOptimizer(BaseOptimizer):
         str_cols = _get_discrete_column_values(combinations)
 
         # Already-successful known_observations count toward the coverage budget.
-        successful_known = sum(1 for e in self.evaluations if e.get("score") is not None)
+        successful_known = sum(1 for e in self.evaluations if _is_finite_score(e.get("score")))
         # effective_budget: the larger of n_random_nodes and what known_observations
         # already provide — if known obs alone meet the minimum, no raise is needed.
         effective_budget = max(self.settings.n_random_nodes, successful_known)
@@ -465,7 +475,7 @@ class GAMOptimizer(BaseOptimizer):
         "greedy"   — greedy selection maximizing string-column coverage (each value >= 2 times).
         "balanced" — round-robin across fields_to_balance value tuples.
         """
-        successful_evaluations = sum(1 for e in self.evaluations if e["score"] is not None)
+        successful_evaluations = sum(1 for e in self.evaluations if _is_finite_score(e["score"]))
         effective_target = self._compute_warm_start_effective_target()
 
         if successful_evaluations >= effective_target:
@@ -530,7 +540,7 @@ class GAMOptimizer(BaseOptimizer):
             if params is None:
                 break
             score = self._objective_function(params=params)
-            if score is not None:
+            if _is_finite_score(score):
                 successful_evaluations += 1
             self._evaluated_combinations.append(params)
             self.evaluations.append(params | {"score": score})
@@ -546,7 +556,7 @@ class GAMOptimizer(BaseOptimizer):
     ) -> None:
         uncovered_by_col: dict[str, list[str]] = {}
         for col, vals_in_space in discrete_cols_in_space.items():
-            covered = {_str_val(e.get(col)) for e in evaluations if e.get("score") is not None}
+            covered = {_str_val(e.get(col)) for e in evaluations if _is_finite_score(e.get("score"))}
             uncovered = vals_in_space - covered
             if uncovered:
                 uncovered_by_col[col] = sorted(uncovered)
@@ -730,7 +740,11 @@ class GAMOptimizer(BaseOptimizer):
             return
 
         df = pd.DataFrame(data=self.evaluations)
-        df = df[df["score"].notna()].copy()
+        numeric_scores = pd.to_numeric(df["score"], errors="coerce")
+        df = df[np.isfinite(numeric_scores)].copy()
+        if df.empty:
+            logger.warning("Skipping GAM iteration: no finite evaluation scores are available for training.")
+            return
         data = df.drop(columns=["score"])
         for col in data.columns:
             data[col] = _serialize_dict_col(data[col])
@@ -739,7 +753,7 @@ class GAMOptimizer(BaseOptimizer):
         for col, enc in encoders:
             if col not in data.columns:
                 data[col] = enc.classes_[0]
-        target = df["score"]
+        target = pd.to_numeric(df["score"], errors="coerce")
 
         x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
 
@@ -762,7 +776,11 @@ class GAMOptimizer(BaseOptimizer):
             terms = term if terms is None else terms + term
 
         gam = LinearGAM(terms)
-        gam.fit(x_train_enc, target)
+        try:
+            gam.fit(x_train_enc, target)
+        except np.linalg.LinAlgError as error:
+            logger.warning("Skipping GAM iteration because surrogate-model fitting failed: %s", error)
+            return
 
         remaining_evaluations = self._get_remaining_evaluations(
             self._search_space.combinations, self._evaluated_combinations
@@ -847,6 +865,10 @@ class GAMOptimizer(BaseOptimizer):
 
         except FailedIterationError:
             # None is here to avoid penalization of iterations failing due to unknown reasons
+            loss = None
+
+        if loss is not None and not _is_finite_score(loss):
+            logger.warning("Discarding non-finite objective score for parameters: %s", params)
             loss = None
 
         return loss
