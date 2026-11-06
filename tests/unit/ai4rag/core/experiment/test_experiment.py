@@ -437,10 +437,10 @@ class TestGAMPatternPublication:
         experiment = _build_experiment()
         for index, (name, score) in enumerate(
             (
-                ("Pattern1-warm-start", 0.7),
-                ("Pattern2-warm-start", 0.9),
-                ("Pattern2", 0.2),
-                ("Pattern3", 0.8),
+                ("PatternA-warm-start", 0.7),
+                ("PatternB-warm-start", 0.9),
+                ("PatternB", 0.2),
+                ("PatternC", 0.8),
             )
         ):
             experiment.results.add_evaluation(
@@ -461,9 +461,9 @@ class TestGAMPatternPublication:
             experiment._publish_best_warm_start_pattern()
 
         assert [call.kwargs["evaluation_result"].final_score for call in publish.call_args_list] == [0.9]
-        assert publish.call_args_list[0].kwargs["pattern_name"] == "Pattern1"
+        assert publish.call_args_list[0].kwargs["pattern_name"] == "PatternA"
         assert [call.kwargs["iteration"] for call in publish.call_args_list] == [0]
-        assert "Publishing best warm-start pattern 'Pattern2-warm-start' as 'Pattern1' (score=0.9)." in caplog.text
+        assert "Publishing best warm-start pattern 'PatternB-warm-start' as 'PatternA' (score=0.9)." in caplog.text
         published_patterns = pd.DataFrame(
             [
                 {
@@ -478,11 +478,11 @@ class TestGAMPatternPublication:
         print(f"\nPublished patterns:\n{published_patterns.to_string(index=False)}")
 
     def test_does_not_publish_an_unscored_warm_start_candidate(self, mocker):
-        """A failed warm-start candidate cannot become final Pattern1."""
+        """A failed warm-start candidate cannot become final PatternA."""
         experiment = _build_experiment()
         for name, score in (
-            ("Pattern1-warm-start", None),
-            ("Pattern2", 0.8),
+            ("PatternA-warm-start", None),
+            ("PatternB", 0.8),
         ):
             experiment.results.add_evaluation(
                 [],
@@ -507,14 +507,14 @@ class TestGAMPatternPublication:
         experiment = _build_experiment()
 
         experiment._optimization_phase = "warm_start"
-        assert experiment._create_pattern_name() == "Pattern1-warm-start"
+        assert experiment._create_pattern_name() == "PatternA-warm-start"
         experiment._optimization_phase = "gam"
-        assert experiment._create_pattern_name() == "Pattern1"
+        assert experiment._create_pattern_name() == "PatternA"
 
         experiment.results.add_evaluation(
             [],
             EvaluationResult(
-                pattern_name="Pattern1-warm-start",
+                pattern_name="PatternA-warm-start",
                 collection="collection",
                 indexing_params={},
                 rag_params={},
@@ -523,7 +523,15 @@ class TestGAMPatternPublication:
                 final_score=0.5,
             ),
         )
-        assert experiment._create_pattern_name() == "Pattern2"
+        assert experiment._create_pattern_name() == "PatternB"
+
+    @pytest.mark.parametrize(
+        ("index", "suffix"),
+        [(1, "A"), (26, "Z"), (27, "AA"), (30, "AD"), (52, "AZ"), (53, "BA")],
+    )
+    def test_pattern_suffix_uses_spreadsheet_style_letters(self, index, suffix):
+        """Pattern suffixes continue with doubled letters after Z."""
+        assert AI4RAGExperiment._pattern_suffix(index) == suffix
 
 
 class TestMultiModelGAMExperiment:
@@ -783,7 +791,7 @@ class TestWarmStartMetrics:
         experiment = _build_experiment(metrics=[Metrics.FAITHFULNESS, Metrics.RAGAS_FAITHFULNESS])
         partial_scores = _make_result("faithfulness", "unitxt", 0.9, {"q1": 0.9})
         result = EvaluationResult(
-            pattern_name="Pattern1-warm-start",
+            pattern_name="PatternA-warm-start",
             collection="collection",
             indexing_params={},
             rag_params={},
@@ -802,7 +810,7 @@ class TestWarmStartMetrics:
         assert result.scores is partial_scores
         assert result.final_score == 0.9
         assert publish.call_args.kwargs["evaluation_result"] is result
-        assert publish.call_args.kwargs["pattern_name"] == "Pattern1"
+        assert publish.call_args.kwargs["pattern_name"] == "PatternA"
         assert "Unable to complete non-objective metrics" in caplog.text
 
 

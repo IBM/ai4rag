@@ -58,7 +58,7 @@ The optimization process has two phases:
 This approach balances **exploration** (warm-start phase) with **exploitation** (model-guided phase).
 
 !!! note "Only the best warm-start result is published"
-    When warm-starting, every candidate in Phase 1 still counts against `max_evals`, but only the single best successful warm-start evaluation is published as a result pattern (`Pattern1`) and passed to your event handler — the rest remain internal to the optimizer. See [Event Handlers](event-handlers.md).
+    When warm-starting, every candidate in Phase 1 still counts against `max_evals`, but only the single best successful warm-start evaluation is published as a result pattern (`PatternA`) and passed to your event handler — the rest remain internal to the optimizer. See [Event Handlers](event-handlers.md).
 
 ---
 

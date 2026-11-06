@@ -50,7 +50,7 @@ def on_status_change(self, level: LogLevel, message: str, step: str | None = Non
 Called once per evaluated RAG pattern that is published to the event handler. This is where you receive the full evaluation result and can persist, forward, or display it.
 
 !!! note "Warm-start evaluations are not all published"
-    When the GAM optimizer's warm-start phase is enabled (see [Optimizers](optimizers.md)), only the best successful warm-start candidate is published as `Pattern1`; the other warm-start evaluations are internal to the optimizer and never reach `on_pattern_creation`.
+    When the GAM optimizer's warm-start phase is enabled (see [Optimizers](optimizers.md)), only the best successful warm-start candidate is published as `PatternA`; the other warm-start evaluations are internal to the optimizer and never reach `on_pattern_creation`.
 
 ```python
 def on_pattern_creation(
@@ -67,7 +67,7 @@ def on_pattern_creation(
 
 ```python
 {
-    "name": "Pattern1",
+    "name": "PatternA",
     "template_id": "sequential_rag",
     "iteration": 0,
     "max_combinations": 24,
@@ -201,7 +201,7 @@ estimates. During the retry, compressed retrieval-tool records also include
 the original documents; `messages` and `tool_execution` describe the successful retry.
 See [Context-overflow fallback](../architecture/rag-components.md#context-overflow-fallback).
 
-The selected warm-start pattern retains its trajectories when it is published as `Pattern1`.
+The selected warm-start pattern retains its trajectories when it is published as `PatternA`.
 Non-agentic publication omits the `conversations` keyword. Custom handlers used with
 agentic experiments must accept it explicitly or through `**kwargs`.
 

@@ -18,7 +18,7 @@ class EvaluationResult:
     ----------
     pattern_name : str
         Name of the RAG pattern created. Next names should be
-        i.e. Pattern1, Pattern2, ..., PatternX
+        i.e. PatternA, PatternB, ..., PatternZ, PatternAA
 
     collection : list[str]
         Name of the indexes/collections in the VectorStores for single
