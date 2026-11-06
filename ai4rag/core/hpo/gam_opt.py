@@ -620,7 +620,8 @@ class GAMOptimizer(BaseOptimizer):
 
     @staticmethod
     # The coverage-aware selection keeps its related state together.
-    # pylint: disable=too-many-locals
+    # The iteration coordinates data preparation, surrogate fitting, prediction, and evaluation.
+    # pylint: disable=too-many-locals,too-many-branches
     def _get_balanced_combinations(
         combinations: list[dict], fields_to_balance: list[str], coverage_target: int | None = None
     ) -> list[dict]:
