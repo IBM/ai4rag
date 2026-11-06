@@ -24,8 +24,8 @@ This user guide covers:
 
 ai4rag transforms templates into patterns through optimization.
 
-Published patterns include `template_id`, allowing generated inference notebooks to
-recreate the chosen `AgenticRAG` or `SequentialRAG` template. With `LocalEventHandler`,
+Published patterns include `template_id`, identifying the chosen `AgenticRAG` or
+`SequentialRAG` template through `ai4rag.rag.template.registry`. With `LocalEventHandler`,
 each published pattern has `pattern.json` and `evaluation_results.json`; agentic
 patterns also include `conversations.json` with retrieval and tool activity. See
 [Event Handlers](event-handlers.md) for the output schema.

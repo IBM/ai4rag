@@ -1,6 +1,6 @@
 # Pipeline Components
 
-`ai4rag.utils.data` and `ai4rag.assets_generator` provide reusable building blocks for RAG
+`ai4rag.utils.data` provides reusable building blocks for RAG
 pipeline workflows. These functions encapsulate the business logic that was previously inlined in
 Kubeflow Pipeline components, making it available for use in any context — KFP pipelines, standalone
 scripts, notebooks, or tests.
@@ -24,8 +24,6 @@ scripts, notebooks, or tests.
 │  │ utils/                                    │ │
 │  │  data/                                    │ │
 │  │  clients/ — s3, maas_client               │ │
-│  │ assets_generator/                         │ │
-│  │  notebook, leaderboard, templates         │ │
 │  └───────────────────────────────────────────┘ │
 │  ┌──────────────────────────────────────────┐ │
 │  │ core/ — experiment, HPO                  │ │
@@ -36,7 +34,7 @@ scripts, notebooks, or tests.
 
 KFP wrappers handle artifact I/O (reading `dsl.Input[Artifact]`, writing `dsl.Output[Artifact]`),
 Kubernetes-specific concerns (secrets, resource limits), and full RAG-optimization orchestration.
-Data-stage and asset-generation business logic lives in `ai4rag`, so it can be exercised outside KFP.
+Data-stage business logic lives in `ai4rag`, so it can be exercised outside KFP.
 
 ## Installation
 
@@ -222,14 +220,6 @@ Configured local paths are validated rather than replaced by downloads. With
 the selected detection, classification, recognition, and matching dictionary files
 under `RapidOcr/`; audio needs a complete Transformers-format Whisper directory.
 
-Generated MaaS and knowledge-graph indexing notebooks use this workflow, select
-`language` from the pattern, and use one extraction worker to reduce memory pressure.
-They default to connected mode; set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in a
-workbench or `NOTEBOOK_CLUSTER_MODE=disconnected` as an override, including in AutoX
-Jobs. Both variables accept `connected` or `disconnected`. Run All uses the chosen
-mode without skipping cells. Direct Python callers set `disconnected` explicitly;
-the helper does not read notebook mode variables.
-
 Without a prepared configuration, OCR is **off by default**. Conversion behaviour (table structure and OCR) is
 controlled through a single `DoclingExtractionConfig` instance. To enable
 RapidOCR (for scanned PDFs / images):
@@ -267,10 +257,9 @@ bundled in a compatible RapidOCR wheel. If neither is available and
 connected environment can use Docling's normal model downloader. Explicit model paths
 and bundled wheel models do not require `DOCLING_ARTIFACTS_PATH`.
 
-For disconnected OCR runs, stage all required models before extraction. The generated
-MaaS and knowledge-graph indexing notebooks use the pinned PP-OCRv4 bundles selected
-by `prepare_extraction()`, rather than relying on bundled wheel models or Docling's
-default downloader. See the [offline staging instructions](https://github.com/IBM/ai4rag#running-on-disconnected-clusters).
+For disconnected OCR runs, stage all required models before extraction.
+`prepare_extraction()` validates the pinned PP-OCRv4 bundle for the selected language.
+See the [offline staging instructions](https://github.com/IBM/ai4rag#running-on-disconnected-clusters).
 Docling auto-detects pages that need OCR when `do_ocr=True`.
 
 #### Audio Transcription

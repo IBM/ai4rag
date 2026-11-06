@@ -265,7 +265,7 @@ optimizer_settings = GAMOptSettings(
     Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
     `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
     use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
-    results, streamed patterns, inference notebooks, and starter kits.
+    results and streamed patterns.
 
 Create and run the optimization experiment:
 
@@ -432,4 +432,3 @@ can prune models that would perform better with sequential or graph execution.
 It ranks by `OVERALL_SCORE`, independently of the experiment’s optimization metric.
 Existing model-count thresholds and `search(skip_mps=True)` still apply. Graph RAG
 extension enablement belongs to the calling product; the library adds no feature flag.
-The starter-kit application/package remains named `agentic_rag`.

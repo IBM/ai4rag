@@ -70,7 +70,7 @@ Each candidate selects its template through the categorical `template_id` search
 Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
 `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
 use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
-results, streamed patterns, inference notebooks, and starter kits.
+results and streamed patterns.
 
 Model pre-selection always evaluates `AgenticRAG` with vector retrieval using temporary Milvus Lite,
 regardless of the requested templates or backend. It can prune models that would

@@ -21,9 +21,8 @@ def create_dev_maas_client() -> OpenAI:
 
     A single client serves everything: it lists available models and serves
     chat/embeddings for all of them. ``MAAS_BASE_URL`` is the **complete**
-    OpenAI-compatible endpoint and is used **verbatim** — exactly as the
-    generated notebooks consume it (``OpenAI(base_url=MAAS_BASE_URL, ...)``) — so
-    the same value works for local runs and the produced artifacts alike.
+    OpenAI-compatible endpoint, normalized by :func:`create_maas_client` before
+    constructing the client.
 
     Returns
     -------

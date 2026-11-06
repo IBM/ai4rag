@@ -77,8 +77,8 @@ For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra inclu
 `rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, and `huggingface-hub>=0.30,<2` along with
 Docling's conversion and audio dependencies. Both the core package and this extra
 require `docling-slim~=2.121.0` for ai4rag and Kubeflow Pipelines compatibility.
-Generated indexing notebooks install OCR packages through this extra. Audio extraction also
-requires the system `ffmpeg` executable on `PATH` with support for the input codec.
+Audio extraction also requires the system `ffmpeg` executable on `PATH` with
+support for the input codec.
 
 `extract_text()` and the repository's development-only `FileStore` helper parse PDFs
 with PDFium to recover text that the native parser can emit as NUL characters.
@@ -92,7 +92,7 @@ Each candidate selects its template through the categorical `template_id` search
 Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
 `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
 use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
-results, streamed patterns, inference notebooks, and starter kits.
+results and streamed patterns.
 
 `AgenticRAG` can retry a recognized context-window overflow once with query-relevant
 excerpts from retrieved documents. This fallback is enabled by default; see
@@ -104,12 +104,6 @@ for its limits and configuration.
 Conversations are also available as `EvaluationResult.conversations` and included
 by `to_dict()`; the field is `None` when no conversations are emitted. Per-question
 evaluation records include an optional `conversation_id` linking to these records.
-
-`generate_starter_kit()` packages the selected pattern into a microservice with
-OpenShell deployment for Milvus, PostgreSQL/pgvector, or Neo4j. Deployment forwards
-database CA certificates and retrieves from an already indexed collection. See the
-[Starter Kit guide](https://ibm.github.io/ai4rag/latest/api-reference/assets-generator/starter-kit/)
-and [template migration guidance](https://ibm.github.io/ai4rag/latest/getting-started/quick-start/#template-migration-and-pre-selection).
 
 ## Running on Disconnected Clusters
 
@@ -126,14 +120,13 @@ ai4rag depends on models from two sources:
 
 ### Setup Instructions
 
-For the MaaS and knowledge-graph indexing notebooks, use the approved Docling artifact bundle from
-the documents-indexing pipeline image. A generic Docling download alone does
-not provide the pinned PP-OCRv4 files required for OCR parity. The selected OCR
-bundle must include detection, classification, recognition, and matching dictionary
+For OCR with `prepare_extraction()`, stage the pinned PP-OCRv4 files before
+running offline. A generic Docling download alone does not provide these files.
+The selected OCR bundle must include detection, classification, recognition, and matching dictionary
 files under `RapidOcr/`. Only stage bundles needed by your corpus: PDF/image inputs
 need Docling/RapidOCR, audio needs Whisper, and text-only inputs need neither.
 
-1. **On an internet-connected machine**, stage the approved Docling/RapidOCR bundle
+1. **On an internet-connected machine**, stage the required Docling/RapidOCR bundle
    under `./offline/docling/` for PDF/image inputs. For audio, download the pinned
    Transformers-format Whisper Tiny snapshot:
    ```bash
@@ -164,40 +157,32 @@ need Docling/RapidOCR, audio needs Whisper, and text-only inputs need neither.
    export HF_MODEL_DIR=/offline/models/whisper-tiny
    export HF_HUB_OFFLINE=1  # Enforce offline mode
    export TRANSFORMERS_OFFLINE=1
-   export RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected
    ```
 
    `HF_MODEL_DIR` must contain a complete local Transformers-format Whisper model
-   on disconnected clusters. Connected indexing notebooks can download the pinned
-   Whisper model when no local model is configured.
+   on disconnected clusters. Connected `prepare_extraction()` calls can download
+   the pinned Whisper model when no local model is configured.
    You can override the environment setting with
    `DoclingExtractionConfig(asr_model_path="/models/whisper-tiny")`.
-   Provide `ffmpeg` in the workbench image for audio, and mirror the current
+   Provide `ffmpeg` in the runtime environment for audio, and mirror the current
    `ai4rag[text-extraction]` dependencies in the disconnected environment.
 
-### Indexing Notebooks
-
-Both indexing notebooks default to connected mode. Their early
-**Disconnected cluster setup** cell lists everything to prepare before running
-offline. Set `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` in the workbench, or pass
-`NOTEBOOK_CLUSTER_MODE=disconnected` to an AutoX Job. There are no environment
-tags or cells to skip; Jupyter **Run All** uses the same mode setting.
+### Preparing Extraction Models
 
 After document discovery, `prepare_extraction()` from
 `ai4rag.utils.data.text_extraction` checks the selected file types and returns a
 `PreparedExtraction` with `config`, `artifacts_path`, `needs_ocr`, and `needs_asr`.
-PDFs and images need the pipeline-compatible PP-OCRv4 bundle; audio needs a
+PDFs and images need the pinned PP-OCRv4 bundle; audio needs a
 Whisper model. Text-only corpora need neither. Connected runs download pinned
 OCR or Whisper files only when no local model path is configured. Disconnected
-runs must mount the approved OCR bundle under `DOCLING_ARTIFACTS_PATH` and, for
+runs must mount the required OCR bundle under `DOCLING_ARTIFACTS_PATH` and, for
 audio, a complete Whisper model under `HF_MODEL_DIR`.
-The pattern's selected language chooses
-English or Chinese OCR automatically. Each notebook uses one extraction worker
-so a small workbench can process scanned PDFs and audio without exhausting memory.
-For direct Python use, pass `disconnected=True` to `prepare_extraction()` and
-forward its `config` and `artifacts_path` to `extract_text()`; notebook mode
-variables apply only to the generated notebooks. `extract_text()` itself does not
-download Whisper weights.
+The `language` argument selects English or Chinese OCR. Pass `disconnected=True`
+to `prepare_extraction()` for offline use, then forward its `config` and
+`artifacts_path` to `extract_text()` as `docling_config` and
+`docling_artifacts_path`. `extract_text()` itself does not download Whisper
+weights. See the [text extraction guide](https://ibm.github.io/ai4rag/latest/user-guide/pipeline-components/#text-extraction)
+for an example.
 
 
 ## Quick start

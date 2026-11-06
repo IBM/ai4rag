@@ -70,12 +70,12 @@ sequenceDiagram
 
 Documents are provided as `list[DoclingDocument]` (from the `docling-core` library). Each document is a structured representation of a parsed file, with the document name used as `document_id`. If the name is not set, a content-based hash is generated instead.
 
-Before this experiment phase, generated MaaS and knowledge-graph indexing notebooks
-discover S3 objects, call `prepare_extraction()`, then pass its configuration to
+To prepare source files before this experiment phase, use `discover_documents()`
+to discover S3 objects, call `prepare_extraction()`, then pass its configuration to
 `extract_text()`. Preparation chooses OCR/audio models from file extensions and the
-pattern language. Connected preparation downloads pinned models when local paths are
-unset; disconnected preparation validates mounted bundles. Extraction uses one worker
-in these notebooks. See [Text Extraction](../user-guide/pipeline-components.md#text-extraction).
+supplied language. Connected preparation downloads pinned models when local paths are
+unset; disconnected preparation validates mounted bundles. See
+[Text Extraction](../user-guide/pipeline-components.md#text-extraction).
 
 ### Chunking
 

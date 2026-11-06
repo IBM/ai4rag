@@ -2,7 +2,7 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
-"""Registry for RAG templates supported by persisted patterns and notebooks."""
+"""Registry for RAG templates supported by persisted patterns."""
 
 from dataclasses import dataclass
 
@@ -20,9 +20,9 @@ class RAGTemplateSpec:
     template_id : str
         Stable identifier stored in ``pattern.json``.
     template_class : type[BaseRAGTemplate]
-        Implementation class used by the experiment and generated notebook.
+        Implementation class used by the experiment.
     import_path : str
-        Module from which the notebook imports ``template_class``.
+        Module that exports ``template_class``.
     """
 
     template_id: str
@@ -46,8 +46,7 @@ def get_template_spec(template_id: str) -> RAGTemplateSpec:
     Raises
     ------
     ValueError
-        If the ID is unsupported, so notebook generation never imports an
-        arbitrary module named by pattern data.
+        If the ID is unsupported.
     """
     try:
         return _SPECS_BY_ID[template_id]

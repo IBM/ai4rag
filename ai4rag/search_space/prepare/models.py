@@ -19,7 +19,7 @@ Two complementary modes are exposed through the same
   registry, the model is instantiated on the shared client and, by default,
   validated for responsiveness (embedding dimension/context length are
   auto-detected against the live endpoint). This backs the search-space
-  preparation step and the generated notebooks.
+  preparation step.
 * **Restore** — given serialized specs from a search-space report (each carrying
   its ``model_id``, inference ``params``, detected ``language`` and prompt
   templates), models are rebuilt verbatim, reusing every stored parameter. No
