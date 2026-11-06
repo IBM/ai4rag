@@ -40,8 +40,8 @@ No extra step is needed to use a remote Milvus server, embedded Milvus Lite, Pos
 `langchain` and `langchain-openai` are also core dependencies, powering the `AgenticRAG` template that `AI4RAGExperiment` uses by default (see [RAG Templates](../architecture/rag-components.md#rag-templates)).
 
 `nest-asyncio~=1.6.0` is installed as a core dependency for notebook event-loop
-compatibility. Generated knowledge-graph indexing notebooks call `nest_asyncio.apply()`
-before graph extraction.
+compatibility. Call `nest_asyncio.apply()` before graph extraction when using an
+environment with an active event loop.
 
 `certifi>=2026.7.22,<2027` is installed as a core dependency to supply public CA
 roots alongside deployment-mounted MaaS certificates. Include it in offline package
@@ -57,21 +57,16 @@ mirrors when upgrading.
     pip install "ai4rag[text-extraction] @ git+https://github.com/IBM/ai4rag.git@main"
     ```
 
-    RapidOCR and ONNX Runtime are declared directly by this extra. Generated MaaS
-    indexing notebooks install them through `ai4rag[text-extraction]` without separate
-    OCR package installation commands.
-
-    Both indexing notebooks default to connected mode. Set
-    `RHOAI_NOTEBOOK_CLUSTER_MODE=disconnected` for a disconnected workbench, or
-    `NOTEBOOK_CLUSTER_MODE=disconnected` for an AutoX Job override. After discovery,
-    `prepare_extraction()` downloads pinned PP-OCRv4 files for PDF/image inputs when
-    no local artifacts path is configured. Disconnected runs instead require the
-    approved Docling/RapidOCR bundle through `DOCLING_ARTIFACTS_PATH`, including the
-    recognition dictionary. Text-only corpora need neither OCR nor Whisper models.
+    RapidOCR and ONNX Runtime are declared directly by this extra. After discovery,
+    call `prepare_extraction()` to select the required models. By default it downloads
+    pinned PP-OCRv4 files for PDF/image inputs when no local artifacts path is
+    configured. With `disconnected=True`, it requires the local Docling/RapidOCR
+    bundle through `DOCLING_ARTIFACTS_PATH`, including the recognition dictionary.
+    Text-only corpora need neither OCR nor Whisper models.
 
     Audio extraction requires the system `ffmpeg` executable on `PATH`, with decoders
-    for the input audio formats. Generated indexing notebooks use `prepare_extraction()`
-    to download a pinned Transformers-format Whisper model on connected clusters when
+    for the input audio formats. Connected `prepare_extraction()` calls download
+    a pinned Transformers-format Whisper model when
     neither `HF_MODEL_DIR` nor an explicit model path is set. Disconnected clusters must
     provide a complete local model through `HF_MODEL_DIR` (or
     `DoclingExtractionConfig.asr_model_path`). `extract_text()` itself does not download

@@ -452,7 +452,7 @@ class BaseVectorStore(ABC):
 
 **Configuration:**
 
-Every concrete store is constructed from a typed, frozen `config` dataclass (`MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`, or `Neo4jConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"milvus"`, `"milvus_lite"`, `"pgvector"`, `"neo4j"`). `MilvusConfig` and `MilvusLiteConfig` are separate, validated classes rather than two modes of a single config: `MilvusConfig.uri` must be an `http(s)://` URL (remote server or Zilliz Cloud) and raises `ValueError` otherwise, while `MilvusLiteConfig.db_path` is a local file path and raises `ValueError` if given an `http(s)://` value. Both are served by the same `MilvusVectorStore` implementation. Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code or generated artifacts (e.g. pattern notebooks).
+Every concrete store is constructed from a typed, frozen `config` dataclass (`MilvusConfig`, `MilvusLiteConfig`, `PGVectorConfig`, or `Neo4jConfig`) that carries the backend's connection parameters and a `provider` discriminator (`"milvus"`, `"milvus_lite"`, `"pgvector"`, `"neo4j"`). `MilvusConfig` and `MilvusLiteConfig` are separate, validated classes rather than two modes of a single config: `MilvusConfig.uri` must be an `http(s)://` URL (remote server or Zilliz Cloud) and raises `ValueError` otherwise, while `MilvusLiteConfig.db_path` is a local file path and raises `ValueError` if given an `http(s)://` value. Both are served by the same `MilvusVectorStore` implementation. Each config class exposes a `from_env()` classmethod that reads its own `*_ENV` variables, so connection details never need to be hardcoded in application code.
 
 **Collection naming (shared across all backends):**
 
@@ -1164,10 +1164,6 @@ Published patterns carry a `template_id` resolved by `ai4rag.rag.template.regist
 `get_template_spec()` resolves an allowed ID to its implementation. Vector stores
 accept `agentic_rag` (default) and `sequential_rag`;
 Neo4j requires `agentic_graph_rag` (also implemented by `AgenticRAG`) and graph search.
-Generated inference notebooks instantiate the resolved class. Patterns without an ID
-warn and use `SequentialRAG`; explicit unsupported IDs raise `ValueError`.
-
-See the [registry API](https://github.com/kubeflow/pipelines-components/blob/main/components/training/autorag/shared/assets_generator/docs/notebooks.md#rag-template-registry).
 
 ### BaseRAGTemplate
 
@@ -1314,7 +1310,7 @@ Each candidate selects its template through the categorical `template_id` search
 Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
 `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
 use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
-results, streamed patterns, inference notebooks, and starter kits.
+results and streamed patterns.
 
 ```python
 from ai4rag.search_space.src.parameter import Parameter
@@ -1585,7 +1581,7 @@ class CustomVectorStore(BaseVectorStore):
 ### Custom RAG Template
 
 Custom templates can implement `BaseRAGTemplate` for standalone use. Experiment
-publication and generated notebooks currently accept only registered built-in classes;
+publication currently accepts only registered built-in classes;
 adding a subclass requires changes to the registry before it can publish patterns.
 There is no public dynamic-registration API.
 

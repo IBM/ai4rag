@@ -514,7 +514,6 @@ omit = [
 
 - **Target**: >80% code coverage
 - **Focus**: Cover critical paths, edge cases, and error handling
-- **Exclude**: Template code for notebooks, auto-generated code
 
 ---
 

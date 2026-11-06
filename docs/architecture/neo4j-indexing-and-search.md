@@ -140,10 +140,8 @@ Calling both on the same documents with different chunking settings can therefor
 Published experiment patterns store the extraction policy in
 `settings.graph_extraction`, replacing `settings.knowledge_graph`. The policy contains
 the mode, any configured extraction-token override, and any per-chunk limits; the published payload no longer carries a separate
-extraction-model ID/parameters block. The indexing notebook uses the published
-generation model and this extraction policy. Graph retrieval controls remain in
-`settings.retrieval`. Regenerate older patterns or migrate their `extraction_config`
-before generating new graph indexing notebooks.
+extraction-model ID/parameters block. Graph retrieval controls remain in
+`settings.retrieval`.
 
 ## Graph retrieval
 

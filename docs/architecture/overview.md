@@ -142,7 +142,7 @@ graph TB
 - Combines all RAG components
 - Provides end-to-end RAG pipeline
 - Two implementations: `SequentialRAG` (single fixed retrieve-then-generate pass) and `AgenticRAG` (a LangChain agent that can rewrite its query and retrieve again before answering — the default used by `AI4RAGExperiment` and `ModelsPreSelector`)
-- `ai4rag.rag.template.registry` maps persisted template IDs to allowed classes and import paths; generated inference notebooks use the selected template
+- `ai4rag.rag.template.registry` maps persisted template IDs to allowed classes and import paths
 - `AgenticRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
 - Context compression is enabled by default for `AgenticRAG`; a recognized context overflow triggers one retry, with retained context and compression statistics recorded in the result
 - Budget middleware removes tools for a final answer once the retrieval or agent model-call budget is exhausted
@@ -178,13 +178,6 @@ graph TB
 - Full RAG optimization orchestration
 - Language detection for multilingual benchmark support
 - Built on top of `ai4rag.search_space` and `ai4rag.core`; not part of this repo
-
-**Assets Generator** ([pipelines-components](https://github.com/kubeflow/pipelines-components/tree/main/components/training/autorag/shared/assets_generator))
-
-- Programmatic Jupyter notebook generation from templates
-- HTML leaderboard rendering from pattern evaluations
-- Deployable starter-kit generation from published patterns
-- Bundled notebook templates via `importlib.resources`
 
 ### 6. Utilities Layer
 

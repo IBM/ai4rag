@@ -18,7 +18,7 @@
 </div>
 
 **ai4rag** is an optimization engine for RAG (Retrieval-Augmented Generation) patterns that is **LLM and Vector Database provider-agnostic**.
-It accepts benchmark data, search space definition, optimizer configuration then returns a leaderboard with benchmarked RAG Template instances (called **RAG Patterns**).
+It accepts benchmark data, a search space definition, and optimizer configuration, then evaluates RAG Template instances (called **RAG Patterns**) to find optimal parameter values.
 
 ---
 

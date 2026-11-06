@@ -100,7 +100,7 @@ class MilvusConfig(BaseVectorStoreConfig):
     ----------
     env_vars : ClassVar[tuple[tuple[str, str], ...]]
         ``(name, description)`` pairs for the environment variables consulted by
-        :meth:`from_env`. Exposed for documentation and notebook generation.
+        :meth:`from_env`.
 
     Raises
     ------
@@ -195,7 +195,7 @@ class MilvusLiteConfig(BaseVectorStoreConfig):
     ----------
     env_vars : ClassVar[tuple[tuple[str, str], ...]]
         ``(name, description)`` pairs for the environment variables consulted by
-        :meth:`from_env`. Exposed for documentation and notebook generation.
+        :meth:`from_env`.
 
     Raises
     ------
@@ -287,7 +287,7 @@ class PGVectorConfig(BaseVectorStoreConfig):
     ----------
     env_vars : ClassVar[tuple[tuple[str, str], ...]]
         ``(name, description)`` pairs for the environment variables consulted by
-        :meth:`from_env`. Exposed for documentation and notebook generation.
+        :meth:`from_env`.
     """
 
     env_vars: ClassVar[tuple[tuple[str, str], ...]] = (
@@ -488,8 +488,8 @@ def get_vector_store_config(provider: str) -> BaseVectorStoreConfig:
     Companion to :func:`ai4rag.rag.vector_store.get_vector_store.get_vector_store`:
     given only a provider discriminator, it selects the matching config class and
     populates it from that backend's ``*_ENV`` variables via ``from_env``. Keeping
-    connection details in the environment means secrets never have to be embedded
-    in generated artefacts (e.g. pattern notebooks).
+    connection details in the environment avoids embedding secrets in application
+    code.
 
     Parameters
     ----------

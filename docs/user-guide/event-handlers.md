@@ -109,7 +109,7 @@ Each candidate selects its template through the categorical `template_id` search
 Vector backends (Milvus, Milvus Lite, pgvector) accept `agentic_rag` (default) or
 `sequential_rag`; Neo4j requires `agentic_graph_rag` and graph search. Both agentic IDs
 use `AgenticRAG`; sequential uses `SequentialRAG`. The selected ID is retained in
-results, streamed patterns, inference notebooks, and starter kits.
+results and streamed patterns.
 
 For Neo4j patterns, `settings.graph_extraction` contains the extraction policy, for example:
 
@@ -142,12 +142,9 @@ When `route_k` is unset, it is omitted and Neo4j computes `max(2 * k, 10)` from
 the requested chunk count. The other graph options include their effective
 defaults even when `graph_retrieval_config` was omitted from the experiment.
 
-`LocalEventHandler` writes the streamed payload to `pattern.json`. The
-[starter-kit generator](../api-reference/assets-generator/starter-kit.md) copies
-these retrieval settings into `agent_config.json`; deployment `config.py` loads
-them and the retriever forwards them to Neo4j through `search_kwargs`. This
-preserves custom graph settings through evaluation, publication, and deployment,
-including deferred publication of the best warm-start candidate.
+`LocalEventHandler` writes the streamed payload to `pattern.json`, preserving the
+effective graph retrieval settings used during evaluation. These settings are also
+retained when publication of the best warm-start candidate is deferred.
 
 ### `evaluation_results` — per-question breakdown
 
