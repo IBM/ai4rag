@@ -723,6 +723,38 @@ class GAMOptimizer(BaseOptimizer):
             self._typed_encoders_with_columns.append((col, LabelEncoder().fit(df[col])))
         logger.debug("Typed encoder for %s has been prepared.", self.__class__.__name__)
 
+    def _fit_surrogate_model(
+        self, encoders: list[tuple[str, LabelEncoder]], data: pd.DataFrame, target: pd.Series
+    ) -> LinearGAM | None:
+        """Fit the GAM surrogate model, returning ``None`` for numerical fit failures."""
+        x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
+
+        terms = None
+        for i, (column, enc) in enumerate(encoders):
+            observed_values = set(x_train_enc[:, i])
+            all_values = set(range(len(enc.classes_)))
+            has_unseen_categorical_levels = isinstance(enc.classes_[0], str) and observed_values != all_values
+            if has_unseen_categorical_levels:
+                logger.warning(
+                    "Column '%s' falls back to spline: not all levels are present in training data.",
+                    column,
+                )
+            use_spline = (
+                self.settings.warm_start_strategy == "random"
+                or not isinstance(enc.classes_[0], str)
+                or has_unseen_categorical_levels
+            )
+            term = gam_s(i) if use_spline else gam_f(i)
+            terms = term if terms is None else terms + term
+
+        gam = LinearGAM(terms)
+        try:
+            gam.fit(x_train_enc, target)
+        except np.linalg.LinAlgError as error:
+            logger.warning("Skipping GAM iteration because surrogate-model fitting failed: %s", error)
+            return None
+        return gam
+
     # pylint: disable=too-many-locals
     def _run_iteration(self) -> None:
         """
@@ -756,31 +788,8 @@ class GAMOptimizer(BaseOptimizer):
                 data[col] = enc.classes_[0]
         target = pd.to_numeric(df["score"], errors="coerce")
 
-        x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
-
-        terms = None
-        for i, (column, enc) in enumerate(encoders):
-            observed_values = set(x_train_enc[:, i])
-            all_values = set(range(len(enc.classes_)))
-            has_unseen_categorical_levels = isinstance(enc.classes_[0], str) and observed_values != all_values
-            if has_unseen_categorical_levels:
-                logger.warning(
-                    "Column '%s' falls back to spline: not all levels are present in training data.",
-                    column,
-                )
-            use_spline = (
-                self.settings.warm_start_strategy == "random"
-                or not isinstance(enc.classes_[0], str)
-                or has_unseen_categorical_levels
-            )
-            term = gam_s(i) if use_spline else gam_f(i)
-            terms = term if terms is None else terms + term
-
-        gam = LinearGAM(terms)
-        try:
-            gam.fit(x_train_enc, target)
-        except np.linalg.LinAlgError as error:
-            logger.warning("Skipping GAM iteration because surrogate-model fitting failed: %s", error)
+        gam = self._fit_surrogate_model(encoders, data, target)
+        if gam is None:
             return
 
         remaining_evaluations = self._get_remaining_evaluations(
