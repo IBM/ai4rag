@@ -508,7 +508,7 @@ class GAMOptimizer(BaseOptimizer):
                 col: {val: 0 for val in vals} for col, vals in str_cols.items()
             }
             for obs in self.evaluations:
-                if obs.get("score") is None:
+                if not _is_finite_score(obs.get("score")):
                     continue
                 for col in initial_coverage:
                     val = _str_val(obs.get(col))

@@ -801,6 +801,28 @@ class TestGAMOptimizerKnownObservations:
         assert objective_func.call_count == 2
         assert len(optimizer.evaluations) == 3
 
+    def test_greedy_warm_start_does_not_count_non_finite_known_scores_as_coverage(self, mocker):
+        """Invalid known scores must not satisfy greedy coverage for shared parameter values."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"category": "a", "variant": "shared"},
+            {"category": "b", "variant": "shared"},
+            {"category": "b", "variant": "other"},
+        ]
+        mock_space.max_combinations = 3
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=mock_space,
+            settings=GAMOptSettings(max_evals=3, n_random_nodes=2, warm_start_strategy="greedy"),
+            known_observations=[{"category": "a", "variant": "shared", "score": np.nan}],
+        )
+        greedy = mocker.spy(optimizer, "_get_greedy_combinations")
+
+        optimizer._prepare_warm_start_combinations(effective_target=2, successful_evaluations=0)
+
+        initial_coverage = greedy.call_args.kwargs["initial_coverage"]
+        assert initial_coverage["variant"]["shared"] == 0
+
     def test_known_observations_excludes_already_evaluated(self, mock_search_space):
         """Known observation combinations are excluded from random phase candidates."""
         known = [
