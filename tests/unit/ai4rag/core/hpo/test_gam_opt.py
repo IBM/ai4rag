@@ -633,6 +633,70 @@ class TestGAMOptimizer:
         assert call_args[0][0].shape[0] == 3  # X_train should have 3 samples
         assert call_args[0][1].shape[0] == 3  # y_train should have 3 samples
 
+    @pytest.mark.parametrize("invalid_score", [np.nan, np.inf, -np.inf])
+    def test_run_iteration_filters_out_non_finite_scores_for_training(self, mock_search_space, mocker, invalid_score):
+        """Non-finite scores must never reach the GAM surrogate model."""
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=2, evals_per_trial=1)
+        mock_gam = MagicMock()
+        mock_gam.predict.return_value = np.array([0.6, 0.7, 0.8])
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.9),
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        optimizer.evaluations = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+            {"param1": "b", "param2": 2, "score": invalid_score},
+            {"param1": "c", "param2": 3, "score": 0.5},
+        ]
+        optimizer._evaluated_combinations = [
+            {"param1": "a", "param2": 1},
+            {"param1": "b", "param2": 2},
+            {"param1": "c", "param2": 3},
+        ]
+
+        optimizer._run_iteration()
+
+        assert mock_gam.fit.call_args[0][0].shape[0] == 2
+        assert mock_gam.fit.call_args[0][1].shape[0] == 2
+
+    def test_run_iteration_skips_singular_gam_fit(self, mock_search_space, mocker, caplog):
+        """A numerical GAM fitting failure must not abort the optimization run."""
+        settings = GAMOptSettings(max_evals=6, n_random_nodes=2, evals_per_trial=1)
+        mock_gam = MagicMock()
+        mock_gam.fit.side_effect = np.linalg.LinAlgError("SVD did not converge")
+        mocker.patch("ai4rag.core.hpo.gam_opt.LinearGAM", return_value=mock_gam)
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=0.9),
+            search_space=mock_search_space,
+            settings=settings,
+        )
+        optimizer.evaluations = [
+            {"param1": "a", "param2": 1, "score": 0.3},
+            {"param1": "b", "param2": 2, "score": 0.5},
+        ]
+        optimizer._evaluated_combinations = [
+            {"param1": "a", "param2": 1},
+            {"param1": "b", "param2": 2},
+        ]
+
+        optimizer._run_iteration()
+
+        mock_gam.predict.assert_not_called()
+        assert "Skipping GAM iteration because surrogate-model fitting failed" in caplog.text
+
+    @pytest.mark.parametrize("invalid_score", [np.nan, np.inf, -np.inf])
+    def test_objective_function_discards_non_finite_scores(self, mock_search_space, invalid_score):
+        """An invalid objective result is recorded as a failed evaluation."""
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(return_value=invalid_score),
+            search_space=mock_search_space,
+            settings=GAMOptSettings(max_evals=6, n_random_nodes=2),
+        )
+
+        assert optimizer._objective_function({"param1": "a", "param2": 1}) is None
+
     def test_run_iteration_does_not_crash_when_remaining_is_empty(self, mock_search_space, mocker):
         """_run_iteration returns silently when all combinations have been evaluated."""
         mock_gam = MagicMock()
@@ -736,6 +800,28 @@ class TestGAMOptimizerKnownObservations:
         # Should have called objective function only 2 times (to fill the gap from 1 to 3)
         assert objective_func.call_count == 2
         assert len(optimizer.evaluations) == 3
+
+    def test_greedy_warm_start_does_not_count_non_finite_known_scores_as_coverage(self, mocker):
+        """Invalid known scores must not satisfy greedy coverage for shared parameter values."""
+        mock_space = MagicMock(spec=SearchSpace)
+        mock_space.combinations = [
+            {"category": "a", "variant": "shared"},
+            {"category": "b", "variant": "shared"},
+            {"category": "b", "variant": "other"},
+        ]
+        mock_space.max_combinations = 3
+        optimizer = GAMOptimizer(
+            objective_function=MagicMock(),
+            search_space=mock_space,
+            settings=GAMOptSettings(max_evals=3, n_random_nodes=2, warm_start_strategy="greedy"),
+            known_observations=[{"category": "a", "variant": "shared", "score": np.nan}],
+        )
+        greedy = mocker.spy(optimizer, "_get_greedy_combinations")
+
+        optimizer._prepare_warm_start_combinations(effective_target=2, successful_evaluations=0)
+
+        initial_coverage = greedy.call_args.kwargs["initial_coverage"]
+        assert initial_coverage["variant"]["shared"] == 0
 
     def test_known_observations_excludes_already_evaluated(self, mock_search_space):
         """Known observation combinations are excluded from random phase candidates."""
