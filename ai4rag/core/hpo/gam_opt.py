@@ -723,12 +723,8 @@ class GAMOptimizer(BaseOptimizer):
             self._typed_encoders_with_columns.append((col, LabelEncoder().fit(df[col])))
         logger.debug("Typed encoder for %s has been prepared.", self.__class__.__name__)
 
-    def _fit_surrogate_model(
-        self, encoders: list[tuple[str, LabelEncoder]], data: pd.DataFrame, target: pd.Series
-    ) -> LinearGAM | None:
-        """Fit the GAM surrogate model, returning ``None`` for numerical fit failures."""
-        x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
-
+    def _build_surrogate_terms(self, encoders: list[tuple[str, LabelEncoder]], x_train_enc: np.ndarray) -> Any:
+        """Build GAM terms appropriate for the encoded training data."""
         terms = None
         for i, (column, enc) in enumerate(encoders):
             observed_values = set(x_train_enc[:, i])
@@ -746,6 +742,14 @@ class GAMOptimizer(BaseOptimizer):
             )
             term = gam_s(i) if use_spline else gam_f(i)
             terms = term if terms is None else terms + term
+        return terms
+
+    def _fit_surrogate_model(
+        self, encoders: list[tuple[str, LabelEncoder]], data: pd.DataFrame, target: pd.Series
+    ) -> LinearGAM | None:
+        """Fit the GAM surrogate model, returning ``None`` for numerical fit failures."""
+        x_train_enc = np.column_stack([enc.transform(data[col]) for col, enc in encoders])
+        terms = self._build_surrogate_terms(encoders, x_train_enc)
 
         gam = LinearGAM(terms)
         try:
