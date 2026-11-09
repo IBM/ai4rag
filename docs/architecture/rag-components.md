@@ -1390,6 +1390,27 @@ for CA selection and precedence.
    truth. After a compression retry, these are the retained excerpts or fallback
    source chunks rather than all documents seen by the failed run.
 
+Tool selection is sequential for both `agentic_rag` and `agentic_graph_rag`:
+the agent chooses at most one tool, receives its result, and then chooses its
+next action. Tool-enabled `ChatOpenAI` requests include
+`parallel_tool_calls=false`, including when a caller supplies the model. This
+request setting does not change the shared model configuration and is not added
+to other model implementations or tool-free rewrite, compression, and final-answer
+requests.
+
+If a serving endpoint returns multiple calls despite this instruction, the agent
+keeps the first parsed call, in response order, naming an offered tool with
+dictionary arguments and a nonempty call ID. The existing tool machinery still
+validates its argument schema. All other calls are discarded before execution
+and history storage; they are neither queued nor given fabricated results. The
+model can reconsider them after receiving the accepted call's result. Conversation
+artifacts contain only accepted calls and actual executions. A compatibility
+warning reports only returned and discarded call counts, without prompts,
+arguments, or documents. If no call qualifies, the agent raises `ValueError`.
+There are no additional generation retries; unsupported-parameter HTTP errors
+propagate. Tool calls returned after budget finalization retain the explicit
+`RuntimeError` described above.
+
 **Usage:**
 
 ```python

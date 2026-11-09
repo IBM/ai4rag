@@ -10,14 +10,16 @@ from types import SimpleNamespace
 
 import httpx
 import pytest
+from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
-from openai import BadRequestError
+from openai import BadRequestError, OpenAI
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.rag.retrieval.document_compressor import LLMDocumentCompressor
-from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.template.agentic_rag_template import AgenticRAG, _enforce_sequential_tools, _single_tool_response
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 
 
@@ -49,6 +51,350 @@ def _tool(create_agent, name):
 def _call_tool(create_agent, name, arguments, context):
     tool = _tool(create_agent, name)
     return tool.func(**arguments, runtime=SimpleNamespace(context=context))
+
+
+def _http_tool(name, arguments, call_id):
+    return {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
+
+
+def _http_completion(content="", calls=None):
+    message = {"role": "assistant", "content": content}
+    if calls is not None:
+        message["tool_calls"] = calls
+    return httpx.Response(
+        200,
+        json={
+            "id": "completion",
+            "object": "chat.completion",
+            "created": 0,
+            "model": "model",
+            "choices": [{"index": 0, "finish_reason": "tool_calls" if calls else "stop", "message": message}],
+        },
+    )
+
+
+def _http_agent(mocker, respond, supplied=True, budget=2):
+    client = OpenAI(
+        api_key="test",
+        base_url="https://maas.example/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    )
+    # The internal model uses this same client when MaaS configures TLS trust.
+    client._ai4rag_tls_verify = True
+    foundation = OpenAIFoundationModel(
+        client=client,
+        model_id="model",
+        system_message_text="Answer from context.",
+        user_message_text="Question: {question}\nContext: {reference_documents}",
+        context_template_text="{document}",
+    )
+    model = (
+        ChatOpenAI(
+            model="model",
+            api_key="test",
+            client=client.chat.completions,
+            use_responses_api=False,
+            model_kwargs={"parallel_tool_calls": True},
+        )
+        if supplied
+        else None
+    )
+    retriever = mocker.MagicMock()
+    retriever.retrieve.return_value = [AI4RAGChunk(text="private document", metadata={})]
+    return AgenticRAG(foundation, retriever, budget, model)
+
+
+@pytest.mark.parametrize("supplied", [True, False])
+@pytest.mark.parametrize("batch", ["rewrite_first", "retriever_first", "same_tool", "malformed", "unknown", "no_id"])
+def test_http_agent_serializes_only_the_first_eligible_tool(mocker, caplog, supplied, batch):
+    """A server ignoring the flag cannot execute or replay speculative calls."""
+    requests = []
+    offered_turns = []
+    rewrite = _http_tool("rewrite_query", '{"missing_information":"private missing fact"}', "accepted_rewrite")
+    search = _http_tool("retriever", '{"query":"focused search"}', "accepted_search")
+    discarded = _http_tool("retriever", '{"query":"discarded private query"}', "discarded")
+    batches = {
+        "rewrite_first": [rewrite, discarded],
+        "retriever_first": [_http_tool("retriever", '{"query":"early search"}', "accepted_early"), rewrite],
+        "same_tool": [rewrite, _http_tool("rewrite_query", '{"missing_information":"discarded fact"}', "discarded")],
+        "malformed": [_http_tool("rewrite_query", "invalid private JSON", "discarded"), rewrite, discarded],
+        "unknown": [_http_tool("private_unknown_tool", "{}", "discarded"), rewrite],
+        "no_id": [_http_tool("rewrite_query", '{"missing_information":"discarded fact"}', ""), rewrite],
+    }
+
+    def respond(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        for message in payload["messages"]:
+            if message["role"] == "assistant" and len(message.get("tool_calls", [])) > 1:
+                return httpx.Response(400, json={"error": {"message": "Only single tool calls are supported"}})
+        if payload.get("tools"):
+            assert payload["parallel_tool_calls"] is False
+            assert "at most one tool per response" in payload["messages"][0]["content"]
+            offered_turns.append(payload)
+            if len(offered_turns) == 1:
+                return _http_completion(calls=batches[batch])
+            observations = [message for message in payload["messages"] if message["role"] == "tool"]
+            if observations[-1]["tool_call_id"] == "accepted_early":
+                return _http_completion(calls=[rewrite])
+            assert observations[-1]["tool_call_id"] == "accepted_rewrite"
+            assert observations[-1]["content"] == "focused search"
+            return _http_completion(calls=[search])
+        # Explicit caller configuration is allowed on tool-free calls, but the
+        # policy must never add or overwrite it on these nested/final requests.
+        assert payload.get("parallel_tool_calls") is (True if supplied else None)
+        if "tool budget is exhausted" in payload["messages"][0]["content"]:
+            return _http_completion("grounded answer")
+        assert "Write one concise search query" in payload["messages"][0]["content"]
+        return _http_completion("focused search")
+
+    agent = _http_agent(mocker, respond, supplied, budget=3 if batch == "retriever_first" else 2)
+    original_settings = dict(agent.chat_model.model_kwargs)
+
+    # Reusing a graph must not queue discarded calls for the next invocation.
+    for _ in range(2):
+        requests.clear()
+        offered_turns.clear()
+        agent.retriever.retrieve.reset_mock()
+        result = agent.generate("private question")
+
+        assert result["answer"] == "grounded answer"
+        expected_queries = ["private question", "focused search"]
+        if batch == "retriever_first":
+            expected_queries.insert(1, "early search")
+        assert [call.args[0] for call in agent.retriever.retrieve.call_args_list] == expected_queries
+        assert len(requests) == (5 if batch == "retriever_first" else 4)
+        conversation = result["conversation"]
+        calls = [call for message in conversation["messages"] for call in message.get("tool_calls", [])]
+        ids = [call["id"] for call in calls]
+        assert ids == (["accepted_early"] if batch == "retriever_first" else []) + [
+            "accepted_rewrite",
+            "accepted_search",
+        ]
+        assert [message["tool_call_id"] for message in conversation["messages"] if message["type"] == "tool"] == ids
+        assert len(conversation["tool_execution"]["rewrite_query"]) == 1
+        assert len(conversation["tool_execution"]["retriever"]) == len(expected_queries) - 1
+        assert "discarded" not in json.dumps(conversation)
+        assert all("discarded" not in json.dumps(request) for request in requests)
+    assert agent.chat_model.model_kwargs == original_settings
+    warnings_logged = [record.getMessage() for record in caplog.records if "Agent tool response" in record.getMessage()]
+    returned = len(batches[batch])
+    assert warnings_logged == [f"Agent tool response returned {returned} calls; discarded {returned - 1} calls."] * 2
+    assert not _failure_traces(caplog)
+
+
+def test_http_server_reproduces_failure_without_sequential_policy(mocker):
+    """The same serving restriction rejects history from the original graph."""
+
+    @wrap_model_call
+    def no_policy(request, handler):
+        return handler(request)
+
+    mocker.patch("ai4rag.rag.template.agentic_rag_template._enforce_sequential_tools", no_policy)
+    requests = []
+
+    def respond(request):
+        payload = json.loads(request.content)
+        requests.append(payload)
+        if any(len(message.get("tool_calls", [])) > 1 for message in payload["messages"]):
+            return httpx.Response(400, json={"error": {"message": "Only single tool calls are supported"}})
+        return _http_completion(
+            calls=[_http_tool("retriever", '{"query":"speculative search"}', f"call_{index}") for index in range(2)]
+        )
+
+    agent = _http_agent(mocker, respond)
+    with pytest.raises(BadRequestError, match="Only single tool calls are supported"):
+        agent.generate("question")
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize("kind", ["unknown", "malformed", "no_id"])
+def test_http_agent_rejects_multi_call_response_with_no_eligible_call(mocker, caplog, kind):
+    """An unusable batch fails before any tool execution or generation retry."""
+    calls = {
+        "unknown": [_http_tool("unavailable", "{}", "call_1"), _http_tool("also_unavailable", "{}", "call_2")],
+        "malformed": [
+            _http_tool("retriever", "private invalid JSON", "call_1"),
+            _http_tool("retriever", "[", "call_2"),
+        ],
+        "no_id": [_http_tool("retriever", "{}", ""), _http_tool("rewrite_query", "{}", "")],
+    }[kind]
+    requests = []
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return _http_completion(calls=calls)
+
+    agent = _http_agent(mocker, respond)
+    with pytest.raises(ValueError) as error:
+        agent.generate("private question")
+    assert str(error.value) == (
+        "Model returned multiple tool calls with no eligible call. "
+        "Return one offered tool with dictionary arguments and a nonempty call ID."
+    )
+    assert len(requests) == 1
+    agent.retriever.retrieve.assert_called_once_with("private question")
+    assert "Agent tool response returned 2 calls; discarded 2 calls." in caplog.messages
+    trace = _failure_traces(caplog)[0]
+    assert trace["tool_calls"] == {"retriever": 0, "rewrite_query": 0, "other": 0}
+    assert "private" not in " ".join(caplog.messages)
+
+
+@pytest.mark.parametrize("block_type", ["tool_call", "tool_use", "function_call"])
+def test_tool_policy_synchronizes_message_representations_without_mutating_original(block_type):
+    """Raw calls, invalid calls, and content blocks cannot resurrect a discarded call."""
+    accepted = {"name": "retriever", "args": {"query": "accepted query"}, "id": "accepted"}
+    discarded = {"name": "retriever", "args": {"query": "discarded query"}, "id": "discarded"}
+
+    def block(call):
+        if block_type == "function_call":
+            return {
+                "type": block_type,
+                "call_id": call["id"],
+                "name": call["name"],
+                "arguments": json.dumps(call["args"]),
+            }
+        if block_type == "tool_use":
+            return {"type": block_type, "id": call["id"], "name": call["name"], "input": call["args"]}
+        return {"type": block_type, **call}
+
+    message = AIMessage(
+        id="message identity",
+        content=[{"type": "text", "text": "retained text"}, block(accepted), block(discarded)],
+        tool_calls=[accepted, discarded],
+        invalid_tool_calls=[{"name": "retriever", "args": "invalid private JSON", "id": "invalid", "error": "parse"}],
+        additional_kwargs={
+            "tool_calls": [
+                _http_tool(call["name"], json.dumps(call["args"]), call["id"]) for call in (accepted, discarded)
+            ],
+            "other": "preserved",
+        },
+        response_metadata={"output_version": "v1", "finish_reason": "tool_calls"},
+        usage_metadata={"input_tokens": 3, "output_tokens": 4, "total_tokens": 7},
+    )
+    original = message.model_dump()
+
+    normalized = _single_tool_response(message, {"retriever"})
+
+    assert normalized is not message
+    assert message.model_dump() == original
+    assert normalized.id == message.id
+    assert normalized.text == message.text
+    assert normalized.usage_metadata == message.usage_metadata
+    assert normalized.response_metadata == message.response_metadata
+    assert normalized.tool_calls == [message.tool_calls[0]]
+    assert normalized.invalid_tool_calls == []
+    assert normalized.additional_kwargs == {
+        "other": "preserved",
+        "tool_calls": [_http_tool("retriever", '{"query": "accepted query"}', "accepted")],
+    }
+    assert normalized.content_blocks == [original["content"][0], {"type": "tool_call", **accepted}]
+    assert "discarded" not in normalized.model_dump_json()
+    assert "invalid private" not in normalized.model_dump_json()
+
+
+@pytest.mark.parametrize("representation", ["raw", "content"])
+def test_tool_policy_rejects_unparsed_multi_call_representations(representation):
+    """Multiple unparsed calls must not bypass the eligibility check."""
+    message = AIMessage(content="")
+    if representation == "raw":
+        message = message.model_copy(update={"additional_kwargs": {"tool_calls": [{"id": "one"}, {"id": "two"}]}})
+    else:
+        message = message.model_copy(
+            update={"content": [{"type": "tool_call", "id": value} for value in ("one", "two")]}
+        )
+    with pytest.raises(ValueError, match="no eligible call"):
+        _single_tool_response(message, {"retriever"})
+
+
+def test_tool_policy_skips_parsed_calls_without_dictionary_arguments():
+    """A provider's malformed parsed call cannot displace an eligible one."""
+    accepted = {"name": "retriever", "args": {"query": "accepted"}, "id": "accepted", "type": "tool_call"}
+    message = AIMessage.model_construct(
+        content="",
+        tool_calls=[{"name": "retriever", "args": [], "id": "malformed"}, accepted],
+    )
+
+    result = _single_tool_response(message, {"retriever"})
+
+    assert result.tool_calls == [accepted]
+    result.tool_calls[0]["args"]["query"] = "changed copy"
+    assert message.tool_calls[1]["args"] == {"query": "accepted"}
+
+
+def test_tool_policy_leaves_argument_schema_validation_to_tools(mocker):
+    """A parsed dictionary is eligible even if a required tool argument is absent."""
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "{question}: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    retriever.retrieve.return_value = []
+    batch = AIMessage(
+        content="",
+        tool_calls=[
+            {"name": "retriever", "args": {}, "id": "accepted"},
+            {"name": "retriever", "args": {"query": "discarded"}, "id": "discarded"},
+        ],
+    )
+    model = ToolCallingFake(responses=[batch, AIMessage(content="answer after validation")])
+    generate = mocker.spy(model, "_generate")
+    bind_tools = mocker.spy(ToolCallingFake, "bind_tools")
+
+    result = AgenticRAG(foundation, retriever, chat_model=model).generate("question")
+
+    assert result["answer"] == "answer after validation"
+    retriever.retrieve.assert_called_once_with("question")
+    tool_message = next(message for message in result["conversation"]["messages"] if message["type"] == "tool")
+    assert tool_message["tool_call_id"] == "accepted"
+    assert "query" in tool_message["output"]
+    assert len(batch.tool_calls) == 2
+    # This model rejects neither tool binding nor invoke kwargs; inspect both.
+    assert all("parallel_tool_calls" not in call.kwargs for call in generate.call_args_list)
+    assert all("parallel_tool_calls" not in call.kwargs for call in bind_tools.call_args_list)
+
+
+@pytest.mark.parametrize("offered", [True, False])
+def test_tool_policy_merges_request_settings_without_mutation(mocker, offered):
+    """Caller settings survive, and finalization bypasses response normalization."""
+    model = ChatOpenAI(model="model", api_key="test")
+    settings = {"temperature": 0.2, "parallel_tool_calls": True}
+    request = ModelRequest(
+        model=model,
+        messages=[],
+        model_settings=settings,
+        tools=[{"type": "function", "function": {"name": "retriever"}}] if offered else [],
+    )
+    message = AIMessage(content="", tool_calls=[{"name": "retriever", "args": {}, "id": str(i)} for i in range(2)])
+    response = ModelResponse(result=[message], structured_response={"preserved": True})
+    handler = mocker.Mock(return_value=response)
+
+    result = _enforce_sequential_tools.wrap_model_call(request, handler)
+
+    sent = handler.call_args.args[0]
+    assert settings == {"temperature": 0.2, "parallel_tool_calls": True}
+    assert sent.model_settings == {"temperature": 0.2, "parallel_tool_calls": not offered}
+    assert result.structured_response == {"preserved": True}
+    assert len(result.result[0].tool_calls) == (1 if offered else 2)
+    assert len(message.tool_calls) == 2
+
+
+def test_http_unsupported_parallel_parameter_propagates_without_retry(mocker, caplog):
+    """A parameter-rejecting endpoint fails once rather than silently retrying."""
+    requests = []
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        return httpx.Response(400, json={"error": {"message": "Unsupported parallel_tool_calls private body"}})
+
+    agent = _http_agent(mocker, respond)
+    compress = mocker.patch("ai4rag.rag.template.agentic_rag_template.LLMDocumentCompressor.compress")
+    with pytest.raises(BadRequestError, match="Unsupported parallel_tool_calls"):
+        agent.generate("private question")
+    assert len(requests) == 1
+    assert requests[0]["parallel_tool_calls"] is False
+    compress.assert_not_called()
+    assert "private" not in " ".join(caplog.messages)
 
 
 def test_real_agent_graph_rewrites_then_retrieves(mocker, caplog):
@@ -436,7 +782,8 @@ def test_real_graph_keeps_concurrent_budgets_independent(mocker, caplog):
     assert all(trace["model_calls"] == 2 for trace in traces)
 
 
-def test_real_graph_rejects_tool_calls_returned_after_finalization(mocker, caplog):
+@pytest.mark.parametrize("call_count", [1, 2])
+def test_real_graph_rejects_tool_calls_returned_after_finalization(mocker, caplog, call_count):
     """A provider ignoring the tool-free request cannot restart retrieval."""
     foundation = mocker.MagicMock()
     foundation.system_message_text = "Answer from context."
@@ -446,7 +793,12 @@ def test_real_graph_rejects_tool_calls_returned_after_finalization(mocker, caplo
     retriever.retrieve.return_value = []
     model = ToolCallingFake(
         responses=[
-            AIMessage(content="", tool_calls=[{"name": "retriever", "args": {"query": "again"}, "id": "repeat"}])
+            AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "retriever", "args": {"query": "again"}, "id": f"repeat_{i}"} for i in range(call_count)
+                ],
+            )
         ]
     )
 
@@ -459,6 +811,7 @@ def test_real_graph_rejects_tool_calls_returned_after_finalization(mocker, caplo
     assert traces[0]["error_type"] == "RuntimeError"
     assert traces[0]["model_calls"] == 1
     assert traces[0]["tool_calls"]["retriever"] == 0
+    assert not any("Agent tool response" in message for message in caplog.messages)
 
 
 def test_retrieval_limit_is_validated_on_assignment(rag):
