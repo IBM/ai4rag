@@ -125,6 +125,7 @@ class _AgentRunContext:  # pylint: disable=too-many-instance-attributes
     # The lock is invocation-scoped runtime state, not input to validate.
     state_lock: Any
     model_calls: int = 0
+    replay_sanitized_history: bool = False
     trace: AgentTrace = field(default_factory=AgentTrace)
 
 
@@ -133,6 +134,15 @@ def _enforce_sequential_tools(
     request: ModelRequest[_AgentRunContext], handler: Callable[[ModelRequest], ModelResponse]
 ) -> ModelResponse:
     """Request one tool action and enforce it before graph storage or execution."""
+    if (
+        isinstance(request.model, ChatOpenAI)
+        and request.model.use_previous_response_id
+        and request.runtime.context.replay_sanitized_history
+    ):
+        # The stored response still contains discarded calls. Replay the local
+        # history on every remaining turn, including tool-free finalization,
+        # without changing the caller's shared model or response metadata.
+        request = request.override(model=request.model.model_copy(update={"use_previous_response_id": False}))
     if not request.tools:
         return handler(request)
     if isinstance(request.model, ChatOpenAI):
@@ -142,13 +152,18 @@ def _enforce_sequential_tools(
         item.get("name") or item.get("function", {}).get("name") if isinstance(item, dict) else item.name
         for item in request.tools
     }
-    return replace(
-        response,
-        result=[
-            _single_tool_response(message, offered_tools) if isinstance(message, AIMessage) else message
-            for message in response.result
-        ],
-    )
+    result = [
+        _single_tool_response(message, offered_tools) if isinstance(message, AIMessage) else message
+        for message in response.result
+    ]
+    if (
+        isinstance(request.model, ChatOpenAI)
+        and request.model.use_previous_response_id
+        and any(normalized is not original for normalized, original in zip(result, response.result))
+    ):
+        with request.runtime.context.state_lock:
+            request.runtime.context.replay_sanitized_history = True
+    return replace(response, result=result)
 
 
 @wrap_model_call

@@ -208,6 +208,135 @@ def test_http_server_reproduces_failure_without_sequential_policy(mocker):
     assert len(requests) == 2
 
 
+@pytest.mark.parametrize("accepted_tool", ["rewrite_query", "retriever"])
+def test_responses_agent_replays_sanitized_history_after_discarding_calls(mocker, accepted_tool):
+    """Server-stored batches cannot reappear through automatic response chaining."""
+    requests = []
+    agent_requests = []
+    stored_calls = {}
+
+    def completion(response_id, calls=None, text=""):
+        output = (
+            [
+                {
+                    "type": "function_call",
+                    "id": f"fc_{call['id']}",
+                    "call_id": call["id"],
+                    "name": call["function"]["name"],
+                    "arguments": call["function"]["arguments"],
+                    "status": "completed",
+                }
+                for call in calls
+            ]
+            if calls
+            else [
+                {
+                    "type": "message",
+                    "id": f"msg_{response_id}",
+                    "role": "assistant",
+                    "status": "completed",
+                    "content": [{"type": "output_text", "text": text, "annotations": []}],
+                }
+            ]
+        )
+        stored_calls[response_id] = {call["id"] for call in calls or []}
+        return httpx.Response(
+            200,
+            json={
+                "id": response_id,
+                "object": "response",
+                "created_at": 0,
+                "model": "model",
+                "status": "completed",
+                "error": None,
+                "output": output,
+            },
+        )
+
+    def respond(request):
+        assert request.url.path == "/v1/responses"
+        payload = json.loads(request.content)
+        requests.append(payload)
+        previous = payload.get("previous_response_id")
+        outputs = {item["call_id"] for item in payload["input"] if item["type"] == "function_call_output"}
+        if previous and stored_calls[previous] - outputs:
+            return httpx.Response(400, json={"error": {"message": "Missing tool output for a discarded call"}})
+        if "Write one concise search query" in json.dumps(payload["input"]):
+            assert previous is None
+            return completion("resp_nested", text="focused search")
+        agent_requests.append(payload)
+        if payload.get("tools"):
+            assert payload["parallel_tool_calls"] is False
+        turn = len(agent_requests)
+        if turn == 1:
+            return completion("resp_prior", [_http_tool("rewrite_query", '{"missing_information":"date"}', "prior")])
+        if turn == 2:
+            arguments = (
+                '{"missing_information":"details"}'
+                if accepted_tool == "rewrite_query"
+                else '{"query":"focused search"}'
+            )
+            calls = [_http_tool(accepted_tool, arguments, "accepted")]
+            if discard_calls:
+                calls.append(_http_tool("retriever", '{"query":"discarded speculative query"}', "discarded"))
+            return completion("resp_batch", calls)
+        if payload.get("tools"):
+            return completion("resp_search", [_http_tool("retriever", '{"query":"focused search"}', "search")])
+        if discard_calls:
+            assert "tool budget is exhausted" in json.dumps(payload["input"])
+        return completion("resp_final", text="grounded answer")
+
+    model = ChatOpenAI(
+        model="model",
+        api_key="test",
+        base_url="https://maas.example/v1",
+        use_responses_api=True,
+        use_previous_response_id=True,
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    )
+    foundation = mocker.MagicMock()
+    foundation.system_message_text = "Answer from context."
+    foundation.user_message_text = "Question: {question}\nContext: {reference_documents}"
+    foundation.context_template_text = "{document}"
+    retriever = mocker.MagicMock()
+    retriever.retrieve.return_value = []
+    agent = AgenticRAG(foundation, retriever, chat_model=model)
+    invoke = mocker.spy(AgenticRAG, "_invoke_agent")
+
+    # A later invocation without discarded calls must retain the caller's
+    # automatic continuation, even after this graph previously needed replay.
+    for discard_calls in (True, False):
+        requests.clear()
+        agent_requests.clear()
+        stored_calls.clear()
+        agent.retriever.retrieve.reset_mock()
+
+        result = agent.generate("question")
+
+        assert result["answer"] == "grounded answer"
+        assert [call.args[0] for call in agent.retriever.retrieve.call_args_list] == ["question", "focused search"]
+        assert agent_requests[0].get("previous_response_id") is None
+        assert agent_requests[1]["previous_response_id"] == "resp_prior"
+        assert len(agent_requests) == (4 if accepted_tool == "rewrite_query" else 3)
+        for turn, payload in enumerate(agent_requests[2:], start=2):
+            if discard_calls:
+                assert "previous_response_id" not in payload
+                calls = [item for item in payload["input"] if item["type"] == "function_call"]
+                assert [call["call_id"] for call in calls] == ["prior", "accepted"] + (["search"] if turn == 3 else [])
+                assert any(item.get("role") == "user" for item in payload["input"])
+            else:
+                assert payload["previous_response_id"] == ("resp_batch" if turn == 2 else "resp_search")
+        assert all("discarded" not in json.dumps(payload) for payload in requests)
+        batch_message = next(
+            message for message in invoke.spy_return if message.response_metadata.get("id") == "resp_batch"
+        )
+        assert batch_message.id == "resp_batch"
+        assert [call["id"] for call in batch_message.tool_calls] == ["accepted"]
+        assert "discarded" not in json.dumps(result["conversation"])
+        assert agent.chat_model is model
+        assert model.use_previous_response_id is True
+
+
 @pytest.mark.parametrize("kind", ["unknown", "malformed", "no_id"])
 def test_http_agent_rejects_multi_call_response_with_no_eligible_call(mocker, caplog, kind):
     """An unusable batch fails before any tool execution or generation retry."""

@@ -1411,6 +1411,14 @@ There are no additional generation retries; unsupported-parameter HTTP errors
 propagate. Tool calls returned after budget finalization retain the explicit
 `RuntimeError` described above.
 
+For a supplied `ChatOpenAI` model using the Responses API with
+`use_previous_response_id=True`, discarding calls also switches the remaining
+agent requests in that invocation to explicit replay of the sanitized history,
+including the tool-free final-answer request. Referencing the original stored
+response would restore discarded calls that still expect tool outputs. The
+caller's shared model configuration and message IDs are preserved; later
+invocations can use automatic continuation again.
+
 **Usage:**
 
 ```python
