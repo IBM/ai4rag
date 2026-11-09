@@ -36,6 +36,13 @@ KFP wrappers handle artifact I/O (reading `dsl.Input[Artifact]`, writing `dsl.Ou
 Kubernetes-specific concerns (secrets, resource limits), and full RAG-optimization orchestration.
 Data-stage business logic lives in `ai4rag`, so it can be exercised outside KFP.
 
+Notebook, leaderboard, and starter-kit generation also lives in
+[pipelines-components](https://github.com/opendatahub-io/pipelines-components),
+under `kfp_components.components.training.autorag.shared.assets_generator`.
+`ai4rag.assets_generator` and the local OpenShell gateway setup script were
+removed in 0.26.0. See [Assets generator migration](../getting-started/quick-start.md#assets-generator-migration)
+for import, wheel, runtime-image, and pipeline-recompilation steps.
+
 ## Installation
 
 S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for born-digital documents (`docling-slim[feat-chunking]`) are all included in the core `ai4rag` install. OCR (scanned PDFs/images) and audio transcription additionally require the `text-extraction` extra — see [Installation](../getting-started/installation.md#basic-installation).

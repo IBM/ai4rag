@@ -259,7 +259,7 @@ The **Generalized Additive Models (GAM)** optimizer is the recommended algorithm
 
 **Phase 2: GAM-Guided Search**
 
-- Trains a `LinearGAM` model on evaluated configurations, using factor (`f()`) terms for categorical columns and spline (`s()`) terms for numeric ones — a categorical column falls back to a spline term when the warm-start sample didn't observe every one of its values
+- Trains a `LinearGAM` model on configurations with finite numeric scores, using factor (`f()`) terms for categorical columns and spline (`s()`) terms for numeric ones; random warm starts and categorical columns with unobserved values use spline terms
 - Predicts scores for all remaining (unevaluated) configurations
 - Selects top `evals_per_trial` configurations with highest predicted scores
 - Evaluates selected configurations and updates training data
@@ -290,18 +290,32 @@ def search(self) -> dict[str, Any]:
     for _ in range(self._get_gam_iterations_limit()):
         self._run_iteration()  # Train GAM, predict, evaluate best
 
-    # Return best configuration
-    return max(evaluations, key=lambda x: x["score"])
+    # Return the best configuration with a finite numeric score.
+    successful_evaluations = [
+        evaluation for evaluation in self.evaluations
+        if _is_finite_score(evaluation["score"])
+    ]
+    if not successful_evaluations:
+        raise OptimizationError("Number of evaluations has reached limit. All iterations have failed.")
+    return max(successful_evaluations, key=lambda evaluation: evaluation["score"])
 ```
 
 **GAM Iteration Details:**
 
 1. **Encode parameters** using a `LabelEncoder` per varying column (constant columns dropped)
-2. **Train `LinearGAM`** on `(encoded_params, scores)` from successful evaluations, with factor terms for fully-observed categorical columns and spline terms for numeric or sparsely-observed categorical columns
+2. **Train `LinearGAM`** on `(encoded_params, scores)` with finite numeric scores, with factor terms for fully-observed categorical columns and spline terms for numeric columns, random warm starts, or sparsely-observed categorical columns
 3. **Predict scores** for all remaining unevaluated configurations
 4. **Select top N** configurations with highest predictions (N = `min(evals_per_trial, remaining max_evals, remaining max_iterations)`)
 5. **Evaluate** selected configurations via `objective_function`
 6. **Update** `evaluations` and `_evaluated_combinations`
+
+The implementation's `_is_finite_score()` helper excludes `None`, nonnumeric
+values, `NaN`, and infinities from successful-evaluation counts, categorical
+coverage, and best-result selection. Objective results that fail this check are
+stored as `None`; known observations retain their stored scores and are filtered
+when used. Failed evaluations still consume `max_evals` and are not retried.
+If no finite training scores remain, or surrogate fitting raises NumPy's
+`LinAlgError`, the GAM iteration logs a warning and skips prediction and evaluation.
 
 **When to Use:**
 
@@ -326,7 +340,7 @@ optimizer = GAMOptimizer(
 ```
 
 - Pre-populates `evaluations` with known results
-- Counts toward `n_random_nodes` target (may skip random phase entirely if enough known)
+- Only observations with finite numeric scores count toward the `n_random_nodes` target and categorical coverage (the random phase can be skipped if enough successful observations are known)
 - Excludes known combinations from random sampling candidates
 
 ### RandomOptimizer

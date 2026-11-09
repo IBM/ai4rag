@@ -146,6 +146,7 @@ graph TB
 - `AgenticRAG.generate()` returns conversation records with initial retrieval, agent messages, and tool activity alongside its answer and reference documents
 - Context compression is enabled by default for `AgenticRAG`; a recognized context overflow triggers one retry, with retained context and compression statistics recorded in the result
 - Budget middleware removes tools for a final answer once the retrieval or agent model-call budget is exhausted
+- Tool-selection middleware enforces one tool action per response before history storage and execution; see [AgenticRAG](rag-components.md#agenticrag) for provider compatibility behavior
 - `ai4rag.rag.template.agent_trace.AgentTrace` keeps invocation-scoped counts and bounded events, emitting a content-free failure record for unrecovered errors after initial retrieval
 
 ### 4. Evaluation Layer
@@ -178,6 +179,12 @@ graph TB
 - Full RAG optimization orchestration
 - Language detection for multilingual benchmark support
 - Built on top of `ai4rag.search_space` and `ai4rag.core`; not part of this repo
+
+**Assets Generation** (`pipelines-components` repo)
+
+- Notebook, leaderboard, and starter-kit generation is owned by `kfp_components.components.training.autorag.shared.assets_generator`
+- The former `ai4rag.assets_generator` package, its bundled templates, and the OpenShell gateway setup script were removed in 0.26.0 without an import shim
+- See [Assets generator migration](../getting-started/quick-start.md#assets-generator-migration) for the required caller and runtime updates
 
 ### 6. Utilities Layer
 

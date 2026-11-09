@@ -49,7 +49,7 @@ The optimization process has two phases:
 
 **Phase 2: Model-Guided Search**
 
-- Train a `LinearGAM` model on the evaluated configurations, using factor terms for categorical parameters and spline terms for numeric ones (a categorical column falls back to a spline term if the warm-start sample didn't observe every one of its values)
+- Train a `LinearGAM` model on configurations with finite numeric scores, using factor terms for categorical parameters and spline terms for numeric ones; random warm starts and categorical columns with unobserved values use spline terms
 - Use the model to predict scores for all remaining (unevaluated) configurations
 - Select the top `evals_per_trial` configurations with highest predicted scores
 - Evaluate those configurations
@@ -59,6 +59,19 @@ This approach balances **exploration** (warm-start phase) with **exploitation** 
 
 !!! note "Only the best warm-start result is published"
     When warm-starting, every candidate in Phase 1 still counts against `max_evals`, but only the single best successful warm-start evaluation is published as a result pattern (`PatternA`) and passed to your event handler — the rest remain internal to the optimizer. See [Event Handlers](event-handlers.md).
+
+!!! note "Invalid scores and surrogate-fit failures"
+    Objective results of `None`, nonnumeric values, `NaN`, or positive/negative
+    infinity are treated as failed evaluations. They consume evaluation budget
+    but do not count toward warm-start success or categorical coverage, train the
+    GAM surrogate, or qualify as the optimizer's best result. The same finite-score
+    checks apply to known observations; their configurations remain marked as
+    evaluated, so they are not retried automatically.
+
+    If no finite training scores are available, or fitting the surrogate raises
+    NumPy's `LinAlgError`, the affected GAM iteration logs a warning and skips
+    prediction and evaluation. The optimizer can still return an existing finite
+    result. If no finite result exists, `search()` raises `OptimizationError`.
 
 ---
 

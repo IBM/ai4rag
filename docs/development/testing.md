@@ -17,7 +17,7 @@ All tests use **pytest** as the testing framework with additional plugins for mo
 
 - **Unit tests** validate individual components in isolation using mocks
 - **Functional tests** validate end-to-end workflows with real services
-- **Coverage** targets >80% for production code
+- **Coverage** requires at least 90% in PR checks
 - **Fast feedback** through parallelizable, independent test cases
 
 ---
@@ -505,14 +505,14 @@ Coverage settings are in `pyproject.toml`:
 ```toml
 [tool.coverage.run]
 omit = [
-    "ai4rag/search_space/prepare/validation_error_decoder.py",
     "ai4rag/core/experiment/experiment.py",
+    "ai4rag/utils/data/text_extraction.py",
 ]
 ```
 
 ### Coverage Goals
 
-- **Target**: >80% code coverage
+- **Target**: At least 90% code coverage, enforced by CI with `--cov-fail-under=90`
 - **Focus**: Cover critical paths, edge cases, and error handling
 
 ---
@@ -528,7 +528,7 @@ omit = [
 7. **Keep tests fast** by using mocks in unit tests
 8. **Make tests independent** - no shared state
 9. **Add docstrings** explaining what each test validates
-10. **Maintain high coverage** (>80%) with focus on critical paths
+10. **Maintain high coverage** (at least 90%) with focus on critical paths
 
 ---
 

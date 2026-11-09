@@ -29,10 +29,9 @@ This installs the core package with all required dependencies.
 Using `"@main"` will download and install latest version of `ai4rag`.
 If you want to use specific version, please use e.g. `"@v0.1.1"`
 
-The core package and `text-extraction` extra require `docling-slim~=2.121.0`
-(`>=2.121.0,<2.122.0`) for ai4rag and Kubeflow Pipelines compatibility. This restores
-the compatibility pin and reverts the Docling upgrade for security fixes documented
-for 0.25.0. Refresh dependency environments and offline package mirrors when upgrading.
+The core package and `text-extraction` extra require `docling-slim~=2.145.0`
+(`>=2.145.0,<2.146.0`), including upstream security fixes. Refresh dependency
+environments, runtime images, and offline package mirrors when upgrading.
 
 Vector store clients — `pymilvus` (with the `milvus-lite` extra), `pgvector`, `asyncpg`, `neo4j`, and `neo4j-graphrag` — are core dependencies and install automatically. There is no separate vector-store extra to install.
 No extra step is needed to use a remote Milvus server, embedded Milvus Lite, PostgreSQL/pgvector, or Neo4j as a vector store.
@@ -43,9 +42,9 @@ No extra step is needed to use a remote Milvus server, embedded Milvus Lite, Pos
 compatibility. Call `nest_asyncio.apply()` before graph extraction when using an
 environment with an active event loop.
 
-`certifi>=2026.7.22,<2027` is installed as a core dependency to supply public CA
-roots alongside deployment-mounted MaaS certificates. Include it in offline package
-mirrors when upgrading.
+`certifi` is installed as a core dependency without version bounds to supply public
+CA roots alongside deployment-mounted MaaS certificates. Include it in offline
+package mirrors when upgrading.
 
 !!! note "OCR and audio ingestion"
     Text extraction from born-digital documents (PDF, DOCX, Markdown, HTML, …) works out of the box.
@@ -113,7 +112,7 @@ uv sync --extra docs        # documentation tools only
 
 | Extra | Dependencies | Purpose |
 |-------|-------------|---------|
-| `text-extraction` | `docling-slim~=2.121.0` conversion/audio extras, `huggingface-hub>=0.30,<2`, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
+| `text-extraction` | `docling-slim~=2.145.0` conversion/audio extras, `huggingface-hub>=0.30,<2`, `rapidocr~=3.9.2`, `onnxruntime~=1.25.0` | OCR and audio ingestion |
 | `test` | `pytest`, `pytest-cov`, `pytest-mock` | Testing tools |
 | `code_check` | `black`, `pylint`, `isort` | Code quality tools |
 | `docs` | `mkdocs`, `mkdocs-material` | Documentation tools |
