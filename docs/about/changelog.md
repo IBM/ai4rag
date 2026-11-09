@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.26.0](https://github.com/IBM/ai4rag/releases/tag/v0.26.0)
+
+### Changed
+
+- **BREAKING CHANGE: Experiment** — generated pattern names use alphabetic suffixes (`PatternA`, `PatternB`, …, `PatternZ`, `PatternAA`) instead of numeric suffixes; warm-start names retain `-warm-start`, and the best warm-start pattern is published as `PatternA`
+- **Dependencies** — upgraded the core and `text-extraction` extra's `docling-slim` requirement from `~=2.121.0` to `~=2.145.0` for upstream security fixes; removed version bounds on `certifi`
+- **Dependencies** — refreshed the lockfile with certifi 2026.10.23, Pillow 13.0.0, and Transformers 5.22.1 across platforms for security fixes, alongside filelock 4.2.6, Tornado 6.6, and pypdf 6.21.4
+
+### Fixed
+
+- **Experiment** — logs the original name and score of the best warm-start pattern before publishing it under its final name
+- **GAM optimizer** — excludes invalid and non-finite scores from warm-start success counts, coverage, surrogate training, and final selection; numerical surrogate-fit failures skip the affected iteration instead of aborting optimization
+- **Vector store** — restored RRF and weighted hybrid search with Milvus Lite by disabling unsupported sparse-query term dropping; remote Milvus keeps its existing setting
+- **Agentic RAG** — requests one tool call per model response and, when a provider returns multiple calls, retains only the first eligible offered call before storing history or executing tools; batches without an eligible call fail clearly, and budget finalization remains enforced
+
+### Removed
+
+- **BREAKING CHANGE: Assets generator** — removed `ai4rag.assets_generator` and its bundled notebook, leaderboard, and starter-kit templates without a compatibility shim; generation now lives in `kfp_components.components.training.autorag.shared.assets_generator` in [pipelines-components](https://github.com/opendatahub-io/pipelines-components)
+- **OpenShell gateway** — removed `scripts/setup-openshell-gateway.sh` from ai4rag; gateway setup is maintained with the relocated assets generator in pipelines-components
+
+---
+
 ## [0.25.4](https://github.com/IBM/ai4rag/releases/tag/v0.25.4)
 
 ### Changed

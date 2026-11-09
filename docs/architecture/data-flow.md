@@ -743,29 +743,50 @@ flowchart TD
 
 Each optimizer iteration follows this flow:
 
+The sketches below use the GAM implementation's `_is_finite_score()` helper:
+only finite numeric scores count as successful evaluations. `None`, nonnumeric
+values, `NaN`, and infinities do not contribute to warm-start success, categorical
+coverage, surrogate training, or best-result selection. Failed configurations
+still consume evaluation budget and remain excluded from future candidates.
+
 **Random Phase (GAMOptimizer only):**
 
 ```python
+from ai4rag.core.hpo.gam_opt import _is_finite_score
+
+
 def evaluate_initial_random_nodes():
-    successful = count(evaluations where score is not None)
+    successful = sum(1 for evaluation in evaluations if _is_finite_score(evaluation["score"]))
 
     while successful < n_random_nodes and len(evaluations) < max_evals:
         config = random.choice(unevaluated_combinations)
         score = objective_function(config)  # Calls run_single_evaluation()
         evaluations.append({"config": config, "score": score})
-        if score is not None:
+        if _is_finite_score(score):
             successful += 1
 ```
 
 **GAM Phase:**
 
 ```python
+import numpy as np
+
+from ai4rag.core.hpo.gam_opt import _is_finite_score
+
+
 def _run_iteration():
     # 1. Train GAM
-    successful_evals = [e for e in evaluations if e["score"] is not None]
+    successful_evals = [e for e in evaluations if _is_finite_score(e["score"])]
+    if not successful_evals:
+        logger.warning("Skipping GAM iteration: no finite training scores.")
+        return
     X_train = encode_categorical_params(successful_evals)
     y_train = [e["score"] for e in successful_evals]
-    gam = LinearGAM().fit(X_train, y_train)
+    try:
+        gam = LinearGAM().fit(X_train, y_train)
+    except np.linalg.LinAlgError:
+        logger.warning("Skipping GAM iteration: surrogate-model fitting failed.")
+        return
 
     # 2. Predict
     remaining = get_unevaluated_configs()
@@ -1091,6 +1112,10 @@ evaluations.append({"config": config, "score": score})
 ```
 
 **Result:** Failed evaluations don't stop optimization but don't contribute to GAM training.
+GAM also treats nonnumeric or non-finite objective results as failures. Numerical
+surrogate-fit failures skip the affected iteration rather than aborting the run.
+The optimizer returns the best finite result already available, or raises
+`OptimizationError` when no finite result exists.
 
 **Common Failures:**
 

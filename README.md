@@ -68,7 +68,7 @@ Each config is a frozen dataclass with a `.from_env()` constructor and an `env_v
 
 ai4RAG uses [`docling-core`](https://github.com/docling-project/docling-core) for document representation and chunking. Documents are represented as `DoclingDocument` instances, and the `DoclingChunker` leverages docling's `HybridChunker` for structure-aware, token-aware chunking. `docling-core`, `openai`, `langchain`/`langchain-openai`, and the vector store clients (`pymilvus` with Milvus Lite, `pgvector`, `asyncpg`) are all installed automatically with `ai4rag`.
 
-The core dependency `certifi>=2026.7.22,<2027` supplies public CA roots when MaaS
+The core dependency `certifi` supplies public CA roots when MaaS
 clients add deployment-mounted CA bundles. See
 [private CA configuration](https://ibm.github.io/ai4rag/latest/user-guide/pipeline-components/#private-ca-certificates-on-openshift-ai)
 for explicit bundle settings and automatic mounted-bundle discovery.
@@ -76,7 +76,7 @@ for explicit bundle settings and automatic mounted-bundle discovery.
 For OCR and audio ingestion, install `ai4rag[text-extraction]`. This extra includes
 `rapidocr~=3.9.2`, `onnxruntime~=1.25.0`, and `huggingface-hub>=0.30,<2` along with
 Docling's conversion and audio dependencies. Both the core package and this extra
-require `docling-slim~=2.121.0` for ai4rag and Kubeflow Pipelines compatibility.
+require `docling-slim~=2.145.0`, including upstream security fixes.
 Audio extraction also requires the system `ffmpeg` executable on `PATH` with
 support for the input codec.
 
@@ -104,6 +104,12 @@ for its limits and configuration.
 Conversations are also available as `EvaluationResult.conversations` and included
 by `to_dict()`; the field is `None` when no conversations are emitted. Per-question
 evaluation records include an optional `conversation_id` linking to these records.
+
+> [!IMPORTANT]
+> Starting with 0.26.0, notebook, leaderboard, and starter-kit generation lives in
+> [pipelines-components](https://github.com/opendatahub-io/pipelines-components).
+> The `ai4rag.assets_generator` package and OpenShell gateway setup script have been removed.
+> See the [migration steps](https://ibm.github.io/ai4rag/latest/getting-started/quick-start/#assets-generator-migration).
 
 ## Running on Disconnected Clusters
 

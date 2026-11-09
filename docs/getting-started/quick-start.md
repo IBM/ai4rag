@@ -301,6 +301,10 @@ After completion, check the `output_path` directory for:
 - **`<pattern_name>/evaluation_results.json`**: Per-question answers, retrieved contexts, scores, and optional `conversation_id` links to full conversations
 - **`<pattern_name>/conversations.json`**: Agent messages, retrievals, and tool activity when the template emits trajectories
 
+Published pattern names use spreadsheet-style alphabetic suffixes: `PatternA`,
+`PatternB`, …, `PatternZ`, `PatternAA`. Update integrations that assume numeric
+names such as `Pattern1` when upgrading to 0.26.0.
+
 Only the best successful warm-start candidate is published as `PatternA`; other
 warm-start candidates do not get output directories. See
 [Event Handlers](../user-guide/event-handlers.md) for the artifact schema.
@@ -409,6 +413,25 @@ print(f"Optimization complete! Best pattern: {best_pattern}")
 
 ---
 
+
+### Assets generator migration
+
+Starting with 0.26.0, `ai4rag.assets_generator` is removed without a compatibility
+shim. Notebook, leaderboard, and starter-kit generation now lives in
+[pipelines-components](https://github.com/opendatahub-io/pipelines-components).
+Install its matching wheel and use the compatible runtime image, then replace
+the old package import with:
+
+```python
+from kfp_components.components.training.autorag.shared import assets_generator
+```
+
+Update submodule imports to use this package path as well. Recompile pipelines
+that embed the old import path, or keep their compatible ai4rag version and runtime
+image until they can migrate. OpenShell gateway setup is also maintained in
+pipelines-components; `scripts/setup-openshell-gateway.sh` is no longer shipped
+by ai4rag. The core experiment, search-space, and data-extraction APIs remain in
+ai4rag.
 
 ### Template migration and pre-selection
 

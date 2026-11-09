@@ -49,8 +49,16 @@ def on_status_change(self, level: LogLevel, message: str, step: str | None = Non
 
 Called once per evaluated RAG pattern that is published to the event handler. This is where you receive the full evaluation result and can persist, forward, or display it.
 
+Pattern names use spreadsheet-style alphabetic suffixes: `PatternA`, `PatternB`,
+…, `PatternZ`, `PatternAA`. These names appear in `payload["name"]` and the
+directories written by `LocalEventHandler`. From 0.26.0, integrations should accept
+alphabetic names instead of assuming numeric suffixes such as `Pattern1`.
+
 !!! note "Warm-start evaluations are not all published"
     When the GAM optimizer's warm-start phase is enabled (see [Optimizers](optimizers.md)), only the best successful warm-start candidate is published as `PatternA`; the other warm-start evaluations are internal to the optimizer and never reach `on_pattern_creation`.
+    Internal warm-start names retain the `-warm-start` suffix, such as
+    `PatternA-warm-start`. Publication logs the selected candidate's original name
+    and score before renaming it to `PatternA`.
 
 ```python
 def on_pattern_creation(
