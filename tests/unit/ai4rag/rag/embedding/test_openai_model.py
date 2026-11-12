@@ -3,9 +3,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+import json
+
 import httpx
 import pytest
-from openai import APITimeoutError, BadRequestError
+from openai import APIConnectionError, APIStatusError, APITimeoutError, BadRequestError, InternalServerError, OpenAI
 
 from ai4rag.rag.embedding.openai_model import (
     _TRUNCATION_MARGINS,
@@ -236,7 +238,7 @@ class TestOpenAIEmbeddingModel:
             params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
         )
 
-        batch_size = OpenAIEmbeddingModel._BATCH_SIZE
+        batch_size = 128
         remainder = 100
         total = 2 * batch_size + remainder
 
@@ -250,6 +252,11 @@ class TestOpenAIEmbeddingModel:
 
         assert len(embeddings) == total
         assert mock_openai_client.embeddings.create.call_count == 3
+        assert [call.kwargs["input"] for call in mock_openai_client.embeddings.create.call_args_list] == [
+            texts[:128],
+            texts[128:256],
+            texts[256:],
+        ]
 
     def test_embed_query(self, mock_openai_client, mocker):
         """Test embed_query method."""
@@ -332,6 +339,185 @@ class TestOpenAIEmbeddingModel:
 
         assert repr(model) == "all-MiniLM-L6-v2"
         assert str(model) == "all-MiniLM-L6-v2"
+
+
+class TestEmbeddingBatchRecovery:
+    """Document batch recovery without replaying successful work or delaying queries."""
+
+    @pytest.fixture
+    def model(self, mocker):
+        return OpenAIEmbeddingModel(
+            client=mocker.MagicMock(),
+            model_id="test-model",
+            params=OpenAIEmbeddingParams(embedding_dimension=1, context_length=1024),
+        )
+
+    @pytest.fixture(autouse=True)
+    def recovery_sleep(self, mocker):
+        return mocker.patch("ai4rag.rag.embedding.openai_model.sleep")
+
+    @staticmethod
+    def server_error(status=500):
+        return InternalServerError(
+            "Embedding service unavailable",
+            response=httpx.Response(status, request=httpx.Request("POST", "https://test/v1/embeddings")),
+            body=None,
+        )
+
+    @pytest.mark.parametrize("failures", [1, 2])
+    def test_recovers_after_server_errors(self, model, mocker, recovery_sleep, failures, caplog):
+        response = _make_mock_openai_embedding_response(mocker, [[0.1]])
+        model.client.embeddings.create.side_effect = [self.server_error(503)] * failures + [response]
+
+        assert model.embed_documents(["text"]) == [[0.1]]
+
+        assert recovery_sleep.call_args_list == [mocker.call(delay) for delay in (30.0, 60.0)[:failures]]
+        assert model.client.embeddings.create.call_count == failures + 1
+        assert "Embedding batch 1 (1 texts) failed with HTTP 503" in caplog.text
+        assert "test-model" in caplog.text
+
+    def test_exhausted_recovery_propagates_last_error(self, model, recovery_sleep, mocker):
+        errors = [self.server_error(status) for status in (500, 502, 503)]
+        model.client.embeddings.create.side_effect = errors
+
+        with pytest.raises(InternalServerError) as exc_info:
+            model.embed_documents(["text"])
+
+        assert exc_info.value is errors[-1]
+        assert model.client.embeddings.create.call_count == 3
+        assert recovery_sleep.call_args_list == [mocker.call(30.0), mocker.call(60.0)]
+
+    def test_recovery_keeps_completed_batches_and_resets_delays(self, model, mocker, recovery_sleep):
+        texts = [f"text{i}" for i in range(257)]
+        expected = [[float(i)] for i in range(257)]
+        model.client.embeddings.create.side_effect = [
+            _make_mock_openai_embedding_response(mocker, expected[:128]),
+            self.server_error(),
+            self.server_error(),
+            _make_mock_openai_embedding_response(mocker, expected[128:256]),
+            self.server_error(),
+            _make_mock_openai_embedding_response(mocker, expected[256:]),
+        ]
+
+        assert model.embed_documents(texts) == expected
+
+        assert [call.kwargs["input"] for call in model.client.embeddings.create.call_args_list] == [
+            texts[:128],
+            texts[128:256],
+            texts[128:256],
+            texts[128:256],
+            texts[256:],
+            texts[256:],
+        ]
+        assert recovery_sleep.call_args_list == [mocker.call(30.0), mocker.call(60.0), mocker.call(30.0)]
+
+    @pytest.mark.parametrize("status", [401, 403, 404, 408, 409, 429])
+    def test_other_http_errors_propagate_without_recovery(self, model, recovery_sleep, status):
+        error = APIStatusError(
+            "Request failed",
+            response=httpx.Response(status, request=httpx.Request("POST", "https://test/v1/embeddings")),
+            body=None,
+        )
+        model.client.embeddings.create.side_effect = error
+
+        with pytest.raises(APIStatusError) as exc_info:
+            model.embed_documents(["text"])
+
+        assert exc_info.value is error
+        model.client.embeddings.create.assert_called_once()
+        recovery_sleep.assert_not_called()
+
+    def test_bad_request_keeps_truncation_without_recovery_waits(self, model, recovery_sleep):
+        model.client.embeddings.create.side_effect = _make_bad_request_error()
+
+        with pytest.raises(BadRequestError):
+            model.embed_documents(["text"])
+
+        assert model.client.embeddings.create.call_count == 3
+        recovery_sleep.assert_not_called()
+
+    @pytest.mark.parametrize(
+        "error", [ValueError("Invalid response"), APIConnectionError(request=httpx.Request("POST", "https://test"))]
+    )
+    def test_non_http_errors_propagate_without_recovery(self, model, recovery_sleep, error):
+        model.client.embeddings.create.side_effect = error
+
+        with pytest.raises(type(error)) as exc_info:
+            model.embed_documents(["text"])
+
+        assert exc_info.value is error
+        model.client.embeddings.create.assert_called_once()
+        recovery_sleep.assert_not_called()
+
+    def test_failed_timeout_fallback_does_not_add_recovery_waits(self, model, recovery_sleep):
+        error = APITimeoutError(request=httpx.Request("POST", "https://test/v1/embeddings"))
+        model.client.embeddings.create.side_effect = error
+        fallback = model.client.with_options.return_value
+        fallback.embeddings.create.side_effect = error
+
+        with pytest.raises(APITimeoutError) as exc_info:
+            model.embed_documents(["text"])
+
+        assert exc_info.value is error
+        model.client.with_options.assert_called_once_with(timeout=1200.0, max_retries=0)
+        fallback.embeddings.create.assert_called_once()
+        recovery_sleep.assert_not_called()
+
+    def test_query_does_not_use_document_recovery(self, model, recovery_sleep):
+        error = self.server_error()
+        model.client.embeddings.create.side_effect = error
+
+        with pytest.raises(InternalServerError) as exc_info:
+            model.embed_query("query")
+
+        assert exc_info.value is error
+        model.client.embeddings.create.assert_called_once()
+        recovery_sleep.assert_not_called()
+
+    def test_empty_documents_make_no_requests(self, model, recovery_sleep):
+        assert model.embed_documents([]) == []
+        model.client.embeddings.create.assert_not_called()
+        recovery_sleep.assert_not_called()
+
+    @pytest.mark.parametrize("failed_requests", [3, 6, 9])
+    def test_recovery_runs_after_sdk_retries(self, mocker, recovery_sleep, failed_requests):
+        requests = []
+
+        def respond(request):
+            requests.append(json.loads(request.content)["input"])
+            if len(requests) <= failed_requests:
+                return httpx.Response(500, json={"error": {"message": "Unavailable"}})
+            return httpx.Response(
+                200,
+                json={
+                    "object": "list",
+                    "model": "test-model",
+                    "data": [{"object": "embedding", "index": 0, "embedding": [0.1]}],
+                    "usage": {"prompt_tokens": 1, "total_tokens": 1},
+                },
+            )
+
+        with OpenAI(
+            api_key="test",
+            base_url="https://test/v1",
+            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        ) as client:
+            sdk_sleep = mocker.patch.object(client, "_sleep_for_retry")
+            model = OpenAIEmbeddingModel(
+                client=client,
+                model_id="test-model",
+                params=OpenAIEmbeddingParams(embedding_dimension=1, context_length=1024),
+            )
+            if failed_requests == 9:
+                with pytest.raises(InternalServerError):
+                    model.embed_documents(["text"])
+            else:
+                assert model.embed_documents(["text"]) == [[0.1]]
+            assert client.max_retries == 2
+
+        assert requests == [["text"]] * min(failed_requests + 1, 9)
+        assert sdk_sleep.call_count == failed_requests // 3 * 2
+        assert recovery_sleep.call_args_list == [mocker.call(delay) for delay in (30.0, 60.0)[: failed_requests // 3]]
 
 
 class TestEmbeddingTruncationFallback:

@@ -390,13 +390,26 @@ def _detect_context_length(self) -> int:
 
 **Batch Processing:**
 
+Document embeddings are sent sequentially in batches of up to **128 texts**.
+When a batch still fails with HTTP 5xx after the OpenAI client's retries, it is
+retried after **30 seconds**, then **60 seconds**, for up to three batch attempts.
+Earlier successful batches are retained in memory and are not embedded again.
+The final failure propagates to the indexing caller.
+
+These waits supplement the SDK's short retry delays. Request timeouts remain
+separate, including the existing single 1,200-second fallback on `APITimeoutError`.
+Query embeddings (`embed_query`) do not use the 30/60-second recovery waits.
+With the default SDK setting of two retries, persistent HTTP 5xx can cause up to
+nine HTTP requests for one document batch. Other errors retain their existing
+handling, including the truncation fallback for HTTP 400.
+
 ```python
 def embed_documents(self, texts: list[str]) -> list[list[float]]:
-    """Process in batches of 1024 to respect API limits."""
+    """Process in batches of 128 with recovery for failed batches."""
     embeddings = []
-    for idx in range(0, len(texts), 1024):
-        batch = texts[idx : idx + 1024]
-        batch_embeddings = self._embed_text(batch)
+    for idx in range(0, len(texts), self._BATCH_SIZE):
+        batch = texts[idx : idx + self._BATCH_SIZE]
+        batch_embeddings = self._embed_document_batch(batch, batch_number=idx // self._BATCH_SIZE + 1)
         embeddings.extend(batch_embeddings)
     return embeddings
 ```

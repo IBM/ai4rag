@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from dataclasses import dataclass
+from time import sleep
 from typing import Optional
 
-from openai import APITimeoutError, BadRequestError, OpenAI
+from openai import APITimeoutError, BadRequestError, InternalServerError, OpenAI
 
 from ai4rag import logger
 from ai4rag.utils.constants import TokenEstimation
@@ -18,6 +19,7 @@ __all__ = ["OpenAIEmbeddingModel", "OpenAIEmbeddingParams"]
 MIN_CONTEXT_LENGTH = 700
 _TRUNCATION_MARGINS = (0.05, 0.10)
 _FALLBACK_TIMEOUT = 1200.0
+_INDEXING_RETRY_DELAYS = (30.0, 60.0)
 
 
 @dataclass
@@ -31,7 +33,7 @@ class OpenAIEmbeddingParams:
 class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     """Creates embeddings via an OpenAI-compatible client."""
 
-    _BATCH_SIZE = 1024
+    _BATCH_SIZE = 128
 
     def __init__(self, client: OpenAI, model_id: str, params: dict | OpenAIEmbeddingParams | None = None):
         super().__init__(client=client, model_id=model_id, params=params)
@@ -224,10 +226,34 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
                     )
             raise
 
+    def _embed_document_batch(self, texts: list[str], batch_number: int) -> list[list[float]]:
+        """Retry a failed document batch after 30 and 60 seconds on HTTP 5xx."""
+        for attempt, delay in enumerate(_INDEXING_RETRY_DELAYS, start=1):
+            try:
+                return self._embed_text(text_input=texts)
+            except InternalServerError as exc:
+                logger.warning(
+                    "Embedding batch %d (%d texts) failed with HTTP %d. "
+                    "Retrying in %.0fs (recovery %d/%d). Model: %s.",
+                    batch_number,
+                    len(texts),
+                    exc.status_code,
+                    delay,
+                    attempt,
+                    len(_INDEXING_RETRY_DELAYS),
+                    self.model_id,
+                )
+                sleep(delay)
+        return self._embed_text(text_input=texts)
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Embeds given list of strings.
-        The maximum batch size supported is 2048 chunks,
-        hence we need to do it iteratively.
+        """Embed strings sequentially in batches of up to 128 texts.
+
+        After the client's retries are exhausted on HTTP 5xx, retry only the
+        failed batch after 30 seconds, then 60 seconds. Previously completed
+        batches are retained. Client retry and request timeout settings still
+        apply to each attempt. These recovery waits do not apply to
+        :meth:`embed_query`.
 
         Parameters
         ----------
@@ -241,7 +267,11 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         """
         resp = []
         for idx in range(0, len(texts), self._BATCH_SIZE):
-            resp.extend(self._embed_text(text_input=texts[idx : idx + self._BATCH_SIZE]))
+            resp.extend(
+                self._embed_document_batch(
+                    texts=texts[idx : idx + self._BATCH_SIZE], batch_number=idx // self._BATCH_SIZE + 1
+                )
+            )
 
         return resp
 
