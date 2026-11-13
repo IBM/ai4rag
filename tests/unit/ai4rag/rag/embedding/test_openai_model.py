@@ -239,6 +239,24 @@ def test_confirmed_overflow_truncates(model, client, message, code, no_wait):
     no_wait.assert_not_called()
 
 
+@pytest.mark.parametrize("operation", ["query", "documents"])
+@pytest.mark.parametrize("length", [3687, 3800, 3891])
+def test_overflow_skips_unchanged_truncation_margin(model, client, no_wait, operation, length):
+    original = "x" * length
+    texts = [original, "short"] if operation == "documents" else [original]
+    vectors = [VECTOR] * len(texts)
+    client.embeddings.create.side_effect = [status_error(400, "Input too long"), response(vectors)]
+
+    if operation == "query":
+        assert model.embed_query(original) == VECTOR
+    else:
+        assert model.embed_documents(texts) == vectors
+
+    assert sent_inputs(client) == [texts, [text[:3686] for text in texts]]
+    assert texts[0] == original
+    no_wait.assert_not_called()
+
+
 def test_mixed_overflow_and_server_errors_keep_repaired_payload(model, client, no_wait):
     original = "x" * 6000
     client.embeddings.create.side_effect = [
@@ -252,19 +270,21 @@ def test_mixed_overflow_and_server_errors_keep_repaired_payload(model, client, n
     no_wait.assert_called_once_with(30.0)
 
 
-def test_truncation_exhaustion_raises_latest_error(model, client):
-    errors = [status_error(400, "Input too long") for _ in range(3)]
+@pytest.mark.parametrize("length,expected_lengths", [(3800, [3800, 3686]), (6000, [6000, 3891, 3686])])
+def test_truncation_exhaustion_raises_latest_error(model, client, length, expected_lengths):
+    errors = [status_error(400, "Input too long") for _ in expected_lengths]
     client.embeddings.create.side_effect = errors
     with pytest.raises(BadRequestError) as caught:
-        model.embed_query("x" * 6000)
+        model.embed_query("x" * length)
     assert caught.value is errors[-1]
-    assert client.embeddings.create.call_count == 3
+    assert [len(item[0]) for item in sent_inputs(client)] == expected_lengths
 
 
-def test_overflow_does_not_retry_unchanged_input(model, client):
+@pytest.mark.parametrize("length", [5, 3685, 3686])
+def test_overflow_does_not_retry_unchanged_input(model, client, length):
     client.embeddings.create.side_effect = status_error(400, "Input too long")
     with pytest.raises(BadRequestError):
-        model.embed_query("short")
+        model.embed_query("x" * length)
     client.embeddings.create.assert_called_once()
 
 

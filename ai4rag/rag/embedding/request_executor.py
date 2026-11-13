@@ -164,14 +164,14 @@ class _RequestState:
         Current timeout limits, before the per-attempt remaining-budget cap.
     retries : int, default=0
         Number of transient-error waits already consumed.
-    truncations : int, default=0
-        Number of input repairs already applied.
+    truncation_index : int, default=0
+        Index of the next truncation margin to consider.
     """
 
     texts: list[str]
     timeout: httpx.Timeout
     retries: int = 0
-    truncations: int = 0
+    truncation_index: int = 0
 
 
 class EmbeddingRequestExecutor:
@@ -335,40 +335,39 @@ class EmbeddingRequestExecutor:
         Parameters
         ----------
         state : _RequestState
-            Current payload and count of previously applied truncations.
+            Current payload and next truncation margin to consider.
         original : list[str]
             Unrepaired texts. Each margin is applied to this original batch.
 
         Returns
         -------
         bool
-            True after replacing state.texts and incrementing state.truncations.
-            False if repair is disabled, context length is unknown, both margins
-            are exhausted, or the payload would be unchanged.
+            True after replacing state.texts with the first remaining repair
+            that changes the payload. False if repair is disabled, context
+            length is unknown, or no remaining margin changes the payload.
 
         Notes
         -----
         Repairs target 95%, then 90% of the configured context length using
-        CHARS_PER_TOKEN. Shorter texts remain intact; the character estimate
+        CHARS_PER_TOKEN. Margins that leave the payload unchanged are skipped
+        without a request. Shorter texts remain intact; the character estimate
         does not guarantee that the service will accept the repaired batch.
         """
-        if (
-            not self._policy.allow_truncation
-            or self._context_length is None
-            or state.truncations == len(_TRUNCATION_MARGINS)
-        ):
+        if not self._policy.allow_truncation or self._context_length is None:
             return False
-        margin = _TRUNCATION_MARGINS[state.truncations]
-        max_chars = int(self._context_length * (1 - margin) * TokenEstimation.CHARS_PER_TOKEN)
-        repaired = [text[:max_chars] for text in original]
-        if repaired == state.texts:
-            return False
-        state.texts = repaired
-        state.truncations += 1
-        logger.warning(
-            "Truncating embedding input by %.0f%% of context length. Model: %s.", margin * 100, self._model_id
-        )
-        return True
+        while state.truncation_index < len(_TRUNCATION_MARGINS):
+            margin = _TRUNCATION_MARGINS[state.truncation_index]
+            state.truncation_index += 1
+            max_chars = int(self._context_length * (1 - margin) * TokenEstimation.CHARS_PER_TOKEN)
+            repaired = [text[:max_chars] for text in original]
+            if repaired == state.texts:
+                continue
+            state.texts = repaired
+            logger.warning(
+                "Truncating embedding input by %.0f%% of context length. Model: %s.", margin * 100, self._model_id
+            )
+            return True
+        return False
 
     def _extend_read_timeout(self, state: _RequestState) -> bool:
         """Apply the policy's read-timeout fallback when it extends a finite limit.
