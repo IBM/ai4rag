@@ -6,6 +6,7 @@
 
 from unittest.mock import MagicMock, Mock
 
+import httpx
 import pytest
 from openai import OpenAI
 from pydantic import ValidationError
@@ -46,9 +47,11 @@ def _setup_client(mocker, registered_ids, *, foundation_valid=True, embedding_va
     # spec=OpenAI does not expose instance attributes set in __init__, so set them explicitly.
     client.base_url = "https://maas.example.com/maas-api/v1"
     client.api_key = "secret-key"
+    client.timeout = httpx.Timeout(600)
+    client.with_options.return_value = client
     client.models.list.return_value.data = [_make_model(mid) for mid in registered_ids]
     emb_response = Mock()
-    emb_response.data = [Mock(embedding=[0.0] * dim)]
+    emb_response.data = [Mock(index=0, embedding=[0.0] * dim)]
     client.embeddings.create.return_value = emb_response
     client.chat.completions.create.return_value = Mock(choices=[])
 

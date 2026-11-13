@@ -12,14 +12,16 @@ mocked ai4rag model.
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import httpx
 import pytest
-from openai import BadRequestError
+from openai import BadRequestError, InternalServerError
 from ragas.run_config import RunConfig
 
 from ai4rag.evaluator.ragas_adapters import AI4RAGRagasEmbeddings, AI4RAGRagasLLM
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 
 
 def _make_chat_model(content: str = "hello") -> MagicMock:
@@ -130,3 +132,69 @@ class TestAI4RAGRagasEmbeddings:
 
         assert asyncio.run(emb.aembed_query("x")) == [0.3]
         assert asyncio.run(emb.aembed_documents(["a"])) == [[0.3]]
+
+    @pytest.mark.parametrize("is_async", [True, False])
+    def test_other_providers_keep_ragas_retries(self, is_async):
+        model = MagicMock()
+        model.embed_documents.side_effect = [ConnectionError("temporary"), [[0.3]]]
+        emb = AI4RAGRagasEmbeddings(model)
+        emb.set_run_config(RunConfig(max_retries=2, max_wait=0))
+
+        assert asyncio.run(emb.embed_texts(["a"], is_async=is_async)) == [[0.3]]
+        assert model.embed_documents.call_count == 2
+
+
+@pytest.fixture
+def openai_embeddings(mocker):
+    client = MagicMock()
+    client.timeout = httpx.Timeout(600)
+    client.with_options.return_value = client
+    client.embeddings.create.return_value = SimpleNamespace(data=[SimpleNamespace(index=0, embedding=[0.3])])
+    model = OpenAIEmbeddingModel(client, "test", {"embedding_dimension": 1, "context_length": 1024})
+    sleep = mocker.patch("ai4rag.rag.embedding.request_executor.sleep")
+    mocker.patch("ai4rag.rag.embedding.request_executor.uniform", return_value=0.0)
+    emb = AI4RAGRagasEmbeddings(model)
+    emb.set_run_config(RunConfig(max_retries=10, max_wait=0))
+    return emb, client, sleep
+
+
+@pytest.mark.parametrize("entrypoint", ["sync", "async", "texts-sync", "texts-async"])
+def test_openai_evaluation_selects_short_recovery(openai_embeddings, entrypoint):
+    emb, client, sleep = openai_embeddings
+    error = InternalServerError(
+        "Unavailable",
+        response=httpx.Response(500, request=httpx.Request("POST", "https://example.test")),
+        body=None,
+    )
+    client.embeddings.create.side_effect = [error, client.embeddings.create.return_value]
+
+    if entrypoint == "sync":
+        result = emb.embed_documents(["a"])
+    elif entrypoint == "async":
+        result = asyncio.run(emb.aembed_documents(["a"]))
+    else:
+        result = asyncio.run(emb.embed_texts(["a"], is_async=entrypoint == "texts-async"))
+
+    assert result == [[0.3]]
+    assert client.embeddings.create.call_count == 2
+    sleep.assert_called_once_with(0.5)
+
+
+@pytest.mark.parametrize("is_async", [True, False])
+@pytest.mark.parametrize("status,headers,attempts", [(400, {}, 1), (500, {}, 3), (503, {"x-should-retry": "false"}, 1)])
+def test_openai_evaluation_has_one_retry_owner(openai_embeddings, is_async, status, headers, attempts):
+    emb, client, sleep = openai_embeddings
+    error_type = BadRequestError if status == 400 else InternalServerError
+    error = error_type(
+        "Unsupported parameter" if status == 400 else "Unavailable",
+        response=httpx.Response(status, request=httpx.Request("POST", "https://example.test"), headers=headers),
+        body=None,
+    )
+    client.embeddings.create.side_effect = error
+
+    with pytest.raises(error_type) as caught:
+        asyncio.run(emb.embed_texts(["a"], is_async=is_async))
+
+    assert caught.value is error
+    assert client.embeddings.create.call_count == attempts
+    assert [call.args[0] for call in sleep.call_args_list] == [0.5, 1.0][: attempts - 1]
