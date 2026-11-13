@@ -19,6 +19,7 @@ characters.
 
 from unittest.mock import MagicMock, Mock
 
+import httpx
 import pytest
 from openai import OpenAI
 
@@ -63,9 +64,11 @@ def _serving_client(registered_ids: list[str], *, dim: int = 768) -> MagicMock:
     # spec=OpenAI does not expose instance attributes set in __init__, so set them explicitly.
     client.base_url = "https://maas.example.com/maas-api/v1"
     client.api_key = "secret-key"
+    client.timeout = httpx.Timeout(600)
+    client.with_options.return_value = client
     client.models.list.return_value.data = [_make_model_mock(mid) for mid in registered_ids]
     emb_response = Mock()
-    emb_response.data = [Mock(embedding=[0.0] * dim)]
+    emb_response.data = [Mock(index=0, embedding=[0.0] * dim)]
     client.embeddings.create.return_value = emb_response
     client.chat.completions.create.return_value = Mock(choices=[])
     return client
@@ -120,7 +123,8 @@ class TestValidateEmbeddingModel:
     def test_returns_true_when_model_responds(self):
         """Validation returns True when the model responds successfully."""
         mock_client = MagicMock()
-        mock_client.embeddings.create.return_value = Mock(data=[Mock(embedding=[0.1, 0.2, 0.3])])
+        mock_client.timeout = httpx.Timeout(600)
+        mock_client.embeddings.create.return_value = Mock(data=[Mock(index=0, embedding=[0.1] * 768)])
         mock_client.with_options.return_value = mock_client
 
         model = OpenAIEmbeddingModel(
@@ -131,6 +135,7 @@ class TestValidateEmbeddingModel:
     def test_returns_false_when_model_fails(self):
         """Validation returns False when the model raises."""
         mock_client = MagicMock()
+        mock_client.timeout = httpx.Timeout(600)
         mock_client.with_options.return_value = mock_client
         model = OpenAIEmbeddingModel(
             model_id="m", client=mock_client, params=OpenAIEmbeddingParams(embedding_dimension=768, context_length=1024)

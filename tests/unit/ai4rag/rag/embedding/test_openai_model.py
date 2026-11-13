@@ -2,646 +2,433 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+"""Embedding recovery, capability detection, and response-contract regressions."""
 
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from openai import APIConnectionError, APIStatusError, APITimeoutError, BadRequestError, InternalServerError, OpenAI
 
 from ai4rag.rag.embedding.openai_model import (
-    _TRUNCATION_MARGINS,
     MIN_CONTEXT_LENGTH,
     OpenAIEmbeddingModel,
     OpenAIEmbeddingParams,
+    _RequestPolicy,
+    _retry_delay,
 )
-from ai4rag.utils.constants import TokenEstimation
+
+REQUEST = httpx.Request("POST", "https://test/v1/embeddings")
+VECTOR = [0.1, 0.2, 0.3]
 
 
-def _make_bad_request_error():
-    """Create a BadRequestError for testing."""
-    return BadRequestError(
-        message="Input too long",
-        response=httpx.Response(status_code=400, request=httpx.Request("POST", "http://test")),
-        body=None,
+def response(vectors, indices=None):
+    indices = range(len(vectors)) if indices is None else indices
+    return SimpleNamespace(
+        data=[SimpleNamespace(index=index, embedding=vector) for index, vector in zip(indices, vectors)]
     )
 
 
-def _make_mock_openai_embedding_response(mocker, embeddings):
-    """Helper to create a mock OpenAI embedding response."""
-    mock_response = mocker.MagicMock()
-    mock_response.data = []
-    for emb in embeddings:
-        mock_data = mocker.MagicMock()
-        mock_data.embedding = emb
-        mock_response.data.append(mock_data)
-    return mock_response
+def status_error(status=500, message="Unavailable", headers=None, code=None):
+    error_type = BadRequestError if status == 400 else InternalServerError if status >= 500 else APIStatusError
+    return error_type(message, response=httpx.Response(status, request=REQUEST, headers=headers), body={"code": code})
 
 
-class TestOpenAIEmbeddingModel:
-    """Test suite for OpenAIEmbeddingModel class."""
+@pytest.fixture(autouse=True)
+def no_wait(mocker):
+    mocker.patch("ai4rag.rag.embedding.openai_model.uniform", return_value=0.0)
+    mocker.patch("ai4rag.rag.embedding.openai_model.monotonic", return_value=0.0)
+    return mocker.patch("ai4rag.rag.embedding.openai_model.sleep")
 
-    @pytest.fixture
-    def mock_openai_client(self, mocker):
-        """Create a mock OpenAI client with default embedding response for auto-detection."""
-        mock_client = mocker.MagicMock()
-        mock_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
-            mocker, [[0.1, 0.2, 0.3, 0.4]]
-        )
-        return mock_client
 
-    def test_init_with_explicit_dimension(self, mock_openai_client):
-        """Test initialization with explicit embedding_dimension and context_length does not trigger auto-detection."""
-        params = OpenAIEmbeddingParams(embedding_dimension=768, context_length=1024)
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
+@pytest.fixture
+def client(mocker):
+    instance = mocker.MagicMock()
+    instance.timeout = httpx.Timeout(600.0, connect=5.0, write=20.0, pool=10.0)
+    instance.with_options.return_value = instance
+    instance.embeddings.create.return_value = response([VECTOR])
+    return instance
 
-        assert model.params.embedding_dimension == 768
-        assert model.params.context_length == 1024
-        mock_openai_client.embeddings.create.assert_not_called()
 
-    @pytest.mark.parametrize("operation", ["embed_documents", "embed_query"])
-    def test_timeout_fallback_disables_sdk_retries(self, mock_openai_client, mocker, operation):
-        """A timed-out request gets one longer attempt with retries disabled and the same input."""
-        mock_openai_client.embeddings.create.side_effect = APITimeoutError(
-            request=httpx.Request("POST", "https://test/v1/embeddings")
-        )
-        fallback_client = mock_openai_client.with_options.return_value
-        fallback_client.embeddings.create.return_value = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2]])
-        model = OpenAIEmbeddingModel(
-            client=mock_openai_client,
-            model_id="test-model",
-            params=OpenAIEmbeddingParams(embedding_dimension=2, context_length=1024),
-        )
+@pytest.fixture
+def model(client):
+    return OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3, "context_length": 1024})
 
-        result = getattr(model, operation)(["text"] if operation == "embed_documents" else "text")
 
-        assert result == ([[0.1, 0.2]] if operation == "embed_documents" else [0.1, 0.2])
-        mock_openai_client.with_options.assert_called_once_with(timeout=1200.0, max_retries=0)
-        mock_openai_client.embeddings.create.assert_called_once()
-        fallback_client.embeddings.create.assert_called_once_with(
-            **mock_openai_client.embeddings.create.call_args.kwargs
-        )
+def sent_inputs(client):
+    return [call.kwargs["input"] for call in client.embeddings.create.call_args_list]
 
-    def test_init_with_dict_params_with_dimension(self, mock_openai_client):
-        """Test initialization with dict params containing embedding_dimension and context_length."""
-        model = OpenAIEmbeddingModel(
-            client=mock_openai_client,
-            model_id="all-MiniLM-L6-v2",
-            params={"embedding_dimension": 384, "context_length": 1024},
-        )
 
-        assert model.params.embedding_dimension == 384
-        assert model.params.context_length == 1024
-        mock_openai_client.embeddings.create.assert_not_called()
+def test_explicit_capabilities_do_not_call_service(client, model):
+    assert model.params == OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024)
+    assert str(model) == "test-model"
+    assert repr(model) == "test-model"
+    client.embeddings.create.assert_not_called()
 
-    def test_init_without_params_auto_detects_dimension(self, mock_openai_client):
-        """Test initialization without params triggers auto-detection of embedding_dimension and context_length."""
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2")
 
-        assert model.params.embedding_dimension == 4
-        # Binary search converges near upper bound when all probes succeed
-        assert model.params.context_length > 0
-
-    def test_init_with_none_params_auto_detects_dimension(self, mock_openai_client):
-        """Test initialization with params=None triggers auto-detection."""
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=None)
-
-        assert model.params.embedding_dimension == 4
-        assert model.params.context_length > 0
-
-    def test_init_with_params_missing_dimension_auto_detects(self, mock_openai_client):
-        """Test that auto-detection triggers when OpenAIEmbeddingParams has no dimension."""
-        params = OpenAIEmbeddingParams()  # embedding_dimension and context_length default to None
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
-
-        assert model.params.embedding_dimension == 4
-        assert model.params.context_length > 0
-
-    def test_init_with_invalid_params_type(self, mock_openai_client):
-        """Test initialization with invalid params type raises TypeError."""
-        with pytest.raises(TypeError, match="Incorrect type of 'params' parameter"):
-            OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params="invalid")
-
-    def test_detect_embedding_dimension_api_failure(self, mocker):
-        """Test that _detect_embedding_dimension raises RuntimeError on API failure."""
-        mock_client = mocker.MagicMock()
-        mock_client.embeddings.create.side_effect = ConnectionError("Service unavailable")
-
-        with pytest.raises(RuntimeError, match="Failed to auto-detect embedding dimension"):
-            OpenAIEmbeddingModel(client=mock_client, model_id="all-MiniLM-L6-v2", params=None)
-
-    def test_detect_embedding_dimension_preserves_original_exception(self, mocker):
-        """Test that the original exception is chained in the RuntimeError."""
-        mock_client = mocker.MagicMock()
-        original_error = ConnectionError("Connection refused")
-        mock_client.embeddings.create.side_effect = original_error
-
-        with pytest.raises(RuntimeError) as exc_info:
-            OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=None)
-
-        assert exc_info.value.__cause__ is original_error
-
-    def test_detect_context_length_all_probes_succeed(self, mock_openai_client):
-        """Test that context_length detection converges near upper bound when all probes succeed."""
-        params = OpenAIEmbeddingParams(embedding_dimension=384)
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
-
-        # Binary search converges near 8192 when all probes succeed
-        assert model.params.context_length > 4096
-
-    def test_detect_context_length_binary_search_finds_limit(self, mocker):
-        """Test that binary search finds the correct context_length limit."""
-        mock_client = mocker.MagicMock()
-        response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-
-        def side_effect(**kwargs):
-            text = kwargs.get("input", "")
-            # Each "word " is 5 chars, so N words = N*5 chars
-            # Accept up to 2048 words
-            if isinstance(text, str) and len(text) > 2048 * 5:
-                raise ValueError("Input too long")
-            return response
-
-        mock_client.embeddings.create.side_effect = side_effect
-
-        params = OpenAIEmbeddingParams(embedding_dimension=384)
-        model = OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=params)
-
-        # Binary search should find a value close to 2048
-        assert 1792 <= model.params.context_length <= 2048
-
-    def test_detect_context_length_all_probes_fail(self, mocker):
-        """Test that RuntimeError is raised when all context_length probes fail."""
-        mock_client = mocker.MagicMock()
-        dim_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-
-        call_count = [0]
-
-        def side_effect(**kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return dim_response  # dimension detection
-            raise ValueError("Input too long")
-
-        mock_client.embeddings.create.side_effect = side_effect
-
-        with pytest.raises(RuntimeError, match="Failed to auto-detect 'context_length'"):
-            OpenAIEmbeddingModel(client=mock_client, model_id="test-model", params=None)
-
-    def test_detect_context_length_disables_server_truncation(self, mocker):
-        """Test that context_length probes send truncate_prompt_tokens=None to override server defaults."""
-        mock_client = mocker.MagicMock()
-        response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        mock_client.embeddings.create.return_value = response
-
-        OpenAIEmbeddingModel(
-            client=mock_client, model_id="test-model", params=OpenAIEmbeddingParams(embedding_dimension=384)
-        )
-
-        probe_calls = [
-            call
-            for call in mock_client.embeddings.create.call_args_list
-            if call.kwargs.get("extra_body") == {"truncate_prompt_tokens": None}
-        ]
-        assert len(probe_calls) > 0, "Detection probes must explicitly disable server-side truncation"
-
-    def test_detect_context_length_skipped_when_explicit(self, mock_openai_client):
-        """Test that context_length detection is skipped when explicitly provided."""
-        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=1024)
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="all-MiniLM-L6-v2", params=params)
-
-        assert model.params.context_length == 1024
-        mock_openai_client.embeddings.create.assert_not_called()
-
-    def test_embed_documents(self, mock_openai_client, mocker):
-        """Test embed_documents method."""
-        model = OpenAIEmbeddingModel(
-            client=mock_openai_client,
-            model_id="all-MiniLM-L6-v2",
-            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
-        )
-        mock_openai_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
-            mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]]
-        )
-
-        embeddings = model.embed_documents(["text1", "text2"])
-
-        assert len(embeddings) == 2
-        assert embeddings[0] == [0.1, 0.2, 0.3]
-        assert embeddings[1] == [0.4, 0.5, 0.6]
-
-    def test_embed_documents_batches_large_input(self, mock_openai_client, mocker):
-        """Test embed_documents batches inputs exceeding _BATCH_SIZE texts."""
-        model = OpenAIEmbeddingModel(
-            client=mock_openai_client,
-            model_id="all-MiniLM-L6-v2",
-            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
-        )
-
-        batch_size = 128
-        remainder = 100
-        total = 2 * batch_size + remainder
-
-        batch1_response = _make_mock_openai_embedding_response(mocker, [[0.1] for _ in range(batch_size)])
-        batch2_response = _make_mock_openai_embedding_response(mocker, [[0.2] for _ in range(batch_size)])
-        batch3_response = _make_mock_openai_embedding_response(mocker, [[0.3] for _ in range(remainder)])
-        mock_openai_client.embeddings.create.side_effect = [batch1_response, batch2_response, batch3_response]
-
-        texts = [f"text{i}" for i in range(total)]
-        embeddings = model.embed_documents(texts)
-
-        assert len(embeddings) == total
-        assert mock_openai_client.embeddings.create.call_count == 3
-        assert [call.kwargs["input"] for call in mock_openai_client.embeddings.create.call_args_list] == [
-            texts[:128],
-            texts[128:256],
-            texts[256:],
-        ]
-
-    def test_embed_query(self, mock_openai_client, mocker):
-        """Test embed_query method."""
-        model = OpenAIEmbeddingModel(
-            client=mock_openai_client,
-            model_id="all-MiniLM-L6-v2",
-            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=1024),
-        )
-        mock_openai_client.embeddings.create.return_value = _make_mock_openai_embedding_response(
-            mocker, [[0.1, 0.2, 0.3]]
-        )
-
-        embedding = model.embed_query("test query")
-
-        assert embedding == [0.1, 0.2, 0.3]
-
-    def test_explicit_context_length_below_minimum_raises(self, mock_openai_client):
-        """Test that explicit context_length below MIN_CONTEXT_LENGTH raises ValueError."""
-        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH - 1)
-        with pytest.raises(ValueError, match="Minimal required value is"):
-            OpenAIEmbeddingModel(client=mock_openai_client, model_id="small-ctx-model", params=params)
-
-    def test_explicit_context_length_at_minimum_succeeds(self, mock_openai_client):
-        """Test that context_length exactly at MIN_CONTEXT_LENGTH is accepted."""
-        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=MIN_CONTEXT_LENGTH)
-        model = OpenAIEmbeddingModel(client=mock_openai_client, model_id="boundary-model", params=params)
-
-        assert model.params.context_length == MIN_CONTEXT_LENGTH
-
-    def test_dict_params_context_length_below_minimum_raises(self, mock_openai_client):
-        """Test that dict params with context_length below minimum raises ValueError."""
-        with pytest.raises(ValueError, match="Minimal required value is"):
-            OpenAIEmbeddingModel(
-                client=mock_openai_client,
-                model_id="small-ctx-model",
-                params={"embedding_dimension": 384, "context_length": 200},
-            )
-
-    def test_auto_detected_context_length_below_minimum_raises(self, mocker):
-        """Test that auto-detected context_length below MIN_CONTEXT_LENGTH raises ValueError."""
-        mock_client = mocker.MagicMock()
-        dim_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-
-        call_count = [0]
-
-        def side_effect(**kwargs):
-            call_count[0] += 1
-            if call_count[0] == 1:
-                return dim_response
-            text = kwargs.get("input", "")
-            if isinstance(text, str) and len(text) > 500 * 5:
-                raise ValueError("Input too long")
-            return dim_response
-
-        mock_client.embeddings.create.side_effect = side_effect
-
-        with pytest.raises(ValueError, match="Minimal required value is"):
-            OpenAIEmbeddingModel(client=mock_client, model_id="tiny-ctx-model", params=None)
-
-    def test_context_length_error_message_contains_model_id_and_values(self, mock_openai_client):
-        """Test that the ValueError message includes model_id, actual value, and minimum."""
-        ctx_len = 300
-        model_id = "test-model-xyz"
-        params = OpenAIEmbeddingParams(embedding_dimension=384, context_length=ctx_len)
-
-        with pytest.raises(ValueError, match=model_id) as exc_info:
-            OpenAIEmbeddingModel(client=mock_openai_client, model_id=model_id, params=params)
-
-        message = str(exc_info.value)
-        assert str(ctx_len) in message
-        assert str(MIN_CONTEXT_LENGTH) in message
-
-    def test_model_repr(self, mock_openai_client):
-        """Test string representation."""
-        model = OpenAIEmbeddingModel(
-            client=mock_openai_client,
-            model_id="all-MiniLM-L6-v2",
-            params=OpenAIEmbeddingParams(embedding_dimension=384, context_length=1024),
-        )
-
-        assert repr(model) == "all-MiniLM-L6-v2"
-        assert str(model) == "all-MiniLM-L6-v2"
-
-
-class TestEmbeddingBatchRecovery:
-    """Document batch recovery without replaying successful work or delaying queries."""
-
-    @pytest.fixture
-    def model(self, mocker):
-        return OpenAIEmbeddingModel(
-            client=mocker.MagicMock(),
-            model_id="test-model",
-            params=OpenAIEmbeddingParams(embedding_dimension=1, context_length=1024),
-        )
-
-    @pytest.fixture(autouse=True)
-    def recovery_sleep(self, mocker):
-        return mocker.patch("ai4rag.rag.embedding.openai_model.sleep")
-
-    @staticmethod
-    def server_error(status=500):
-        return InternalServerError(
-            "Embedding service unavailable",
-            response=httpx.Response(status, request=httpx.Request("POST", "https://test/v1/embeddings")),
-            body=None,
-        )
-
-    @pytest.mark.parametrize("failures", [1, 2])
-    def test_recovers_after_server_errors(self, model, mocker, recovery_sleep, failures, caplog):
-        response = _make_mock_openai_embedding_response(mocker, [[0.1]])
-        model.client.embeddings.create.side_effect = [self.server_error(503)] * failures + [response]
-
-        assert model.embed_documents(["text"]) == [[0.1]]
-
-        assert recovery_sleep.call_args_list == [mocker.call(delay) for delay in (30.0, 60.0)[:failures]]
-        assert model.client.embeddings.create.call_count == failures + 1
-        assert "Embedding batch 1 (1 texts) failed with HTTP 503" in caplog.text
-        assert "test-model" in caplog.text
-
-    def test_exhausted_recovery_propagates_last_error(self, model, recovery_sleep, mocker):
-        errors = [self.server_error(status) for status in (500, 502, 503)]
-        model.client.embeddings.create.side_effect = errors
-
-        with pytest.raises(InternalServerError) as exc_info:
-            model.embed_documents(["text"])
-
-        assert exc_info.value is errors[-1]
-        assert model.client.embeddings.create.call_count == 3
-        assert recovery_sleep.call_args_list == [mocker.call(30.0), mocker.call(60.0)]
-
-    def test_recovery_keeps_completed_batches_and_resets_delays(self, model, mocker, recovery_sleep):
-        texts = [f"text{i}" for i in range(257)]
-        expected = [[float(i)] for i in range(257)]
-        model.client.embeddings.create.side_effect = [
-            _make_mock_openai_embedding_response(mocker, expected[:128]),
-            self.server_error(),
-            self.server_error(),
-            _make_mock_openai_embedding_response(mocker, expected[128:256]),
-            self.server_error(),
-            _make_mock_openai_embedding_response(mocker, expected[256:]),
-        ]
-
-        assert model.embed_documents(texts) == expected
-
-        assert [call.kwargs["input"] for call in model.client.embeddings.create.call_args_list] == [
-            texts[:128],
-            texts[128:256],
-            texts[128:256],
-            texts[128:256],
-            texts[256:],
-            texts[256:],
-        ]
-        assert recovery_sleep.call_args_list == [mocker.call(30.0), mocker.call(60.0), mocker.call(30.0)]
-
-    @pytest.mark.parametrize("status", [401, 403, 404, 408, 409, 429])
-    def test_other_http_errors_propagate_without_recovery(self, model, recovery_sleep, status):
-        error = APIStatusError(
-            "Request failed",
-            response=httpx.Response(status, request=httpx.Request("POST", "https://test/v1/embeddings")),
-            body=None,
-        )
-        model.client.embeddings.create.side_effect = error
-
-        with pytest.raises(APIStatusError) as exc_info:
-            model.embed_documents(["text"])
-
-        assert exc_info.value is error
-        model.client.embeddings.create.assert_called_once()
-        recovery_sleep.assert_not_called()
-
-    def test_bad_request_keeps_truncation_without_recovery_waits(self, model, recovery_sleep):
-        model.client.embeddings.create.side_effect = _make_bad_request_error()
-
-        with pytest.raises(BadRequestError):
-            model.embed_documents(["text"])
-
-        assert model.client.embeddings.create.call_count == 3
-        recovery_sleep.assert_not_called()
-
-    @pytest.mark.parametrize(
-        "error", [ValueError("Invalid response"), APIConnectionError(request=httpx.Request("POST", "https://test"))]
+@pytest.mark.parametrize("params", [None, OpenAIEmbeddingParams(), {}])
+def test_detects_missing_capabilities(client, params):
+    detected = OpenAIEmbeddingModel(client, "test-model", params)
+    assert detected.params.embedding_dimension == 3
+    assert detected.params.context_length == 8129
+    assert all(
+        call.kwargs["extra_body"] == {"truncate_prompt_tokens": None}
+        for call in client.embeddings.create.call_args_list
     )
-    def test_non_http_errors_propagate_without_recovery(self, model, recovery_sleep, error):
-        model.client.embeddings.create.side_effect = error
-
-        with pytest.raises(type(error)) as exc_info:
-            model.embed_documents(["text"])
-
-        assert exc_info.value is error
-        model.client.embeddings.create.assert_called_once()
-        recovery_sleep.assert_not_called()
-
-    def test_failed_timeout_fallback_does_not_add_recovery_waits(self, model, recovery_sleep):
-        error = APITimeoutError(request=httpx.Request("POST", "https://test/v1/embeddings"))
-        model.client.embeddings.create.side_effect = error
-        fallback = model.client.with_options.return_value
-        fallback.embeddings.create.side_effect = error
-
-        with pytest.raises(APITimeoutError) as exc_info:
-            model.embed_documents(["text"])
-
-        assert exc_info.value is error
-        model.client.with_options.assert_called_once_with(timeout=1200.0, max_retries=0)
-        fallback.embeddings.create.assert_called_once()
-        recovery_sleep.assert_not_called()
-
-    def test_query_does_not_use_document_recovery(self, model, recovery_sleep):
-        error = self.server_error()
-        model.client.embeddings.create.side_effect = error
-
-        with pytest.raises(InternalServerError) as exc_info:
-            model.embed_query("query")
-
-        assert exc_info.value is error
-        model.client.embeddings.create.assert_called_once()
-        recovery_sleep.assert_not_called()
-
-    def test_empty_documents_make_no_requests(self, model, recovery_sleep):
-        assert model.embed_documents([]) == []
-        model.client.embeddings.create.assert_not_called()
-        recovery_sleep.assert_not_called()
-
-    @pytest.mark.parametrize("failed_requests", [3, 6, 9])
-    def test_recovery_runs_after_sdk_retries(self, mocker, recovery_sleep, failed_requests):
-        requests = []
-
-        def respond(request):
-            requests.append(json.loads(request.content)["input"])
-            if len(requests) <= failed_requests:
-                return httpx.Response(500, json={"error": {"message": "Unavailable"}})
-            return httpx.Response(
-                200,
-                json={
-                    "object": "list",
-                    "model": "test-model",
-                    "data": [{"object": "embedding", "index": 0, "embedding": [0.1]}],
-                    "usage": {"prompt_tokens": 1, "total_tokens": 1},
-                },
-            )
-
-        with OpenAI(
-            api_key="test",
-            base_url="https://test/v1",
-            http_client=httpx.Client(transport=httpx.MockTransport(respond)),
-        ) as client:
-            sdk_sleep = mocker.patch.object(client, "_sleep_for_retry")
-            model = OpenAIEmbeddingModel(
-                client=client,
-                model_id="test-model",
-                params=OpenAIEmbeddingParams(embedding_dimension=1, context_length=1024),
-            )
-            if failed_requests == 9:
-                with pytest.raises(InternalServerError):
-                    model.embed_documents(["text"])
-            else:
-                assert model.embed_documents(["text"]) == [[0.1]]
-            assert client.max_retries == 2
-
-        assert requests == [["text"]] * min(failed_requests + 1, 9)
-        assert sdk_sleep.call_count == failed_requests // 3 * 2
-        assert recovery_sleep.call_args_list == [mocker.call(delay) for delay in (30.0, 60.0)[: failed_requests // 3]]
 
 
-class TestEmbeddingTruncationFallback:
-    """Test suite for the progressive truncation fallback in _embed_text."""
+def test_invalid_parameter_type(client):
+    with pytest.raises(TypeError, match="Incorrect type"):
+        OpenAIEmbeddingModel(client, "test-model", "invalid")
 
-    CONTEXT_LENGTH = 1024
 
-    @pytest.fixture
-    def model(self, mocker):
-        mock_client = mocker.MagicMock()
-        return OpenAIEmbeddingModel(
-            client=mock_client,
-            model_id="test-model",
-            params=OpenAIEmbeddingParams(embedding_dimension=3, context_length=self.CONTEXT_LENGTH),
+@pytest.mark.parametrize("length", [MIN_CONTEXT_LENGTH - 1, 0])
+def test_rejects_too_small_context(client, length):
+    with pytest.raises(ValueError, match="Minimal required value"):
+        OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3, "context_length": length})
+
+
+def test_accepts_minimum_context(client):
+    assert (
+        OpenAIEmbeddingModel(client, "test-model", OpenAIEmbeddingParams(3, MIN_CONTEXT_LENGTH)).params.context_length
+        == MIN_CONTEXT_LENGTH
+    )
+
+
+@pytest.mark.parametrize("status", [400, 401, 500])
+def test_dimension_probe_preserves_error_before_context_is_known(client, status, no_wait):
+    error = status_error(status, "Unknown model")
+    client.embeddings.create.side_effect = error
+    with pytest.raises(RuntimeError, match="Failed to auto-detect embedding dimension") as caught:
+        OpenAIEmbeddingModel(client, "test-model")
+    assert caught.value.__cause__ is error
+    assert client.embeddings.create.call_count == (3 if status == 500 else 1)
+    assert all(item == ["test"] for item in sent_inputs(client))
+
+
+def test_context_probe_only_narrows_after_length_rejection(client):
+    def respond(**kwargs):
+        if len(kwargs["input"][0]) > 2048 * 5:
+            raise status_error(400, "Input too long")
+        return response([VECTOR])
+
+    client.embeddings.create.side_effect = respond
+    detected = OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3})
+    assert 1792 <= detected.params.context_length <= 2048
+
+
+def test_transient_probe_failure_does_not_change_detected_limit(client, no_wait):
+    client.embeddings.create.side_effect = [status_error()] + [response([VECTOR])] * 20
+    detected = OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3})
+    assert detected.params.context_length == 8129
+    assert sent_inputs(client)[0] == sent_inputs(client)[1]
+    no_wait.assert_called_once_with(0.5)
+
+
+@pytest.mark.parametrize("status", [400, 401, 429, 500])
+def test_context_probe_outage_propagates_instead_of_inventing_limit(client, status):
+    error = status_error(status, "Unavailable")
+    client.embeddings.create.side_effect = error
+    with pytest.raises(RuntimeError, match="Failed to auto-detect 'context_length'") as caught:
+        OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3})
+    assert caught.value.__cause__ is error
+    assert len({len(item[0]) for item in sent_inputs(client)}) == 1
+
+
+def test_no_accepted_context_probe_has_clear_error(client):
+    client.embeddings.create.side_effect = status_error(400, "Input too long")
+    with pytest.raises(RuntimeError, match="context_length") as caught:
+        OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3})
+    assert isinstance(caught.value.__cause__, ValueError)
+
+
+def test_empty_documents_make_no_requests(model, client, no_wait):
+    assert model.embed_documents([]) == []
+    client.embeddings.create.assert_not_called()
+    no_wait.assert_not_called()
+
+
+def test_batches_128_and_keeps_completed_results(model, client, no_wait):
+    texts = [str(i) for i in range(257)]
+    vectors = [[float(i)] * 3 for i in range(257)]
+    client.embeddings.create.side_effect = [
+        response(vectors[:128]),
+        status_error(),
+        status_error(),
+        response(vectors[128:256]),
+        status_error(),
+        response(vectors[256:]),
+    ]
+    assert model.embed_documents(texts) == vectors
+    assert sent_inputs(client) == [
+        texts[:128],
+        texts[128:256],
+        texts[128:256],
+        texts[128:256],
+        texts[256:],
+        texts[256:],
+    ]
+    assert [call.args[0] for call in no_wait.call_args_list] == [30.0, 60.0, 30.0]
+
+
+@pytest.mark.parametrize("status", [408, 409, 429, 500, 502, 503, 504])
+def test_transient_status_has_two_retries(model, client, no_wait, status):
+    errors = [status_error(status) for _ in range(3)]
+    client.embeddings.create.side_effect = errors
+    with pytest.raises(APIStatusError) as caught:
+        model.embed_documents(["text"])
+    assert caught.value is errors[-1]
+    assert client.embeddings.create.call_count == 3
+    assert [call.args[0] for call in no_wait.call_args_list] == [30.0, 60.0]
+
+
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 422, 501, 505])
+def test_permanent_errors_fail_immediately(model, client, no_wait, status):
+    error = status_error(status, "Unsupported parameter")
+    client.embeddings.create.side_effect = error
+    with pytest.raises(APIStatusError) as caught:
+        model.embed_documents(["text"])
+    assert caught.value is error
+    client.embeddings.create.assert_called_once()
+    no_wait.assert_not_called()
+
+
+@pytest.mark.parametrize("indexing", [True, False])
+def test_backend_stop_instruction_is_honored(model, client, no_wait, indexing):
+    error = status_error(503, headers={"x-should-retry": "false"})
+    client.embeddings.create.side_effect = error
+    with pytest.raises(InternalServerError) as caught:
+        model.embed_documents(["text"], for_indexing=indexing)
+    assert caught.value is error
+    client.embeddings.create.assert_called_once()
+    no_wait.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["query", "evaluation"])
+def test_short_policy_for_query_and_evaluation(model, client, no_wait, operation):
+    client.embeddings.create.side_effect = [status_error(), response([VECTOR])]
+    result = model.embed_query("text") if operation == "query" else model.embed_documents(["text"], for_indexing=False)
+    assert result == (VECTOR if operation == "query" else [VECTOR])
+    no_wait.assert_called_once_with(0.5)
+
+
+def test_connection_failure_recovers(model, client, no_wait):
+    client.embeddings.create.side_effect = [APIConnectionError(request=REQUEST), response([VECTOR])]
+    assert model.embed_documents(["text"]) == [VECTOR]
+    no_wait.assert_called_once_with(30.0)
+
+
+@pytest.mark.parametrize(
+    "message,code",
+    [("Input too long", None), ("maximum context length exceeded", None), ("Rejected", "context_length_exceeded")],
+)
+def test_confirmed_overflow_truncates(model, client, message, code, no_wait):
+    original = "x" * 6000
+    client.embeddings.create.side_effect = [status_error(400, message, code=code), response([VECTOR])]
+    assert model.embed_query(original) == VECTOR
+    assert [len(item[0]) for item in sent_inputs(client)] == [6000, int(1024 * 0.95 * 4)]
+    no_wait.assert_not_called()
+
+
+def test_mixed_overflow_and_server_errors_keep_repaired_payload(model, client, no_wait):
+    original = "x" * 6000
+    client.embeddings.create.side_effect = [
+        status_error(400, "Input too long"),
+        status_error(),
+        status_error(400, "Input too long"),
+        response([VECTOR]),
+    ]
+    assert model.embed_documents([original]) == [VECTOR]
+    assert [len(item[0]) for item in sent_inputs(client)] == [6000, 3891, 3891, 3686]
+    no_wait.assert_called_once_with(30.0)
+
+
+def test_truncation_exhaustion_raises_latest_error(model, client):
+    errors = [status_error(400, "Input too long") for _ in range(3)]
+    client.embeddings.create.side_effect = errors
+    with pytest.raises(BadRequestError) as caught:
+        model.embed_query("x" * 6000)
+    assert caught.value is errors[-1]
+    assert client.embeddings.create.call_count == 3
+
+
+def test_overflow_does_not_retry_unchanged_input(model, client):
+    client.embeddings.create.side_effect = status_error(400, "Input too long")
+    with pytest.raises(BadRequestError):
+        model.embed_query("short")
+    client.embeddings.create.assert_called_once()
+
+
+def test_timeout_extends_only_read_once_and_retains_other_phase_limits(model, client):
+    error = APITimeoutError(request=REQUEST)
+    client.embeddings.create.side_effect = [error, status_error(), error]
+    with pytest.raises(APITimeoutError) as caught:
+        model.embed_documents(["text"])
+    assert caught.value is error
+    timeouts = [call.kwargs["timeout"] for call in client.with_options.call_args_list]
+    assert [timeout.read for timeout in timeouts] == [600.0, 1200.0, 1200.0]
+    assert all(timeout.connect == 5.0 and timeout.write == 20.0 and timeout.pool == 10.0 for timeout in timeouts)
+    assert all(call.kwargs["max_retries"] == 0 for call in client.with_options.call_args_list)
+    assert client.timeout.read == 600.0
+
+
+@pytest.mark.parametrize("timeout", [None, 1500.0])
+def test_timeout_fallback_does_not_shorten_existing_read_limit(model, client, timeout):
+    client.timeout = httpx.Timeout(timeout)
+    client.embeddings.create.side_effect = APITimeoutError(request=REQUEST)
+    with pytest.raises(APITimeoutError):
+        model.embed_query("text")
+    client.embeddings.create.assert_called_once()
+
+
+@pytest.mark.parametrize("cause", [httpx.ConnectTimeout, httpx.WriteTimeout, httpx.PoolTimeout])
+def test_non_read_timeouts_use_normal_retry_without_extending_read(model, client, cause, no_wait):
+    error = APITimeoutError(request=REQUEST)
+    error.__cause__ = cause("Timed out", request=REQUEST)
+    client.embeddings.create.side_effect = [error, response([VECTOR])]
+    assert model.embed_documents(["text"]) == [VECTOR]
+    assert all(call.kwargs["timeout"].read == 600.0 for call in client.with_options.call_args_list)
+    no_wait.assert_called_once_with(30.0)
+
+
+def test_successful_read_timeout_fallback(model, client, no_wait):
+    client.embeddings.create.side_effect = [APITimeoutError(request=REQUEST), response([VECTOR])]
+    assert model.embed_query("text") == VECTOR
+    no_wait.assert_not_called()
+
+
+def test_total_attempt_budget_covers_mixed_failures(model, client, no_wait):
+    errors = [
+        status_error(400, "Input too long"),
+        APITimeoutError(request=REQUEST),
+        status_error(),
+        status_error(400, "Input too long"),
+        status_error(),
+        status_error(),
+    ]
+    client.embeddings.create.side_effect = errors
+    with pytest.raises(InternalServerError) as caught:
+        model.embed_documents(["x" * 6000])
+    assert caught.value is errors[-1]
+    assert client.embeddings.create.call_count == 6
+    assert [call.args[0] for call in no_wait.call_args_list] == [30.0, 60.0]
+
+
+def test_elapsed_budget_does_not_wait_past_deadline(model, client, no_wait):
+    error = status_error(503, headers={"Retry-After": "2500"})
+    client.embeddings.create.side_effect = error
+    with pytest.raises(InternalServerError) as caught:
+        model.embed_documents(["text"])
+    assert caught.value is error
+    client.embeddings.create.assert_called_once()
+    no_wait.assert_not_called()
+
+
+def test_request_timeout_is_capped_to_remaining_budget(model, client):
+    assert model._embed_text("text", policy=_RequestPolicy(max_elapsed=3.0)) == [VECTOR]
+    assert client.with_options.call_args.kwargs["timeout"].as_dict() == dict(connect=3.0, read=3.0, write=3.0, pool=3.0)
+
+
+def test_elapsed_budget_preserves_last_error(model, client, mocker, no_wait):
+    error = status_error()
+    client.embeddings.create.side_effect = error
+    mocker.patch("ai4rag.rag.embedding.openai_model.monotonic", side_effect=[0.0, 0.0, 0.0, 2500.0])
+    with pytest.raises(InternalServerError) as caught:
+        model.embed_documents(["text"])
+    assert caught.value is error
+    client.embeddings.create.assert_called_once()
+    no_wait.assert_called_once_with(30.0)
+
+
+@pytest.mark.parametrize(
+    "headers,expected",
+    [
+        ({"Retry-After": "90"}, 90.0),
+        ({"retry-after-ms": "90000"}, 90.0),
+        ({"Retry-After": "-1"}, 30.0),
+        ({"Retry-After": "nan"}, 30.0),
+        ({"Retry-After": "inf"}, 30.0),
+        ({"Retry-After": "invalid"}, 30.0),
+        ({"Retry-After": "Thu, 01 Jan 99999999999999999999999 00:00:00 GMT"}, 30.0),
+        ({"retry-after-ms": "bad", "Retry-After": "90"}, 90.0),
+        ({"Retry-After": "Thu, 01 Jan 1970 00:01:30 GMT"}, 90.0),
+    ],
+)
+def test_server_retry_delays(headers, expected, mocker):
+    mocker.patch("ai4rag.rag.embedding.openai_model.time", return_value=0.0)
+    assert _retry_delay(status_error(503, headers=headers), 30.0) == expected
+
+
+def test_jitter_only_adds_to_server_delay(mocker):
+    mocker.patch("ai4rag.rag.embedding.openai_model.uniform", side_effect=lambda low, high: high)
+    assert _retry_delay(status_error(503, headers={"Retry-After": "90"}), 30.0) == 99.0
+
+
+def test_response_indices_restore_input_order(model, client):
+    client.embeddings.create.return_value = response([[2.0] * 3, [1.0] * 3], [1, 0])
+    assert model.embed_documents(["first", "second"]) == [[1.0] * 3, [2.0] * 3]
+
+
+@pytest.mark.parametrize(
+    "data,texts,match",
+    [
+        (response([VECTOR]), ["a", "b"], "count"),
+        (response([VECTOR, VECTOR], [0, 0]), ["a", "b"], "indices"),
+        (response([VECTOR], [1]), ["a"], "indices"),
+        (response([VECTOR], [False]), ["a"], "indices"),
+        (response([VECTOR], ["0"]), ["a"], "indices"),
+        (SimpleNamespace(data=[SimpleNamespace(embedding=VECTOR)]), ["a"], "indices"),
+        (SimpleNamespace(data=[SimpleNamespace(index=0)]), ["a"], "numeric"),
+        (response(["encoded"]), ["a"], "numeric"),
+        (response([[]]), ["a"], "numeric"),
+        (response([[True, 0.0, 0.0]]), ["a"], "numeric"),
+        (response([[float("nan"), 0.0, 0.0]]), ["a"], "numeric"),
+        (response([[float("inf"), 0.0, 0.0]]), ["a"], "numeric"),
+        (response([["bad", 0.0, 0.0]]), ["a"], "numeric"),
+        (response([[0.0]]), ["a"], "dimension"),
+        (SimpleNamespace(data=None), ["a"], "count"),
+    ],
+)
+def test_malformed_responses_fail_without_silent_loss(model, client, no_wait, data, texts, match):
+    client.embeddings.create.return_value = data
+    with pytest.raises(ValueError, match=match):
+        model.embed_documents(texts)
+    client.embeddings.create.assert_called_once()
+    no_wait.assert_not_called()
+
+
+@pytest.mark.parametrize("failures", [1, 2, 3])
+def test_real_sdk_makes_exact_attempts_without_nested_retries(failures, no_wait):
+    requests = []
+
+    def respond(request):
+        requests.append(json.loads(request.content))
+        if len(requests) <= failures:
+            return httpx.Response(500, json={"error": {"message": "Unavailable"}})
+        return httpx.Response(
+            200,
+            json={
+                "object": "list",
+                "model": "test-model",
+                "data": [{"object": "embedding", "index": 0, "embedding": VECTOR}],
+                "usage": {"prompt_tokens": 1, "total_tokens": 1},
+            },
         )
 
-    def test_batch_success_no_fallback(self, model, mocker):
-        """When the batch call succeeds, no fallback is triggered."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-        model.client.embeddings.create.return_value = ok_response
-
-        result = model.embed_documents(["short text", "another"])
-
-        assert len(result) == 2
-        assert model.client.embeddings.create.call_count == 1
-
-    def test_first_truncation_retries_entire_batch(self, model, mocker):
-        """When batch fails, the entire batch is retried with 5% truncation."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-
-        model.client.embeddings.create.side_effect = [
-            _make_bad_request_error(),  # original batch fails
-            ok_response,  # 5% truncated batch succeeds
-        ]
-
-        result = model.embed_documents(["text1", "text2"])
-
-        assert len(result) == 2
-        assert model.client.embeddings.create.call_count == 2
-
-    def test_first_truncation_margin_truncates_oversized(self, model, mocker):
-        """5% truncation clips oversized texts to the expected character limit."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        oversized_text = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
-
-        model.client.embeddings.create.side_effect = [
-            _make_bad_request_error(),
-            ok_response,
-        ]
-
-        result = model.embed_documents([oversized_text])
-
-        assert len(result) == 1
-        retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
-        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[0]) * TokenEstimation.CHARS_PER_TOKEN)
-        assert len(retry_input[0]) == expected_max
-
-    def test_second_truncation_margin_succeeds(self, model, mocker):
-        """When 5% truncation also fails, 10% truncation is attempted as a batch."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        oversized_text = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
-
-        model.client.embeddings.create.side_effect = [
-            _make_bad_request_error(),  # original batch fails
-            _make_bad_request_error(),  # 5% truncated batch fails
-            ok_response,  # 10% truncated batch succeeds
-        ]
-
-        result = model.embed_documents([oversized_text])
-
-        assert len(result) == 1
-        assert model.client.embeddings.create.call_count == 3
-        retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
-        expected_max = int(self.CONTEXT_LENGTH * (1 - _TRUNCATION_MARGINS[1]) * TokenEstimation.CHARS_PER_TOKEN)
-        assert len(retry_input[0]) == expected_max
-
-    def test_all_truncations_fail_raises(self, model):
-        """When all truncation attempts fail, BadRequestError is re-raised."""
-        model.client.embeddings.create.side_effect = _make_bad_request_error()
-
-        with pytest.raises(BadRequestError):
-            model.embed_documents(["x" * 100_000])
-
-    def test_short_texts_unchanged_after_truncation(self, model, mocker):
-        """Short texts are not affected by the truncation slice."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
-        short_text = "short"
-
-        model.client.embeddings.create.side_effect = [
-            _make_bad_request_error(),
-            ok_response,
-        ]
-
-        result = model.embed_documents([short_text, short_text])
-
-        assert len(result) == 2
-        retry_input = model.client.embeddings.create.call_args_list[-1].kwargs["input"]
-        assert retry_input[0] == short_text
-        assert retry_input[1] == short_text
-
-    def test_truncation_preserves_document_order(self, model, mocker):
-        """Embeddings maintain 1:1 correspondence with input texts after fallback."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
-
-        model.client.embeddings.create.side_effect = [
-            _make_bad_request_error(),
-            ok_response,
-        ]
-
-        result = model.embed_documents(["a", "b", "c"])
-
-        assert result == [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-
-    def test_embed_query_fallback(self, model, mocker):
-        """embed_query also benefits from the truncation fallback."""
-        ok_response = _make_mock_openai_embedding_response(mocker, [[0.1, 0.2, 0.3]])
-        oversized_query = "x" * (self.CONTEXT_LENGTH * TokenEstimation.CHARS_PER_TOKEN + 500)
-
-        model.client.embeddings.create.side_effect = [
-            _make_bad_request_error(),  # original fails
-            _make_bad_request_error(),  # 5% truncation fails
-            ok_response,  # 10% truncation succeeds
-        ]
-
-        result = model.embed_query(oversized_query)
-
-        assert result == [0.1, 0.2, 0.3]
+    with OpenAI(
+        api_key="test",
+        base_url="https://test/v1",
+        max_retries=8,
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    ) as sdk:
+        embedding = OpenAIEmbeddingModel(sdk, "test-model", {"embedding_dimension": 3, "context_length": 1024})
+        if failures == 3:
+            with pytest.raises(InternalServerError):
+                embedding.embed_documents(["text"])
+        else:
+            assert embedding.embed_documents(["text"]) == [VECTOR]
+        assert sdk.max_retries == 8
+    assert len(requests) == min(failures + 1, 3)
+    assert all(request["encoding_format"] == "float" for request in requests)
+    assert [call.args[0] for call in no_wait.call_args_list] == [30.0, 60.0][:failures]

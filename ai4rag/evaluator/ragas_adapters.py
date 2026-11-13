@@ -23,6 +23,7 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 
 from ai4rag.evaluator.ragas_diagnostics import failure_reason
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
 # RAGAS faithfulness NLI emits one {statement, reason, verdict} object per
@@ -228,6 +229,25 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
         super().__init__()
         self._model = model
 
+    async def embed_texts(self, texts: list[str], is_async: bool = True) -> list[list[float]]:
+        """Embed with one recovery owner for the OpenAI model.
+
+        Parameters
+        ----------
+        texts : list[str]
+            Texts to embed.
+        is_async : bool, default=True
+            Select the underlying RAGAS execution path for other providers.
+
+        Returns
+        -------
+        list[list[float]]
+            One vector per input text.
+        """
+        if isinstance(self._model, OpenAIEmbeddingModel):
+            return await self.aembed_documents(texts)
+        return await super().embed_texts(texts, is_async=is_async)
+
     def embed_query(self, text: str) -> list[float]:
         """Embed a single query string.
 
@@ -256,6 +276,8 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
         list[list[float]]
             One embedding per input document.
         """
+        if isinstance(self._model, OpenAIEmbeddingModel):
+            return self._model.embed_documents(texts, for_indexing=False)
         return self._model.embed_documents(texts)
 
     async def aembed_query(self, text: str) -> list[float]:
@@ -286,4 +308,4 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
         list[list[float]]
             One embedding per input document.
         """
-        return await asyncio.to_thread(self._model.embed_documents, texts)
+        return await asyncio.to_thread(self.embed_documents, texts)
