@@ -151,8 +151,8 @@ def openai_embeddings(mocker):
     client.with_options.return_value = client
     client.embeddings.create.return_value = SimpleNamespace(data=[SimpleNamespace(index=0, embedding=[0.3])])
     model = OpenAIEmbeddingModel(client, "test", {"embedding_dimension": 1, "context_length": 1024})
-    sleep = mocker.patch("ai4rag.rag.embedding.openai_model.sleep")
-    mocker.patch("ai4rag.rag.embedding.openai_model.uniform", return_value=0.0)
+    sleep = mocker.patch("ai4rag.rag.embedding.request_executor.sleep")
+    mocker.patch("ai4rag.rag.embedding.request_executor.uniform", return_value=0.0)
     emb = AI4RAGRagasEmbeddings(model)
     emb.set_run_config(RunConfig(max_retries=10, max_wait=0))
     return emb, client, sleep

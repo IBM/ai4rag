@@ -380,13 +380,24 @@ Earlier successful batches are retained in memory and are not embedded again.
 The final failure propagates to the caller.
 
 ```python
+from ai4rag.rag.embedding.request_executor import QUERY_POLICY
+
 embeddings = embedding_model.embed_documents(texts)  # Indexing waits: 30 s, 60 s
-embeddings = embedding_model.embed_documents(texts, for_indexing=False)  # Evaluation waits: 0.5 s, 1 s
+embeddings = embedding_model.embed_documents(texts, policy=QUERY_POLICY)  # Evaluation waits: 0.5 s, 1 s
 ```
 
 **Error Recovery:**
 
-One request loop owns recovery for each batch:
+`OpenAIEmbeddingModel` handles batching, capability detection, and one API call
+with response validation. It delegates recovery to `EmbeddingRequestExecutor`
+in `ai4rag/rag/embedding/request_executor.py`. The executor accepts that request
+callback and an immutable `RequestPolicy`, and `execute(texts)` owns all attempts
+for one batch. Input repairs, timeout changes, counters, and the elapsed budget
+belong to that execution; separate or concurrent executions do not share state.
+
+The default document policy is `INDEXING_POLICY`; `QUERY_POLICY` selects the
+shorter evaluation waits explicitly. Capability detection uses `PROBE_POLICY`.
+All use the same executor and error classification:
 
 - Connection failures and HTTP **408, 409, 429, 500, 502, 503, 504** allow two
   retries. Indexing waits **30 seconds**, then **60 seconds**; queries,

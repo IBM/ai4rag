@@ -15,9 +15,8 @@ from ai4rag.rag.embedding.openai_model import (
     MIN_CONTEXT_LENGTH,
     OpenAIEmbeddingModel,
     OpenAIEmbeddingParams,
-    _RequestPolicy,
-    _retry_delay,
 )
+from ai4rag.rag.embedding.request_executor import INDEXING_POLICY, QUERY_POLICY, RequestPolicy
 
 REQUEST = httpx.Request("POST", "https://test/v1/embeddings")
 VECTOR = [0.1, 0.2, 0.3]
@@ -37,9 +36,9 @@ def status_error(status=500, message="Unavailable", headers=None, code=None):
 
 @pytest.fixture(autouse=True)
 def no_wait(mocker):
-    mocker.patch("ai4rag.rag.embedding.openai_model.uniform", return_value=0.0)
-    mocker.patch("ai4rag.rag.embedding.openai_model.monotonic", return_value=0.0)
-    return mocker.patch("ai4rag.rag.embedding.openai_model.sleep")
+    mocker.patch("ai4rag.rag.embedding.request_executor.uniform", return_value=0.0)
+    mocker.patch("ai4rag.rag.embedding.request_executor.monotonic", return_value=0.0)
+    return mocker.patch("ai4rag.rag.embedding.request_executor.sleep")
 
 
 @pytest.fixture
@@ -143,6 +142,15 @@ def test_no_accepted_context_probe_has_clear_error(client):
     assert isinstance(caught.value.__cause__, ValueError)
 
 
+def test_context_probe_honors_backend_stop_instruction(client):
+    error = status_error(400, "Input too long", headers={"x-should-retry": "false"})
+    client.embeddings.create.side_effect = error
+    with pytest.raises(RuntimeError, match="context_length") as caught:
+        OpenAIEmbeddingModel(client, "test-model", {"embedding_dimension": 3})
+    assert caught.value.__cause__ is error
+    client.embeddings.create.assert_called_once()
+
+
 def test_empty_documents_make_no_requests(model, client, no_wait):
     assert model.embed_documents([]) == []
     client.embeddings.create.assert_not_called()
@@ -194,12 +202,12 @@ def test_permanent_errors_fail_immediately(model, client, no_wait, status):
     no_wait.assert_not_called()
 
 
-@pytest.mark.parametrize("indexing", [True, False])
-def test_backend_stop_instruction_is_honored(model, client, no_wait, indexing):
+@pytest.mark.parametrize("policy", [INDEXING_POLICY, QUERY_POLICY])
+def test_backend_stop_instruction_is_honored(model, client, no_wait, policy):
     error = status_error(503, headers={"x-should-retry": "false"})
     client.embeddings.create.side_effect = error
     with pytest.raises(InternalServerError) as caught:
-        model.embed_documents(["text"], for_indexing=indexing)
+        model.embed_documents(["text"], policy=policy)
     assert caught.value is error
     client.embeddings.create.assert_called_once()
     no_wait.assert_not_called()
@@ -208,7 +216,7 @@ def test_backend_stop_instruction_is_honored(model, client, no_wait, indexing):
 @pytest.mark.parametrize("operation", ["query", "evaluation"])
 def test_short_policy_for_query_and_evaluation(model, client, no_wait, operation):
     client.embeddings.create.side_effect = [status_error(), response([VECTOR])]
-    result = model.embed_query("text") if operation == "query" else model.embed_documents(["text"], for_indexing=False)
+    result = model.embed_query("text") if operation == "query" else model.embed_documents(["text"], policy=QUERY_POLICY)
     assert result == (VECTOR if operation == "query" else [VECTOR])
     no_wait.assert_called_once_with(0.5)
 
@@ -326,43 +334,19 @@ def test_elapsed_budget_does_not_wait_past_deadline(model, client, no_wait):
 
 
 def test_request_timeout_is_capped_to_remaining_budget(model, client):
-    assert model._embed_text("text", policy=_RequestPolicy(max_elapsed=3.0)) == [VECTOR]
+    assert model._embed_text("text", policy=RequestPolicy(max_elapsed=3.0)) == [VECTOR]
     assert client.with_options.call_args.kwargs["timeout"].as_dict() == dict(connect=3.0, read=3.0, write=3.0, pool=3.0)
 
 
 def test_elapsed_budget_preserves_last_error(model, client, mocker, no_wait):
     error = status_error()
     client.embeddings.create.side_effect = error
-    mocker.patch("ai4rag.rag.embedding.openai_model.monotonic", side_effect=[0.0, 0.0, 0.0, 2500.0])
+    mocker.patch("ai4rag.rag.embedding.request_executor.monotonic", side_effect=[0.0, 0.0, 0.0, 2500.0])
     with pytest.raises(InternalServerError) as caught:
         model.embed_documents(["text"])
     assert caught.value is error
     client.embeddings.create.assert_called_once()
     no_wait.assert_called_once_with(30.0)
-
-
-@pytest.mark.parametrize(
-    "headers,expected",
-    [
-        ({"Retry-After": "90"}, 90.0),
-        ({"retry-after-ms": "90000"}, 90.0),
-        ({"Retry-After": "-1"}, 30.0),
-        ({"Retry-After": "nan"}, 30.0),
-        ({"Retry-After": "inf"}, 30.0),
-        ({"Retry-After": "invalid"}, 30.0),
-        ({"Retry-After": "Thu, 01 Jan 99999999999999999999999 00:00:00 GMT"}, 30.0),
-        ({"retry-after-ms": "bad", "Retry-After": "90"}, 90.0),
-        ({"Retry-After": "Thu, 01 Jan 1970 00:01:30 GMT"}, 90.0),
-    ],
-)
-def test_server_retry_delays(headers, expected, mocker):
-    mocker.patch("ai4rag.rag.embedding.openai_model.time", return_value=0.0)
-    assert _retry_delay(status_error(503, headers=headers), 30.0) == expected
-
-
-def test_jitter_only_adds_to_server_delay(mocker):
-    mocker.patch("ai4rag.rag.embedding.openai_model.uniform", side_effect=lambda low, high: high)
-    assert _retry_delay(status_error(503, headers={"Retry-After": "90"}), 30.0) == 99.0
 
 
 def test_response_indices_restore_input_order(model, client):

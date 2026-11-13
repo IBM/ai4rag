@@ -2,113 +2,109 @@
 # Copyright IBM Corp. 2025-2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+"""OpenAI-compatible embedding calls, capability detection, and response validation."""
+
 from dataclasses import dataclass
-from email.utils import mktime_tz, parsedate_tz
+from functools import partial
 from math import isfinite
-from random import uniform
-from time import monotonic, sleep, time
-from typing import Literal
 
 import httpx
-from openai import APIConnectionError, APIStatusError, APITimeoutError, BadRequestError, OpenAI
-
-from ai4rag import logger
-from ai4rag.utils.constants import TokenEstimation
+from openai import BadRequestError, OpenAI
 
 from .base_model import BaseEmbeddingModel
+from .request_executor import (
+    INDEXING_POLICY,
+    PROBE_POLICY,
+    QUERY_POLICY,
+    EmbeddingRequestExecutor,
+    RequestPolicy,
+    is_context_overflow,
+)
 
 __all__ = ["OpenAIEmbeddingModel", "OpenAIEmbeddingParams"]
 
 MIN_CONTEXT_LENGTH = 700
-_TRUNCATION_MARGINS = (0.05, 0.10)
-_FALLBACK_TIMEOUT = 1200.0
-
-
-@dataclass(frozen=True)
-class _RequestPolicy:
-    """Limits shared by all recovery actions for one embedding batch."""
-
-    retry_delays: tuple[float, ...] = (0.5, 1.0)
-    max_attempts: int = 6
-    max_elapsed: float = 2400.0
-    allow_truncation: bool = True
-    fallback_read_timeout: float | None = _FALLBACK_TIMEOUT
-
-
-_INDEXING_POLICY = _RequestPolicy(retry_delays=(30.0, 60.0))
-_QUERY_POLICY = _RequestPolicy()
-_PROBE_POLICY = _RequestPolicy(max_attempts=3, max_elapsed=600.0, allow_truncation=False, fallback_read_timeout=None)
-
-
-def _classify_error(error: APIStatusError | APIConnectionError) -> Literal["truncate", "timeout", "retry", "fail"]:
-    """Distinguish input repair, slow reads, temporary failures, and permanent errors."""
-    if isinstance(error, APIStatusError) and error.response.headers.get("x-should-retry") == "false":
-        return "fail"
-    if isinstance(error, APITimeoutError):
-        return (
-            "retry"
-            if isinstance(error.__cause__, (httpx.ConnectTimeout, httpx.WriteTimeout, httpx.PoolTimeout))
-            else "timeout"
-        )
-    if isinstance(error, BadRequestError):
-        message = str(error).lower()
-        if error.code in {"context_length_exceeded", "input_too_long"} or any(
-            phrase in message
-            for phrase in ("maximum context length", "input too long", "maximum input length exceeded")
-        ):
-            return "truncate"
-        return "fail"
-    if isinstance(error, APIConnectionError) or error.status_code in {408, 409, 429, 500, 502, 503, 504}:
-        return "retry"
-    return "fail"
-
-
-def _retry_delay(error: APIStatusError | APIConnectionError, fallback: float) -> float:
-    """Respect server delays and add positive jitter without shortening the cooldown."""
-    if isinstance(error, APIStatusError):
-        headers = error.response.headers
-        for name, scale in (("retry-after-ms", 0.001), ("retry-after", 1.0)):
-            value = headers.get(name)
-            if value is None:
-                continue
-            try:
-                delay = float(value) * scale
-            except ValueError:
-                try:
-                    date = parsedate_tz(value) if name == "retry-after" else None
-                    delay = mktime_tz(date) - time() if date else 0.0
-                except (ValueError, OverflowError):
-                    continue
-            if isfinite(delay) and delay > 0:
-                fallback = max(fallback, delay)
-                break
-    return fallback + uniform(0.0, fallback * 0.1)
 
 
 @dataclass
 class OpenAIEmbeddingParams:
-    """Parameters to be used to create embeddings."""
+    """Model capabilities used to validate vectors and repair oversized input.
+
+    Parameters
+    ----------
+    embedding_dimension : int | None, default=None
+        Expected vector width. None triggers detection when assigned to a model.
+    context_length : int | None, default=None
+        Input context length in tokens. None triggers approximate detection when
+        assigned to a model. The model requires at least MIN_CONTEXT_LENGTH.
+    """
 
     embedding_dimension: int | None = None
     context_length: int | None = None
 
 
 class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
-    """Create validated embeddings with bounded recovery through an OpenAI-compatible client."""
+    """Create validated embeddings through an OpenAI-compatible client.
+
+    Parameters
+    ----------
+    client : OpenAI
+        Shared synchronous client. Request-specific options leave its settings
+        unchanged; the model does not close the client or its HTTP transport.
+    model_id : str
+        Model identifier sent to the embedding endpoint.
+    params : dict[str, int | None] | OpenAIEmbeddingParams | None, default=None
+        Model capabilities. Missing values are detected during construction,
+        which requires a reachable embedding service.
+
+    Notes
+    -----
+    Document calls use batches of at most 128 texts. EmbeddingRequestExecutor
+    owns recovery for each batch; this model performs individual API calls and
+    validates their responses. Capability probes disable truncation and the
+    extended read-timeout fallback.
+    """
 
     _BATCH_SIZE = 128
 
-    def __init__(self, client: OpenAI, model_id: str, params: dict | OpenAIEmbeddingParams | None = None):
+    def __init__(
+        self, client: OpenAI, model_id: str, params: dict[str, int | None] | OpenAIEmbeddingParams | None = None
+    ) -> None:
+        """Initialize the client binding and resolve missing model capabilities."""
         super().__init__(client=client, model_id=model_id, params=params)
 
     @property
     def params(self) -> OpenAIEmbeddingParams:
-        """Get model params."""
+        """Get the resolved model capabilities.
+
+        Returns
+        -------
+        OpenAIEmbeddingParams
+            The model's parameter object; this is not a defensive copy.
+        """
         return self._params
 
     @params.setter
-    def params(self, params: dict | OpenAIEmbeddingParams | None) -> None:
-        """Set model params and detect missing capabilities."""
+    def params(self, params: dict[str, int | None] | OpenAIEmbeddingParams | None) -> None:
+        """Assign model capabilities, detect missing values, and check context size.
+
+        Parameters
+        ----------
+        params : dict[str, int | None] | OpenAIEmbeddingParams | None
+            Capabilities to assign. None requests detection of both values.
+            An OpenAIEmbeddingParams instance is stored and updated in place;
+            a dictionary is used to construct a new parameter object.
+
+        Raises
+        ------
+        TypeError
+            If the parameter type or dictionary field names are unsupported.
+        RuntimeError
+            If a missing capability cannot be detected. The probe failure is
+            retained as the exception cause.
+        ValueError
+            If the resolved context length is below MIN_CONTEXT_LENGTH.
+        """
         if params is None:
             self._params = OpenAIEmbeddingParams()
         elif isinstance(params, OpenAIEmbeddingParams):
@@ -128,9 +124,24 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
             )
 
     def _detect_embedding_dimension(self) -> int:
-        """Probe the dimension without attempting truncation before capabilities are known."""
+        """Infer vector width from a short, validated embedding response.
+
+        The request uses PROBE_POLICY without input repair, server truncation,
+        or an extended read timeout.
+
+        Returns
+        -------
+        int
+            Number of values in the probe's nonempty embedding vector.
+
+        Raises
+        ------
+        RuntimeError
+            If the request or response validation fails, with the original
+            exception retained as the cause.
+        """
         try:
-            return len(self._embed_text("test", policy=_PROBE_POLICY, truncate_prompt_tokens=None)[0])
+            return len(self._embed_text("test", policy=PROBE_POLICY, truncate_prompt_tokens=None)[0])
         except Exception as exc:
             raise RuntimeError(
                 f"Failed to auto-detect embedding dimension for model '{self.model_id}'. "
@@ -138,19 +149,33 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
             ) from exc
 
     def _detect_context_length(self) -> int:
-        """Search 64–8192 approximate tokens; only length rejections narrow the range.
+        """Estimate context length using repeated-word probes and binary search.
 
-        Probes disable server truncation and share the short recovery policy.
-        The search stops when fewer than 64 candidate tokens remain.
+        Search between 64 and 8192 approximate tokens until fewer than 64
+        candidate sizes remain. Only a recognized input-length rejection that
+        permits recovery lowers the upper bound. Each probe uses PROBE_POLICY
+        with server truncation disabled.
+
+        Returns
+        -------
+        int
+            Largest accepted probe size, not an exact tokenizer-derived limit.
+            The caller separately checks the minimum supported context length.
+
+        Raises
+        ------
+        RuntimeError
+            If no probe is accepted or a probe fails for another reason. The
+            underlying failure is retained as the exception cause.
         """
         lo, hi, best = 64, 8192, None
         try:
             while hi - lo >= 64:
                 mid = (lo + hi) // 2
                 try:
-                    self._embed_text("word " * mid, policy=_PROBE_POLICY, truncate_prompt_tokens=None)
+                    self._embed_text("word " * mid, policy=PROBE_POLICY, truncate_prompt_tokens=None)
                 except BadRequestError as exc:
-                    if _classify_error(exc) != "truncate":
+                    if not is_context_overflow(exc):
                         raise
                     hi = mid - 1
                 else:
@@ -168,7 +193,41 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     def _request_once(
         self, texts: list[str], timeout: httpx.Timeout, truncate_prompt_tokens: int | None
     ) -> list[list[float]]:
-        """Make exactly one request and reject incomplete or malformed vectors."""
+        """Make one embedding API call and validate and order its vectors.
+
+        Parameters
+        ----------
+        texts : list[str]
+            Input texts in the order expected in the returned vectors.
+        timeout : httpx.Timeout
+            Per-phase timeout limits for this attempt.
+        truncate_prompt_tokens : int | None
+            Provider-specific truncation option forwarded unchanged. On
+            compatible backends, -1 requests truncation to the model limit and
+            None disables truncation for capability probes.
+
+        Returns
+        -------
+        list[list[float]]
+            Nonempty, finite numeric vectors reordered by response index. Their
+            width must match the configured dimension, or be consistent across
+            the response when the dimension is not yet known.
+
+        Raises
+        ------
+        APIStatusError
+            If the server returns an unsuccessful HTTP status.
+        APIConnectionError
+            If the SDK reports a transport failure, including APITimeoutError.
+        ValueError
+            If response counts, indices, vector contents, or dimensions fail
+            validation.
+
+        Notes
+        -----
+        SDK retries are disabled on a client copy sharing the original HTTP
+        transport. This method neither retries nor closes that copy.
+        """
         response = self.client.with_options(max_retries=0, timeout=timeout).embeddings.create(
             input=texts,
             model=self.model_id,
@@ -183,7 +242,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         ):
             raise ValueError("Embedding response indices are missing, duplicated, or out of range.")
         ordered = sorted(response.data, key=lambda item: item.index)
-        vectors = []
+        vectors: list[list[float]] = []
         dimension = self.params.embedding_dimension
         for item in ordered:
             vector = getattr(item, "embedding", None)
@@ -203,112 +262,89 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
             vectors.append(vector)
         return vectors
 
-    def _truncate_text(self, text: str, margin: float) -> str:
-        """Truncate using the configured context length and a character-based token estimate."""
-        max_chars = int(self.params.context_length * (1 - margin) * TokenEstimation.CHARS_PER_TOKEN)
-        return text[:max_chars]
-
     def _embed_text(
         self,
         text_input: list[str] | str,
         *,
-        policy: _RequestPolicy = _QUERY_POLICY,
+        policy: RequestPolicy = QUERY_POLICY,
         truncate_prompt_tokens: int | None = -1,
     ) -> list[list[float]]:
-        """Own all request attempts, retaining repaired input and timeout state.
+        """Normalize input and execute one batch with independent recovery state.
 
-        A batch permits at most six HTTP attempts: an initial request, two
-        temporary-failure retries, two truncations, and one read-timeout
-        extension. Probes permit three attempts without input or timeout repair.
-        The elapsed budget is checked before waits and requests; each timeout
-        phase is capped to the remaining budget.
+        Parameters
+        ----------
+        text_input : list[str] | str
+            One string or one batch of strings. This method does not split
+            lists into smaller batches.
+        policy : RequestPolicy, default=QUERY_POLICY
+            Recovery settings for the new executor.
+        truncate_prompt_tokens : int | None, default=-1
+            Provider-specific truncation option forwarded to every attempt;
+            capability probes pass None to disable server truncation.
+
+        Returns
+        -------
+        list[list[float]]
+            Validated vectors in input order, including a one-element list for
+            string input.
+
+        Raises
+        ------
+        APIStatusError
+            If an HTTP failure cannot be recovered within the policy limits.
+        APIConnectionError
+            If a transport failure cannot be recovered within the policy limits.
+        ValueError
+            If a response fails validation; the same request is not retried.
+        TimeoutError
+            If the elapsed budget expires before any failed request is recorded.
         """
-        text_input = [text_input] if isinstance(text_input, str) else text_input
-        texts = text_input
-        timeout = httpx.Timeout(self.client.timeout)
-        retries = truncations = 0
-        started = monotonic()
-        last_error = None
-        for attempt in range(policy.max_attempts):
-            remaining = policy.max_elapsed - (monotonic() - started)
-            if remaining <= 0:
-                raise last_error or TimeoutError("Embedding recovery time budget exhausted.")
-            try:
-                return self._request_once(
-                    texts,
-                    httpx.Timeout(
-                        **{
-                            key: min(value, remaining) if value is not None else remaining
-                            for key, value in timeout.as_dict().items()
-                        }
-                    ),
-                    truncate_prompt_tokens,
-                )
-            except (APIStatusError, APIConnectionError) as exc:
-                last_error = exc
-                if attempt + 1 == policy.max_attempts:
-                    raise
-                match _classify_error(exc):
-                    case "truncate" if policy.allow_truncation and self.params.context_length is not None:
-                        if truncations == len(_TRUNCATION_MARGINS):
-                            raise
-                        repaired = [self._truncate_text(text, _TRUNCATION_MARGINS[truncations]) for text in text_input]
-                        if repaired == texts:
-                            raise
-                        texts = repaired
-                        logger.warning(
-                            "Truncating embedding input by %.0f%% of context length. Model: %s.",
-                            _TRUNCATION_MARGINS[truncations] * 100,
-                            self.model_id,
-                        )
-                        truncations += 1
-                    case "timeout" if policy.fallback_read_timeout is not None:
-                        # The extended read limit also prevents extending a second time.
-                        if timeout.read is None or timeout.read >= policy.fallback_read_timeout:
-                            raise
-                        timeout = httpx.Timeout(**(timeout.as_dict() | {"read": policy.fallback_read_timeout}))
-                        logger.warning(
-                            "Extending embedding read timeout to %.0fs once. Model: %s.", timeout.read, self.model_id
-                        )
-                    case "retry" if retries < len(policy.retry_delays):
-                        delay = _retry_delay(exc, policy.retry_delays[retries])
-                        remaining = policy.max_elapsed - (monotonic() - started)
-                        if delay >= remaining:
-                            raise
-                        retries += 1
-                        logger.warning(
-                            "Embedding request failed (%s, status=%s); retry %d/%d in %.1fs. Model: %s.",
-                            type(exc).__name__,
-                            getattr(exc, "status_code", None),
-                            retries,
-                            len(policy.retry_delays),
-                            delay,
-                            self.model_id,
-                        )
-                        sleep(delay)
-                    case _:
-                        raise
-        raise AssertionError("Embedding attempt budget must be positive.")
+        texts = [text_input] if isinstance(text_input, str) else text_input
+        return EmbeddingRequestExecutor(
+            request=partial(self._request_once, truncate_prompt_tokens=truncate_prompt_tokens),
+            policy=policy,
+            timeout=self.client.timeout,
+            context_length=self.params.context_length,
+            model_id=self.model_id,
+        ).execute(texts)
 
-    def embed_documents(self, texts: list[str], *, for_indexing: bool = True) -> list[list[float]]:
+    def embed_documents(self, texts: list[str], *, policy: RequestPolicy = INDEXING_POLICY) -> list[list[float]]:
         """Embed texts sequentially in batches of up to 128.
 
         Parameters
         ----------
         texts : list[str]
             Texts to embed, preserving their order.
-        for_indexing : bool, default=True
-            Use 30/60-second transient-error waits for indexing. False selects
-            short waits for evaluation. Both add up to 10% positive jitter and
-            honor longer server delays. Completed batches remain in memory.
+        policy : RequestPolicy, default=INDEXING_POLICY
+            Recovery settings applied independently to each batch. The default
+            uses 30/60-second transient-error waits; QUERY_POLICY selects short
+            waits for evaluation. Retry waits honor longer server delays and
+            add up to 10% positive jitter.
 
         Returns
         -------
         list[list[float]]
-            One validated vector per input text, in input order.
+            One validated vector per input text, in input order. Empty input
+            returns an empty list without calling the embedding service.
+
+        Raises
+        ------
+        APIStatusError
+            If a batch's HTTP failure cannot be recovered.
+        APIConnectionError
+            If a batch's transport failure cannot be recovered.
+        ValueError
+            If a batch response fails validation.
+        TimeoutError
+            If a batch's elapsed budget expires before a failed request is recorded.
+
+        Notes
+        -----
+        Recovery retries only the current batch. Earlier batches are retained
+        during this call, but a final failure raises without returning partial
+        results. Completed batches are not cached for subsequent calls.
         """
-        policy = _INDEXING_POLICY if for_indexing else _QUERY_POLICY
-        embeddings = []
+        embeddings: list[list[float]] = []
         for idx in range(0, len(texts), self._BATCH_SIZE):
             embeddings.extend(self._embed_text(texts[idx : idx + self._BATCH_SIZE], policy=policy))
         return embeddings
@@ -325,5 +361,21 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         -------
         list[float]
             The validated query vector.
+
+        Raises
+        ------
+        APIStatusError
+            If an HTTP failure cannot be recovered.
+        APIConnectionError
+            If a transport failure cannot be recovered.
+        ValueError
+            If the response fails validation.
+        TimeoutError
+            If the elapsed budget expires before a failed request is recorded.
+
+        Notes
+        -----
+        Uses QUERY_POLICY, including the read-timeout fallback. Its short
+        transient-error waits do not impose a short overall request deadline.
         """
         return self._embed_text(query)[0]
