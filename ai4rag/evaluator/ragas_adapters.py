@@ -23,6 +23,8 @@ from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt, wait
 
 from ai4rag.evaluator.ragas_diagnostics import failure_reason
 from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+from ai4rag.rag.embedding.request_executor import QUERY_POLICY
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 
 # RAGAS faithfulness NLI emits one {statement, reason, verdict} object per
@@ -49,6 +51,7 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         foundation_model: BaseFoundationModel,
         max_completion_tokens: int = DEFAULT_MAX_COMPLETION_TOKENS,
     ) -> None:
+        """Bind the foundation model and per-completion token limit."""
         super().__init__()
         self._model = foundation_model
         self._max_completion_tokens = max_completion_tokens
@@ -63,15 +66,15 @@ class AI4RAGRagasLLM(BaseRagasLLM):
     ) -> LLMResult:
         """Apply RAGAS retries except for confirmed context overflow.
 
-        Context-overflow failures are not retried with the same prompt. Transient
-        failures retain the configured RAGAS attempt and wait limits.
+        Context-overflow failures are not retried with the same prompt. Other
+        configured exception types retain the RAGAS attempt and wait limits.
 
         Parameters
         ----------
         prompt : PromptValue
             The RAGAS prompt to complete.
         n : int, default=1
-            Number of completions to generate.
+            Number of completions requested; values below one still generate one.
         temperature : float | None, default=1e-2
             Sampling temperature; ``None`` uses RAGAS's default for ``n``.
         stop : list[str] | None, default=None
@@ -113,7 +116,7 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         prompt : PromptValue
             The RAGAS prompt to complete.
         n : int
-            Number of completions to generate (at least one).
+            Number of completions requested; values below one still generate one.
         temperature : float
             Sampling temperature forwarded to the foundation model.
         stop : list[str] | None
@@ -152,7 +155,7 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         prompt : PromptValue
             The RAGAS prompt to complete.
         n : int, default=1
-            Number of completions to generate.
+            Number of completions requested; values below one still generate one.
         temperature : float, default=1e-2
             Sampling temperature forwarded to the foundation model.
         stop : list[str] | None, default=None
@@ -182,7 +185,7 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         prompt : PromptValue
             The RAGAS prompt to complete.
         n : int, default=1
-            Number of completions to generate.
+            Number of completions requested; values below one still generate one.
         temperature : float | None, default=1e-2
             Sampling temperature; ``None`` falls back to ``1e-2``.
         stop : list[str] | None, default=None
@@ -199,13 +202,12 @@ class AI4RAGRagasLLM(BaseRagasLLM):
         return await asyncio.to_thread(self._generate, prompt, n, temp, stop)
 
     def is_finished(self, response: LLMResult) -> bool:  # type: ignore[override]  # pylint: disable=unused-argument
-        """Report whether generation is complete.
+        """Accept the generation result without inspecting completion status.
 
         Parameters
         ----------
         response : LLMResult
-            The result RAGAS is inspecting; unused because ai4rag responses
-            are always returned fully formed.
+            The result RAGAS is inspecting; unused by this adapter.
 
         Returns
         -------
@@ -222,14 +224,46 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
     ----------
     model : BaseEmbeddingModel
         The ai4rag embedding model that backs every RAGAS embedding call.
+
+    Notes
+    -----
+    OpenAI document calls select QUERY_POLICY and delegate recovery to the
+    embedding executor. Other providers retain their own model behavior and
+    the RAGAS retry wrapper used by embed_texts. Async entry points offload
+    synchronous model calls to worker threads.
     """
 
     def __init__(self, model: BaseEmbeddingModel) -> None:
+        """Bind the embedding model without creating a separate endpoint client."""
         super().__init__()
         self._model = model
 
+    async def embed_texts(self, texts: list[str], is_async: bool = True) -> list[list[float]]:
+        """Embed texts using the appropriate model or RAGAS recovery owner.
+
+        OpenAIEmbeddingModel calls run in a worker thread with QUERY_POLICY,
+        bypassing the additional RAGAS retry wrapper. Other providers delegate
+        to the base implementation and its configured RAGAS retries.
+
+        Parameters
+        ----------
+        texts : list[str]
+            Texts to embed.
+        is_async : bool, default=True
+            Select the RAGAS async or executor path for other providers.
+            Ignored for OpenAIEmbeddingModel, which always uses a worker thread.
+
+        Returns
+        -------
+        list[list[float]]
+            The wrapped model's vectors in input order.
+        """
+        if isinstance(self._model, OpenAIEmbeddingModel):
+            return await self.aembed_documents(texts)
+        return await super().embed_texts(texts, is_async=is_async)
+
     def embed_query(self, text: str) -> list[float]:
-        """Embed a single query string.
+        """Delegate one query to the wrapped model without adding adapter retries.
 
         Parameters
         ----------
@@ -244,22 +278,30 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
         return self._model.embed_query(text)
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Embed a batch of documents.
+        """Embed documents with short recovery waits for OpenAI models.
+
+        OpenAIEmbeddingModel receives QUERY_POLICY, including its timeout and
+        input-repair settings. Other providers receive an unchanged delegation
+        call. This method adds no RAGAS retry wrapper.
 
         Parameters
         ----------
         texts : list[str]
-            The documents to embed.
+            Texts to embed; the wrapped model determines batch sizes.
 
         Returns
         -------
         list[list[float]]
-            One embedding per input document.
+            The wrapped model's vectors in input order.
         """
+        if isinstance(self._model, OpenAIEmbeddingModel):
+            return self._model.embed_documents(texts, policy=QUERY_POLICY)
         return self._model.embed_documents(texts)
 
     async def aembed_query(self, text: str) -> list[float]:
-        """Async wrapper around :meth:`embed_query`.
+        """Run the wrapped model's query embedding in a worker thread.
+
+        Model exceptions propagate without an additional adapter retry loop.
 
         Parameters
         ----------
@@ -274,7 +316,10 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
         return await asyncio.to_thread(self._model.embed_query, text)
 
     async def aembed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Async wrapper around :meth:`embed_documents`.
+        """Run this adapter's document embedding method in a worker thread.
+
+        Delegation through embed_documents preserves its OpenAI QUERY_POLICY
+        selection. Model exceptions propagate without another retry wrapper.
 
         Parameters
         ----------
@@ -284,6 +329,6 @@ class AI4RAGRagasEmbeddings(BaseRagasEmbeddings):
         Returns
         -------
         list[list[float]]
-            One embedding per input document.
+            The wrapped model's vectors in input order.
         """
-        return await asyncio.to_thread(self._model.embed_documents, texts)
+        return await asyncio.to_thread(self.embed_documents, texts)

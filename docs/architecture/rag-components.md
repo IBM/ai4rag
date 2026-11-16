@@ -351,55 +351,85 @@ class OpenAIEmbeddingParams:
 
 **Auto-Detection:**
 
-When `embedding_dimension` or `context_length` not provided, the model auto-detects them on first use:
-
-**Chunk Truncation:**
-
-When a chunk exceeds the embedding model's context length, `OpenAIEmbeddingModel` automatically truncates it using a progressive margin strategy (5%, then 10%) before retrying. This prevents embedding failures for oversized chunks while preserving as much content as possible.
+When `embedding_dimension` or `context_length` is not provided, the model
+auto-detects it during construction. The embedding service must be reachable.
+Detection requests disable truncation and use short transient-error waits.
 
 **Embedding Dimension Detection:**
 
 ```python
-def _detect_embedding_dimension(self) -> int:
-    """Embed a test string and count dimensions."""
-    test_embedding = self._embed_text("test")[0]
-    return len(test_embedding)  # e.g., 768 for nomic-embed-text
+# Dimension detection embeds a short test string and counts its vector values.
+# Supply the dimension explicitly to skip this request:
+params = OpenAIEmbeddingParams(embedding_dimension=768)
 ```
 
 **Context Length Detection:**
 
-```python
-def _detect_context_length(self) -> int:
-    """Binary search to find max context length."""
-    lo, hi, best = 64, 8192, None
-
-    while hi - lo >= 64:
-        mid = (lo + hi) // 2
-        probe_text = "word " * mid  # Approx. 1 word = 1 token
-        try:
-            self._embed_text(probe_text)
-            best = mid
-            lo = mid + 1
-        except:
-            hi = mid - 1
-
-    return best
-```
-
-**Performance:** ~5 API calls for context length detection via binary search.
+Context detection searches between 64 and 8192 approximate tokens using
+repeated words, stopping when fewer than 64 candidate tokens remain. It takes
+about seven probes, plus any transient-error retries. Only a confirmed context
+overflow reduces the search range. Authentication, configuration, service, or
+response-validation failures propagate with their original cause instead of
+producing a false limit. The result is an estimate; provide the known context
+length explicitly for an exact model limit.
 
 **Batch Processing:**
 
+Document embeddings are sent sequentially in batches of up to **128 texts**.
+Earlier successful batches are retained in memory and are not embedded again.
+The final failure propagates to the caller.
+
 ```python
-def embed_documents(self, texts: list[str]) -> list[list[float]]:
-    """Process in batches of 1024 to respect API limits."""
-    embeddings = []
-    for idx in range(0, len(texts), 1024):
-        batch = texts[idx : idx + 1024]
-        batch_embeddings = self._embed_text(batch)
-        embeddings.extend(batch_embeddings)
-    return embeddings
+from ai4rag.rag.embedding.request_executor import QUERY_POLICY
+
+embeddings = embedding_model.embed_documents(texts)  # Indexing waits: 30 s, 60 s
+embeddings = embedding_model.embed_documents(texts, policy=QUERY_POLICY)  # Evaluation waits: 0.5 s, 1 s
 ```
+
+**Error Recovery:**
+
+`OpenAIEmbeddingModel` handles batching, capability detection, and one API call
+with response validation. It delegates recovery to `EmbeddingRequestExecutor`
+in `ai4rag/rag/embedding/request_executor.py`. The executor accepts that request
+callback and an immutable `RequestPolicy`, and `execute(texts)` owns all attempts
+for one batch. Input repairs, timeout changes, counters, and the elapsed budget
+belong to that execution; separate or concurrent executions do not share state.
+
+The default document policy is `INDEXING_POLICY`; `QUERY_POLICY` selects the
+shorter evaluation waits explicitly. Capability detection uses `PROBE_POLICY`.
+All use the same executor and error classification:
+
+- Connection failures and HTTP **408, 409, 429, 500, 502, 503, 504** allow two
+  retries. Indexing waits **30 seconds**, then **60 seconds**; queries,
+  evaluation, and capability probes wait **0.5 seconds**, then **1 second**.
+  Waits honor longer `Retry-After` / `retry-after-ms` server delays and add
+  up to 10% positive jitter. `x-should-retry: false` prevents recovery.
+- Confirmed HTTP 400 context overflow permits two input repairs, targeting
+  95%, then 90% of the configured context length using a character estimate.
+  Repairs are skipped if they would leave the input unchanged. Other HTTP 400
+  responses and permanent status errors fail immediately.
+- A read timeout permits one fallback with a **1,200-second read timeout**,
+  provided the original read limit was shorter. Connect, write, and pool limits
+  are preserved. Their timeouts use the normal transient-error retry policy.
+  Capability probes do not extend timeouts or repair input.
+
+Repaired input and the extended timeout survive subsequent transient failures.
+Persistent transient errors cause at most **three HTTP requests**. A mixed
+sequence of failures permits at most **six HTTP requests** in total, including
+input repairs and the timeout fallback. Probes permit three requests per probe.
+Recovery has a 2,400-second elapsed budget per batch (600 seconds per probe),
+checked before requests and waits. Each timeout phase is capped to the remaining
+budget; this is not a hard cancellation deadline for an in-flight request.
+
+SDK retries are disabled on request-scoped client copies so they do not
+multiply these attempts. The supplied client's settings are unchanged. The
+RAGAS adapter selects the shorter waits and delegates recovery to this loop
+without an additional RAGAS retry layer for `OpenAIEmbeddingModel`.
+
+Responses must contain one nonempty, finite numeric vector per input, with
+unique indices and the expected dimension. Vectors are reordered by index;
+malformed or incomplete responses raise `ValueError` rather than silently
+dropping vectors or associating them with the wrong text.
 
 **Usage:**
 
@@ -409,9 +439,9 @@ embedding_model = OpenAIEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
     client=maas_client,
 )
-# First call triggers detection:
+# Construction triggers detection:
 # - embedding_dimension = 768 (detected)
-# - context_length = 8192 (detected)
+# - context_length estimated from probes
 
 # Or explicitly provide parameters
 embedding_model = OpenAIEmbeddingModel(

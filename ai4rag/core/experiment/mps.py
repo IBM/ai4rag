@@ -222,10 +222,9 @@ class ModelsPreSelector:
 
     @staticmethod
     def _index_documents(vector_store: BaseVectorStore, chunked_documents: list[AI4RAGChunk]) -> None:
-        """Embed and add the chunked documents to *vector_store*, retrying once.
+        """Embed and add the chunked documents to *vector_store*.
 
-        A single retry absorbs transient embedding-service hiccups. If the retry
-        also fails, the exception propagates so the caller can wrap it in an
+        Any exception propagates so the caller can wrap it in an
         :class:`IndexingError` and skip this embedding model.
 
         Parameters
@@ -239,15 +238,10 @@ class ModelsPreSelector:
         Raises
         ------
         Exception
-            Propagates the second failure when both the initial embedding attempt
-            and the retry fail.
+            Propagates any failure while embedding and adding the documents.
         """
         logger.debug("MPS: Embedding documents ...")
-        try:
-            vector_store.add_documents(chunked_documents)
-        except Exception as err:  # pylint: disable=broad-exception-caught
-            logger.warning("Failed to build the vector index due to: %s. Retrying once.", repr(err), exc_info=True)
-            vector_store.add_documents(chunked_documents)
+        vector_store.add_documents(chunked_documents)
         logger.debug("MPS: Embedding documents finished!")
 
     def _evaluate_single_pattern(

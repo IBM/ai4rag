@@ -347,8 +347,9 @@ class TestModelsPreSelector:
         )
 
         assert expected_msg in str(err.value)
+        assert vs.add_documents.call_count == len(fully_mocked_selector.embedding_models)
 
-    def test_index_documents_retries_then_propagates(self, mocker, fully_mocked_selector, caplog):
+    def test_index_documents_propagates_without_retry(self, mocker, fully_mocked_selector):
         vs = mocker.MagicMock(spec=BaseVectorStore)
         document = mocker.MagicMock(AI4RAGChunk)
         val_err = ValueError("Fake embeddings error")
@@ -357,8 +358,7 @@ class TestModelsPreSelector:
         with pytest.raises(ValueError) as err:
             fully_mocked_selector._index_documents(vs, [document])
 
-        assert vs.add_documents.call_count == 2, "Indexing should be attempted twice (initial + one retry)."
-        assert "Failed to build the vector index due to:" in caplog.text, "Retry warning was not logged."
+        vs.add_documents.assert_called_once_with([document])
         assert err.value is val_err
 
     def test_mean_based_scoring(self, pre_selector):
