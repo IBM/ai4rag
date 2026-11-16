@@ -231,7 +231,6 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         response = self.client.with_options(max_retries=0, timeout=timeout).embeddings.create(
             input=texts,
             model=self.model_id,
-            encoding_format="float",
             extra_body={"truncate_prompt_tokens": truncate_prompt_tokens},
         )
         if not isinstance(response.data, list) or len(response.data) != len(texts):
