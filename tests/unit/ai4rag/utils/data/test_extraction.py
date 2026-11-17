@@ -238,7 +238,10 @@ class TestDownloadDocument:
         )
 
         assert local_path == tmp_path / "docs/example.txt"
-        client.download_file.assert_called_once_with("bucket", "docs/example.txt", str(local_path))
+        args, kwargs = client.download_file.call_args
+        assert args == ("bucket", "docs/example.txt", str(local_path))
+        assert kwargs["Config"].use_threads is False
+        assert kwargs["Config"].preferred_transfer_client == "classic"
 
 
 # ---------------------------------------------------------------------------
@@ -317,6 +320,12 @@ class TestResolveArtifactsPath:
 
 class TestEffectiveWorkerCount:
     """Tests for ``_effective_worker_count``."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_host_limits(self, monkeypatch):
+        """CPU-count cases are independent of the machine running the suite."""
+        monkeypatch.setattr(text_extraction, "_container_cpu_quota", lambda: None)
+        monkeypatch.setattr(os, "sched_getaffinity", lambda _pid: set(range(128)), raising=False)
 
     def test_explicit_positive_value(self):
         """An explicit positive integer should be returned as-is."""
@@ -801,19 +810,8 @@ class TestSupportedExtensionsAudio:
 
 
 # ---------------------------------------------------------------------------
-# _download_and_submit
+# _download_documents
 # ---------------------------------------------------------------------------
-
-
-class _RecordingPool:
-    """Minimal stand-in for the process pool used by ``_download_and_submit``."""
-
-    def __init__(self):
-        self.calls = []
-
-    def apply_async(self, _func, args):
-        self.calls.append(args)
-        return args
 
 
 def _fake_download(doc, _bucket, base_path, _s3_client):
@@ -825,28 +823,24 @@ def _fake_download(doc, _bucket, base_path, _s3_client):
     return local_path
 
 
-class TestDownloadAndSubmitKeyPairing:
+class TestDownloadDocumentsKeyPairing:
     """Each downloaded file must reach the worker with its own object key."""
 
     def _submitted_keys(self, monkeypatch, tmp_path, keys):
         monkeypatch.setattr(text_extraction, "_download_document", _fake_download)
-        pool = _RecordingPool()
         download_path = tmp_path / "download"
         download_path.mkdir()
 
-        tasks, errors = text_extraction._download_and_submit(
+        tasks, errors = text_extraction._download_documents(
             docs=[{"key": key, "size_bytes": 7} for key in keys],
             bucket="bucket",
             download_path=download_path,
-            process_pool=pool,
-            out_dir=tmp_path / "out",
             s3_client=object(),
         )
 
         assert not errors
         assert len(tasks) == len(keys)
-        # Worker args are (local_path, out_dir, doc_key).
-        return {args[2] for args in pool.calls}
+        return {key for _path, key in tasks}
 
     def test_nested_keys_are_passed_through(self, monkeypatch, tmp_path):
         keys = ["docs/manuals/xr-200/setup.txt", "docs/manuals/xr-300/setup.txt"]
@@ -871,19 +865,16 @@ class TestDownloadAndSubmitKeyPairing:
             return _fake_download(doc, bucket, base_path, s3_client)
 
         monkeypatch.setattr(text_extraction, "_download_document", flaky_download)
-        pool = _RecordingPool()
         download_path = tmp_path / "download"
         download_path.mkdir()
 
-        tasks, errors = text_extraction._download_and_submit(
+        tasks, errors = text_extraction._download_documents(
             docs=[{"key": k, "size_bytes": 7} for k in ("docs/ok.txt", "docs/broken.txt")],
             bucket="bucket",
             download_path=download_path,
-            process_pool=pool,
-            out_dir=tmp_path / "out",
             s3_client=object(),
         )
 
         assert len(tasks) == 1
         assert [e["file"] for e in errors] == ["docs/broken.txt"]
-        assert {args[2] for args in pool.calls} == {"docs/ok.txt"}
+        assert {key for _path, key in tasks} == {"docs/ok.txt"}
