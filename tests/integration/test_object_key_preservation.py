@@ -70,22 +70,9 @@ class _FakeS3Client:
         assert operation_name == "list_objects_v2"
         return _FakePaginator(self._objects)
 
-    def download_file(self, Bucket: str, Key: str, Filename: str):  # noqa: N803 - boto3 casing
+    def download_file(self, Bucket: str, Key: str, Filename: str, **_kwargs):  # noqa: N803 - boto3 casing
         del Bucket
         Path(Filename).write_text(self._objects[Key], encoding="utf-8")
-
-
-class _InlinePool:
-    """Process-pool stand-in that runs the worker synchronously in-process.
-
-    ``extract_text`` uses a ``spawn`` pool whose initializer builds a Docling
-    ``DocumentConverter``; running the worker inline exercises the same function
-    with the same arguments without paying for model loading.
-    """
-
-    def apply_async(self, func, args):
-        result = func(*args)
-        return type("_Result", (), {"ready": staticmethod(lambda: True), "get": staticmethod(lambda: result)})()
 
 
 # ---------------------------------------------------------------------------
@@ -118,18 +105,16 @@ def _ingest(discovery, tmp_path: Path, s3_client) -> Path:
     download_dir.mkdir()
     out_dir = tmp_path / "extracted"
 
-    tasks, errors = text_extraction._download_and_submit(
+    tasks, errors = text_extraction._download_documents(
         docs=discovery.to_dict()["documents"],
         bucket="bucket",
         download_path=download_dir,
-        process_pool=_InlinePool(),
-        out_dir=out_dir,
         s3_client=s3_client,
     )
 
     assert not errors, f"Downloads failed: {errors}"
-    for file_path, task in tasks:
-        success, error = task.get()
+    for file_path, key in tasks:
+        success, error = text_extraction._worker_process_document(str(file_path), str(out_dir), key)
         assert success, f"Extraction failed for {file_path}: {error}"
 
     return out_dir
@@ -203,17 +188,15 @@ class TestObjectKeyPreservation:
         download_dir.mkdir()
         out_dir = tmp_path / "extracted"
 
-        tasks, errors = text_extraction._download_and_submit(
+        tasks, errors = text_extraction._download_documents(
             docs=[{"key": "/docs/a/setup.txt", "size_bytes": 7}],
             bucket="bucket",
             download_path=download_dir,
-            process_pool=_InlinePool(),
-            out_dir=out_dir,
             s3_client=client,
         )
 
         assert not errors
-        assert all(task.get()[0] for _, task in tasks)
+        assert all(text_extraction._worker_process_document(str(path), str(out_dir), key)[0] for path, key in tasks)
         assert _extracted_names(out_dir) == {"/docs/a/setup.txt"}
 
 
