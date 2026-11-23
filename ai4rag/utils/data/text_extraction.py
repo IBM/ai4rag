@@ -15,6 +15,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from boto3.s3.transfer import TransferConfig
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
@@ -41,7 +42,7 @@ from docling.document_converter import (
 )
 
 from ai4rag import handler
-from ai4rag.utils.clients.s3 import create_s3_client
+from ai4rag.utils.clients.s3 import _download_transfer_config, create_s3_client
 
 from ._extraction_pool import _container_cpu_quota
 from .constants import SUPPORTED_EXTENSIONS
@@ -469,6 +470,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
 
     all_errors: list[dict] = []
     processed_count = 0
+    transfer_config = _download_transfer_config()
     # Separate, bounded download/conversion phases keep ownership simple and
     # preserve largest-first conversion within each batch. No unbounded task
     # queue or full-corpus staging is needed.
@@ -494,6 +496,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
                 bucket=bucket,
                 download_path=input_dir,
                 s3_client=s3_client,
+                transfer_config=transfer_config,
             )
             all_errors.extend(download_errors)
             _raise_if_threshold_exceeded(all_errors, len(documents), error_tolerance)
@@ -584,6 +587,7 @@ def _download_document(
     bucket: str,
     base_path: Path,
     s3_client: Any,
+    transfer_config: TransferConfig,
 ) -> Path:
     """Download one S3 object under ``base_path``, preserving its nested key.
 
@@ -605,17 +609,6 @@ def _download_document(
     dl_start = time.perf_counter()
     _logger.info("Downloading %s", raw_key)
 
-    from inspect import signature
-
-    from boto3.s3.transfer import TransferConfig
-
-    # The application download pool owns transfer concurrency. Force the
-    # classic backend because CRT transfers can ignore use_threads=False.
-    transfer_options: dict[str, Any] = {"use_threads": False}
-    # Older supported boto3 versions only have the classic implementation.
-    if "preferred_transfer_client" in signature(TransferConfig).parameters:
-        transfer_options["preferred_transfer_client"] = "classic"
-    transfer_config = TransferConfig(**transfer_options)
     try:
         s3_client.download_file(bucket, raw_key, str(local_path), Config=transfer_config)
     except BaseException:
@@ -998,6 +991,7 @@ def _download_documents(  # pylint: disable=too-many-locals
     bucket: str,
     download_path: Path,
     s3_client: Any,
+    transfer_config: TransferConfig | None = None,
 ) -> tuple[list[tuple[Path, str]], list[dict]]:
     """Download one bounded batch and return (local path, original key) pairs.
 
@@ -1017,9 +1011,12 @@ def _download_documents(  # pylint: disable=too-many-locals
             skipped_keys,
         )
 
+    if transfer_config is None:
+        transfer_config = _download_transfer_config()
     with ThreadPoolExecutor(max_workers=DOWNLOAD_MAX_THREADS) as dl_pool:
         dl_futures = {
-            dl_pool.submit(_download_document, doc, bucket, download_path, s3_client): doc for doc in supported
+            dl_pool.submit(_download_document, doc, bucket, download_path, s3_client, transfer_config): doc
+            for doc in supported
         }
         for dl_future in as_completed(dl_futures):
             doc = dl_futures[dl_future]

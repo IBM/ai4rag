@@ -5,10 +5,12 @@
 """Exercise real worker processes without loading conversion models."""
 
 import os
+import signal
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import psutil
 import pytest
@@ -16,11 +18,22 @@ import pytest
 from ai4rag.utils.data import _extraction_pool as pools
 
 _CHILD = """
-import json, os, signal, subprocess, sys, time
-from multiprocessing.connection import Connection
+import json, os, signal, socket, struct, subprocess, sys, time
 from pathlib import Path
-with Connection(int(sys.argv[1])) as connection:
-    config = connection.recv()
+with socket.socket(fileno=int(sys.argv[1])) as connection, connection.makefile('rb') as commands:
+    def recv():
+        size, = struct.unpack('!I', commands.read(4))
+        return json.loads(commands.read(size))
+
+    def send(message):
+        payload = json.dumps(message).encode()
+        connection.sendall(struct.pack('!I', len(payload)) + payload)
+
+    def partial():
+        connection.sendall(struct.pack('!I', 10) + b'[')
+        time.sleep(3)
+
+    config = recv()
     mode = config.get('mode')
     if config.get('fail_restart') and any(Path(config['markers']).iterdir()):
         raise RuntimeError('replacement initialization failed')
@@ -28,8 +41,12 @@ with Connection(int(sys.argv[1])) as connection:
         raise RuntimeError('initialization failed')
     if mode == 'init_hang':
         time.sleep(60)
-    connection.send(('ready',))
-    while (task := connection.recv()) is not None:
+    if mode == 'init_partial':
+        partial()
+    send(['ready'])
+    while (task := recv()) is not None:
+        if mode == 'partial':
+            partial()
         if mode in ('memory_exit', 'killed'):
             with open(config['calls'], 'a') as calls:
                 calls.write(json.dumps([os.getpid(), task[2]]) + '\\n')
@@ -59,7 +76,7 @@ with Connection(int(sys.argv[1])) as connection:
         if mode == 'environment':
             assert os.environ['OPENBLAS_NUM_THREADS'] == '1'
             assert os.environ['DOCLING_ARTIFACTS_PATH'] == config['artifacts']
-        connection.send((True, str(os.getpid())))
+        send([True, str(os.getpid())])
 """
 
 
@@ -83,7 +100,33 @@ def _pool(config=None, **kwargs):
 
 def _assert_reaped(pool):
     assert pool.workers
-    assert all(worker.process.poll() is not None and worker.connection.closed for worker in pool.workers)
+    assert all(worker.process.poll() is not None and worker.connection.fileno() == -1 for worker in pool.workers)
+
+
+@pytest.mark.parametrize("workers", [0, -1])
+def test_worker_count_must_be_positive(workers):
+    with pytest.raises(ValueError, match="at least one"):
+        _pool(workers=workers)
+
+
+def test_platform_check_runs_before_launch(monkeypatch):
+    monkeypatch.setattr(pools, "os", SimpleNamespace(name="nt"))
+    with pytest.raises(RuntimeError, match="requires a POSIX platform"):
+        _pool()
+
+
+def test_conversion_requires_an_entered_pool(worker_command, tmp_path):
+    pool = _pool()
+    docs = [(Path("input"), "original/key.pdf")]
+    with pytest.raises(RuntimeError, match="requires a running worker pool"):
+        list(pool.convert(docs, tmp_path))
+    with pool:
+        assert list(pool.convert([], tmp_path)) == []
+        with pytest.raises(RuntimeError, match="can only be entered once"):
+            with pool:
+                pytest.fail("An active pool cannot be entered again")
+    with pytest.raises(RuntimeError, match="requires a running worker pool"):
+        list(pool.convert(docs, tmp_path))
 
 
 def test_reuses_workers_and_bounds_active_work(worker_command, tmp_path):
@@ -109,6 +152,20 @@ def test_worker_failures_terminate_and_reap(worker_command, tmp_path, mode):
     assert time.monotonic() - start < 10
     _assert_reaped(pool)
     assert not pool._memory_recovery_used
+
+
+@pytest.mark.parametrize("stage", ["initialization", "conversion"])
+def test_partial_response_times_out_and_reaps_worker(worker_command, tmp_path, stage):
+    pool = _pool(
+        {"mode": "init_partial" if stage == "initialization" else "partial"},
+        startup_timeout=0.5 if stage == "initialization" else 5,
+        conversion_timeout=0.3,
+    )
+    with pytest.raises(RuntimeError, match=f"{stage} timed out"):
+        with pool:
+            list(pool.convert([(Path("input"), "original/key.pdf")], tmp_path))
+    assert pool.workers[0].response.endswith(b"[")
+    _assert_reaped(pool)
 
 
 def test_kills_conversion_descendants(worker_command, tmp_path):
@@ -160,7 +217,8 @@ def test_parent_publication_delay_does_not_timeout_completed_work(worker_command
         assert list(results) == []
 
 
-def test_partial_startup_failure_reaps_already_started_workers(worker_command, monkeypatch):
+@pytest.mark.parametrize("fail_cleanup", [False, True])
+def test_partial_startup_failure_reaps_already_started_workers(worker_command, monkeypatch, fail_cleanup):
     """Failure to start a later interpreter must clean up the earlier ones."""
     popen = pools.subprocess.Popen
     calls = 0
@@ -173,10 +231,40 @@ def test_partial_startup_failure_reaps_already_started_workers(worker_command, m
         return popen(*args, **kwargs)
 
     monkeypatch.setattr(pools.subprocess, "Popen", start)
+    if fail_cleanup:
+        _fail_term_signal(monkeypatch)
     pool = _pool(workers=2)
-    with pytest.raises(OSError, match="cannot start"):
+    with pytest.raises(OSError, match="cannot start") as caught:
         with pool:
             pytest.fail("Startup should fail")
+    _assert_reaped(pool)
+    if fail_cleanup:
+        assert "Sending SIGTERM" in caught.value.__notes__[0]
+
+
+def _fail_term_signal(monkeypatch):
+    signal_group = pools.ConversionPool._signal_group
+    calls = []
+
+    def fail_term(process, sig, deadline):
+        calls.append((process.pid, sig))
+        if process.pid == calls[0][0] and sig == signal.SIGTERM:
+            raise PermissionError("cannot send termination signal")
+        signal_group(process, sig, deadline)
+
+    monkeypatch.setattr(pools.ConversionPool, "_signal_group", staticmethod(fail_term))
+    return calls
+
+
+def test_cleanup_failure_attempts_all_workers_and_does_not_run_twice(worker_command, monkeypatch):
+    calls = _fail_term_signal(monkeypatch)
+    pool = _pool(workers=2)
+    with pytest.raises(RuntimeError, match="Sending SIGTERM"):
+        with pool:
+            pass
+    assert calls == [(worker.process.pid, sig) for sig in (signal.SIGTERM, signal.SIGKILL) for worker in pool.workers]
+    assert pool._close(graceful=False)
+    assert len(calls) == 4
     _assert_reaped(pool)
 
 
@@ -236,7 +324,7 @@ def test_memory_failure_retries_only_unfinished_work(
         remaining = list(results)
         assert [result[0] for result in remaining] == [Path("bad"), Path("pending")]
         assert all(result[1] for result in remaining)
-        assert old_worker.process.poll() is not None and old_worker.connection.closed
+        assert old_worker.process.poll() is not None and old_worker.connection.fileno() == -1
         assert pool.workers[0].process is not old_worker.process
         assert list(pool.convert([(Path("next-batch"), "next-batch")], tmp_path))[0][1]
     calls = [json.loads(line)[1] for line in Path(recovery_config["calls"]).read_text().splitlines()]
@@ -254,6 +342,20 @@ def test_repeated_memory_failure_is_fatal(worker_command, recovery_config, start
             list(pool.convert([(Path("bad"), "bad")], tmp_path))
     assert len(started_processes) == 2
     assert all(process.poll() is not None for process in started_processes)
+    _assert_reaped(pool)
+
+
+def test_cleanup_failure_aborts_restart_and_preserves_memory_error(
+    worker_command, recovery_config, started_processes, monkeypatch, tmp_path
+):
+    _fail_term_signal(monkeypatch)
+    pool = _pool(recovery_config)
+    with pytest.raises(RuntimeError, match="worker reported MemoryError") as caught:
+        with pool:
+            list(pool.convert([(Path("bad"), "bad")], tmp_path))
+    assert len(started_processes) == 1
+    assert len(caught.value.__notes__) == 1
+    assert "Sending SIGTERM" in caught.value.__notes__[0]
     _assert_reaped(pool)
 
 
@@ -283,14 +385,12 @@ def test_replacement_startup_failure_reaps_both_generations(
 
 
 def test_worker_killed_before_submission_can_recover(worker_command, started_processes, tmp_path):
-    import signal
-
     with _pool() as pool:
         old_worker = pool.workers[0]
         os.kill(old_worker.process.pid, signal.SIGKILL)
         old_worker.process.wait(timeout=5)
         assert list(pool.convert([(Path("input"), "input")], tmp_path))[0][1]
-        assert old_worker.connection.closed
+        assert old_worker.connection.fileno() == -1
     assert len(started_processes) == 2
     assert all(process.poll() is not None for process in started_processes)
     _assert_reaped(pool)
@@ -319,7 +419,7 @@ def test_memory_recovery_reaps_all_workers_and_retries_interrupted_conversions(
         remaining = list(results)
         assert {path for path, _, _ in remaining} == {Path("bad"), Path("interrupted"), Path("pending")}
         assert all(success for _, success, _ in remaining)
-        assert all(worker.process.poll() is not None and worker.connection.closed for worker in old_workers)
+        assert all(worker.process.poll() is not None and worker.connection.fileno() == -1 for worker in old_workers)
     calls = [json.loads(line)[1] for line in Path(recovery_config["calls"]).read_text().splitlines()]
     assert Counter(calls) == {"done": 1, "bad": 2, "interrupted": 2, "pending": 1}
     assert len(started_processes) == 4

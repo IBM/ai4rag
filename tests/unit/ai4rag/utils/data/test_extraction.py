@@ -235,6 +235,7 @@ class TestDownloadDocument:
             bucket="bucket",
             base_path=tmp_path,
             s3_client=client,
+            transfer_config=text_extraction._download_transfer_config(),
         )
 
         assert local_path == tmp_path / "docs/example.txt"
@@ -814,7 +815,7 @@ class TestSupportedExtensionsAudio:
 # ---------------------------------------------------------------------------
 
 
-def _fake_download(doc, _bucket, base_path, _s3_client):
+def _fake_download(doc, _bucket, base_path, _s3_client, _transfer_config):
     """Mimic ``_download_document``: normalize the key, then write the file."""
     safe_key = doc["key"].strip().lstrip("/")
     local_path = (base_path / safe_key).resolve()
@@ -859,10 +860,10 @@ class TestDownloadDocumentsKeyPairing:
         assert self._submitted_keys(monkeypatch, tmp_path, keys) == set(keys)
 
     def test_no_key_is_lost_when_a_download_fails(self, monkeypatch, tmp_path):
-        def flaky_download(doc, bucket, base_path, s3_client):
+        def flaky_download(doc, bucket, base_path, s3_client, transfer_config):
             if doc["key"].endswith("broken.txt"):
                 raise RuntimeError("boom")
-            return _fake_download(doc, bucket, base_path, s3_client)
+            return _fake_download(doc, bucket, base_path, s3_client, transfer_config)
 
         monkeypatch.setattr(text_extraction, "_download_document", flaky_download)
         download_path = tmp_path / "download"

@@ -45,7 +45,7 @@ for import, wheel, runtime-image, and pipeline-recompilation steps.
 
 ## Installation
 
-S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for born-digital documents (`docling-slim[feat-chunking]`) are all included in the core `ai4rag` install. OCR (scanned PDFs/images) and audio transcription additionally require the `text-extraction` extra — see [Installation](../getting-started/installation.md#basic-installation).
+The core `ai4rag` install includes S3 support (`boto3`) and text extraction for born-digital documents (`docling-slim[feat-chunking]`). OCR for scanned PDFs or images and audio transcription additionally require the `text-extraction` extra. [Installation](../getting-started/installation.md#basic-installation)
 
 ## Private CA certificates on OpenShift AI
 
@@ -200,8 +200,8 @@ with larger documents prioritized. Temporary input usage is bounded by that batc
 not by a fixed byte limit. Completed JSON files are published atomically on the output
 filesystem; unfinished output and downloaded inputs are cleaned up on failure.
 
-`worker_startup_timeout=300.0` bounds each worker's initialization, including imports.
-`document_timeout=600.0` bounds conversion of each document, including lazy model loading.
+`worker_startup_timeout=300.0` bounds each worker's initialization, including imports and the ready response.
+`document_timeout=600.0` bounds each document conversion, including lazy model loading and the worker's result.
 Both values are seconds and must be positive and finite. Increase them for workloads
 that need longer initialization or conversion. During conversion, a worker reporting
 Python or Torch memory exhaustion, or exiting through `SIGKILL` (possible OOM), allows
@@ -454,5 +454,5 @@ from ai4rag.utils.docling_io import load_docling_documents
 
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
 - **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
-- **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
+- **Lazy imports** keep optional conversion runtimes such as Torch and OpenCV out of the module's initial imports.
 - **TLS verification**: Configure private CAs through the platform trust bundle and `AWS_CA_BUNDLE`; do not disable certificate verification.

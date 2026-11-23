@@ -12,6 +12,7 @@ import pytest
 from docling_core.types.doc import DoclingDocument
 from torch import OutOfMemoryError
 
+from ai4rag.utils.clients import s3
 from ai4rag.utils.data import _extraction_pool
 from ai4rag.utils.data import text_extraction as extraction
 
@@ -20,10 +21,12 @@ class _Client:
     def __init__(self, failures=()):
         self.failures = failures
         self.paths = []
+        self.transfer_configs = []
         self.peak_inputs = 0
 
     def download_file(self, _bucket, key, filename, **kwargs):
         assert kwargs["Config"].use_threads is False
+        self.transfer_configs.append(kwargs["Config"])
         self.paths.append(Path(filename))
         self.peak_inputs = max(self.peak_inputs, sum(path.exists() for path in self.paths))
         if key in self.failures:
@@ -72,6 +75,7 @@ def test_batches_bound_inputs_and_preserve_names(inline_pool, tmp_path):
     )
     assert result == extraction.ExtractionResult(9, 9, 0)
     assert [len(batch) for batch in inline_pool.instances[0].batches] == [4, 4, 1]
+    assert len({id(config) for config in client.transfer_configs}) == 1
     assert client.peak_inputs <= 4
     assert all(not path.exists() for path in client.paths)
     assert {DoclingDocument.load_from_json(path).name for path in tmp_path.rglob("*.json")} == set(keys)
@@ -176,15 +180,16 @@ def test_worker_failure_is_fatal_and_cleans_staging(inline_pool, monkeypatch, tm
 
 def test_download_supports_older_classic_only_boto3(monkeypatch, tmp_path):
     """The declared boto3 minimum predates the CRT backend selector."""
-    from boto3.s3 import transfer
 
     class ClassicConfig:
         def __init__(self, use_threads):
             self.use_threads = use_threads
 
-    monkeypatch.setattr(transfer, "TransferConfig", ClassicConfig)
+    monkeypatch.setattr(s3, "TransferConfig", ClassicConfig)
     client = _Client()
-    path = extraction._download_document({"key": "file.txt"}, "bucket", tmp_path, client)
+    path = extraction._download_document(
+        {"key": "file.txt"}, "bucket", tmp_path, client, extraction._download_transfer_config()
+    )
     assert path.read_text() == "content"
 
 
@@ -198,9 +203,8 @@ def test_cpu_quota_and_affinity_bound_automatic_workers(monkeypatch):
 
 @pytest.mark.parametrize("v2", [True, False])
 def test_container_cpu_quota_reads_process_and_ancestor_limits(monkeypatch, v2):
-    files = {
-        "/proc/self/cgroup": "0::/parent/child" if v2 else "1:cpu,cpuacct:/parent/child",
-    }
+    membership = "0::/parent/child" if v2 else "1:cpu,cpuacct:/parent/child"
+    files = {"/proc/self/cgroup": f"malformed\n{membership}\nmalformed:line"}
     if v2:
         files.update(
             {
@@ -298,7 +302,7 @@ def test_wrapped_docling_memory_errors_reach_the_supervisor(monkeypatch, tmp_pat
         extraction._worker_process_document(str(source), str(tmp_path / "output"), "file.pdf")
 
 
-def test_real_worker_memory_recovery_preserves_outputs_and_downloads(monkeypatch, tmp_path):
+def test_real_worker_memory_recovery_preserves_outputs_and_downloads(monkeypatch, tmp_path, capfd):
     """Recover through the production entry point, then reuse it for another batch."""
     import sys
 
@@ -334,6 +338,7 @@ runpy.run_module('ai4rag.utils.data._extraction_worker', run_name='__main__')
         document_timeout=30,
     )
     assert result == extraction.ExtractionResult(3, 3, 0)
+    assert "Text extraction worker caught MemoryError." in capfd.readouterr().err
     assert marker.exists()
     assert len(client.paths) == 3
     assert all(not path.exists() for path in client.paths)
