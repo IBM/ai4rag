@@ -49,13 +49,17 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     Parameters
     ----------
     client : OpenAI
-        Shared synchronous client. Request-specific options leave its settings
+        Synchronous client. Request-specific options leave its settings
         unchanged; the model does not close the client or its HTTP transport.
     model_id : str
         Model identifier sent to the embedding endpoint.
     params : dict[str, int | None] | OpenAIEmbeddingParams | None, default=None
         Model capabilities. Missing values are detected during construction,
         which requires a reachable embedding service.
+    use_server_truncation : bool, default=True
+        Send the provider-specific ``truncate_prompt_tokens`` field. Set to
+        False on endpoints that accept only standard OpenAI request fields.
+        Client-side recovery after a recognized overflow is still available.
 
     Notes
     -----
@@ -68,9 +72,15 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     _BATCH_SIZE = 128
 
     def __init__(
-        self, client: OpenAI, model_id: str, params: dict[str, int | None] | OpenAIEmbeddingParams | None = None
+        self,
+        client: OpenAI,
+        model_id: str,
+        params: dict[str, int | None] | OpenAIEmbeddingParams | None = None,
+        *,
+        use_server_truncation: bool = True,
     ) -> None:
         """Initialize the client binding and resolve missing model capabilities."""
+        self._use_server_truncation = use_server_truncation
         super().__init__(client=client, model_id=model_id, params=params)
 
     @property
@@ -202,9 +212,9 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         timeout : httpx.Timeout
             Per-phase timeout limits for this attempt.
         truncate_prompt_tokens : int | None
-            Provider-specific truncation option forwarded unchanged. On
-            compatible backends, -1 requests truncation to the model limit and
-            None disables truncation for capability probes.
+            Provider-specific option sent when ``use_server_truncation`` is
+            enabled. On compatible backends, -1 requests truncation to the
+            model limit and None disables truncation for capability probes.
 
         Returns
         -------
@@ -228,10 +238,11 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         SDK retries are disabled on a client copy sharing the original HTTP
         transport. This method neither retries nor closes that copy.
         """
+        extra_body = {"truncate_prompt_tokens": truncate_prompt_tokens} if self._use_server_truncation else None
         response = self.client.with_options(max_retries=0, timeout=timeout).embeddings.create(
             input=texts,
             model=self.model_id,
-            extra_body={"truncate_prompt_tokens": truncate_prompt_tokens},
+            extra_body=extra_body,
         )
         if not isinstance(response.data, list) or len(response.data) != len(texts):
             raise ValueError("Embedding response count does not match the number of input texts.")
@@ -278,8 +289,8 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         policy : RequestPolicy, default=QUERY_POLICY
             Recovery settings for the new executor.
         truncate_prompt_tokens : int | None, default=-1
-            Provider-specific truncation option forwarded to every attempt;
-            capability probes pass None to disable server truncation.
+            Provider-specific option when server truncation is enabled.
+            Capability probes pass None to disable server truncation.
 
         Returns
         -------

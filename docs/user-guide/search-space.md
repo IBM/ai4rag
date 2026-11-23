@@ -250,11 +250,55 @@ Parameter(
 
 ---
 
+## Using Separate OpenAI-Compatible Endpoints
+
+Use `prepare_search_space_with_models()` when generation and embeddings are served
+by independently configured OpenAI-compatible endpoints. Pass one or more models
+per role. Each model keeps its own client and becomes a candidate in the search
+space. Model IDs must be unique within each role, including across endpoints.
+
+```python
+import os
+
+from openai import OpenAI
+
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.search_space.prepare import prepare_search_space_with_models
+
+foundation = OpenAIFoundationModel(
+    client=OpenAI(base_url=os.environ["CHAT_BASE_URL"], api_key=os.environ["CHAT_API_KEY"]),
+    model_id=os.environ["CHAT_MODEL"],
+)
+embedding = OpenAIEmbeddingModel(
+    client=OpenAI(base_url=os.environ["EMBEDDING_BASE_URL"], api_key=os.environ["EMBEDDING_API_KEY"]),
+    model_id=os.environ["EMBEDDING_MODEL"],
+    use_server_truncation=False,
+)
+
+search_space = prepare_search_space_with_models(
+    {"chunking_methods": ["recursive"], "chunk_sizes": [512]},
+    foundation_models=[foundation],
+    embedding_models=[embedding],
+)
+```
+
+Supply the full API base URL for each endpoint, including any gateway prefix
+and `/v1` where required. The example omits the provider-specific embedding
+truncation field for servers that accept only standard OpenAI fields. Missing
+embedding capabilities are probed when the embedding wrapper is constructed.
+The search-space helper skips model discovery. If you supply `benchmark_data`,
+it uses each foundation model to detect the benchmark language and updates
+the model's language and generated user prompt on success.
+
+---
+
 ## Default Parameters
 
 If you don't specify certain parameters, `AI4RAGSearchSpace` uses sensible defaults, selected by the
 `vector_store_type` constructor argument (default `"milvus"`; also accepted by
-`get_default_ai4rag_search_space_parameters()` and `prepare_search_space_with_maas()`). `"milvus"`,
+`get_default_ai4rag_search_space_parameters()`, `prepare_search_space_with_maas()`, and
+`prepare_search_space_with_models()`). `"milvus"`,
 `"milvus_lite"`, and `"pgvector"` all support dense and hybrid search (Milvus and Milvus Lite via
 server-side/embedded BM25, PGVector via PostgreSQL full-text search), so hybrid search parameters are
 always included in their default parameter set. `"neo4j"` supports graph retrieval only, so its defaults
@@ -313,9 +357,9 @@ retrieval is tuned instead through `Neo4jGraphRetrievalConfig`, passed to `AI4RA
 User-provided parameters always override defaults:
 
 The default chunk-size choices are 512 and 1,024 tokens. When using
-`prepare_search_space_with_maas()`, payload `chunk_sizes` must be between 128 and
-1,024 tokens inclusive; values outside this range raise a Pydantic
-`ValidationError` before model discovery. Direct `AI4RAGSearchSpace` construction
+either search-space preparation function, payload `chunk_sizes` must be between 128 and
+1,024 tokens inclusive. Values outside this range raise a Pydantic
+`ValidationError` during payload validation. Direct `AI4RAGSearchSpace` construction
 with `Parameter` objects can use larger chunks, subject to the embedding-context
 and other combination validation rules.
 

@@ -2,14 +2,17 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+from collections.abc import Sequence
 from typing import Any
 
 import pandas as pd
 from openai import OpenAI
 
 from ai4rag import logger
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import Language
-from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints, SearchSpaceConstraints
 from ai4rag.search_space.prepare.language_detection import detect_language_with_llm
 from ai4rag.search_space.prepare.models import get_embedding_models, get_foundation_models
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
@@ -17,13 +20,13 @@ from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
 
-__all__ = ["prepare_search_space_with_maas"]
+__all__ = ["prepare_search_space_with_maas", "prepare_search_space_with_models"]
 
 
 def _resolve_models_from_payload(
     validated_payload: AI4RAGConstraints,
     client: OpenAI,
-) -> tuple[list, list]:
+) -> tuple[list[OpenAIFoundationModel], list[OpenAIEmbeddingModel]]:
     """Discover and validate foundation and embedding models from the payload.
 
     MaaS carries no metadata distinguishing foundation from embedding models, so
@@ -42,7 +45,7 @@ def _resolve_models_from_payload(
 
     Returns
     -------
-    tuple[list, list]
+    tuple[list[OpenAIFoundationModel], list[OpenAIEmbeddingModel]]
         A (foundation_models, embedding_models) pair of instantiated model objects.
 
     Raises
@@ -65,12 +68,12 @@ def _resolve_models_from_payload(
     return foundation_models, embedding_models
 
 
-def _apply_language_detection(foundation_models: list, benchmark_data: pd.DataFrame) -> None:
+def _apply_language_detection(foundation_models: list[OpenAIFoundationModel], benchmark_data: pd.DataFrame) -> None:
     """Detect language from benchmark questions and set it on each foundation model in-place.
 
     Parameters
     ----------
-    foundation_models : list
+    foundation_models : list[OpenAIFoundationModel]
         Foundation model objects to update with detected language.
     benchmark_data : pd.DataFrame
         Benchmark data whose "question" column is sampled for detection.
@@ -153,7 +156,87 @@ def prepare_search_space_with_maas(
     validated_payload = AI4RAGConstraints(**payload)
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
+    return _build_search_space(
+        validated_payload, foundation_models, embedding_models, benchmark_data, vector_store_type
+    )
 
+
+def prepare_search_space_with_models(
+    payload: dict[str, Any],
+    *,
+    foundation_models: Sequence[OpenAIFoundationModel],
+    embedding_models: Sequence[OpenAIEmbeddingModel],
+    benchmark_data: pd.DataFrame | None = None,
+    vector_store_type: str = "milvus",
+) -> AI4RAGSearchSpace:
+    """Prepare a search space with initialized models that retain their clients.
+
+    The caller constructs the models and checks endpoint availability before
+    calling this function. Model IDs must be unique within each role because
+    optimization uses them to distinguish candidates.
+
+    Parameters
+    ----------
+    payload : dict[str, Any]
+        Template and chunking constraints. Supports ``template_ids``,
+        ``chunking_methods``, ``chunk_sizes``, and ``chunk_overlaps`` with the
+        same validation and defaults as :func:`prepare_search_space_with_maas`.
+    foundation_models : Sequence[OpenAIFoundationModel]
+        One or more generation candidates in the search space.
+    embedding_models : Sequence[OpenAIEmbeddingModel]
+        One or more embedding candidates in the search space.
+    benchmark_data : pd.DataFrame | None, default=None
+        Benchmark data whose ``question`` column is sampled for language
+        detection through each foundation model. Successful detection updates
+        that model's language and regenerates its user prompt in place.
+    vector_store_type : str, default="milvus"
+        Vector-store provider that selects the backend-specific defaults.
+
+    Returns
+    -------
+    AI4RAGSearchSpace
+        Search space containing the supplied model objects.
+
+    Raises
+    ------
+    pydantic.ValidationError
+        If the payload contains unsupported keys or invalid constraints.
+    SearchSpaceValueError
+        If either sequence is empty, contains the wrong wrapper type, or
+        repeats a model ID. Also raised when a template is incompatible with
+        the vector-store provider.
+    """
+    logger.info("Preparing search space based on provided constraints: %s.", payload)
+    validated_payload = SearchSpaceConstraints(**payload)
+
+    _validate_model_candidates(foundation_models, OpenAIFoundationModel, "foundation_models")
+    _validate_model_candidates(embedding_models, OpenAIEmbeddingModel, "embedding_models")
+
+    return _build_search_space(
+        validated_payload, list(foundation_models), list(embedding_models), benchmark_data, vector_store_type
+    )
+
+
+def _validate_model_candidates(
+    models: Sequence[OpenAIFoundationModel | OpenAIEmbeddingModel],
+    model_class: type[OpenAIFoundationModel] | type[OpenAIEmbeddingModel],
+    name: str,
+) -> None:
+    """Validate a model dimension before applying language detection."""
+    if not isinstance(models, Sequence) or not models or any(not isinstance(model, model_class) for model in models):
+        raise SearchSpaceValueError(f"'{name}' must be a non-empty sequence of {model_class.__name__} instances.")
+    if len({model.model_id for model in models}) != len(models):
+        raise SearchSpaceValueError(f"'{name}' must contain unique model IDs.")
+
+
+def _build_search_space(
+    validated_payload: SearchSpaceConstraints,
+    foundation_models: list[OpenAIFoundationModel],
+    embedding_models: list[OpenAIEmbeddingModel],
+    benchmark_data: pd.DataFrame | None,
+    vector_store_type: str,
+) -> AI4RAGSearchSpace:
+    """Apply benchmark language detection and assemble the validated dimensions."""
     if benchmark_data is not None:
         _apply_language_detection(foundation_models, benchmark_data)
 

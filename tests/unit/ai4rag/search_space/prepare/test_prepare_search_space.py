@@ -4,14 +4,23 @@
 # -----------------------------------------------------------------------------
 """Unit tests for prepare_search_space module."""
 
+import json
+from copy import copy
 from unittest.mock import MagicMock, Mock
 
 import httpx
+import pandas as pd
 import pytest
 from openai import OpenAI
 from pydantic import ValidationError
 
-from ai4rag.search_space.prepare import prepare_search_space_with_maas
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.search_space.prepare import (
+    build_search_space_report,
+    prepare_search_space_with_maas,
+    prepare_search_space_with_models,
+)
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
@@ -303,3 +312,172 @@ def test_maas_rejects_incompatible_templates_in_search_space(mocker):
     client = _setup_client(mocker, ["default-llm", "default-embedding"])
     with pytest.raises(SearchSpaceValueError, match="incompatible"):
         prepare_search_space_with_maas(_payload(template_ids=["sequential_rag"]), client, vector_store_type="neo4j")
+
+
+@pytest.fixture
+def direct_models():
+    foundation_client = MagicMock(spec=OpenAI)
+    foundation_client.api_key = "foundation-secret"
+    foundation_client.base_url = "https://chat.example.com/gateway/v1"
+    embedding_client = MagicMock(spec=OpenAI)
+    embedding_client.api_key = "embedding-secret"
+    embedding_client.base_url = "https://embedding.example.com/v1"
+    return {
+        "foundation_models": [OpenAIFoundationModel(foundation_client, "provider/chat", params={"temperature": 0.1})],
+        "embedding_models": [
+            OpenAIEmbeddingModel(
+                embedding_client,
+                "provider/embed",
+                params={"embedding_dimension": 768, "context_length": 2048},
+                use_server_truncation=False,
+            )
+        ],
+    }
+
+
+def test_direct_search_space_preserves_model_objects_and_overrides(direct_models):
+    result = prepare_search_space_with_models(
+        {
+            "template_ids": ["sequential_rag"],
+            "chunking_methods": ["recursive"],
+            "chunk_sizes": [256],
+            "chunk_overlaps": [64],
+        },
+        **direct_models,
+    )
+
+    for role, (model,) in direct_models.items():
+        values = result[role.removesuffix("s")].values
+        assert len(values) == 1
+        assert values[0] is model
+        assert not model.client.mock_calls
+    assert result["template_id"].values == ("sequential_rag",)
+    assert result["chunking_method"].values == ("recursive",)
+    assert result["chunk_size"].values == (256,)
+    assert result["chunk_overlap"].values == (64,)
+
+
+def test_direct_language_detection_and_report(direct_models, tmp_path):
+    (foundation,) = direct_models["foundation_models"]
+    (embedding,) = direct_models["embedding_models"]
+    prompt_before_detection = foundation.user_message_text
+    completion = Mock()
+    completion.message.content = '{"code": "pl"}'
+    foundation.client.chat.completions.create.return_value = Mock(choices=[completion])
+
+    result = prepare_search_space_with_models(
+        {}, benchmark_data=pd.DataFrame({"question": ["Gdzie jest Warszawa?"]}), **direct_models
+    )
+
+    foundation.client.models.list.assert_not_called()
+    foundation.client.chat.completions.create.assert_called_once()
+    assert foundation.client.chat.completions.create.call_args.kwargs["model"] == foundation.model_id
+    assert not embedding.client.mock_calls
+    assert foundation.language.code == "pl"
+    assert foundation.user_message_text != prompt_before_detection
+
+    report_path = tmp_path / "search-space.json"
+    build_search_space_report(result).save_json(report_path)
+    report_json = report_path.read_text(encoding="utf-8")
+    for model in (foundation, embedding):
+        assert model.client.api_key not in report_json
+        assert model.client.base_url not in report_json
+    report = json.loads(report_json)
+    assert report["foundation_model"] == [
+        {
+            "model_id": "provider/chat",
+            "type": "generation",
+            "params": foundation.params.model_dump(),
+            "language": {"code": "pl", "name": "Polish"},
+            "system_message_text": foundation.system_message_text,
+            "user_message_text": foundation.user_message_text,
+            "context_template_text": foundation.context_template_text,
+        }
+    ]
+    assert report["embedding_model"] == [
+        {
+            "model_id": "provider/embed",
+            "type": "embedding",
+            "params": {"embedding_dimension": 768, "context_length": 2048},
+        }
+    ]
+
+
+def test_direct_search_space_explores_multiple_models_with_separate_clients(direct_models):
+    foundation_models = direct_models["foundation_models"]
+    embedding_models = direct_models["embedding_models"]
+    foundation_models.append(OpenAIFoundationModel(MagicMock(spec=OpenAI), "provider/multitask"))
+    embedding_models.append(
+        OpenAIEmbeddingModel(
+            MagicMock(spec=OpenAI),
+            "provider/multitask",
+            params={"embedding_dimension": 1024, "context_length": 4096},
+            use_server_truncation=False,
+        )
+    )
+    for model, code in zip(foundation_models, ("en", "pl"), strict=True):
+        completion = Mock()
+        completion.message.content = json.dumps({"code": code})
+        model.client.chat.completions.create.return_value = Mock(choices=[completion])
+
+    result = prepare_search_space_with_models(
+        {}, benchmark_data=pd.DataFrame({"question": ["Where is Warsaw?"]}), **direct_models
+    )
+
+    for role, models in direct_models.items():
+        for candidate, model in zip(result[role.removesuffix("s")].values, models, strict=True):
+            assert candidate is model
+    assert {(combo["foundation_model"], combo["embedding_model"]) for combo in result.combinations} == {
+        (foundation, embedding) for foundation in foundation_models for embedding in embedding_models
+    }
+    for model, code in zip(foundation_models, ("en", "pl"), strict=True):
+        model.client.models.list.assert_not_called()
+        model.client.chat.completions.create.assert_called_once()
+        assert model.client.chat.completions.create.call_args.kwargs["model"] == model.model_id
+        assert model.language.code == code
+    assert all(not model.client.mock_calls for model in embedding_models)
+
+
+@pytest.mark.parametrize(
+    "payload,field",
+    [
+        ({"foundation_models": [{"model_id": "other-chat"}]}, "foundation_models"),
+        ({"embedding_models": None}, "embedding_models"),
+        ({"chunking_methods": ["semantic"]}, "chunking_methods"),
+        ({"chunk_sizes": [1]}, "chunk_sizes"),
+    ],
+)
+def test_direct_search_space_validates_constraints(payload, field, direct_models):
+    with pytest.raises(ValidationError, match=field):
+        prepare_search_space_with_models(payload, **direct_models)
+
+
+@pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])
+@pytest.mark.parametrize("models", [[], ["model-id"], object()])
+def test_direct_search_space_requires_nonempty_sequences_of_model_wrappers(role, models, direct_models):
+    direct_models[role] = models
+    with pytest.raises(SearchSpaceValueError, match=rf"{role}.*non-empty sequence"):
+        prepare_search_space_with_models({}, **direct_models)
+
+
+@pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])
+def test_direct_search_space_rejects_duplicate_ids_with_separate_clients(role, direct_models):
+    duplicate = copy(direct_models[role][0])
+    duplicate.client = MagicMock(spec=OpenAI)
+    direct_models[role].append(duplicate)
+
+    with pytest.raises(SearchSpaceValueError, match=rf"{role}.*unique model IDs"):
+        prepare_search_space_with_models({}, **direct_models)
+
+
+def test_direct_search_space_applies_neo4j_defaults(direct_models):
+    result = prepare_search_space_with_models({}, vector_store_type="neo4j", **direct_models)
+
+    assert result["template_id"].values == ("agentic_graph_rag",)
+    assert result["search_mode"].values == ("graph",)
+    assert "ranker_strategy" not in {param.name for param in result.params}
+
+    with pytest.raises(SearchSpaceValueError, match="incompatible"):
+        prepare_search_space_with_models(
+            {"template_ids": ["sequential_rag"]}, vector_store_type="neo4j", **direct_models
+        )
