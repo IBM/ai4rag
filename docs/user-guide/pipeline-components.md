@@ -45,7 +45,7 @@ for import, wheel, runtime-image, and pipeline-recompilation steps.
 
 ## Installation
 
-S3 support (`boto3`), multiprocessing (`multiprocess`), and text extraction for born-digital documents (`docling-slim[feat-chunking]`) are all included in the core `ai4rag` install. OCR (scanned PDFs/images) and audio transcription additionally require the `text-extraction` extra — see [Installation](../getting-started/installation.md#basic-installation).
+The core `ai4rag` install includes S3 support (`boto3`) and text extraction for born-digital documents (`docling-slim[feat-chunking]`). OCR for scanned PDFs or images and audio transcription additionally require the `text-extraction` extra. [Installation](../getting-started/installation.md#basic-installation)
 
 ## Private CA certificates on OpenShift AI
 
@@ -180,6 +180,40 @@ result = extract_text(
     s3_client=s3_client,
 )
 ```
+
+Extraction uses a parent-owned S3 client shared by at most eight download threads.
+Each transfer uses boto3's classic backend without an additional transfer thread pool.
+Conversion runs in fresh interpreter processes, each with its own converter. Native
+thread limits are set in the child environment before imports; the caller's environment
+and multiprocessing start method are unchanged. Docling/Torch use two intra-op threads
+per worker, with Torch and RapidOCR/ONNX inter-op parallelism and OpenCV
+parallelism limited to one.
+
+With `max_extraction_workers=None`, extraction uses half the available CPUs, considering
+CPU affinity and Linux cgroup quotas, with at least one and at most eight workers. The
+supported document count also caps the worker count. Positive explicit overrides can
+exceed the CPU budget; allow memory for each worker's model instances. Zero or negative
+overrides retain their previous behavior of selecting one worker.
+
+Downloads and conversion run in separate batches of at most twice the worker count,
+with larger documents prioritized. Temporary input usage is bounded by that batch,
+not by a fixed byte limit. Completed JSON files are published atomically on the output
+filesystem; unfinished output and downloaded inputs are cleaned up on failure.
+
+`worker_startup_timeout=300.0` bounds each worker's initialization, including imports and the ready response.
+`document_timeout=600.0` bounds each document conversion, including lazy model loading and the worker's result.
+Both values are seconds and must be positive and finite. Increase them for workloads
+that need longer initialization or conversion. During conversion, a worker reporting
+Python or Torch memory exhaustion, or exiting through `SIGKILL` (possible OOM), allows
+one pool restart per extraction run. All old workers and their decoder process groups
+are stopped before replacements start. Already acknowledged results remain published;
+only unfinished documents are retried, using their existing downloads. Workers are
+then reused normally across subsequent batches. A second memory failure, initialization
+failure, other worker death, or deadline violation fails the run regardless of
+`error_tolerance`. Ordinary download and conversion errors retain the existing
+error-tolerance accounting. Recovery requires the parent process to survive; it cannot
+recover a container-wide kill or guarantee that an oversized document fits in memory.
+These deadlines do not impose a total download deadline on a caller-supplied S3 client.
 
 Supported document extensions include PDF, DOCX, PPTX, Markdown, HTML, TXT, ODT/ODP, AsciiDoc, LaTeX, EPUB, email (`.eml`, `.msg`), Quarto/R Markdown, XHTML, images (JPEG, PNG, TIFF), and audio (WAV, MP3, M4A, AAC, OGG, FLAC).
 
@@ -420,5 +454,5 @@ from ai4rag.utils.docling_io import load_docling_documents
 
 - **No KFP types**: Functions accept plain Python types (`str`, `Path`, `dict`) and return frozen dataclasses.
 - **Dependency injection**: All functions accept pre-configured clients (S3, MaaS) as optional parameters — when omitted, clients are created from environment variables.
-- **Lazy imports**: Heavy optional dependencies (`boto3`, `multiprocess`, `docling`) are imported only when used.
+- **Lazy imports** keep optional conversion runtimes such as Torch and OpenCV out of the module's initial imports.
 - **TLS verification**: Configure private CAs through the platform trust bundle and `AWS_CA_BUNDLE`; do not disable certificate verification.

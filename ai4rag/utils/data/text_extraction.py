@@ -2,16 +2,20 @@
 # Copyright IBM Corp. 2026
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
+import errno
+import importlib
 import logging
+import math
 import os
 import sys
 import time
 import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Sequence
 
+from boto3.s3.transfer import TransferConfig
 from docling.backend.pypdfium2_backend import PyPdfiumDocumentBackend
 from docling.datamodel.accelerator_options import AcceleratorOptions
 from docling.datamodel.base_models import InputFormat
@@ -38,8 +42,9 @@ from docling.document_converter import (
 )
 
 from ai4rag import handler
-from ai4rag.utils.clients.s3 import create_s3_client
+from ai4rag.utils.clients.s3 import _download_transfer_config, create_s3_client
 
+from ._extraction_pool import _container_cpu_quota
 from .constants import SUPPORTED_EXTENSIONS
 from .local_hf_asr_pipeline import (
     LocalHuggingFaceAsrPipeline,
@@ -93,8 +98,8 @@ _BUNDLED_RAPIDOCR_DET = "PP-OCRv6_det_small.onnx"
 _BUNDLED_RAPIDOCR_CLS = "ch_ppocr_mobile_v2.0_cls_mobile.onnx"
 _BUNDLED_RAPIDOCR_REC = "PP-OCRv6_rec_small.onnx"
 
-# Module-level global used by multiprocessing workers.  Each spawned worker
-# initializes its own ``DocumentConverter`` via the pool initializer and
+# Module-level state private to each fresh conversion interpreter. Each worker
+# initializes its own ``DocumentConverter`` before accepting documents and
 # stores it here so that ``_worker_process_document`` can retrieve it.
 _mp_worker_converter = None  # pylint: disable=invalid-name
 
@@ -122,12 +127,11 @@ class ExtractionResult:
 class DoclingExtractionConfig:
     """Docling converter settings shared with extraction worker processes.
 
-    An instance of this config is the single knob callers (e.g.
+    This config holds the converter settings callers (e.g.
     ``pipelines-components``) use to control conversion behaviour.  It is
-    constructed once and passed to :func:`extract_text`, which forwards it
-    unchanged to every worker process so each worker builds an identically
-    configured ``DocumentConverter``.  Being ``frozen`` makes it hashable and
-    safe to ship across the ``spawn`` process boundary.
+    constructed once and passed to :func:`extract_text`, which copies its
+    settings into every isolated worker so each builds an identically
+    configured ``DocumentConverter``. The caller's config remains immutable.
 
     Attributes
     ----------
@@ -328,14 +332,17 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     docling_artifacts_path: str | None = None,
     docling_config: DoclingExtractionConfig | None = None,
     s3_client: Any | None = None,
+    *,
+    worker_startup_timeout: float = 300.0,
+    document_timeout: float = 600.0,
 ) -> ExtractionResult:
     """Download documents from S3 and extract text using Docling.
 
     Each input document is downloaded from S3, converted to a
     :class:`DoclingDocument` via the Docling library, and persisted as a
-    JSON file in *output_dir*.  Conversion runs in a separate process pool
-    (``multiprocess`` library, ``"spawn"`` context) while downloads happen
-    concurrently in a thread pool.
+    JSON file in *output_dir*. Downloads use a parent-owned thread pool.
+    Fresh-interpreter conversion workers are reused across bounded batches
+    of at most twice the worker count, with larger files scheduled first.
 
     Parameters
     ----------
@@ -364,8 +371,11 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         Fraction of documents (0.0--1.0) allowed to fail.  ``None`` means
         zero tolerance.
     max_extraction_workers
-        Number of parallel worker processes.  Defaults to
-        ``min(max(1, cpu_count // 2), 8)``.
+        Number of parallel conversion processes, limited to the supported document
+        count. By default uses half the available CPUs (including affinity and
+        container quota), at least one and at most eight. Positive explicit
+        overrides may exceed the CPU budget; each worker loads its own models.
+        Zero and negative overrides retain their historical meaning of one.
     docling_artifacts_path
         Path to pre-downloaded Docling model artifacts for offline use.
         Falls back to ``DOCLING_ARTIFACTS_PATH`` environment variable.
@@ -383,6 +393,17 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         from the environment. The client is shared only by download threads;
         it is never sent to Docling worker processes.
 
+    worker_startup_timeout
+        Maximum seconds for each worker to initialize, including imports.
+        Defaults to 300 seconds. Must be positive and finite.
+    document_timeout
+        Maximum seconds for a worker to convert one document, including lazy
+        model loading. Defaults to 600 seconds. Must be positive and finite.
+        A worker MemoryError or SIGKILL allows one fresh-pool retry of unfinished
+        work per extraction run. SIGKILL is treated as possible memory exhaustion.
+        Timeouts, other worker failures, and exhausted recovery abort the run
+        regardless of error tolerance. Recovery requires the parent to survive.
+
     Returns
     -------
     ExtractionResult
@@ -396,7 +417,7 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     """
     import tempfile
 
-    import multiprocess as multiprocessing
+    from ._extraction_pool import ConversionPool
 
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -404,6 +425,10 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
     if not documents:
         _logger.info("No documents to process.")
         return ExtractionResult(processed_count=0, total_documents=0, error_count=0)
+
+    for name, value in (("worker_startup_timeout", worker_startup_timeout), ("document_timeout", document_timeout)):
+        if not math.isfinite(value) or value <= 0:
+            raise ValueError(f"{name} must be positive and finite.")
 
     pipeline_config = docling_config or DoclingExtractionConfig()
     _require_cuda_ocr_provider(pipeline_config)
@@ -429,7 +454,13 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
 
     documents = sorted(documents, key=lambda d: d.get("size_bytes", 0), reverse=True)
 
-    effective_workers = _effective_worker_count(max_extraction_workers)
+    supported = [doc for doc in documents if Path(doc["key"]).suffix.lower() in SUPPORTED_EXTENSIONS]
+    skipped = len(documents) - len(supported)
+    if skipped:
+        _logger.warning("Skipping %d document(s) with unsupported extensions.", skipped)
+    if not supported:
+        return ExtractionResult(processed_count=0, total_documents=len(documents), error_count=0)
+    effective_workers = min(len(supported), _effective_worker_count(max_extraction_workers))
     _logger.info(
         "Starting text extraction for %d documents. extraction_workers=%d, download_threads=%d.",
         len(documents),
@@ -437,64 +468,50 @@ def extract_text(  # pylint: disable=too-many-locals,too-many-arguments,too-many
         DOWNLOAD_MAX_THREADS,
     )
 
-    if artifacts_path is not None:
-        os.environ.setdefault("HF_HUB_OFFLINE", "1")
-
-    mp_context = multiprocessing.get_context("spawn")  # pylint: disable=no-member
+    all_errors: list[dict] = []
+    processed_count = 0
+    transfer_config = _download_transfer_config()
+    # Separate, bounded download/conversion phases keep ownership simple and
+    # preserve largest-first conversion within each batch. No unbounded task
+    # queue or full-corpus staging is needed.
     with (
         tempfile.TemporaryDirectory() as download_dir,
-        mp_context.Pool(
-            processes=effective_workers,
-            initializer=_text_extraction_pool_initializer,
-            initargs=(pipeline_config,),
+        tempfile.TemporaryDirectory(prefix=".text-extraction-", dir=out_dir) as conversion_dir,
+        ConversionPool(
+            workers=effective_workers,
+            config=asdict(pipeline_config),
+            artifacts_path=artifacts_path,
+            startup_timeout=worker_startup_timeout,
+            conversion_timeout=document_timeout,
         ) as process_pool,
     ):
-        download_start = time.perf_counter()
-        extraction_tasks, download_errors = _download_and_submit(
-            docs=documents,
-            bucket=bucket,
-            download_path=Path(download_dir),
-            process_pool=process_pool,
-            out_dir=out_dir,
-            s3_client=s3_client,
-        )
-        _logger.info(
-            "Downloads finished in %.1fs; %d file(s) queued for extraction, %d download error(s).",
-            time.perf_counter() - download_start,
-            len(extraction_tasks),
-            len(download_errors),
-        )
-        _raise_if_threshold_exceeded(download_errors, len(documents), error_tolerance)
-
-        extraction_errors: list[dict] = []
-        processed_count = 0
-        pending = list(extraction_tasks)
-        completed = 0
-
-        while pending:
-            still_pending = []
-            for file_path, task in pending:
-                if task.ready():
-                    completed += 1
-                    try:
-                        success, tb = task.get()
-                    except Exception:
-                        tb = traceback.format_exc()
-                        _logger.error("Worker crashed for %s:\n%s", file_path, tb)
-                        success = False
-                    Path(file_path).unlink(missing_ok=True)
-                    if success:
-                        processed_count += 1
-                    else:
-                        extraction_errors.append({"file": file_path, "traceback": tb})
-                    _logger.info("Extraction progress %d/%d", completed, len(extraction_tasks))
+        input_dir = Path(download_dir).resolve() / "inputs"
+        # Stage JSON on the artifact filesystem so publishing stays atomic even
+        # when the download directory and KFP artifact are on different mounts.
+        staged_output = Path(conversion_dir).resolve()
+        batch_size = 2 * effective_workers
+        for offset in range(0, len(supported), batch_size):
+            downloaded, download_errors = _download_documents(
+                docs=supported[offset : offset + batch_size],
+                bucket=bucket,
+                download_path=input_dir,
+                s3_client=s3_client,
+                transfer_config=transfer_config,
+            )
+            all_errors.extend(download_errors)
+            _raise_if_threshold_exceeded(all_errors, len(documents), error_tolerance)
+            for file_path, success, error in process_pool.convert(downloaded, staged_output):
+                file_path.unlink(missing_ok=True)
+                if success:
+                    relative = file_path.relative_to(input_dir).with_suffix(file_path.suffix + ".json")
+                    destination = out_dir / relative
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    (staged_output / relative).replace(destination)
+                    processed_count += 1
                 else:
-                    still_pending.append((file_path, task))
-            pending = still_pending
-            if pending:
-                time.sleep(0.01)
+                    all_errors.append({"file": str(file_path), "traceback": error})
+                _logger.info("Extraction progress %d/%d", processed_count + len(all_errors), len(supported))
 
-    all_errors = download_errors + extraction_errors
     total_errors = len(all_errors)
     _logger.info(
         "Text extraction completed. Total processed: %d/%d, Errors: %d",
@@ -570,25 +587,12 @@ def _download_document(
     bucket: str,
     base_path: Path,
     s3_client: Any,
+    transfer_config: TransferConfig,
 ) -> Path:
-    """Download a single document from S3 with path-traversal protection.
+    """Download one S3 object under ``base_path``, preserving its nested key.
 
-    Parameters
-    ----------
-    doc
-        Document descriptor dict with at least a ``"key"`` field.
-    bucket
-        S3 bucket name.
-    base_path
-        Local directory under which the file is saved, preserving the S3
-        key as a relative sub-path.
-    s3_client
-        Configured S3 client shared by the extraction run.
-
-    Returns
-    -------
-    Path
-        Path to the downloaded local file.
+    The configured client is shared by the run's download threads. Reject
+    traversal keys and return the absolute local path to the downloaded file.
     """
     raw_key = doc["key"]
     safe_key = raw_key.strip().lstrip("/")
@@ -605,7 +609,11 @@ def _download_document(
     dl_start = time.perf_counter()
     _logger.info("Downloading %s", raw_key)
 
-    s3_client.download_file(bucket, raw_key, str(local_path))
+    try:
+        s3_client.download_file(bucket, raw_key, str(local_path), Config=transfer_config)
+    except BaseException:
+        local_path.unlink(missing_ok=True)
+        raise
 
     _logger.info("Download finished %s (%.1fs)", raw_key, time.perf_counter() - dl_start)
     return local_path
@@ -743,6 +751,7 @@ def _build_rapidocr_options(config: DoclingExtractionConfig) -> RapidOcrOptions:
     kwargs: dict[str, Any] = {
         "lang": list(config.ocr_lang),
         "force_full_page_ocr": False,
+        "rapidocr_params": {"EngineConfig.onnxruntime.inter_op_num_threads": 1},
     }
     custom_paths = {
         "det_model_path": config.ocr_det_model_path,
@@ -835,7 +844,7 @@ def _build_docling_format_options(
 def _text_extraction_pool_initializer(
     config: DoclingExtractionConfig | bool = False,
 ) -> None:
-    """Pool initializer that creates a ``DocumentConverter`` per worker process.
+    """Create a ``DocumentConverter`` in a fresh, thread-limited worker.
 
     Accepts either a :class:`DoclingExtractionConfig` or a legacy boolean
     ``do_table_structure`` flag for backward compatibility with older call sites.
@@ -845,10 +854,17 @@ def _text_extraction_pool_initializer(
     else:
         pipeline_config = config
 
-    os.environ["TQDM_DISABLE"] = "1"
-    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
-    os.environ.setdefault("MKL_NUM_THREADS", "1")
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    # These optional modules are provided by the text-extraction extra, not
+    # the lightweight installation used for static analysis and core callers.
+    cv2 = importlib.import_module("cv2")
+    torch = importlib.import_module("torch")
+
+    # Environment limits were installed before this interpreter imported any
+    # native library. Docling's accelerator uses two intra-op threads; bound
+    # Torch's independent inter-op pool as well, including the lazy ASR path.
+    torch.set_num_threads(2)
+    torch.set_num_interop_threads(1)
+    cv2.setNumThreads(1)  # pylint: disable=no-member
 
     if _resolve_artifacts_path(None) is not None:
         os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -859,45 +875,21 @@ def _text_extraction_pool_initializer(
     if not worker_log.handlers:
         worker_log.addHandler(logging.StreamHandler(sys.stdout))
 
-    worker_pid = os.getpid()
-    init_start = time.perf_counter()
-    worker_log.debug("Worker pid=%s: loading DocumentConverter.", worker_pid)
-
     mod = sys.modules[__name__]
     # pylint: disable=protected-access
     mod._mp_worker_converter = DocumentConverter(format_options=_build_docling_format_options(config=pipeline_config))
-    worker_log.debug(
-        "Worker pid=%s: DocumentConverter ready (%.1fs)",
-        worker_pid,
-        time.perf_counter() - init_start,
-    )
 
 
 def _worker_process_document(  # pylint: disable=too-many-locals
     file_path_str: str, output_dir_str: str, doc_key: str = ""
 ) -> tuple[bool, str | None]:
-    """Convert a single document to a DoclingDocument JSON file.
+    """Convert an absolute input path to a DoclingDocument JSON under the output directory.
 
-    Plain-text (``.txt``) files are wrapped in a minimal
-    ``DoclingDocument``.  All other supported formats are converted via
-    the ``DocumentConverter`` created by the pool initializer.
-
-    Parameters
-    ----------
-    file_path_str
-        Absolute path to the local input file.
-    output_dir_str
-        Absolute path to the directory where the resulting JSON file
-        will be written (named ``<original_filename>.json``).
-    doc_key
-        Key identifying the document (e.g. ``"manuals/xr-200/setup.txt"``).
-        Used as the document name so that the full path is preserved through
-        the pipeline.  Falls back to the filename if empty.
-
-    Returns
-    -------
-    tuple[bool, str | None]
-        ``(True, None)`` on success; ``(False, error_message)`` on failure.
+    TXT files are wrapped directly; other formats use the worker's converter.
+    The original ``doc_key`` names the document and preserves its nested output
+    path, falling back to the input filename when empty. Returns ``(True, None)``
+    on success or ``(False, traceback)`` for ordinary document errors. Memory
+    exhaustion escapes as ``MemoryError`` so the parent can replace the pool.
     """
     from docling_core.types.doc.document import DoclingDocument
     from docling_core.types.doc.labels import DocItemLabel
@@ -925,7 +917,7 @@ def _worker_process_document(  # pylint: disable=too-many-locals
             doc = DoclingDocument(name=doc_name)
             doc.add_text(label=DocItemLabel.TEXT, text=input_file.read_text(encoding="utf-8"))
             output_file.parent.mkdir(parents=True, exist_ok=True)
-            doc.save_as_json(output_file)
+            _save_document(doc, output_file)
             return True, None
 
         converter = getattr(sys.modules[__name__], "_mp_worker_converter", None)
@@ -945,7 +937,7 @@ def _worker_process_document(  # pylint: disable=too-many-locals
         conversion_result = converter.convert(input_file)
         conversion_result.document.name = doc_name
         output_file.parent.mkdir(parents=True, exist_ok=True)
-        conversion_result.document.save_as_json(output_file)
+        _save_document(conversion_result.document, output_file)
         worker_log.info(
             "pid=%s docling convert done: %s -> %s (%.1fs)",
             os.getpid(),
@@ -955,46 +947,56 @@ def _worker_process_document(  # pylint: disable=too-many-locals
         )
         return True, None
 
-    except Exception:
+    except Exception as exc:
+        if _is_memory_error(exc):
+            raise MemoryError("The conversion runtime exhausted worker memory.") from exc
         error_tb = traceback.format_exc()
         worker_log.error("Failed to process %s:\n%s", file_path_str, error_tb)
         return False, error_tb
 
 
-def _download_and_submit(  # pylint: disable=too-many-locals
+def _is_memory_error(error: BaseException | None) -> bool:
+    """Recognize allocation failures, including causes wrapped by Docling."""
+    # A Torch exception implies Torch is already loaded in this worker.
+    torch_memory_error = getattr(sys.modules.get("torch"), "OutOfMemoryError", MemoryError)
+    seen: set[int] = set()
+    while error is not None and id(error) not in seen:
+        seen.add(id(error))
+        if isinstance(error, (MemoryError, torch_memory_error)):
+            return True
+        if isinstance(error, OSError) and getattr(error, "errno", None) == errno.ENOMEM:
+            return True
+        # Torch's CPU allocator uses RuntimeError in some versions.
+        if isinstance(error, RuntimeError) and "DefaultCPUAllocator: can't allocate memory" in str(error):
+            return True
+        error = error.__cause__ or error.__context__
+    return False
+
+
+def _save_document(document: Any, output_file: Path) -> None:
+    """Publish complete JSON only; temporary files are never named ``*.json``."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(dir=output_file.parent, suffix=".tmp", delete=False) as temporary:
+        temporary_path = Path(temporary.name)
+    try:
+        document.save_as_json(temporary_path)
+        temporary_path.replace(output_file)
+    finally:
+        temporary_path.unlink(missing_ok=True)
+
+
+def _download_documents(  # pylint: disable=too-many-locals
     docs: list[dict],
     bucket: str,
     download_path: Path,
-    process_pool: Any,
-    out_dir: Path,
     s3_client: Any,
-) -> tuple[list[tuple[str, Any]], list[dict]]:
-    """Download all documents from S3, then submit for extraction largest-first.
+    transfer_config: TransferConfig | None = None,
+) -> tuple[list[tuple[Path, str]], list[dict]]:
+    """Download one bounded batch and return (local path, original key) pairs.
 
-    Documents with unsupported extensions are filtered out before any
-    downloads begin.  Supported documents are downloaded concurrently,
-    then sorted by size descending before being submitted to the process
-    pool to avoid the straggler problem.
-
-    Parameters
-    ----------
-    docs
-        Document descriptor dicts.
-    bucket
-        S3 bucket name.
-    download_path
-        Local temporary directory for downloaded files.
-    process_pool
-        Active multiprocessing pool.
-    out_dir
-        Directory where extracted DoclingDocument JSONs are written.
-    s3_client
-        Configured S3 client shared by the download threads.
-
-    Returns
-    -------
-    tuple[list[tuple[str, Any]], list[dict]]
-        Extraction tasks (path, AsyncResult) and download error dicts.
+    The supplied client stays in the parent process and is shared only by
+    the download threads. Results are sorted by actual size, largest first.
     """
     download_errors: list[dict] = []
     downloaded: list[tuple[Path, str]] = []
@@ -1009,9 +1011,12 @@ def _download_and_submit(  # pylint: disable=too-many-locals
             skipped_keys,
         )
 
+    if transfer_config is None:
+        transfer_config = _download_transfer_config()
     with ThreadPoolExecutor(max_workers=DOWNLOAD_MAX_THREADS) as dl_pool:
         dl_futures = {
-            dl_pool.submit(_download_document, doc, bucket, download_path, s3_client): doc for doc in supported
+            dl_pool.submit(_download_document, doc, bucket, download_path, s3_client, transfer_config): doc
+            for doc in supported
         }
         for dl_future in as_completed(dl_futures):
             doc = dl_futures[dl_future]
@@ -1029,17 +1034,7 @@ def _download_and_submit(  # pylint: disable=too-many-locals
             downloaded.append((local_path, key))
 
     downloaded.sort(key=lambda item: item[0].stat().st_size, reverse=True)
-    extraction_tasks = [
-        (
-            str(local_path),
-            process_pool.apply_async(
-                _worker_process_document,
-                (str(local_path), str(out_dir), doc_key),
-            ),
-        )
-        for local_path, doc_key in downloaded
-    ]
-    return extraction_tasks, download_errors
+    return downloaded, download_errors
 
 
 def _raise_if_threshold_exceeded(
@@ -1088,4 +1083,13 @@ def _effective_worker_count(requested: int | None) -> int:
     """Determine the number of extraction worker processes."""
     if requested is not None:
         return max(1, requested)
-    return min(max(1, (os.cpu_count() or 1) // 2), 8)
+    available = float(os.cpu_count() or 1)
+    if hasattr(os, "sched_getaffinity"):
+        try:
+            available = min(available, len(os.sched_getaffinity(0)))
+        except OSError:
+            pass
+    quota = _container_cpu_quota()
+    if quota is not None:
+        available = min(available, quota)
+    return min(max(1, int(available // 2)), 8)

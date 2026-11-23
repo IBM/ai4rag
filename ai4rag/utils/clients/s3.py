@@ -3,13 +3,24 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 import os
+from inspect import signature
 from typing import Any
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 
 from ai4rag.utils.network import ensure_safe_url
 
 _REQUIRED_ENV_KEYS = ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_S3_ENDPOINT")
+
+
+def _download_transfer_config() -> TransferConfig:
+    """Keep transfer concurrency in the caller's download pool."""
+    transfer_options: dict[str, Any] = {"use_threads": False}
+    # CRT can ignore use_threads=False. Older boto3 versions only have the classic implementation.
+    if "preferred_transfer_client" in signature(TransferConfig).parameters:
+        transfer_options["preferred_transfer_client"] = "classic"
+    return TransferConfig(**transfer_options)
 
 
 def get_s3_credentials_from_env() -> dict[str, str | None]:
