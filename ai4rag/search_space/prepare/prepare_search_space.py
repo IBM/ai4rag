@@ -72,20 +72,30 @@ def _resolve_models_from_payload(
     return foundation_models, embedding_models
 
 
-def _apply_language_detection(foundation_models: list[OpenAIFoundationModel], benchmark_data: pd.DataFrame) -> None:
+def _apply_language_detection(
+    foundation_models: Sequence[OpenAIFoundationModel],
+    benchmark_data: pd.DataFrame | None,
+    *,
+    include_error_details: bool = True,
+) -> None:
     """Detect language from benchmark questions and set it on each foundation model in-place.
 
     Parameters
     ----------
-    foundation_models : list[OpenAIFoundationModel]
+    foundation_models : Sequence[OpenAIFoundationModel]
         Foundation model objects to update with detected language.
-    benchmark_data : pd.DataFrame
+    benchmark_data : pd.DataFrame | None
         Benchmark data whose "question" column is sampled for detection.
+    include_error_details : bool, default=True
+        Include exception messages in language detection logs.
     """
+    if benchmark_data is None:
+        return
     for fm in foundation_models:
         lang = detect_language_with_llm(
             questions=[str(q) for q in benchmark_data["question"][:10]],
             generation_model=fm,
+            include_error_details=include_error_details,
         )
         if lang is not None:
             fm.language = Language(**lang)
@@ -160,9 +170,9 @@ def prepare_search_space_with_maas(
     validated_payload = AI4RAGConstraints(**payload)
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
-    return _build_search_space(
-        validated_payload, foundation_models, embedding_models, benchmark_data, vector_store_type
-    )
+    search_space = _build_search_space(validated_payload, foundation_models, embedding_models, vector_store_type)
+    _apply_language_detection(foundation_models, benchmark_data)
+    return search_space
 
 
 def prepare_search_space_with_models(
@@ -215,11 +225,11 @@ def prepare_search_space_with_models(
 
     _validate_model_candidates(foundation_models, OpenAIFoundationModel, "foundation_models")
     _validate_model_candidates(embedding_models, OpenAIEmbeddingModel, "embedding_models")
+    foundation_models, embedding_models = list(foundation_models), list(embedding_models)
+    search_space = _build_search_space(validated_payload, foundation_models, embedding_models, vector_store_type)
     _validate_model_responsiveness(foundation_models, embedding_models)
-
-    return _build_search_space(
-        validated_payload, list(foundation_models), list(embedding_models), benchmark_data, vector_store_type
-    )
+    _apply_language_detection(foundation_models, benchmark_data, include_error_details=False)
+    return search_space
 
 
 def _validate_model_candidates(
@@ -238,13 +248,9 @@ def _build_search_space(
     validated_payload: SearchSpaceConstraints,
     foundation_models: list[OpenAIFoundationModel],
     embedding_models: list[OpenAIEmbeddingModel],
-    benchmark_data: pd.DataFrame | None,
     vector_store_type: str,
 ) -> AI4RAGSearchSpace:
-    """Apply benchmark language detection and assemble the validated dimensions."""
-    if benchmark_data is not None:
-        _apply_language_detection(foundation_models, benchmark_data)
-
+    """Assemble the search space and validate its backend compatibility."""
     fms_param = Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models)
     ems_param = Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models)
     logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])

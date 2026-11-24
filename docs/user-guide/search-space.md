@@ -287,11 +287,16 @@ Supply the full API base URL for each endpoint, including any gateway prefix
 and `/v1` where required. The example omits the provider-specific embedding
 truncation field for servers that accept only standard OpenAI fields. Missing
 embedding capabilities are probed when the embedding wrapper is constructed.
-The search-space helper checks each supplied model with a short chat or embedding
-request through that model's client. It raises `SearchSpaceValueError` with the
+Search-space reports preserve `use_server_truncation=False` so the setting
+survives model restoration. Older reports default to `True`.
+
+The helper validates the template and backend before checking each model with a
+short chat or embedding request. It raises `SearchSpaceValueError` with the
 failed model IDs if a probe fails. If you supply `benchmark_data`, language
 detection runs after the probes and updates each foundation model's language
-and generated user prompt on success.
+and generated user prompt on success. The default agentic template uses the
+supplied foundation client for synchronous requests, including its custom
+headers and TLS settings.
 
 ---
 

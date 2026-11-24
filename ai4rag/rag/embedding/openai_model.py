@@ -84,6 +84,11 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         super().__init__(client=client, model_id=model_id, params=params)
 
     @property
+    def use_server_truncation(self) -> bool:
+        """Return whether requests include the provider-specific truncation field."""
+        return self._use_server_truncation
+
+    @property
     def params(self) -> OpenAIEmbeddingParams:
         """Get the resolved model capabilities.
 

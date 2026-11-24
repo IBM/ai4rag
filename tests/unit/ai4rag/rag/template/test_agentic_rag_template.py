@@ -76,11 +76,10 @@ def _http_completion(content="", calls=None):
 def _http_agent(mocker, respond, supplied=True, budget=2):
     client = OpenAI(
         api_key="test",
-        base_url="https://maas.example/v1",
+        base_url="https://gateway.example/v1",
+        default_headers={"X-Gateway-Route": "rag"},
         http_client=httpx.Client(transport=httpx.MockTransport(respond)),
     )
-    # The internal model uses this same client when MaaS configures TLS trust.
-    client._ai4rag_tls_verify = True
     foundation = OpenAIFoundationModel(
         client=client,
         model_id="model",
@@ -123,6 +122,7 @@ def test_http_agent_serializes_only_the_first_eligible_tool(mocker, caplog, supp
     }
 
     def respond(request):
+        assert request.headers["X-Gateway-Route"] == "rag"
         payload = json.loads(request.content)
         requests.append(payload)
         for message in payload["messages"]:

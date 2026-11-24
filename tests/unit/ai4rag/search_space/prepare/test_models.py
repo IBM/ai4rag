@@ -303,6 +303,7 @@ class TestRestoreFromSpec:
         assert model.client is client
         assert model.params.embedding_dimension == 1024
         assert model.params.context_length == 8192
+        assert model.use_server_truncation is True
         # No auto-detection round-trips and no registry listing.
         client.embeddings.create.assert_not_called()
         client.models.list.assert_not_called()
@@ -379,6 +380,7 @@ class TestSerializeModel:
         assert out["type"] == "embedding"
         assert out["params"]["embedding_dimension"] == 1024
         assert out["params"]["context_length"] == 8192
+        assert "use_server_truncation" not in out
         assert "language" not in out
         assert "system_message_text" not in out
         assert "context_template_text" not in out

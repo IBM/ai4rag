@@ -7,6 +7,7 @@ import re
 
 from ai4rag import logger
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.search_space.prepare.models import _describe_error
 
 LANGUAGE_MAP: dict[str, str] = {
     "aa": "Afar",
@@ -200,6 +201,8 @@ LANGUAGE_MAP: dict[str, str] = {
 def detect_language_with_llm(
     questions: list[str],
     generation_model: OpenAIFoundationModel,
+    *,
+    include_error_details: bool = True,
 ) -> dict[str, str] | None:
     """Detect the dominant language from sample questions using an LLM.
 
@@ -213,6 +216,9 @@ def detect_language_with_llm(
 
     generation_model : OpenAIFoundationModel
         Model instance.
+    include_error_details : bool, default=True
+        Include the exception message in failure logs. When False, log the
+        exception type and any HTTP status.
 
     Returns
     -------
@@ -276,5 +282,6 @@ def detect_language_with_llm(
         return {"code": base_code, "name": name}
 
     except Exception as exc:
-        logger.warning("LLM language detection failed: %s", exc)
+        details = str(exc) if include_error_details else _describe_error(exc, include_details=False)
+        logger.warning("LLM language detection failed: %s", details)
         return None

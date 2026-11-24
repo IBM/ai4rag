@@ -11,13 +11,14 @@ from unittest.mock import MagicMock, Mock
 import httpx
 import pandas as pd
 import pytest
-from openai import AuthenticationError, OpenAI
+from openai import AuthenticationError, BadRequestError, OpenAI
 from pydantic import ValidationError
 
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.search_space.prepare import (
     build_search_space_report,
+    get_embedding_models,
     prepare_search_space_with_maas,
     prepare_search_space_with_models,
 )
@@ -419,8 +420,38 @@ def test_direct_language_detection_and_report(direct_models, tmp_path):
             "model_id": "provider/embed",
             "type": "embedding",
             "params": {"embedding_dimension": 768, "context_length": 2048},
+            "use_server_truncation": False,
         }
     ]
+    embedding.client.embeddings.create.reset_mock()
+    (restored,) = get_embedding_models(embedding.client, report["embedding_model"], validate=False)
+    embedding.client.embeddings.create.assert_not_called()
+    assert restored.embed_query("restored query") == [0.0] * 768
+    embedding.client.embeddings.create.assert_called_once_with(
+        model=embedding.model_id, input=["restored query"], extra_body=None
+    )
+
+
+def test_direct_language_detection_sanitizes_endpoint_errors(direct_models, caplog):
+    (foundation,) = direct_models["foundation_models"]
+    question = "Private benchmark question"
+    error = BadRequestError(
+        f"Could not process {question} with {foundation.client.api_key}",
+        response=httpx.Response(400, request=httpx.Request("POST", foundation.client.base_url)),
+        body=None,
+    )
+    foundation.client.chat.completions.create.side_effect = [Mock(choices=[]), error]
+    original_language = foundation.language
+    original_prompt = foundation.user_message_text
+
+    prepare_search_space_with_models({}, benchmark_data=pd.DataFrame({"question": [question]}), **direct_models)
+
+    assert foundation.client.chat.completions.create.call_count == 2
+    assert "LLM language detection failed: BadRequestError, status_code=400" in caplog.text
+    assert question not in caplog.text
+    assert foundation.client.api_key not in caplog.text
+    assert foundation.language is original_language
+    assert foundation.user_message_text == original_prompt
 
 
 def test_direct_search_space_explores_multiple_models_with_separate_clients(direct_models):
@@ -526,7 +557,24 @@ def test_direct_search_space_applies_neo4j_defaults(direct_models):
     assert result["search_mode"].values == ("graph",)
     assert "ranker_strategy" not in {param.name for param in result.params}
 
+
+def test_direct_incompatible_template_leaves_model_unchanged(direct_models):
+    (foundation,) = direct_models["foundation_models"]
+    original_language = foundation.language
+    original_prompt = "Use these sources: {reference_documents}\nQuestion: {question}"
+    foundation.user_message_text = original_prompt
+    completion = Mock()
+    completion.message.content = '{"code": "pl"}'
+    foundation.client.chat.completions.create.return_value = Mock(choices=[completion])
+
     with pytest.raises(SearchSpaceValueError, match="incompatible"):
         prepare_search_space_with_models(
-            {"template_ids": ["sequential_rag"]}, vector_store_type="neo4j", **direct_models
+            {"template_ids": ["sequential_rag"]},
+            benchmark_data=pd.DataFrame({"question": ["Gdzie jest Warszawa?"]}),
+            vector_store_type="neo4j",
+            **direct_models,
         )
+
+    assert all(not model.client.mock_calls for (model,) in direct_models.values())
+    assert foundation.language is original_language
+    assert foundation.user_message_text == original_prompt

@@ -103,9 +103,9 @@ def create_maas_client(base_url: str, api_key: str, ca_bundle: str | None = None
         client_kwargs["http_client"] = DefaultHttpxClient(verify=verify)
 
     client = OpenAI(**client_kwargs)
-    if verify is not None:
-        # The agent reuses this client for sync calls and shares its trust with async calls.
-        setattr(client, "_ai4rag_tls_verify", verify)
+    # Record the MaaS trust choice so the agent can retain its default clients
+    # for MaaS sessions that use platform trust.
+    setattr(client, "_ai4rag_tls_verify", verify)
     try:
         client.models.list()
     except (ssl.SSLCertVerificationError, httpx.ConnectError, APIConnectionError) as exc:

@@ -304,28 +304,27 @@ class AgenticRAG(BaseRAGTemplate):
         return "maximum context length" in str(error).lower()
 
     def _chat_model(self) -> BaseChatModel:
-        """Build the LangChain model from the configured MaaS client."""
+        """Build the LangChain model using the configured OpenAI client."""
         if self.chat_model is not None:
             return self.chat_model
         if not isinstance(self.foundation_model, OpenAIFoundationModel):
             raise TypeError("A non-OpenAI foundation model requires a LangChain chat_model")
         client = self.foundation_model.client
-        verify = vars(client).get("_ai4rag_tls_verify")
-        tls_kwargs: dict[str, Any] = {}
+        client_settings = vars(client)
+        verify = client_settings.get("_ai4rag_tls_verify")
+        client_kwargs: dict[str, Any] = {}
+        if "_ai4rag_tls_verify" not in client_settings or verify is not None:
+            client_kwargs.update(client=client.chat.completions, root_client=client)
         if verify is not None:
-            tls_kwargs = {
-                "client": client.chat.completions,
-                "root_client": client,
-                "http_async_client": DefaultAsyncHttpxClient(verify=verify),
-            }
+            client_kwargs["http_async_client"] = DefaultAsyncHttpxClient(verify=verify)
         self.chat_model = ChatOpenAI(
             model=self.foundation_model.model_id,
-            api_key=self.foundation_model.client.api_key,
-            base_url=str(self.foundation_model.client.base_url),
+            api_key=client.api_key,
+            base_url=str(client.base_url),
             temperature=self.foundation_model.params.temperature,
             max_completion_tokens=self.foundation_model.params.max_completion_tokens,
             use_responses_api=False,
-            **tls_kwargs,
+            **client_kwargs,
         )
         return self.chat_model
 
