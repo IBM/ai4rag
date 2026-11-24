@@ -5,6 +5,9 @@ on:
     branches:
       - '**'
 
+permissions:
+  contents: read
+
 jobs:
   static-analysis:
     name: Static Code Analysis
