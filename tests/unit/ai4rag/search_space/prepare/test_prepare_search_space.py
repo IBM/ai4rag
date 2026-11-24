@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, Mock
 import httpx
 import pandas as pd
 import pytest
-from openai import OpenAI
+from openai import AuthenticationError, OpenAI
 from pydantic import ValidationError
 
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
@@ -314,12 +314,21 @@ def test_maas_rejects_incompatible_templates_in_search_space(mocker):
         prepare_search_space_with_maas(_payload(template_ids=["sequential_rag"]), client, vector_store_type="neo4j")
 
 
+def _direct_embedding_client(dimension: int) -> MagicMock:
+    client = MagicMock(spec=OpenAI)
+    client.timeout = httpx.Timeout(600)
+    client.with_options.return_value = client
+    client.embeddings.create.return_value = Mock(data=[Mock(index=0, embedding=[0.0] * dimension)])
+    return client
+
+
 @pytest.fixture
 def direct_models():
     foundation_client = MagicMock(spec=OpenAI)
     foundation_client.api_key = "foundation-secret"
     foundation_client.base_url = "https://chat.example.com/gateway/v1"
-    embedding_client = MagicMock(spec=OpenAI)
+    foundation_client.chat.completions.create.return_value = Mock(choices=[])
+    embedding_client = _direct_embedding_client(768)
     embedding_client.api_key = "embedding-secret"
     embedding_client.base_url = "https://embedding.example.com/v1"
     return {
@@ -350,7 +359,16 @@ def test_direct_search_space_preserves_model_objects_and_overrides(direct_models
         values = result[role.removesuffix("s")].values
         assert len(values) == 1
         assert values[0] is model
-        assert not model.client.mock_calls
+        model.client.models.list.assert_not_called()
+    (foundation,) = direct_models["foundation_models"]
+    (embedding,) = direct_models["embedding_models"]
+    foundation_call = foundation.client.chat.completions.create
+    embedding_call = embedding.client.embeddings.create
+    foundation_call.assert_called_once()
+    embedding_call.assert_called_once()
+    assert foundation_call.call_args.kwargs["model"] == foundation.model_id
+    assert foundation_call.call_args.kwargs["messages"] == [{"role": "user", "content": "Hi"}]
+    assert embedding_call.call_args.kwargs == {"model": embedding.model_id, "input": ["test"], "extra_body": None}
     assert result["template_id"].values == ("sequential_rag",)
     assert result["chunking_method"].values == ("recursive",)
     assert result["chunk_size"].values == (256,)
@@ -370,9 +388,11 @@ def test_direct_language_detection_and_report(direct_models, tmp_path):
     )
 
     foundation.client.models.list.assert_not_called()
-    foundation.client.chat.completions.create.assert_called_once()
-    assert foundation.client.chat.completions.create.call_args.kwargs["model"] == foundation.model_id
-    assert not embedding.client.mock_calls
+    probe, detection = foundation.client.chat.completions.create.call_args_list
+    assert probe.kwargs["messages"] == [{"role": "user", "content": "Hi"}]
+    assert detection.kwargs["model"] == foundation.model_id
+    assert "response_format" in detection.kwargs
+    embedding.client.embeddings.create.assert_called_once()
     assert foundation.language.code == "pl"
     assert foundation.user_message_text != prompt_before_detection
 
@@ -409,7 +429,7 @@ def test_direct_search_space_explores_multiple_models_with_separate_clients(dire
     foundation_models.append(OpenAIFoundationModel(MagicMock(spec=OpenAI), "provider/multitask"))
     embedding_models.append(
         OpenAIEmbeddingModel(
-            MagicMock(spec=OpenAI),
+            _direct_embedding_client(1024),
             "provider/multitask",
             params={"embedding_dimension": 1024, "context_length": 4096},
             use_server_truncation=False,
@@ -432,10 +452,38 @@ def test_direct_search_space_explores_multiple_models_with_separate_clients(dire
     }
     for model, code in zip(foundation_models, ("en", "pl"), strict=True):
         model.client.models.list.assert_not_called()
-        model.client.chat.completions.create.assert_called_once()
-        assert model.client.chat.completions.create.call_args.kwargs["model"] == model.model_id
+        probe, detection = model.client.chat.completions.create.call_args_list
+        assert probe.kwargs["model"] == detection.kwargs["model"] == model.model_id
         assert model.language.code == code
-    assert all(not model.client.mock_calls for model in embedding_models)
+    for model in embedding_models:
+        model.client.models.list.assert_not_called()
+        model.client.embeddings.create.assert_called_once()
+        assert model.client.embeddings.create.call_args.kwargs["model"] == model.model_id
+
+
+def test_direct_search_space_reports_failed_probes_before_language_detection(direct_models, caplog):
+    (foundation,) = direct_models["foundation_models"]
+    (embedding,) = direct_models["embedding_models"]
+    foundation.client.chat.completions.create.side_effect = AuthenticationError(
+        f"Invalid credential {foundation.client.api_key}",
+        response=httpx.Response(401, request=httpx.Request("POST", foundation.client.base_url)),
+        body=None,
+    )
+    embedding.client.embeddings.create.side_effect = RuntimeError(f"Invalid credential {embedding.client.api_key}")
+
+    with pytest.raises(SearchSpaceValueError) as caught:
+        prepare_search_space_with_models(
+            {}, benchmark_data=pd.DataFrame({"question": ["Where is Warsaw?"]}), **direct_models
+        )
+
+    error_message = str(caught.value)
+    assert f"Foundation models failed the responsiveness check: ['{foundation.model_id}']" in error_message
+    assert f"Embedding models failed the responsiveness check: ['{embedding.model_id}']" in error_message
+    foundation.client.chat.completions.create.assert_called_once()
+    embedding.client.embeddings.create.assert_called_once()
+    assert "status_code=401" in caplog.text
+    for model in (foundation, embedding):
+        assert model.client.api_key not in error_message + caplog.text
 
 
 @pytest.mark.parametrize(
@@ -450,6 +498,7 @@ def test_direct_search_space_explores_multiple_models_with_separate_clients(dire
 def test_direct_search_space_validates_constraints(payload, field, direct_models):
     with pytest.raises(ValidationError, match=field):
         prepare_search_space_with_models(payload, **direct_models)
+    assert all(not model.client.mock_calls for (model,) in direct_models.values())
 
 
 @pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])

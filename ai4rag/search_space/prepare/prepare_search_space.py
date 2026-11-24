@@ -14,7 +14,11 @@ from ai4rag.rag.foundation_models.base_model import Language
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.search_space.prepare.input_payload_types import AI4RAGConstraints, SearchSpaceConstraints
 from ai4rag.search_space.prepare.language_detection import detect_language_with_llm
-from ai4rag.search_space.prepare.models import get_embedding_models, get_foundation_models
+from ai4rag.search_space.prepare.models import (
+    _validate_model_responsiveness,
+    get_embedding_models,
+    get_foundation_models,
+)
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
@@ -171,8 +175,8 @@ def prepare_search_space_with_models(
 ) -> AI4RAGSearchSpace:
     """Prepare a search space with initialized models that retain their clients.
 
-    The caller constructs the models and checks endpoint availability before
-    calling this function. Model IDs must be unique within each role because
+    Each supplied model is checked with a minimal chat or embedding request
+    through its own client. Model IDs must be unique within each role because
     optimization uses them to distinguish candidates.
 
     Parameters
@@ -203,14 +207,15 @@ def prepare_search_space_with_models(
         If the payload contains unsupported keys or invalid constraints.
     SearchSpaceValueError
         If either sequence is empty, contains the wrong wrapper type, or
-        repeats a model ID. Also raised when a template is incompatible with
-        the vector-store provider.
+        repeats a model ID. Also raised if any model fails its probe or a
+        template is incompatible with the vector-store provider.
     """
     logger.info("Preparing search space based on provided constraints: %s.", payload)
     validated_payload = SearchSpaceConstraints(**payload)
 
     _validate_model_candidates(foundation_models, OpenAIFoundationModel, "foundation_models")
     _validate_model_candidates(embedding_models, OpenAIEmbeddingModel, "embedding_models")
+    _validate_model_responsiveness(foundation_models, embedding_models)
 
     return _build_search_space(
         validated_payload, list(foundation_models), list(embedding_models), benchmark_data, vector_store_type

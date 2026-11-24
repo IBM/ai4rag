@@ -287,9 +287,11 @@ Supply the full API base URL for each endpoint, including any gateway prefix
 and `/v1` where required. The example omits the provider-specific embedding
 truncation field for servers that accept only standard OpenAI fields. Missing
 embedding capabilities are probed when the embedding wrapper is constructed.
-The search-space helper skips model discovery. If you supply `benchmark_data`,
-it uses each foundation model to detect the benchmark language and updates
-the model's language and generated user prompt on success.
+The search-space helper checks each supplied model with a short chat or embedding
+request through that model's client. It raises `SearchSpaceValueError` with the
+failed model IDs if a probe fails. If you supply `benchmark_data`, language
+detection runs after the probes and updates each foundation model's language
+and generated user prompt on success.
 
 ---
 

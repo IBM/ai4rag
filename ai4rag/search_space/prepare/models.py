@@ -85,7 +85,7 @@ def _list_maas_model_ids(client: OpenAI) -> set[str]:
     return model_ids
 
 
-def _describe_error(exc: BaseException) -> str:
+def _describe_error(exc: BaseException, *, include_details: bool = True) -> str:
     """Render a one-line, actionable description of a failed model call.
 
     ``openai.APIError`` (raised by the OpenAI client for every failed request,
@@ -93,15 +93,19 @@ def _describe_error(exc: BaseException) -> str:
     ``BadRequestError``) carries the serving endpoint's machine-readable
     ``code`` and human-readable ``message``, plus an HTTP ``status_code`` when
     the endpoint actually returned a response. Any other exception (e.g. a raw
-    connection failure) falls back to its string form.
+    connection failure) falls back to its string form. With ``include_details``
+    disabled, only the exception type and any HTTP status are included.
     """
+    if not include_details:
+        status = f", status_code={exc.status_code}" if isinstance(exc, APIStatusError) else ""
+        return f"{type(exc).__name__}{status}"
     if isinstance(exc, APIError):
         status = f"status_code={exc.status_code}, " if isinstance(exc, APIStatusError) else ""
         return f"{status}code={exc.code!r}, message={exc.message!r}"
     return str(exc)
 
 
-def _validate_foundation_model(model: OpenAIFoundationModel) -> bool:
+def _validate_foundation_model(model: OpenAIFoundationModel, *, include_error_details: bool = True) -> bool:
     """Validate that a foundation model responds to a minimal chat request.
 
     Returns
@@ -114,15 +118,15 @@ def _validate_foundation_model(model: OpenAIFoundationModel) -> bool:
         return True
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.warning(
-            "Foundation model '%s' is available but does not respond (%s).",
+            "Foundation model '%s' failed the responsiveness check (%s).",
             model.model_id,
-            _describe_error(exc),
-            exc_info=True,
+            _describe_error(exc, include_details=include_error_details),
+            exc_info=include_error_details,
         )
         return False
 
 
-def _validate_embedding_model(model: OpenAIEmbeddingModel) -> bool:
+def _validate_embedding_model(model: OpenAIEmbeddingModel, *, include_error_details: bool = True) -> bool:
     """Validate that an embedding model responds to a minimal embed request.
 
     Returns
@@ -135,12 +139,37 @@ def _validate_embedding_model(model: OpenAIEmbeddingModel) -> bool:
         return True
     except Exception as exc:  # pylint: disable=broad-exception-caught
         logger.warning(
-            "Embedding model '%s' is available but does not respond (%s).",
+            "Embedding model '%s' failed the responsiveness check (%s).",
             model.model_id,
-            _describe_error(exc),
-            exc_info=True,
+            _describe_error(exc, include_details=include_error_details),
+            exc_info=include_error_details,
         )
         return False
+
+
+def _validate_model_responsiveness(
+    foundation_models: Sequence[OpenAIFoundationModel], embedding_models: Sequence[OpenAIEmbeddingModel]
+) -> None:
+    """Probe initialized models through their own clients and report failed IDs by role."""
+    failed_models = {
+        _FOUNDATION: [
+            model.model_id
+            for model in foundation_models
+            if not _validate_foundation_model(model, include_error_details=False)
+        ],
+        _EMBEDDING: [
+            model.model_id
+            for model in embedding_models
+            if not _validate_embedding_model(model, include_error_details=False)
+        ],
+    }
+    errors = [
+        f"{role.capitalize()} models failed the responsiveness check: {model_ids!r}."
+        for role, model_ids in failed_models.items()
+        if model_ids
+    ]
+    if errors:
+        raise SearchSpaceValueError("\n".join(errors))
 
 
 def _normalize_entry(entry: ModelEntry) -> dict[str, Any]:
