@@ -6,6 +6,9 @@ on:
       - main
       - dev
 
+permissions:
+  contents: read
+
 jobs:
   check:
     name: Check Documentation Build
