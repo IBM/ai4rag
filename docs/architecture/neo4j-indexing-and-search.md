@@ -54,11 +54,11 @@ For Neo4j, the experiment's collection-reuse key includes chunking settings, emb
 The foundation-model and KG settings are part of the key because they change the extracted graph even when the chunk embeddings are identical.
 
 If no exact match exists, ai4rag creates a namespaced `ai4rag_*` collection.
-`Neo4jGraphStore` verifies connectivity and creates one collection-scoped cosine vector index with `IF NOT EXISTS`:
+`Neo4jGraphStore` verifies connectivity. After canonical chunks are written, it creates one collection-scoped cosine vector index with `IF NOT EXISTS`:
 
 - `{collection}__embedding` for chunk embeddings.
 
-The index targets the collection label.
+The index targets the collection label. Creating it after the bulk write lets Neo4j build the HNSW structure from the completed chunk set instead of maintaining it incrementally for every inserted chunk. ai4rag waits for the index to become online before the first search.
 That label isolates ANN seed retrieval; graph expansion also filters by the `collection` property.
 In the `add_documents()` workflow, both persistent `Document` nodes and canonical `Chunk` nodes receive the collection label; only chunks enter this vector index.
 
@@ -81,8 +81,8 @@ The default transaction threshold is 512 chunks.
 })
 ```
 
-Consecutive chunks receive `NEXT_CHUNK` relationships.
-They preserve document order, but current graph retrieval does not traverse them.
+Chunks keep their document order in the stored `sequence_number` property.
+No sequential chunk-to-chunk relationship is written: graph retrieval expands only through extracted KG entities.
 
 The Neo4j default search space fixes chunk size at `1024`, explores overlap `0` and `64`, and fixes the mode to `graph`.
 The chunking rules require a positive overlap for `recursive` and zero overlap for `hybrid`, leaving two valid indexing configurations: `recursive/1024/64` and `hybrid/1024/0`.
@@ -94,22 +94,24 @@ Callers can override `chunking_methods`, `chunk_sizes`, and `chunk_overlaps` whe
 
 ### Knowledge-graph extraction
 
-`add_documents()` runs `SimpleKGPipeline` on non-empty chunk text when a foundation model was supplied at store construction or as `model=` to `add_documents()`.
+`add_documents()` runs per-chunk KG extraction on non-empty chunk text when a foundation model was supplied at store construction or as `model=` to `add_documents()`.
 Without a model, it stores only canonical chunks.
-The pipeline uses ai4rag model adapters and a pass-through `_PreChunkedTextSplitter` that returns each existing `AI4RAGChunk` as one unchanged GraphRAG text chunk.
-It does not split recursive or hybrid chunks again.
-Both its async `run()` and GraphRAG chunk-iterator interface preserve the canonical
-text and chunk index. During extraction, ai4rag suppresses GraphRAG's verbose logs
-that include document text, retains warnings/errors, and logs extraction start and
-completion with chunk counts.
-The pipeline uses `on_error="IGNORE"` and processes up to two chunks concurrently by default to reduce pressure on the foundation-model endpoint. Extraction start logs include the concurrency limit.
-ai4rag disables GraphRAG's database-wide resolver and optionally resolves entities for this collection after all chunk extraction finishes (enabled by default).
+The extractor preserves the existing canonical text and chunk ID; it does not split recursive or hybrid chunks again. It always sends exactly one chunk per MaaS request, asks for a strict JSON Schema response, and validates each returned chunk graph locally. During extraction, ai4rag suppresses GraphRAG's verbose logs that include document text, retains warnings/errors, and logs extraction start and completion with chunk counts.
+The default request concurrency is four. Pass `kg_max_concurrent` to `Neo4jGraphStore.add_documents()` or `AI4RAGExperiment` to tune it for the foundation-model endpoint. A request keeps its concurrency slot while backing off, so during a sustained rate-limit window every slot may sit in retry and no new requests are issued. Because each request carries one chunk, a malformed or incomplete response skips only that chunk and is never retried as part of a batch. The parser locally removes fences and a short preamble only when it can recover an already-valid JSON object, and never invents graph data.
+Each request retries rate limits, transient server errors, and transport failures with exponential backoff and jitter, honouring a numeric `Retry-After` header and capping the delay at 60 seconds. `kg_extraction_config.max_retries` (default 4) sets the application-level attempts, so a chunk costs at most five HTTP requests, and `retry_base_seconds` (default 1.0) sets the backoff base. Extraction disables the OpenAI SDK's own retries by default (`sdk_max_retries` = 0) so the two layers cannot multiply and every attempt is visible to the retry metrics and the breaker; raise it only if you deliberately want nested retries. Client errors such as a malformed request are not retried. If the endpoint rejects `rate_limit_breaker_threshold` consecutive requests (default 12), extraction aborts with a rate-limit error instead of issuing hundreds of futile calls against an exhausted token quota. Extraction also raises when every chunk was skipped, so a run never continues with a silently empty knowledge graph.
+`kg_extraction_config.response_format` defaults to `json_schema`, a required JSON Schema (`strict: true`) that lists every field in `required` and sets `additionalProperties: false` on every object, so a structured-output-capable endpoint enforces the payload. ai4rag does not use function calling: MaaS does not invoke a declared tool, so the extraction contract is carried by `response_format` and validated locally. Set `json_object` only for deployments without structured-output support. `max_skipped_chunks` defaults to zero. Exceeding it marks extraction degraded, or raises when `partial_failure_policy` is `raise`. `fail_on_empty_kg` defaults to `true` and raises when every chunk was skipped; set it to `false` to continue with canonical chunks only. Extracted graphs are persisted even when a later chunk trips the rate-limit breaker, so a retry does not repeat completed work.
+The foundation-model endpoint must therefore accept OpenAI-compatible structured output. vLLM implements `json_schema` through guided decoding with the xgrammar backend, which is enabled by default and needs no additional serving flags; verify the support with a single `response_format` probe before enabling graph extraction. Endpoints without structured-output support must be configured with `response_format: json_object`, which relies on the prompt contract and local validation instead of server-side enforcement.
+ai4rag resolves named entity identity during bounded, collection-scoped ingestion writes, rather than running a database-wide post-extraction resolver.
 Each chunk is therefore one KG extraction input; an upstream chunk that is too large for the foundation model can exceed its context limit.
 
 | Extraction mode | Behavior |
 | --- | --- |
-| `constrained` (default) | Uses ai4rag's fixed entity and relationship type sets. |
+| `constrained` (default) | Uses ai4rag's fixed entity and relationship type sets, and caps extraction at 5 entities and 5 relationships per chunk. |
 | `free` | Passes `schema="FREE"`, lets the model choose types, and uses positive per-chunk entity and relationship limits. |
+
+The prompt states both caps as hard limits and asks the model to keep entity names and any
+schema-required descriptions to a short phrase (`KG_MAX_DESCRIPTION_WORDS`, default 8), so a dense
+chunk cannot spend the completion budget on verbose output and truncate the JSON.
 
 Both modes accept `kg_extraction_config.max_completion_tokens`, a positive integer
 defaulting to `1024`. It caps each entity-extraction response independently of the
@@ -122,10 +124,8 @@ These are distinct from model-extracted entity types such as `Document` or `Chun
 ai4rag's canonical graph writer stores only the extracted entities and their relationships.
 It connects each entity to the existing canonical chunk by its chunk ID.
 No second source document or chunk node is persisted, and linking does not depend on matching text.
-The writer records ownership on the relationships it writes; entity ownership is tagged before resolution.
-The scoped resolver merges same-name entities of the same type only when they link to canonical chunks in this collection and are owned exclusively by this collection.
-It leaves shared entities untouched and retains separate relationship edges so their ownership tags are not discarded.
-When collections resolve the same entity pair, an existing edge from another collection must not become part of this collection's search path.
+The writer records ownership on the relationships it writes; entity ownership is tagged during the same ingestion write.
+During ingestion, same-name entities of the same type are merged through a collection-scoped, normalized identity key. Entities without a name remain local to their source chunk to avoid unsafe merges. This avoids a graph-wide post-ingestion APOC merge pass while preserving collection isolation. Relationship ownership tags ensure an edge from another collection does not become part of this collection's search path.
 
 The public indexing paths are:
 
@@ -190,7 +190,7 @@ Hybrid settings (`ranker_strategy`, `ranker_k`, and `ranker_alpha`) do not apply
 | `entity_pivot_limit` | `3` | Highest-degree entity pivots used for relationship traversal; zero disables it. |
 | `entity_relationship_hops` | `1` | Entity-to-entity hops when the related limits are nonzero. |
 | `relationship_neighbor_limit` | `5` | Maximum relationship-linked chunks kept after relevance ranking. |
-| `graph_hops` | `0` only | Sequential `NEXT_CHUNK` traversal is not implemented; another value raises `ValueError`. |
+| `graph_hops` | `0` only | Only entity-based expansion is supported; another value raises `ValueError`. |
 
 The relationship controls default to three pivots, one hop, and five related chunks per seed.
 Set any of them to `0` to disable that part of the query.

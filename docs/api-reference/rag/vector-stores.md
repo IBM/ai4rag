@@ -86,7 +86,13 @@ for the full indexing/retrieval flow.
 integer, defaulting to `1024`, in both constrained and free extraction modes. This
 limit overrides the completion-token limit for extraction calls without changing
 the model's answer-generation parameters. The same config can be passed to
-`AI4RAGExperiment`. Entity extraction processes up to two chunks concurrently by default.
+`AI4RAGExperiment`. `kg_extraction_config.response_format` accepts
+`json_schema` (default, strict and fully required) or `json_object` for
+structured-output-capable and legacy endpoints respectively. Entity extraction
+sends one chunk per request by default and processes up to two requests
+concurrently. The endpoint must accept OpenAI-compatible `json_schema`
+structured output; vLLM supports it by default through xgrammar guided
+decoding, with no additional serving flags.
 
 ::: ai4rag.rag.vector_store.neo4j
     options:

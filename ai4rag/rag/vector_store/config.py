@@ -361,6 +361,11 @@ class Neo4jConfig(BaseVectorStoreConfig):
         Database password.
     database : str, default="neo4j"
         Target Neo4j database name (``neo4j`` in Community Edition).
+    max_transaction_retry_time : float, default=30.0
+        Wall-clock budget, in seconds, that the driver spends retrying one
+        managed transaction with transient errors. Lower it when retrying a
+        deterministic failure (for example a heap exhaustion in a graph
+        expansion) only delays reporting the error.
     provider : str, default="neo4j"
         Backend discriminator.
 
@@ -386,6 +391,10 @@ class Neo4jConfig(BaseVectorStoreConfig):
         ("NEO4J_USERNAME", "Database user (default neo4j)."),
         ("NEO4J_PASSWORD", "Database password. (required)"),
         ("NEO4J_DATABASE", "Neo4j database name (default neo4j)."),
+        (
+            "NEO4J_MAX_TRANSACTION_RETRY_TIME",
+            "Seconds the driver retries one transiently failing transaction (default 30). (optional)",
+        ),
         ("NEO4J_CA_CERT", "PEM-encoded CA certificate for self-signed TLS endpoints. (optional)"),
     )
 
@@ -394,6 +403,9 @@ class Neo4jConfig(BaseVectorStoreConfig):
     password: str = field(default="", repr=False)
     database: str = "neo4j"
     ca_cert: str | None = field(default=None, repr=False)
+    liveness_check_timeout: float = 30.0
+    max_connection_lifetime: float = 300.0
+    max_transaction_retry_time: float = 30.0
     provider: str = "neo4j"
 
     def __post_init__(self) -> None:
@@ -406,6 +418,13 @@ class Neo4jConfig(BaseVectorStoreConfig):
         Without a custom CA, only ``+s`` URIs are accepted for remote hosts.
         """
         scheme = urlsplit(self.uri).scheme.lower()
+        for name, value in {
+            "liveness_check_timeout": self.liveness_check_timeout,
+            "max_connection_lifetime": self.max_connection_lifetime,
+            "max_transaction_retry_time": self.max_transaction_retry_time,
+        }.items():
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value <= 0:
+                raise ValueError(f"Neo4jConfig.{name} must be a positive number.")
         if self.ca_cert:
             if scheme not in {"neo4j", "bolt", "neo4j+s", "bolt+s"}:
                 raise ValueError(
@@ -441,6 +460,9 @@ class Neo4jConfig(BaseVectorStoreConfig):
             password=os.environ["NEO4J_PASSWORD"],
             database=os.environ.get("NEO4J_DATABASE", "neo4j"),
             ca_cert=os.environ.get("NEO4J_CA_CERT"),
+            liveness_check_timeout=float(os.environ.get("NEO4J_LIVENESS_CHECK_TIMEOUT", "30")),
+            max_connection_lifetime=float(os.environ.get("NEO4J_MAX_CONNECTION_LIFETIME", "300")),
+            max_transaction_retry_time=float(os.environ.get("NEO4J_MAX_TRANSACTION_RETRY_TIME", "30")),
         )
 
 

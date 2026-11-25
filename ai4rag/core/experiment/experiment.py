@@ -167,6 +167,13 @@ class AI4RAGExperiment:
         self.known_observations: list[dict] | None = kwargs.pop("known_observations", None)
         self.inference_max_threads: int = kwargs.pop("inference_max_threads", 10)
         self.kg_extraction_config: dict[str, Any] | None = kwargs.pop("kg_extraction_config", None)
+        self.kg_max_concurrent: int | None = kwargs.pop("kg_max_concurrent", None)
+        if self.kg_max_concurrent is not None and (
+            isinstance(self.kg_max_concurrent, bool)
+            or not isinstance(self.kg_max_concurrent, int)
+            or self.kg_max_concurrent < 1
+        ):
+            raise ValueError("kg_max_concurrent must be a positive integer or None.")
         graph_retrieval_config = kwargs.pop("graph_retrieval_config", None)
         if graph_retrieval_config is None:
             self.graph_retrieval_config: Neo4jGraphRetrievalConfig | None = (
@@ -585,7 +592,12 @@ class AI4RAGExperiment:
                 )
 
                 try:
-                    vector_store.add_documents(chunked_documents)
+                    add_documents_kwargs = (
+                        {"kg_max_concurrent": self.kg_max_concurrent}
+                        if search_mode == "graph" and self.kg_max_concurrent is not None
+                        else {}
+                    )
+                    vector_store.add_documents(chunked_documents, **add_documents_kwargs)
                 except Exception as exc:
                     raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
@@ -595,6 +607,12 @@ class AI4RAGExperiment:
                     message=f"Using index {collection_name}.",
                     step=ExperimentStep.EMBEDDING,
                 )
+
+            # Record the built index so a later failure does not force a rebuild.
+            self.results.register_collection(
+                indexing_params=indexing_params,
+                collection_name=collection_name,
+            )
 
             logger.info("Using retriever with parameters: %s", retrieval_params)
 

@@ -68,13 +68,14 @@ def _make_result(
     )
 
 
-def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None):
+def _build_experiment(evaluators=None, optimization_metric=Metrics.FAITHFULNESS, metrics=None, **extra_kwargs):
     """Construct an AI4RAGExperiment with all heavy deps mocked out."""
     kwargs = {}
     if evaluators is not None:
         kwargs["evaluators"] = evaluators
     if metrics is not None:
         kwargs["metrics"] = metrics
+    kwargs.update(extra_kwargs)
     return AI4RAGExperiment(
         documents=[],
         benchmark_data=_BENCHMARK_DF,
@@ -115,6 +116,15 @@ class TestEvaluatorType:
 
 
 class TestRAGTemplateSelection:
+    def test_kg_concurrency_is_configurable_for_graph_indexing(self):
+        experiment = _build_experiment(kg_max_concurrent=3)
+
+        assert experiment.kg_max_concurrent == 3
+
+    def test_kg_concurrency_rejects_non_positive_values(self):
+        with pytest.raises(ValueError, match="kg_max_concurrent"):
+            _build_experiment(kg_max_concurrent=0)
+
     def test_vector_backend_does_not_initialize_graph_retrieval_configuration(self):
         assert _build_experiment().graph_retrieval_config is None
 
@@ -348,6 +358,69 @@ class TestGraphCollectionReuse:
         assert payload["settings"]["retrieval"]["entity_pivot_limit"] == 3
         assert payload["settings"]["retrieval"]["entity_relationship_hops"] == 2
         assert payload["settings"]["retrieval"]["relationship_neighbor_limit"] == 5
+
+
+class TestIndexRegistrationBeforeGeneration:
+    @staticmethod
+    def _params() -> dict:
+        foundation_model = MagicMock()
+        foundation_model.model_id = "model"
+        foundation_model.params.temperature = 0.2
+        foundation_model.params.max_completion_tokens = 512
+        embedding_model = MagicMock()
+        embedding_model.model_id = "embedding"
+        embedding_model.params = {"embedding_dimension": 384}
+        return {
+            "template_id": "agentic_graph_rag",
+            AI4RAGParamNames.FOUNDATION_MODEL: foundation_model,
+            AI4RAGParamNames.EMBEDDING_MODEL: embedding_model,
+            AI4RAGParamNames.CHUNKING_METHOD: "recursive",
+            AI4RAGParamNames.CHUNK_SIZE: 1024,
+            AI4RAGParamNames.CHUNK_OVERLAP: 64,
+            AI4RAGParamNames.RETRIEVAL_METHOD: "simple",
+            AI4RAGParamNames.WINDOW_SIZE: 0,
+            AI4RAGParamNames.NUMBER_OF_CHUNKS: 3,
+            AI4RAGParamNames.SEARCH_MODE: "vector",
+            AI4RAGParamNames.RANKER_STRATEGY: "",
+            AI4RAGParamNames.RANKER_K: 0,
+            AI4RAGParamNames.RANKER_ALPHA: 1,
+        }
+
+    def test_failed_generation_keeps_built_index_reusable(self, mocker):
+        """A failure after indexing must not force the next candidate to rebuild."""
+        experiment = _build_experiment()
+        store = MagicMock()
+        store.collection_name = "ai4rag_built"
+        store.__enter__.return_value = store
+        mocker.patch("ai4rag.core.experiment.experiment.get_vector_store", return_value=store)
+        chunker = mocker.patch("ai4rag.core.experiment.experiment.LangChainChunker").return_value
+        chunker.split_documents.return_value = []
+        mocker.patch("ai4rag.core.experiment.experiment.Retriever")
+        template_spec = mocker.patch("ai4rag.core.experiment.experiment.get_template_spec").return_value
+        template_spec.template_class.return_value = MagicMock()
+        mocker.patch(
+            "ai4rag.core.experiment.experiment.query_rag",
+            side_effect=RuntimeError("generation failed"),
+        )
+
+        params = self._params()
+        with pytest.raises(RuntimeError, match="generation failed"):
+            experiment.run_single_evaluation(params)
+
+        store.add_documents.assert_called_once()
+        assert experiment.results.collection_names == ["ai4rag_built"]
+
+        store.add_documents.reset_mock()
+        with pytest.raises(RuntimeError, match="generation failed"):
+            experiment.run_single_evaluation(params)
+
+        store.add_documents.assert_not_called()
+        reused = [
+            call.kwargs["message"]
+            for call in experiment.event_handler.on_status_change.call_args_list
+            if "Using index" in call.kwargs.get("message", "")
+        ]
+        assert reused == ["Using index ai4rag_built."]
 
 
 class TestEvaluatorsSetter:
