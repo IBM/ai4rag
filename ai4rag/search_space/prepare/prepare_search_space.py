@@ -184,10 +184,11 @@ def prepare_search_space_with_models(
 ) -> AI4RAGSearchSpace:
     """Prepare a search space with initialized models that retain their clients.
 
-    Each supplied model is checked with a minimal chat or embedding request
-    through its own client. Client base URLs must use HTTPS, except for loopback
-    and cluster-local endpoints, which may use HTTP. If a model probes for
-    capabilities during construction, validate its URL before constructing it.
+    Each supplied model uses a synchronous ``openai.OpenAI`` client and is
+    checked with a minimal chat or embedding request. Client base URLs must
+    use HTTPS, except for loopback and cluster-local endpoints, which may use
+    HTTP. If a model probes for capabilities during construction, validate its
+    URL before constructing it.
     Model IDs must be unique within each role because optimization uses them
     to distinguish candidates.
 

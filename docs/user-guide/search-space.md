@@ -254,8 +254,9 @@ Parameter(
 
 Use `prepare_search_space_with_models()` when generation and embeddings are served
 by independently configured OpenAI-compatible endpoints. Pass one or more models
-per role. Each model keeps its own client and becomes a candidate in the search
-space. Model IDs must be unique within each role, including across endpoints.
+per role, each with its own synchronous `openai.OpenAI` client. Each model becomes
+a candidate in the search space. Model IDs must be unique within each role,
+including across endpoints.
 
 ```python
 import os
@@ -299,12 +300,12 @@ The helper validates the template and backend before checking each model with a
 short chat or embedding request. It raises `SearchSpaceValueError` with the
 failed model IDs if a probe fails. If you supply `benchmark_data`, language
 detection runs after the probes and updates each foundation model's language
-and generated user prompt on success. The default agentic template uses the
-supplied foundation client for chat. Async calls to its LangChain chat model
-run the same client in a worker thread, preserving its headers, TLS settings,
-timeouts, and retries. Async streaming also honors LangChain's
-`LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S` setting. The direct-client adapter
-disables LangChain's global response cache to keep answers isolated by route.
+and generated user prompt on success.
+
+For direct models, the default agentic template supports synchronous chat only.
+It uses the supplied foundation client, preserving its headers, TLS settings,
+timeouts, and retries, and disables LangChain's global response cache to keep
+answers isolated by route.
 
 ---
 

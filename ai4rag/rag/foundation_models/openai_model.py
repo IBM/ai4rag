@@ -23,7 +23,7 @@ class OpenAIModelParameters(BaseModel):
 
 
 class OpenAIFoundationModel(BaseFoundationModel[OpenAI, dict[str, Any] | OpenAIModelParameters | None]):
-    """Integration point to use any model via an OpenAI-compatible API / client."""
+    """Run chat completions through a synchronous ``openai.OpenAI`` client."""
 
     def __init__(
         self,
