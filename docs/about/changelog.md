@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.27.0](https://github.com/IBM/ai4rag/releases/tag/v0.27.0)
+
+### Added
+
+- **Search space preparation** — `prepare_search_space_with_models()` accepts one or more preconfigured foundation and embedding models per role from OpenAI-compatible endpoints. It probes each model using that model's own client and can detect the benchmark language.
+- **Text extraction** — `extract_text()` accepts `worker_startup_timeout` and `document_timeout`, with defaults of 300 and 600 seconds, respectively.
+- **Embeddings** — `OpenAIEmbeddingModel.embed_documents()` accepts a `policy` override for its default indexing retry behavior.
+
+### Changed
+
+- **Agentic RAG** — the default chat model uses the supplied OpenAI client for direct endpoints, honoring its headers, TLS settings, timeouts, and retries. For these clients it supports synchronous calls and bypasses the shared response cache.
+- **Search space preparation** — validation errors and preparation logs omit raw constraint values. Probe and language-detection logs for direct models omit endpoint error details.
+- **Text extraction** — downloads and converts documents in bounded, largest-first batches. Automatic worker counts account for CPU affinity, container quotas, and the number of supported documents.
+- **Dependencies** — updated the lockfile to Soup Sieve 4.0 and Tornado 6.6.1.
+- **Development workflow** — documentation and pull request checks use read-only repository contents permissions.
+
+### Fixed
+
+- **Embeddings** — OpenAI-compatible requests process up to 128 texts per batch and use bounded recovery for transient failures, confirmed context overflows, and read timeouts. Recovery preserves completed batches, and RAGAS uses shorter retry waits for evaluation.
+- **Embeddings** — validate vector count and dimensions, reject non-finite values, and restore input order using response indices. Context-length detection narrows its estimate only on confirmed overflows and surfaces other endpoint failures.
+- **Experiment** — model preselection skips a candidate after its first failed index build.
+- **Text extraction** — restarts the worker pool once after reported memory exhaustion or a possible out-of-memory kill and retries unfinished documents from existing downloads. It publishes completed JSON atomically and preserves the original S3 object paths.
+
+### Removed
+
+- **Dependencies** — removed the direct `multiprocess` requirement after text extraction switched to standard-library subprocesses.
+
+---
+
 ## [0.26.0](https://github.com/IBM/ai4rag/releases/tag/v0.26.0)
 
 ### Changed

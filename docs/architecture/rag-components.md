@@ -328,26 +328,15 @@ def embed_query(self, query: str) -> list[float]:
 
 ### OpenAIEmbeddingModel
 
-OpenShift MaaS (and any OpenAI-compatible API) integration with auto-detection of model capabilities:
-
-```python
-class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
-    def __init__(
-        self,
-        client: OpenAI,
-        model_id: str,
-        params: dict | OpenAIEmbeddingParams | None = None
-    ):
-```
+`OpenAIEmbeddingModel` uses a synchronous OpenAI client to call an OpenAI-compatible
+embedding endpoint. The endpoint must accept or ignore the `truncate_prompt_tokens`
+field in embedding requests.
 
 **Parameters:**
 
-```python
-@dataclass
-class OpenAIEmbeddingParams:
-    embedding_dimension: int | None = None    # Auto-detected if None
-    context_length: int | None = None         # Auto-detected if None
-```
+Pass `embedding_dimension` (vector width) and `context_length` (input token limit)
+as a dictionary or an `OpenAIEmbeddingParams` instance. The model requires a context
+length of at least 700 tokens. [Embedding Models API](../api-reference/rag/embedding.md)
 
 **Auto-Detection:**
 
@@ -358,6 +347,8 @@ Detection requests disable truncation and use short transient-error waits.
 **Embedding Dimension Detection:**
 
 ```python
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingParams
+
 # Dimension detection embeds a short test string and counts its vector values.
 # Supply the dimension explicitly to skip this request:
 params = OpenAIEmbeddingParams(embedding_dimension=768)
@@ -1384,12 +1375,18 @@ class AgenticRAG(BaseRAGTemplate):
   Nested query-rewrite and compression model calls do not count toward this
   middleware limit. A provider returning tool calls after tools are removed raises
   `RuntimeError` instead of restarting the loop.
-- `chat_model` is an optional pre-built LangChain `BaseChatModel`. When
-  omitted, one is built from the configured `foundation_model` — which must
-  then be an `OpenAIFoundationModel`, since `AgenticRAG` wraps its MaaS/OpenAI
-  client in a LangChain `ChatOpenAI` instance.
+- `chat_model` is an optional pre-built LangChain `BaseChatModel`. To let
+  `AgenticRAG` construct its default `ChatOpenAI` model, provide an
+  `OpenAIFoundationModel` as `foundation_model`.
 - `enable_context_compression` enables one retry after a recognized context
   overflow. It must be a boolean and defaults to `True`.
+
+For a direct OpenAI client, the default chat model uses that client's synchronous
+completions interface with its configured headers, TLS, timeouts, and retries.
+It disables LangChain's shared response cache to keep results isolated by route.
+Async chat methods raise `NotImplementedError` before sending a request. Supply an
+async-capable `chat_model` if your integration calls the underlying chat model
+asynchronously. [Separate endpoint setup](../user-guide/search-space.md#using-separate-openai-compatible-endpoints)
 
 When `create_maas_client()` configures per-client CA trust through `ca_bundle`,
 `MAAS_CA_BUNDLE`, or the mounted `SSL_CERT_DIR`/`ca.crt` fallback, the automatically

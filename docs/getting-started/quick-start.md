@@ -1,7 +1,9 @@
 # Quick Start
 
 This guide walks you through running your first RAG optimization experiment with `ai4rag`.
-For the sake of quick-start OpenShift AI Models-as-a-Service (MaaS) will be used, but this can be run with any independently deployed OpenAI-compatible models as long as they are introduced to the experiment with the proper wrapper.
+The walkthrough uses OpenShift AI Models-as-a-Service (MaaS). If your models run on separate
+OpenAI-compatible endpoints, use `prepare_search_space_with_models()` to build the `search_space`
+that the experiment takes in step 6. [Separate endpoint setup](../user-guide/search-space.md#using-separate-openai-compatible-endpoints)
 
 ---
 
@@ -26,10 +28,10 @@ Whatever the source, one rule decides whether your experiment scores correctly:
 
 ## Prerequisites
 
-Before starting, ensure you have:
+Before starting the MaaS walkthrough, ensure you have:
 
 - [x] Installed ai4rag ([Installation Guide](installation.md))
-- [x] Access to an OpenShift MaaS deployment (or any OpenAI-compatible models) that can be used for the experiment
+- [x] Access to an OpenShift MaaS deployment with a foundation model and an embedding model
 - [x] Environment variables set (`MAAS_BASE_URL`, `MAAS_API_KEY`) to communicate with MaaS
 
 ---

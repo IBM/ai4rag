@@ -30,7 +30,7 @@ sequenceDiagram
     participant LC as BaseChunker
     participant EM as OpenAIEmbeddingModel
     participant VS as VectorStore
-    participant MaaSClient as MaaS Client
+    participant EC as OpenAI Embedding Client
     participant DB as Vector DB (Milvus, incl. Milvus Lite/PGVector)
 
     Exp->>Exp: check if collection exists
@@ -48,9 +48,9 @@ sequenceDiagram
         activate VS
         VS->>EM: embed_documents([chunk.text])
         activate EM
-        loop Batches of 1024 chunks
-            EM->>MaaSClient: embeddings.create(batch)
-            MaaSClient-->>EM: embeddings
+        loop Batches of up to 128 texts
+            EM->>EC: embeddings.create(batch)
+            EC-->>EM: embeddings
         end
         EM-->>VS: all embeddings
         deactivate EM
@@ -124,35 +124,29 @@ AI4RAGChunk(
 
 **OpenAIEmbeddingModel** converts chunk text to vector embeddings:
 
-**Auto-detection (on first use):**
+**Auto-detection (during construction):**
 
 ```python
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+
 embedding_model = OpenAIEmbeddingModel(
     model_id="ollama/nomic-embed-text:latest",
-    client=maas_client,
+    client=embedding_client,
     params={"embedding_dimension": 768, "context_length": 8192}  # Optional
 )
 ```
 
-If `embedding_dimension` or `context_length` not provided:
-- `embedding_dimension`: Detected via test embedding call (counts dimensions)
-- `context_length`: Detected via binary search (64 to 8192 tokens, ~5 API calls)
+The model detects each omitted capability during construction. It counts the vector
+dimensions of a short sample and estimates the context length using repeated-word
+probes between 64 and 8,192 approximate tokens.
 
 **Batch Processing:**
 
-Embeddings created in batches of 1024 chunks to respect API limits:
+Document embedding requests contain up to 128 texts. The model validates each response
+and uses the response indices to return vectors in input order.
 
 ```python
-def embed_documents(texts: list[str]) -> list[list[float]]:
-    embeddings = []
-    for idx in range(0, len(texts), 1024):
-        batch = texts[idx : idx + 1024]
-        batch_embeddings = self.client.embeddings.create(
-            input=batch,
-            model=self.model_id
-        )
-        embeddings.extend([data.embedding for data in batch_embeddings.data])
-    return embeddings
+embeddings = embedding_model.embed_documents([chunk.text for chunk in chunks])
 ```
 
 **Output:**
@@ -280,7 +274,8 @@ sequenceDiagram
     participant VS as VectorStore
     participant EM as OpenAIEmbeddingModel
     participant FM as OpenAIFoundationModel
-    participant MaaSClient as MaaS Client
+    participant EC as OpenAI Embedding Client
+    participant FC as OpenAI Foundation Client
     participant DB as Vector DB (Milvus, incl. Milvus Lite/PGVector)
 
     Note over QR: Parallel execution (ThreadPoolExecutor)
@@ -299,8 +294,8 @@ sequenceDiagram
     activate VS
     VS->>EM: embed_query(question)
     activate EM
-    EM->>MaaSClient: embeddings.create(question)
-    MaaSClient-->>EM: query_embedding
+    EM->>EC: embeddings.create(question)
+    EC-->>EM: query_embedding
     EM-->>VS: query_embedding
     deactivate EM
 
@@ -321,8 +316,8 @@ sequenceDiagram
     RAG->>RAG: format user message using user_message_text
     RAG->>FM: chat(messages)
     activate FM
-    FM->>MaaSClient: chat.completions.create(model, messages, params)
-    MaaSClient-->>FM: response
+    FM->>FC: chat.completions.create(model, messages, params)
+    FC-->>FM: response
     FM-->>RAG: answer
     deactivate FM
 
@@ -565,9 +560,9 @@ sequenceDiagram
 Contexts come from the `reference_documents` returned by the successful generation
 attempt, including retained excerpts when `AgenticRAG` used its context-overflow
 fallback. RAGAS evaluates those texts unchanged, without another compression pass.
-Its adapter skips identical-request retries for confirmed context overflows, and
-the evaluator logs question IDs and missing metric names for incomplete scores.
-See [RAGAS evidence and context-overflow reporting](../user-guide/evaluation.md#ragas-evidence-and-context-overflow-reporting).
+The judge adapter skips retries of confirmed context overflows. The OpenAI embedding
+adapter uses the model's per-batch recovery. The evaluator logs question IDs and missing
+metric names for incomplete scores. [RAGAS evidence and context-overflow reporting](../user-guide/evaluation.md#ragas-evidence-and-context-overflow-reporting)
 
 **Input: inference_response**
 
@@ -955,19 +950,10 @@ with ThreadPoolExecutor(max_workers=10) as executor:
 
 ### 2. Batch Embedding
 
-**Impact:** 2-3x speedup for indexing phase
-
-**Implementation:**
-
-```python
-for idx in range(0, len(texts), 1024):
-    batch = texts[idx : idx + 1024]
-    embeddings.extend(embed_batch(batch))
-```
-
-**Constraints:**
-- MaaS max batch size: 1024 chunks
-- Smaller batches = more API calls = slower
+`OpenAIEmbeddingModel` applies the indexing retry policy to each request batch and
+retains successful batches for the duration of `embed_documents()`. The vector store
+then upserts the returned vectors using its own batch size.
+[Embedding recovery](rag-components.md#openaiembeddingmodel)
 
 ### 3. Collection Reuse
 

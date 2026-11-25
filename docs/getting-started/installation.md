@@ -127,10 +127,11 @@ uv sync --extra docs        # documentation tools only
 dependency), so it works with **any OpenAI-compatible endpoint** — a hosted API, a
 self-managed server (vLLM, TGI, Ollama, …), or an
 [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment.
-The steps below use MaaS, the provider `ai4rag` ships helpers for; to use a different endpoint,
-point the same `openai` client at its URL (or supply your own `BaseFoundationModel` /
-`BaseEmbeddingModel` implementation). The vector store is configured independently, via direct
-clients (remote Milvus, embedded Milvus Lite, PGVector, or Neo4j) — see [Vector Store Setup](#vector-store-setup) below.
+The steps below use MaaS. For separately configured endpoints, initialize each model wrapper
+with a synchronous `openai.OpenAI` client and pass the wrappers to `prepare_search_space_with_models()`.
+[Separate endpoint setup](../user-guide/search-space.md#using-separate-openai-compatible-endpoints)
+
+Configure the vector store independently. [Vector Store Setup](#vector-store-setup)
 
 ### 1. Get Access to a MaaS Deployment
 

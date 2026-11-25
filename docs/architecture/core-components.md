@@ -182,25 +182,30 @@ sequenceDiagram
 
 ### Models Pre-Selection (MPS)
 
-The `ModelsPreSelector` reduces the search space by evaluating all model combinations on a small benchmark sample:
+`AI4RAGExperiment.run_pre_selection()` uses `ModelsPreSelector` to evaluate model
+combinations on a small benchmark sample:
 
 ```python
-def run_pre_selection(
-    self,
-    foundation_models: list[BaseFoundationModel],
-    embedding_models: list[BaseEmbeddingModel],
-    n_records: int = 5,
-    random_seed: int = 17,
-) -> dict[str, list]:
+selected_models = experiment.run_pre_selection(
+    foundation_models=foundation_models,
+    embedding_models=embedding_models,
+    n_records=5,
+    random_seed=17,
+)
 ```
 
 **Process:**
 
 1. Sample `n_records` questions from benchmark data (with `random_seed` for reproducibility)
-2. Evaluate every `(foundation_model, embedding_model)` combination using `AgenticRAG` and temporary Milvus Lite storage
+2. Build a temporary Milvus Lite index for each embedding model and evaluate its
+   combinations with foundation models using `AgenticRAG`. The embedding model
+   handles request recovery. If indexing still fails, pre-selection skips that
+   embedding model
 3. Rank by `Metrics.OVERALL_SCORE`, independently of the experiment's `optimization_metric`
 4. Select top `n_mps_foundation_models` and `n_mps_embedding_models`
-5. Update search space with selected models
+5. During `search()`, update the search space with selected models
+
+Pre-selection raises `PreSelectorError` if no model combination completes evaluation.
 
 **Default Thresholds:**
 
@@ -579,9 +584,12 @@ sequenceDiagram
     activate Exp
 
     alt Models Pre-Selection needed
-        Exp->>MPS: run_pre_selection()
+        Exp->>Exp: run_pre_selection()
+        Exp->>MPS: evaluate_patterns()
         activate MPS
-        Note over MPS: Evaluate all models on sample
+        Note over MPS: Evaluate model pairs on sample
+        MPS-->>Exp: evaluation complete
+        Exp->>MPS: select_models()
         MPS-->>Exp: selected models
         deactivate MPS
         Exp->>SS: update search space
@@ -677,9 +685,8 @@ The `ExperimentExceptionHandler` can be extended to customize error handling beh
 - Configurable via `max_threads` in `query_rag()`
 
 **Batch Embedding:**
-- OpenAIEmbeddingModel processes documents in batches of 1024 chunks
-- Prevents API request size limits
-- Applied in both indexing and query phases
+- `OpenAIEmbeddingModel.embed_documents()` processes up to 128 texts per request with per-batch recovery
+- `embed_query()` processes one query with shorter retry waits. [Embedding model behavior](rag-components.md#openaiembeddingmodel)
 
 **GAM Efficiency:**
 - Uses `sklearn.preprocessing.LabelEncoder` for categorical parameter encoding
