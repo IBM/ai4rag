@@ -305,7 +305,8 @@ and generated user prompt on success.
 For direct models, the default agentic template supports synchronous chat only.
 It uses the supplied foundation client, preserving its headers, TLS settings,
 timeouts, and retries, and disables LangChain's global response cache to keep
-answers isolated by route.
+answers isolated by route. Async invocation and streaming on the default chat
+model raise `NotImplementedError` before sending a model request.
 
 ---
 

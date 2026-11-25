@@ -6,7 +6,7 @@
 import json
 from dataclasses import dataclass, field, replace
 from threading import Lock
-from typing import Any, Callable
+from typing import Any, Callable, Never
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
@@ -194,6 +194,15 @@ def _enforce_agent_budget(
     return response
 
 
+class _DisabledAsyncClient:
+    """Reject asynchronous calls for direct OpenAI models."""
+
+    def __getattr__(self, name: str) -> Never:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        raise NotImplementedError("Direct OpenAI models support synchronous chat only. Use invoke().")
+
+
 class AgenticRAG(BaseRAGTemplate):
     """Run a LangChain agent with query rewriting and retrieval tools.
 
@@ -317,8 +326,14 @@ class AgenticRAG(BaseRAGTemplate):
         if direct_client or verify is not None:
             client_kwargs.update(client=client.chat.completions, root_client=client)
         if direct_client:
-            # LangChain's global cache does not distinguish client-specific routes.
-            client_kwargs["cache"] = False
+            # Fill both async slots to prevent LangChain from creating a fallback client.
+            disabled = _DisabledAsyncClient()
+            client_kwargs.update(
+                async_client=disabled,
+                root_async_client=disabled,
+                # LangChain's global cache does not distinguish client-specific routes.
+                cache=False,
+            )
         elif verify is not None:
             client_kwargs["http_async_client"] = DefaultAsyncHttpxClient(verify=verify)
         self.chat_model = ChatOpenAI(
