@@ -265,13 +265,19 @@ from openai import OpenAI
 from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
 from ai4rag.search_space.prepare import prepare_search_space_with_models
+from ai4rag.utils.network import ensure_safe_url
+
+chat_url = os.environ["CHAT_BASE_URL"]
+embedding_url = os.environ["EMBEDDING_BASE_URL"]
+ensure_safe_url(chat_url, context="CHAT_BASE_URL")
+ensure_safe_url(embedding_url, context="EMBEDDING_BASE_URL")
 
 foundation = OpenAIFoundationModel(
-    client=OpenAI(base_url=os.environ["CHAT_BASE_URL"], api_key=os.environ["CHAT_API_KEY"]),
+    client=OpenAI(base_url=chat_url, api_key=os.environ["CHAT_API_KEY"]),
     model_id=os.environ["CHAT_MODEL"],
 )
 embedding = OpenAIEmbeddingModel(
-    client=OpenAI(base_url=os.environ["EMBEDDING_BASE_URL"], api_key=os.environ["EMBEDDING_API_KEY"]),
+    client=OpenAI(base_url=embedding_url, api_key=os.environ["EMBEDDING_API_KEY"]),
     model_id=os.environ["EMBEDDING_MODEL"],
 )
 
@@ -283,10 +289,11 @@ search_space = prepare_search_space_with_models(
 ```
 
 Supply the full API base URL for each endpoint, including any gateway prefix
-and `/v1` where required. The embedding endpoint must accept or ignore the
-provider-specific `truncate_prompt_tokens` field. The embedding wrapper sends
-this field on every request, including when it probes for missing model
-capabilities during construction.
+and `/v1` where required. External endpoints require HTTPS. Loopback and
+in-cluster Kubernetes endpoints may use HTTP. Check the URLs before constructing
+the wrappers because embedding capability detection can send requests during
+construction. The embedding endpoint must accept or ignore the provider-specific
+`truncate_prompt_tokens` field on embedding requests.
 
 The helper validates the template and backend before checking each model with a
 short chat or embedding request. It raises `SearchSpaceValueError` with the
@@ -295,7 +302,9 @@ detection runs after the probes and updates each foundation model's language
 and generated user prompt on success. The default agentic template uses the
 supplied foundation client for chat. Async calls to its LangChain chat model
 run the same client in a worker thread, preserving its headers, TLS settings,
-timeouts, and retries.
+timeouts, and retries. Async streaming also honors LangChain's
+`LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S` setting. The direct-client adapter
+disables LangChain's global response cache to keep answers isolated by route.
 
 ---
 

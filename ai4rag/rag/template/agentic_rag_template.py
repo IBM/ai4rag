@@ -3,11 +3,18 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+import asyncio
 import json
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from contextvars import copy_context
 from dataclasses import dataclass, field, replace
-from threading import Lock
+from functools import partial
+from threading import Event, Lock
+from types import SimpleNamespace
 from typing import Any, Callable
 
+import httpx
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
 from langchain.tools import ToolRuntime
@@ -15,10 +22,11 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from openai import BadRequestError, DefaultAsyncHttpxClient
-from openai.types.chat import ChatCompletionMessage
+from openai import BadRequestError, DefaultAsyncHttpxClient, Stream
+from openai.lib.streaming.chat import ChatCompletionStream
+from openai.resources.chat import Completions
+from openai.types.chat import ChatCompletionChunk, ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
-from pydantic import Field
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -195,13 +203,104 @@ def _enforce_agent_budget(
     return response
 
 
-class _DirectChatOpenAI(ChatOpenAI):
-    """Run async chat calls through LangChain's synchronous-client fallback."""
+async def _open_chat_stream[T](opener: Callable[[], T], close: Callable[[T], None]) -> T:
+    """Open a response off-loop and close it if cancellation races with setup."""
+    future = asyncio.get_running_loop().run_in_executor(None, copy_context().run, opener)
+    try:
+        return await asyncio.shield(future)
+    except asyncio.CancelledError:
 
-    # A populated slot keeps ChatOpenAI from constructing a separate SDK client.
-    async_client: Any = Field(default_factory=object, exclude=True)
+        def close_when_ready(completed: asyncio.Future[T]) -> None:
+            if not completed.cancelled() and completed.exception() is None:
+                close(completed.result())
+
+        future.add_done_callback(close_when_ready)
+        raise
+
+
+class _ThreadedChatStream:
+    """Expose a synchronous SDK stream to LangChain's async chunk reader."""
+
+    def __init__(self, stream: Stream[ChatCompletionChunk] | ChatCompletionStream[Any]) -> None:
+        self._stream = stream
+        # The structured SDK stream keeps its HTTP response on a private attribute.
+        response = (
+            stream.response if isinstance(stream, Stream) else stream._response
+        )  # pylint: disable=protected-access
+        if isinstance(response.stream, httpx.SyncByteStream):
+            response.stream = _StoppableByteStream(response.stream)
+
+    async def __aenter__(self) -> "_ThreadedChatStream":
+        return self
+
+    async def __aexit__(self, *_exc: Any) -> None:
+        # Close the response directly so cleanup cannot queue behind a
+        # blocked read in the executor. The caller still owns the SDK client.
+        self._stream.close()
+
+    async def __aiter__(self) -> AsyncIterator[Any]:
+        iterator = iter(self._stream)
+        done = object()
+        while (chunk := await asyncio.to_thread(next, iterator, done)) is not done:
+            yield chunk
+
+    async def get_final_completion(self) -> Any:
+        """Get the final completion from an exhausted structured stream."""
+        return await asyncio.to_thread(self._stream.get_final_completion)
+
+
+class _StoppableByteStream(httpx.SyncByteStream):
+    """Stop a canceled read at the next byte chunk, even on SSE keepalives."""
+
+    def __init__(self, stream: httpx.SyncByteStream) -> None:
+        self._stream = stream
+        self._stopped = Event()
+
+    def __iter__(self):
+        for chunk in self._stream:
+            if self._stopped.is_set():
+                return
+            yield chunk
+
+    def close(self) -> None:
+        """Signal the reader before releasing the underlying response stream."""
+        self._stopped.set()
+        self._stream.close()
+
+
+class _ThreadedChatCompletions:
+    """Provide the SDK operations used by ChatOpenAI's async streaming path."""
+
+    def __init__(self, completions: Completions) -> None:
+        self._completions = completions
+        self.with_raw_response = SimpleNamespace(create=self._create_raw_response)
+
+    async def create(self, **kwargs: Any) -> _ThreadedChatStream:
+        """Open an async view of a synchronous chat completion stream."""
+        stream = await _open_chat_stream(partial(self._completions.create, **kwargs), lambda stream: stream.close())
+        return _ThreadedChatStream(stream)
+
+    async def _create_raw_response(self, **kwargs: Any) -> SimpleNamespace:
+        """Expose response headers and a parsed stream to LangChain."""
+        raw = await _open_chat_stream(
+            partial(self._completions.with_raw_response.create, **kwargs), lambda raw: raw.http_response.close()
+        )
+        return SimpleNamespace(headers=raw.headers, parse=lambda: _ThreadedChatStream(raw.parse()))
+
+    @asynccontextmanager
+    async def stream(self, **kwargs: Any) -> AsyncIterator[_ThreadedChatStream]:
+        """Open the SDK's structured-output stream."""
+        manager = self._completions.stream(**kwargs)
+        response = await _open_chat_stream(manager.__enter__, lambda stream: stream.close())
+        async with _ThreadedChatStream(response) as stream:
+            yield stream
+
+
+class _DirectChatOpenAI(ChatOpenAI):
+    """Run nonstreaming async calls through the supplied synchronous client."""
+
+    # ChatOpenAI handles async streaming with the threaded completion adapter.
     _agenerate = BaseChatModel._agenerate  # pylint: disable=protected-access
-    _astream = BaseChatModel._astream  # pylint: disable=protected-access
 
 
 class AgenticRAG(BaseRAGTemplate):
@@ -326,6 +425,14 @@ class AgenticRAG(BaseRAGTemplate):
         client_kwargs: dict[str, Any] = {}
         if direct_client or verify is not None:
             client_kwargs.update(client=client.chat.completions, root_client=client)
+        if direct_client:
+            completions = _ThreadedChatCompletions(client.chat.completions)
+            chat = SimpleNamespace(completions=completions)
+            client_kwargs.update(
+                async_client=completions,
+                root_async_client=SimpleNamespace(chat=chat, beta=SimpleNamespace(chat=chat)),
+                cache=False,
+            )
         if verify is not None:
             client_kwargs["http_async_client"] = DefaultAsyncHttpxClient(verify=verify)
         model_class = _DirectChatOpenAI if direct_client else ChatOpenAI

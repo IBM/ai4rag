@@ -23,6 +23,7 @@ from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 from ai4rag.search_space.src.parameter import Parameter
 from ai4rag.search_space.src.search_space import AI4RAGSearchSpace
 from ai4rag.utils.constants import AI4RAGParamNames
+from ai4rag.utils.network import ensure_safe_url
 
 __all__ = ["prepare_search_space_with_maas", "prepare_search_space_with_models"]
 
@@ -165,8 +166,6 @@ def prepare_search_space_with_maas(
         Raised when client is not an OpenAI client, or when foundation or
         embedding model ids are missing from the payload.
     """
-    logger.info("Preparing search space based on provided constraints: %s.", payload)
-
     validated_payload = AI4RAGConstraints(**payload)
 
     foundation_models, embedding_models = _resolve_models_from_payload(validated_payload, client)
@@ -186,8 +185,11 @@ def prepare_search_space_with_models(
     """Prepare a search space with initialized models that retain their clients.
 
     Each supplied model is checked with a minimal chat or embedding request
-    through its own client. Model IDs must be unique within each role because
-    optimization uses them to distinguish candidates.
+    through its own client. Client base URLs must use HTTPS, except for loopback
+    and cluster-local endpoints, which may use HTTP. If a model probes for
+    capabilities during construction, validate its URL before constructing it.
+    Model IDs must be unique within each role because optimization uses them
+    to distinguish candidates.
 
     Parameters
     ----------
@@ -217,10 +219,10 @@ def prepare_search_space_with_models(
         If the payload contains unsupported keys or invalid constraints.
     SearchSpaceValueError
         If either sequence is empty, contains the wrong wrapper type, or
-        repeats a model ID. Also raised if any model fails its probe or a
-        template is incompatible with the vector-store provider.
+        repeats a model ID. Also raised if any client has an unsafe base URL,
+        any model fails its probe, or a template is incompatible with the
+        vector-store provider.
     """
-    logger.info("Preparing search space based on provided constraints: %s.", payload)
     validated_payload = SearchSpaceConstraints(**payload)
 
     _validate_model_candidates(foundation_models, OpenAIFoundationModel, "foundation_models")
@@ -237,11 +239,18 @@ def _validate_model_candidates(
     model_class: type[OpenAIFoundationModel] | type[OpenAIEmbeddingModel],
     name: str,
 ) -> None:
-    """Validate a model dimension before applying language detection."""
+    """Validate the model candidates and their endpoint URLs before any probes."""
     if not isinstance(models, Sequence) or not models or any(not isinstance(model, model_class) for model in models):
         raise SearchSpaceValueError(f"'{name}' must be a non-empty sequence of {model_class.__name__} instances.")
     if len({model.model_id for model in models}) != len(models):
         raise SearchSpaceValueError(f"'{name}' must contain unique model IDs.")
+    for model in models:
+        try:
+            ensure_safe_url(str(model.client.base_url), context=f"{name} client base_url")
+        except ValueError:
+            raise SearchSpaceValueError(
+                f"Unsafe '{name}' client base_url. Use HTTPS, or HTTP for loopback and cluster-local endpoints."
+            ) from None
 
 
 def _build_search_space(
@@ -251,6 +260,7 @@ def _build_search_space(
     vector_store_type: str,
 ) -> AI4RAGSearchSpace:
     """Assemble the search space and validate its backend compatibility."""
+    logger.info("Preparing search space with constraint fields: %s.", sorted(validated_payload.model_fields_set))
     fms_param = Parameter(name=AI4RAGParamNames.FOUNDATION_MODEL, values=foundation_models)
     ems_param = Parameter(name=AI4RAGParamNames.EMBEDDING_MODEL, values=embedding_models)
     logger.info("Selected foundation models for the experiment: %s.", [m.model_id for m in fms_param.values])

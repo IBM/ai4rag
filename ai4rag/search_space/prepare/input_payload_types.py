@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, field_validator
 from ai4rag.rag.template.registry import get_template_spec
 from ai4rag.utils.constants import ChunkingConstraints
 
-CONFIG = ConfigDict(extra="forbid")
+CONFIG = ConfigDict(extra="forbid", hide_input_in_errors=True)
 
 
 class AI4RAGFoundationModel(BaseModel):
@@ -56,19 +56,17 @@ class SearchSpaceConstraints(BaseModel):
     def _validate_template_ids(cls, values: list[str] | None) -> list[str] | None:
         if values is not None:
             for template_id in values:
-                get_template_spec(template_id)
+                try:
+                    get_template_spec(template_id)
+                except ValueError:
+                    raise ValueError("Unsupported template_id. Choose a registered RAG template.") from None
         return values
 
     @field_validator("chunking_methods", mode="after")
     @classmethod
     def _validate_chunking_methods(cls, values: list[str] | None) -> list[str] | None:
-        if values is not None:
-            unsupported = [m for m in values if m not in ChunkingConstraints.METHODS]
-            if unsupported:
-                raise ValueError(
-                    f"Unsupported chunking methods: {unsupported!r}. "
-                    f"Supported methods: {ChunkingConstraints.METHODS!r}."
-                )
+        if values is not None and any(method not in ChunkingConstraints.METHODS for method in values):
+            raise ValueError(f"Unsupported chunking methods. Supported methods: {ChunkingConstraints.METHODS!r}.")
         return values
 
 

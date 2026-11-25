@@ -5,17 +5,22 @@
 
 import asyncio
 import json
+import time
 import warnings
 from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 from types import SimpleNamespace
 
 import httpx
 import pytest
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
+from langchain_core.caches import InMemoryCache
+from langchain_core.globals import get_llm_cache, set_llm_cache
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
-from langchain_openai import ChatOpenAI
-from openai import BadRequestError, OpenAI
+from langchain_openai import ChatOpenAI, StreamChunkTimeoutError
+from openai import AsyncOpenAI, BadRequestError, OpenAI
+from pydantic import BaseModel
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
@@ -104,25 +109,35 @@ def _http_agent(mocker, respond, supplied=True, budget=2):
     return AgenticRAG(foundation, retriever, budget, model)
 
 
-@pytest.mark.parametrize("stream", [False, True])
-def test_direct_chat_model_async_calls_use_supplied_transport(mocker, stream):
+def _sse_chunk(content, finish_reason="stop"):
+    chunk = {
+        "id": "completion",
+        "object": "chat.completion.chunk",
+        "model": "model",
+        "created": 0,
+        "choices": [{"index": 0, "delta": {"role": "assistant", "content": content}, "finish_reason": finish_reason}],
+    }
+    return f"data: {json.dumps(chunk)}\n\n".encode()
+
+
+@pytest.mark.parametrize("mode", ["invoke", "stream", "headers", "structured"])
+def test_direct_chat_model_async_calls_use_supplied_transport(mocker, mode):
     requests = []
+
+    class Answer(BaseModel):
+        answer: str
 
     def respond(request):
         requests.append(request)
         assert request.headers["X-Gateway-Route"] == "rag"
         assert request.extensions["timeout"]["read"] == 17.0
-        if not stream:
+        if mode == "invoke":
             return _http_completion("answer")
-        chunk = {
-            "id": "completion",
-            "object": "chat.completion.chunk",
-            "model": "model",
-            "created": 0,
-            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "answer"}, "finish_reason": "stop"}],
-        }
+        content = '{"answer":"answer"}' if mode == "structured" else "answer"
         return httpx.Response(
-            200, headers={"Content-Type": "text/event-stream"}, text=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n"
+            200,
+            headers={"Content-Type": "text/event-stream", "X-Route": "rag"},
+            content=_sse_chunk(content) + b"data: [DONE]\n\n",
         )
 
     with OpenAI(
@@ -137,14 +152,97 @@ def test_direct_chat_model_async_calls_use_supplied_transport(mocker, stream):
         model = AgenticRAG(foundation, mocker.MagicMock()).chat_model
 
         async def invoke():
-            if stream:
-                return "".join([chunk.text async for chunk in model.astream("test")])
-            return (await model.ainvoke("test")).text
+            if mode == "invoke":
+                return (await model.ainvoke("test")).text
+            if mode == "structured":
+                structured = model.with_structured_output(Answer)
+                return [result.answer async for result in structured.astream("test")][-1]
+            model.include_response_headers = mode == "headers"
+            chunks = [chunk async for chunk in model.astream("test")]
+            if mode == "headers":
+                assert chunks[0].response_metadata["headers"]["x-route"] == "rag"
+            return "".join(chunk.text for chunk in chunks)
 
         assert asyncio.run(invoke()) == "answer"
         assert model.root_client is client
-        assert model.root_async_client is None
+        assert not isinstance(model.root_async_client, AsyncOpenAI)
     assert len(requests) == 1
+
+
+@pytest.mark.parametrize("invoke_async", [False, True])
+def test_direct_chat_model_keeps_routed_answers_out_of_global_cache(mocker, invoke_async):
+    requests = []
+
+    def respond(request):
+        route = request.headers["X-Gateway-Route"]
+        requests.append(route)
+        return _http_completion(route)
+
+    def invoke(model):
+        return asyncio.run(model.ainvoke("same question")) if invoke_async else model.invoke("same question")
+
+    old_cache = get_llm_cache()
+    set_llm_cache(InMemoryCache())
+    try:
+        for route in ("first", "second"):
+            with OpenAI(
+                api_key="test",
+                base_url="https://gateway.example/v1",
+                default_headers={"X-Gateway-Route": route},
+                http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+            ) as client:
+                foundation = OpenAIFoundationModel(client, "model")
+                model = AgenticRAG(foundation, mocker.MagicMock()).chat_model
+                assert invoke(model).text == route
+    finally:
+        set_llm_cache(old_cache)
+    assert requests == ["first", "second"]
+
+
+def test_direct_chat_model_times_out_between_chunks_and_closes_response(mocker, monkeypatch):
+    monkeypatch.setenv("LANGCHAIN_OPENAI_STREAM_CHUNK_TIMEOUT_S", "0.2")
+    closed = Event()
+    drained = Event()
+
+    class KeepaliveStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield _sse_chunk("first", finish_reason=None)
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                time.sleep(0.01)
+                yield b": keepalive\n\n"
+            drained.set()
+
+        def close(self):
+            closed.set()
+
+    def respond(request):
+        if json.loads(request.content).get("stream"):
+            return httpx.Response(200, headers={"Content-Type": "text/event-stream"}, stream=KeepaliveStream())
+        return _http_completion("client still usable")
+
+    with OpenAI(
+        api_key="test",
+        base_url="https://gateway.example/v1",
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    ) as client:
+        model = AgenticRAG(OpenAIFoundationModel(client, "model"), mocker.MagicMock()).chat_model
+
+        async def invoke():
+            # Cleanup must work even when the read occupies the only worker.
+            asyncio.get_running_loop().set_default_executor(ThreadPoolExecutor(max_workers=1))
+            chunks = []
+            with pytest.raises(StreamChunkTimeoutError) as caught:
+                async for chunk in model.astream("test"):
+                    chunks.append(chunk.text)
+            assert chunks == ["first"]
+            assert caught.value.timeout_s == 0.2
+            assert caught.value.chunks_received == 1
+            assert closed.is_set()
+
+        asyncio.run(invoke())
+        assert not drained.is_set()
+        assert model.invoke("test").text == "client still usable"
 
 
 @pytest.mark.parametrize("supplied", [True, False])

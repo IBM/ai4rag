@@ -317,6 +317,7 @@ def test_maas_rejects_incompatible_templates_in_search_space(mocker):
 
 def _direct_embedding_client(dimension: int) -> MagicMock:
     client = MagicMock(spec=OpenAI)
+    client.base_url = "https://embedding.example.com/v1"
     client.timeout = httpx.Timeout(600)
     client.with_options.return_value = client
     client.embeddings.create.return_value = Mock(data=[Mock(index=0, embedding=[0.0] * dimension)])
@@ -331,7 +332,6 @@ def direct_models():
     foundation_client.chat.completions.create.return_value = Mock(choices=[])
     embedding_client = _direct_embedding_client(768)
     embedding_client.api_key = "embedding-secret"
-    embedding_client.base_url = "https://embedding.example.com/v1"
     return {
         "foundation_models": [OpenAIFoundationModel(foundation_client, "provider/chat", params={"temperature": 0.1})],
         "embedding_models": [
@@ -456,10 +456,14 @@ def test_direct_language_detection_sanitizes_endpoint_errors(direct_models, capl
 def test_direct_search_space_explores_multiple_models_with_separate_clients(direct_models):
     foundation_models = direct_models["foundation_models"]
     embedding_models = direct_models["embedding_models"]
-    foundation_models.append(OpenAIFoundationModel(MagicMock(spec=OpenAI), "provider/multitask"))
+    local_chat_client = MagicMock(spec=OpenAI)
+    local_chat_client.base_url = httpx.URL("http://localhost:8080/v1")
+    cluster_embedding_client = _direct_embedding_client(1024)
+    cluster_embedding_client.base_url = httpx.URL("http://embedding.models.svc.cluster.local:8080/v1")
+    foundation_models.append(OpenAIFoundationModel(local_chat_client, "provider/multitask"))
     embedding_models.append(
         OpenAIEmbeddingModel(
-            _direct_embedding_client(1024),
+            cluster_embedding_client,
             "provider/multitask",
             params={"embedding_dimension": 1024, "context_length": 4096},
         )
@@ -529,6 +533,40 @@ def test_direct_search_space_reports_failed_probes_before_language_detection(dir
 def test_direct_search_space_validates_constraints(payload, field, direct_models):
     with pytest.raises(ValidationError, match=field):
         prepare_search_space_with_models(payload, **direct_models)
+    assert all(not model.client.mock_calls for (model,) in direct_models.values())
+
+
+@pytest.mark.parametrize("with_maas", [False, True])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"foundation_models": [{"model_id": "model", "api_key": "private-key"}]},
+        {"template_ids": ["private-key"]},
+        {"chunking_methods": ["private-key"]},
+        {"chunk_sizes": ["private-key"]},
+    ],
+)
+def test_search_space_does_not_echo_rejected_constraint_values(with_maas, payload, direct_models, caplog):
+    with caplog.at_level("INFO", logger="ai4rag"):
+        with pytest.raises(ValidationError) as caught:
+            if with_maas:
+                prepare_search_space_with_maas(payload, MagicMock(spec=OpenAI))
+            else:
+                prepare_search_space_with_models(payload, **direct_models)
+
+    assert "private-key" not in caplog.text
+    assert "private-key" not in str(caught.value)
+
+
+@pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])
+def test_direct_search_space_rejects_external_http_before_any_probe(role, direct_models, caplog):
+    (model,) = direct_models[role]
+    model.client.base_url = httpx.URL("http://models.example.com/v1?token=private-key")
+
+    with pytest.raises(SearchSpaceValueError, match=rf"{role}.*HTTPS") as caught:
+        prepare_search_space_with_models({}, **direct_models)
+
+    assert "private-key" not in str(caught.value) + caplog.text
     assert all(not model.client.mock_calls for (model,) in direct_models.values())
 
 
