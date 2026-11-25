@@ -160,12 +160,13 @@ used its context-overflow compression fallback, these are the retained excerpts
 from the successful generation attempt, including tool retrievals. The original
 retrievals remain available in the generation conversation artifacts.
 
-RAGAS does not run another compression pass or retry samples with shorter evidence.
-Confirmed context-overflow requests bypass internal retries of the identical
-request. Other errors retain their existing retry handling. Incomplete evaluations
-produce warnings with `question_id` and missing metric names. These diagnostics
-are not added to published pattern evaluation metadata; unavailable per-question
-metric values are omitted from the results.
+If a judge request hits a confirmed context overflow, the adapter skips retrying
+the identical prompt. For `OpenAIEmbeddingModel`, the embedding adapter delegates
+to the model's per-batch recovery with shorter retry waits for evaluation.
+[Embedding recovery](../architecture/rag-components.md#openaiembeddingmodel)
+
+Incomplete evaluations produce warnings with `question_id` and missing metric
+names. Published per-question scores contain only the available metric values.
 
 The default chunk-size choices are 512 and 1,024 tokens. Smaller chunks reduce
 context pressure, but do not guarantee that judge prompts fit: retrievals can

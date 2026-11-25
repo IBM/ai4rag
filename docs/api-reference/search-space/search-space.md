@@ -31,6 +31,11 @@
 The file-format contract exchanged between the search-space preparation,
 model pre-selection, and optimization steps.
 
+Model entries store IDs, types, and model parameters, plus language and prompt settings
+for foundation models. `get_foundation_models()` and `get_embedding_models()` attach the
+client supplied at restore time to every model in that call. Restore models with separate
+endpoints in groups that share a client.
+
 ::: ai4rag.search_space.prepare.report
     options:
       members:

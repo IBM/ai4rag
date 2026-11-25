@@ -35,6 +35,9 @@ It accepts a variety of RAG Templates and a search space definition, then return
 
 `ai4rag` reaches foundation and embedding models through the stock [`openai`](https://github.com/openai/openai-python) SDK, so it works with **any OpenAI-compatible endpoint** — a hosted API, a self-managed server (vLLM, TGI, Ollama, …), or an [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) deployment. Prefer something else entirely? Implement `BaseFoundationModel` / `BaseEmbeddingModel` and pass your own models straight into an experiment.
 
+To compare models served by separately configured endpoints, pass initialized model wrappers to
+`prepare_search_space_with_models()`. Each wrapper uses its own OpenAI client. [Separate endpoint setup](docs/user-guide/search-space.md#using-separate-openai-compatible-endpoints)
+
 MaaS is the integration `ai4rag` ships helpers for, so the walkthrough below uses it:
 
 - **SDK:** [openai](https://pypi.org/project/openai/) >= 2, < 3 (Python package used by ai4RAG; installs with this project).

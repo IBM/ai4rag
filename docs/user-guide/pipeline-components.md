@@ -406,6 +406,8 @@ search_space = prepare_search_space_with_maas(
 build_search_space_report(search_space).save_json("/tmp/search_space.json")
 ```
 
+Supply the serving client when restoring model specs from the JSON report. [Search Space Report](../api-reference/search-space/search-space.md#search-space-report)
+
 Payload `chunk_sizes` accepts values from 128 through 1,024 tokens inclusive.
 Values outside this range raise a Pydantic `ValidationError` before model
 discovery. Omitting `chunk_sizes` uses the backend defaults: 512 and 1,024 for

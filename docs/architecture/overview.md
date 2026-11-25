@@ -102,6 +102,7 @@ graph TB
 - Provides parameter sampling
 - Enforces constraints (e.g., `chunk_size > chunk_overlap`)
 - Selects templates through categorical `template_id` and validates template/search-mode compatibility with the backend
+- Builds search spaces from model IDs validated against MaaS or initialized model wrappers that retain their own clients
 
 ### 3. RAG Components Layer
 
@@ -115,7 +116,7 @@ graph TB
 
 - Generates text embeddings
 - Integrates with any OpenAI-compatible embedding endpoint via `OpenAIEmbeddingModel` (e.g. OpenShift MaaS)
-- Handles batching and error recovery
+- Delegates each batch's recovery to `EmbeddingRequestExecutor`, using retry policies for indexing, queries, and capability probes
 
 **Vector Stores** (`ai4rag/rag/vector_store/`)
 
@@ -157,7 +158,7 @@ graph TB
 - `UnitxtEvaluator` — wraps the `unitxt` library for reference-based metrics (`faithfulness`, `answer_correctness`, `context_correctness`)
 - `LLMaJEvaluator` — LLM-as-a-Judge for `answer_relevance` scoring with structured output
 - `RagasEvaluator` — optional RAGAS metrics (`faithfulness`, `answer_relevancy`, `context_precision`, `context_recall`) using the configured foundation and embedding models
-- `ragas_adapters` delegates RAGAS calls to those models; `ragas_diagnostics` classifies failures so confirmed context overflows bypass retries of the identical request
+- `ragas_adapters` delegates judge and embedding requests to the configured models. Confirmed judge context overflows bypass retries of the identical prompt, and OpenAI embeddings use per-batch recovery
 - `custom_metrics` — derived metrics such as `overall_score` (mean of all other metrics)
 - `RAGMetric` dataclass and `Metrics` registry for typed metric definitions
 - Automatic judge model selection via calibration when multiple generation models are available
@@ -169,8 +170,9 @@ graph TB
 
 - Reusable functions for pipeline data stages: document discovery, text extraction, and test data loading
 - Extracted from Kubeflow Pipeline components for standalone use
-- Provider-agnostic — accepts injected S3 clients and OpenAI-compatible model clients
+- Accepts injected S3 clients for access to object storage
 - `prepare_extraction()` returns a `PreparedExtraction` configuration based on discovered file types, downloading pinned OCR/Whisper models for connected runs or validating local bundles for disconnected runs
+- `extract_text()` stages downloads in bounded batches and reuses conversion workers with startup and document deadlines. [Text Extraction](../user-guide/pipeline-components.md#text-extraction)
 - `LocalHuggingFaceAsrPipeline` extends Docling's ASR pipeline for local Transformers-format Whisper models, preserving segment timestamps without runtime model downloads
 
 **RAG Optimization Orchestration** (`pipelines-components` repo)

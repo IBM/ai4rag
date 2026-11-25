@@ -308,6 +308,10 @@ timeouts, and retries, and disables LangChain's global response cache to keep
 answers isolated by route. Async invocation and streaming on the default chat
 model raise `NotImplementedError` before sending a model request.
 
+The returned `search_space` keeps the initialized models and their clients in memory.
+If you save a search-space report, supply the corresponding client again when
+restoring each model or group of models. [Search Space Report](../api-reference/search-space/search-space.md#search-space-report)
+
 ---
 
 ## Default Parameters

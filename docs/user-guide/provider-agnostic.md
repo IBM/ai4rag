@@ -23,7 +23,11 @@ For **models**, `ai4rag` speaks the OpenAI API: any OpenAI-compatible endpoint w
 
 ### OpenShift MaaS Integration
 
-**What it is**: [OpenShift AI Models-as-a-Service (MaaS)](https://www.redhat.com/en/products/ai) exposes all deployed models through a single OpenAI-compatible endpoint, so `ai4rag` talks to it with the stock [`openai`](https://github.com/openai/openai-python) SDK. It is one example of an OpenAI-compatible provider; the setup below applies to any of them — point the client at your endpoint's URL.
+OpenShift AI Models-as-a-Service (MaaS) exposes all deployed models through a single
+OpenAI-compatible endpoint. `ai4rag` uses the `openai` SDK for model discovery, chat,
+and embeddings. [OpenShift AI](https://www.redhat.com/en/products/ai)
+
+For models served by separately configured endpoints, use `prepare_search_space_with_models()` with initialized model wrappers. Each model uses its own client for responsiveness checks and inference. [Separate endpoint setup](search-space.md#using-separate-openai-compatible-endpoints)
 
 **What `ai4rag` supports**:
 
