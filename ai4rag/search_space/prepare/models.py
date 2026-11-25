@@ -203,12 +203,7 @@ def _instantiate(
     params = spec.get("params") or None
 
     if model_type == _EMBEDDING:
-        return OpenAIEmbeddingModel(
-            client=client,
-            model_id=model_id,
-            params=params,
-            use_server_truncation=spec.get("use_server_truncation", True),
-        )
+        return OpenAIEmbeddingModel(client=client, model_id=model_id, params=params)
 
     language = Language(**spec["language"]) if spec.get("language") else None
     return OpenAIFoundationModel(
@@ -414,8 +409,7 @@ def serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str
         A spec mapping carrying ``model_id``, ``type`` (``"embedding"`` or
         ``"generation"``) and ``params``; foundation models additionally carry
         ``language`` and the ``system_message_text`` / ``user_message_text`` /
-        ``context_template_text`` prompt templates. OpenAI embedding models
-        with server truncation disabled carry ``use_server_truncation=False``.
+        ``context_template_text`` prompt templates.
     """
     is_embedding = isinstance(model, BaseEmbeddingModel)
 
@@ -438,9 +432,6 @@ def serialize_model(model: BaseFoundationModel | BaseEmbeddingModel) -> dict[str
         "type": "embedding" if is_embedding else "generation",
         "params": params_dict,
     }
-
-    if isinstance(model, OpenAIEmbeddingModel) and not model.use_server_truncation:
-        result["use_server_truncation"] = False
 
     if not is_embedding:
         if hasattr(model, "language") and model.language is not None:

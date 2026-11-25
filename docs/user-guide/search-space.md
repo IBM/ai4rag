@@ -273,7 +273,6 @@ foundation = OpenAIFoundationModel(
 embedding = OpenAIEmbeddingModel(
     client=OpenAI(base_url=os.environ["EMBEDDING_BASE_URL"], api_key=os.environ["EMBEDDING_API_KEY"]),
     model_id=os.environ["EMBEDDING_MODEL"],
-    use_server_truncation=False,
 )
 
 search_space = prepare_search_space_with_models(
@@ -284,11 +283,9 @@ search_space = prepare_search_space_with_models(
 ```
 
 Supply the full API base URL for each endpoint, including any gateway prefix
-and `/v1` where required. The example omits the provider-specific embedding
-truncation field for servers that accept only standard OpenAI fields. Missing
-embedding capabilities are probed when the embedding wrapper is constructed.
-Search-space reports preserve `use_server_truncation=False` so the setting
-survives model restoration. Older reports default to `True`.
+and `/v1` where required. The embedding wrapper probes any missing model
+capabilities during construction. Its requests include `truncate_prompt_tokens`
+as an extra field for endpoints that support server-side truncation.
 
 The helper validates the template and backend before checking each model with a
 short chat or embedding request. It raises `SearchSpaceValueError` with the

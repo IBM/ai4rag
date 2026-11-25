@@ -339,7 +339,6 @@ def direct_models():
                 embedding_client,
                 "provider/embed",
                 params={"embedding_dimension": 768, "context_length": 2048},
-                use_server_truncation=False,
             )
         ],
     }
@@ -366,10 +365,11 @@ def test_direct_search_space_preserves_model_objects_and_overrides(direct_models
     foundation_call = foundation.client.chat.completions.create
     embedding_call = embedding.client.embeddings.create
     foundation_call.assert_called_once()
-    embedding_call.assert_called_once()
     assert foundation_call.call_args.kwargs["model"] == foundation.model_id
     assert foundation_call.call_args.kwargs["messages"] == [{"role": "user", "content": "Hi"}]
-    assert embedding_call.call_args.kwargs == {"model": embedding.model_id, "input": ["test"], "extra_body": None}
+    embedding_call.assert_called_once_with(
+        model=embedding.model_id, input=["test"], extra_body={"truncate_prompt_tokens": -1}
+    )
     assert result["template_id"].values == ("sequential_rag",)
     assert result["chunking_method"].values == ("recursive",)
     assert result["chunk_size"].values == (256,)
@@ -420,7 +420,6 @@ def test_direct_language_detection_and_report(direct_models, tmp_path):
             "model_id": "provider/embed",
             "type": "embedding",
             "params": {"embedding_dimension": 768, "context_length": 2048},
-            "use_server_truncation": False,
         }
     ]
     embedding.client.embeddings.create.reset_mock()
@@ -428,7 +427,7 @@ def test_direct_language_detection_and_report(direct_models, tmp_path):
     embedding.client.embeddings.create.assert_not_called()
     assert restored.embed_query("restored query") == [0.0] * 768
     embedding.client.embeddings.create.assert_called_once_with(
-        model=embedding.model_id, input=["restored query"], extra_body=None
+        model=embedding.model_id, input=["restored query"], extra_body={"truncate_prompt_tokens": -1}
     )
 
 
@@ -463,7 +462,6 @@ def test_direct_search_space_explores_multiple_models_with_separate_clients(dire
             _direct_embedding_client(1024),
             "provider/multitask",
             params={"embedding_dimension": 1024, "context_length": 4096},
-            use_server_truncation=False,
         )
     )
     for model, code in zip(foundation_models, ("en", "pl"), strict=True):
