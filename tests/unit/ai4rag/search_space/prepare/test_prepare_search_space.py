@@ -172,7 +172,7 @@ class TestPrepareSearchSpaceWithMaas:
         client = _setup_client(
             mocker,
             ["llm-ok", "llm-bad", "default-embedding"],
-            foundation_valid=lambda m: m.model_id != "llm-bad",
+            foundation_valid=lambda m, **_: m.model_id != "llm-bad",
         )
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*llm-bad"):
@@ -183,7 +183,7 @@ class TestPrepareSearchSpaceWithMaas:
         client = _setup_client(
             mocker,
             ["default-llm", "emb-ok", "emb-bad"],
-            embedding_valid=lambda m: m.model_id != "emb-bad",
+            embedding_valid=lambda m, **_: m.model_id != "emb-bad",
         )
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-bad"):
@@ -201,7 +201,7 @@ class TestPrepareSearchSpaceWithMaas:
         client = _setup_client(
             mocker,
             ["llm-ok", "llm-bad", "default-embedding"],
-            foundation_valid=lambda m: m.model_id != "llm-bad",
+            foundation_valid=lambda m, **_: m.model_id != "llm-bad",
         )
 
         result = prepare_search_space_with_maas(_payload(foundation_ids=["llm-ok"]), client)
@@ -506,8 +506,10 @@ def test_direct_search_space_reports_failed_probes_before_language_detection(dir
         )
 
     error_message = str(caught.value)
-    assert f"Foundation models failed the responsiveness check: ['{foundation.model_id}']" in error_message
-    assert f"Embedding models failed the responsiveness check: ['{embedding.model_id}']" in error_message
+    assert error_message.splitlines() == [
+        f"Provided models of type 'foundation' do not respond: {[foundation.model_id]!r}.",
+        f"Provided models of type 'embedding' do not respond: {[embedding.model_id]!r}.",
+    ]
     foundation.client.chat.completions.create.assert_called_once()
     embedding.client.embeddings.create.assert_called_once()
     assert "status_code=401" in caplog.text

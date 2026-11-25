@@ -147,27 +147,34 @@ def _validate_embedding_model(model: OpenAIEmbeddingModel, *, include_error_deta
         return False
 
 
+def _validate(model: OpenAIFoundationModel | OpenAIEmbeddingModel, *, include_error_details: bool) -> bool:
+    """Dispatch to the responsiveness check for the model's family."""
+    if isinstance(model, OpenAIEmbeddingModel):
+        return _validate_embedding_model(model, include_error_details=include_error_details)
+    return _validate_foundation_model(model, include_error_details=include_error_details)
+
+
+def _probe_models(
+    models: Sequence[OpenAIFoundationModel | OpenAIEmbeddingModel], *, include_error_details: bool
+) -> list[str]:
+    """Probe initialized models through their own clients and collect failed IDs."""
+    return [model.model_id for model in models if not _validate(model, include_error_details=include_error_details)]
+
+
+def _unresponsive_models_message(model_type: str, failed_ids: list[str]) -> str:
+    """Format the failed IDs for one model family."""
+    return f"Provided models of type '{model_type}' do not respond: {failed_ids!r}."
+
+
 def _validate_model_responsiveness(
     foundation_models: Sequence[OpenAIFoundationModel], embedding_models: Sequence[OpenAIEmbeddingModel]
 ) -> None:
     """Probe initialized models through their own clients and report failed IDs by role."""
     failed_models = {
-        _FOUNDATION: [
-            model.model_id
-            for model in foundation_models
-            if not _validate_foundation_model(model, include_error_details=False)
-        ],
-        _EMBEDDING: [
-            model.model_id
-            for model in embedding_models
-            if not _validate_embedding_model(model, include_error_details=False)
-        ],
+        _FOUNDATION: _probe_models(foundation_models, include_error_details=False),
+        _EMBEDDING: _probe_models(embedding_models, include_error_details=False),
     }
-    errors = [
-        f"{role.capitalize()} models failed the responsiveness check: {model_ids!r}."
-        for role, model_ids in failed_models.items()
-        if model_ids
-    ]
+    errors = [_unresponsive_models_message(role, model_ids) for role, model_ids in failed_models.items() if model_ids]
     if errors:
         raise SearchSpaceValueError("\n".join(errors))
 
@@ -215,13 +222,6 @@ def _instantiate(
         user_message_text=spec.get("user_message_text"),
         context_template_text=spec.get("context_template_text"),
     )
-
-
-def _validate(model: OpenAIFoundationModel | OpenAIEmbeddingModel, model_type: str) -> bool:
-    """Dispatch to the responsiveness check for the model's family."""
-    if model_type == _EMBEDDING:
-        return _validate_embedding_model(model)
-    return _validate_foundation_model(model)
 
 
 def _get_models(
@@ -285,16 +285,12 @@ def _get_models(
             not_responding.append(spec["model_id"])
             continue
 
-        if validate and not _validate(model, model_type):
-            not_responding.append(spec["model_id"])
-            continue
         instances.append(model)
 
+    if validate:
+        not_responding.extend(_probe_models(instances, include_error_details=True))
     if not_responding:
-        error_messages.append(
-            f"Provided models of type '{model_type}' are available but do not respond. "
-            f"Please validate these models are correctly deployed and respond: '{not_responding}'."
-        )
+        error_messages.append(_unresponsive_models_message(model_type, not_responding))
 
     if error_messages:
         raise SearchSpaceValueError("\n".join(error_messages))
