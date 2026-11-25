@@ -18,6 +18,7 @@ from langchain_openai import ChatOpenAI
 from openai import BadRequestError, DefaultAsyncHttpxClient
 from openai.types.chat import ChatCompletionMessage
 from openai.types.chat.chat_completion import Choice
+from pydantic import Field
 
 from ai4rag import logger
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
@@ -194,6 +195,15 @@ def _enforce_agent_budget(
     return response
 
 
+class _DirectChatOpenAI(ChatOpenAI):
+    """Run async chat calls through LangChain's synchronous-client fallback."""
+
+    # A populated slot keeps ChatOpenAI from constructing a separate SDK client.
+    async_client: Any = Field(default_factory=object, exclude=True)
+    _agenerate = BaseChatModel._agenerate  # pylint: disable=protected-access
+    _astream = BaseChatModel._astream  # pylint: disable=protected-access
+
+
 class AgenticRAG(BaseRAGTemplate):
     """Run a LangChain agent with query rewriting and retrieval tools.
 
@@ -311,13 +321,15 @@ class AgenticRAG(BaseRAGTemplate):
             raise TypeError("A non-OpenAI foundation model requires a LangChain chat_model")
         client = self.foundation_model.client
         client_settings = vars(client)
+        direct_client = "_ai4rag_tls_verify" not in client_settings
         verify = client_settings.get("_ai4rag_tls_verify")
         client_kwargs: dict[str, Any] = {}
-        if "_ai4rag_tls_verify" not in client_settings or verify is not None:
+        if direct_client or verify is not None:
             client_kwargs.update(client=client.chat.completions, root_client=client)
         if verify is not None:
             client_kwargs["http_async_client"] = DefaultAsyncHttpxClient(verify=verify)
-        self.chat_model = ChatOpenAI(
+        model_class = _DirectChatOpenAI if direct_client else ChatOpenAI
+        self.chat_model = model_class(
             model=self.foundation_model.model_id,
             api_key=client.api_key,
             base_url=str(client.base_url),

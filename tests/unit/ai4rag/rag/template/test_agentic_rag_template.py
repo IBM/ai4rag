@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+import asyncio
 import json
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -101,6 +102,49 @@ def _http_agent(mocker, respond, supplied=True, budget=2):
     retriever = mocker.MagicMock()
     retriever.retrieve.return_value = [AI4RAGChunk(text="private document", metadata={})]
     return AgenticRAG(foundation, retriever, budget, model)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_direct_chat_model_async_calls_use_supplied_transport(mocker, stream):
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        assert request.headers["X-Gateway-Route"] == "rag"
+        assert request.extensions["timeout"]["read"] == 17.0
+        if not stream:
+            return _http_completion("answer")
+        chunk = {
+            "id": "completion",
+            "object": "chat.completion.chunk",
+            "model": "model",
+            "created": 0,
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "answer"}, "finish_reason": "stop"}],
+        }
+        return httpx.Response(
+            200, headers={"Content-Type": "text/event-stream"}, text=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n"
+        )
+
+    with OpenAI(
+        api_key="test",
+        base_url="https://gateway.example/v1",
+        default_headers={"X-Gateway-Route": "rag"},
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+        timeout=17.0,
+        max_retries=0,
+    ) as client:
+        foundation = OpenAIFoundationModel(client, "model")
+        model = AgenticRAG(foundation, mocker.MagicMock()).chat_model
+
+        async def invoke():
+            if stream:
+                return "".join([chunk.text async for chunk in model.astream("test")])
+            return (await model.ainvoke("test")).text
+
+        assert asyncio.run(invoke()) == "answer"
+        assert model.root_client is client
+        assert model.root_async_client is None
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize("supplied", [True, False])

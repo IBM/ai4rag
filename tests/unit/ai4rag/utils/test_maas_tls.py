@@ -293,8 +293,7 @@ def test_agent_preserves_a_direct_clients_custom_ca(https_maas, mounted_bundle, 
         foundation = OpenAIFoundationModel(client=client, model_id="test-model")
         agent = AgenticRAG(foundation_model=foundation, retriever=MagicMock())
         chat_model = agent.chat_model
-        try:
-            assert chat_model.root_client is client
-            assert chat_model.invoke("test").content == "trusted"
-        finally:
-            asyncio.run(chat_model.root_async_client.close())
+        assert chat_model.root_client is client
+        assert chat_model.root_async_client is None
+        assert chat_model.invoke("test").content == "trusted"
+        assert asyncio.run(chat_model.ainvoke("test")).content == "trusted"

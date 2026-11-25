@@ -283,17 +283,19 @@ search_space = prepare_search_space_with_models(
 ```
 
 Supply the full API base URL for each endpoint, including any gateway prefix
-and `/v1` where required. The embedding wrapper probes any missing model
-capabilities during construction. Its requests include `truncate_prompt_tokens`
-as an extra field for endpoints that support server-side truncation.
+and `/v1` where required. The embedding endpoint must accept or ignore the
+provider-specific `truncate_prompt_tokens` field. The embedding wrapper sends
+this field on every request, including when it probes for missing model
+capabilities during construction.
 
 The helper validates the template and backend before checking each model with a
 short chat or embedding request. It raises `SearchSpaceValueError` with the
 failed model IDs if a probe fails. If you supply `benchmark_data`, language
 detection runs after the probes and updates each foundation model's language
 and generated user prompt on success. The default agentic template uses the
-supplied foundation client for synchronous requests, including its custom
-headers and TLS settings.
+supplied foundation client for chat. Async calls to its LangChain chat model
+run the same client in a worker thread, preserving its headers, TLS settings,
+timeouts, and retries.
 
 ---
 
