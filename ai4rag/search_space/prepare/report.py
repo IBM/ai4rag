@@ -78,7 +78,8 @@ def build_search_space_report(search_space: AI4RAGSearchSpace) -> SearchSpaceRep
     ----------
     search_space : AI4RAGSearchSpace
         The search space produced by
-        :func:`~ai4rag.search_space.prepare.prepare_search_space.prepare_search_space_with_maas`.
+        :func:`~ai4rag.search_space.prepare.prepare_search_space.prepare_search_space_with_maas` or
+        :func:`~ai4rag.search_space.prepare.prepare_search_space.prepare_search_space_with_models`.
 
     Returns
     -------

@@ -267,7 +267,10 @@ def test_agent_without_per_client_ca_keeps_default_clients(tmp_path, monkeypatch
         shutil.copyfile(tls_material / "ca.pem", tmp_path / "07039359.0")
     assert _get_maas_tls_verify(None) is None
 
-    with OpenAI(api_key="test-key", base_url="https://maas.example.com/v1", timeout=17.0, max_retries=0) as client:
+    with OpenAI(api_key="test-key", base_url="https://maas.example.com/v1", timeout=17.0, max_retries=0) as maas_client:
+        monkeypatch.setattr("ai4rag.utils.clients.maas_client.OpenAI", lambda **_kwargs: maas_client)
+        monkeypatch.setattr(maas_client.models, "list", MagicMock())
+        client = create_maas_client("https://maas.example.com", "test-key")
         foundation = OpenAIFoundationModel(client=client, model_id="test-model")
         agent = AgenticRAG(foundation_model=foundation, retriever=MagicMock())
         chat_model = agent._chat_model()  # pylint: disable=protected-access
@@ -281,3 +284,14 @@ def test_agent_without_per_client_ca_keeps_default_clients(tmp_path, monkeypatch
         finally:
             chat_model.root_client.close()
             asyncio.run(chat_model.root_async_client.close())
+
+
+def test_agent_preserves_a_direct_clients_custom_ca(https_maas, mounted_bundle, monkeypatch):
+    monkeypatch.delenv("SSL_CERT_DIR")
+    context = ssl.create_default_context(cafile=str(mounted_bundle))
+    with OpenAI(api_key="test-key", base_url=f"{https_maas}/v1", http_client=httpx.Client(verify=context)) as client:
+        foundation = OpenAIFoundationModel(client=client, model_id="test-model")
+        agent = AgenticRAG(foundation_model=foundation, retriever=MagicMock())
+        chat_model = agent.chat_model
+        assert chat_model.root_client is client
+        assert chat_model.invoke("test").content == "trusted"

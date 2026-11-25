@@ -4,14 +4,24 @@
 # -----------------------------------------------------------------------------
 """Unit tests for prepare_search_space module."""
 
+import json
+from copy import copy
 from unittest.mock import MagicMock, Mock
 
 import httpx
+import pandas as pd
 import pytest
-from openai import OpenAI
+from openai import AuthenticationError, BadRequestError, OpenAI
 from pydantic import ValidationError
 
-from ai4rag.search_space.prepare import prepare_search_space_with_maas
+from ai4rag.rag.embedding.openai_model import OpenAIEmbeddingModel
+from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
+from ai4rag.search_space.prepare import (
+    build_search_space_report,
+    get_embedding_models,
+    prepare_search_space_with_maas,
+    prepare_search_space_with_models,
+)
 from ai4rag.search_space.src.exceptions import SearchSpaceValueError
 
 
@@ -162,7 +172,7 @@ class TestPrepareSearchSpaceWithMaas:
         client = _setup_client(
             mocker,
             ["llm-ok", "llm-bad", "default-embedding"],
-            foundation_valid=lambda m: m.model_id != "llm-bad",
+            foundation_valid=lambda m, **_: m.model_id != "llm-bad",
         )
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*llm-bad"):
@@ -173,7 +183,7 @@ class TestPrepareSearchSpaceWithMaas:
         client = _setup_client(
             mocker,
             ["default-llm", "emb-ok", "emb-bad"],
-            embedding_valid=lambda m: m.model_id != "emb-bad",
+            embedding_valid=lambda m, **_: m.model_id != "emb-bad",
         )
 
         with pytest.raises(SearchSpaceValueError, match=r"do not respond.*emb-bad"):
@@ -191,7 +201,7 @@ class TestPrepareSearchSpaceWithMaas:
         client = _setup_client(
             mocker,
             ["llm-ok", "llm-bad", "default-embedding"],
-            foundation_valid=lambda m: m.model_id != "llm-bad",
+            foundation_valid=lambda m, **_: m.model_id != "llm-bad",
         )
 
         result = prepare_search_space_with_maas(_payload(foundation_ids=["llm-ok"]), client)
@@ -303,3 +313,306 @@ def test_maas_rejects_incompatible_templates_in_search_space(mocker):
     client = _setup_client(mocker, ["default-llm", "default-embedding"])
     with pytest.raises(SearchSpaceValueError, match="incompatible"):
         prepare_search_space_with_maas(_payload(template_ids=["sequential_rag"]), client, vector_store_type="neo4j")
+
+
+def _direct_embedding_client(dimension: int) -> MagicMock:
+    client = MagicMock(spec=OpenAI)
+    client.base_url = "https://embedding.example.com/v1"
+    client.timeout = httpx.Timeout(600)
+    client.with_options.return_value = client
+    client.embeddings.create.return_value = Mock(data=[Mock(index=0, embedding=[0.0] * dimension)])
+    return client
+
+
+@pytest.fixture
+def direct_models():
+    foundation_client = MagicMock(spec=OpenAI)
+    foundation_client.api_key = "foundation-secret"
+    foundation_client.base_url = "https://chat.example.com/gateway/v1"
+    foundation_client.chat.completions.create.return_value = Mock(choices=[])
+    embedding_client = _direct_embedding_client(768)
+    embedding_client.api_key = "embedding-secret"
+    return {
+        "foundation_models": [OpenAIFoundationModel(foundation_client, "provider/chat", params={"temperature": 0.1})],
+        "embedding_models": [
+            OpenAIEmbeddingModel(
+                embedding_client,
+                "provider/embed",
+                params={"embedding_dimension": 768, "context_length": 2048},
+            )
+        ],
+    }
+
+
+def test_direct_search_space_preserves_model_objects_and_overrides(direct_models):
+    result = prepare_search_space_with_models(
+        {
+            "template_ids": ["sequential_rag"],
+            "chunking_methods": ["recursive"],
+            "chunk_sizes": [256],
+            "chunk_overlaps": [64],
+        },
+        **direct_models,
+    )
+
+    for role, (model,) in direct_models.items():
+        values = result[role.removesuffix("s")].values
+        assert len(values) == 1
+        assert values[0] is model
+        model.client.models.list.assert_not_called()
+    (foundation,) = direct_models["foundation_models"]
+    (embedding,) = direct_models["embedding_models"]
+    foundation_call = foundation.client.chat.completions.create
+    embedding_call = embedding.client.embeddings.create
+    foundation_call.assert_called_once()
+    assert foundation_call.call_args.kwargs["model"] == foundation.model_id
+    assert foundation_call.call_args.kwargs["messages"] == [{"role": "user", "content": "Hi"}]
+    embedding_call.assert_called_once_with(
+        model=embedding.model_id, input=["test"], extra_body={"truncate_prompt_tokens": -1}
+    )
+    assert result["template_id"].values == ("sequential_rag",)
+    assert result["chunking_method"].values == ("recursive",)
+    assert result["chunk_size"].values == (256,)
+    assert result["chunk_overlap"].values == (64,)
+
+
+def test_direct_language_detection_and_report(direct_models, tmp_path):
+    (foundation,) = direct_models["foundation_models"]
+    (embedding,) = direct_models["embedding_models"]
+    prompt_before_detection = foundation.user_message_text
+    completion = Mock()
+    completion.message.content = '{"code": "pl"}'
+    foundation.client.chat.completions.create.return_value = Mock(choices=[completion])
+
+    result = prepare_search_space_with_models(
+        {}, benchmark_data=pd.DataFrame({"question": ["Gdzie jest Warszawa?"]}), **direct_models
+    )
+
+    foundation.client.models.list.assert_not_called()
+    probe, detection = foundation.client.chat.completions.create.call_args_list
+    assert probe.kwargs["messages"] == [{"role": "user", "content": "Hi"}]
+    assert detection.kwargs["model"] == foundation.model_id
+    assert "response_format" in detection.kwargs
+    embedding.client.embeddings.create.assert_called_once()
+    assert foundation.language.code == "pl"
+    assert foundation.user_message_text != prompt_before_detection
+
+    report_path = tmp_path / "search-space.json"
+    build_search_space_report(result).save_json(report_path)
+    report_json = report_path.read_text(encoding="utf-8")
+    for model in (foundation, embedding):
+        assert model.client.api_key not in report_json
+        assert model.client.base_url not in report_json
+    report = json.loads(report_json)
+    assert report["foundation_model"] == [
+        {
+            "model_id": "provider/chat",
+            "type": "generation",
+            "params": foundation.params.model_dump(),
+            "language": {"code": "pl", "name": "Polish"},
+            "system_message_text": foundation.system_message_text,
+            "user_message_text": foundation.user_message_text,
+            "context_template_text": foundation.context_template_text,
+        }
+    ]
+    assert report["embedding_model"] == [
+        {
+            "model_id": "provider/embed",
+            "type": "embedding",
+            "params": {"embedding_dimension": 768, "context_length": 2048},
+        }
+    ]
+    embedding.client.embeddings.create.reset_mock()
+    (restored,) = get_embedding_models(embedding.client, report["embedding_model"], validate=False)
+    embedding.client.embeddings.create.assert_not_called()
+    assert restored.embed_query("restored query") == [0.0] * 768
+    embedding.client.embeddings.create.assert_called_once_with(
+        model=embedding.model_id, input=["restored query"], extra_body={"truncate_prompt_tokens": -1}
+    )
+
+
+def test_direct_language_detection_sanitizes_endpoint_errors(direct_models, caplog):
+    (foundation,) = direct_models["foundation_models"]
+    question = "Private benchmark question"
+    error = BadRequestError(
+        f"Could not process {question} with {foundation.client.api_key}",
+        response=httpx.Response(400, request=httpx.Request("POST", foundation.client.base_url)),
+        body=None,
+    )
+    foundation.client.chat.completions.create.side_effect = [Mock(choices=[]), error]
+    original_language = foundation.language
+    original_prompt = foundation.user_message_text
+
+    prepare_search_space_with_models({}, benchmark_data=pd.DataFrame({"question": [question]}), **direct_models)
+
+    assert foundation.client.chat.completions.create.call_count == 2
+    assert "LLM language detection failed: BadRequestError, status_code=400" in caplog.text
+    assert question not in caplog.text
+    assert foundation.client.api_key not in caplog.text
+    assert foundation.language is original_language
+    assert foundation.user_message_text == original_prompt
+
+
+def test_direct_search_space_explores_multiple_models_with_separate_clients(direct_models):
+    foundation_models = direct_models["foundation_models"]
+    embedding_models = direct_models["embedding_models"]
+    local_chat_client = MagicMock(spec=OpenAI)
+    local_chat_client.base_url = httpx.URL("http://localhost:8080/v1")
+    cluster_embedding_client = _direct_embedding_client(1024)
+    cluster_embedding_client.base_url = httpx.URL("http://embedding.models.svc.cluster.local:8080/v1")
+    foundation_models.append(OpenAIFoundationModel(local_chat_client, "provider/multitask"))
+    embedding_models.append(
+        OpenAIEmbeddingModel(
+            cluster_embedding_client,
+            "provider/multitask",
+            params={"embedding_dimension": 1024, "context_length": 4096},
+        )
+    )
+    for model, code in zip(foundation_models, ("en", "pl"), strict=True):
+        completion = Mock()
+        completion.message.content = json.dumps({"code": code})
+        model.client.chat.completions.create.return_value = Mock(choices=[completion])
+
+    result = prepare_search_space_with_models(
+        {}, benchmark_data=pd.DataFrame({"question": ["Where is Warsaw?"]}), **direct_models
+    )
+
+    for role, models in direct_models.items():
+        for candidate, model in zip(result[role.removesuffix("s")].values, models, strict=True):
+            assert candidate is model
+    assert {(combo["foundation_model"], combo["embedding_model"]) for combo in result.combinations} == {
+        (foundation, embedding) for foundation in foundation_models for embedding in embedding_models
+    }
+    for model, code in zip(foundation_models, ("en", "pl"), strict=True):
+        model.client.models.list.assert_not_called()
+        probe, detection = model.client.chat.completions.create.call_args_list
+        assert probe.kwargs["model"] == detection.kwargs["model"] == model.model_id
+        assert model.language.code == code
+    for model in embedding_models:
+        model.client.models.list.assert_not_called()
+        model.client.embeddings.create.assert_called_once()
+        assert model.client.embeddings.create.call_args.kwargs["model"] == model.model_id
+
+
+def test_direct_search_space_reports_failed_probes_before_language_detection(direct_models, caplog):
+    (foundation,) = direct_models["foundation_models"]
+    (embedding,) = direct_models["embedding_models"]
+    foundation.client.chat.completions.create.side_effect = AuthenticationError(
+        f"Invalid credential {foundation.client.api_key}",
+        response=httpx.Response(401, request=httpx.Request("POST", foundation.client.base_url)),
+        body=None,
+    )
+    embedding.client.embeddings.create.side_effect = RuntimeError(f"Invalid credential {embedding.client.api_key}")
+
+    with pytest.raises(SearchSpaceValueError) as caught:
+        prepare_search_space_with_models(
+            {}, benchmark_data=pd.DataFrame({"question": ["Where is Warsaw?"]}), **direct_models
+        )
+
+    error_message = str(caught.value)
+    assert error_message.splitlines() == [
+        f"Provided models of type 'foundation' do not respond: {[foundation.model_id]!r}.",
+        f"Provided models of type 'embedding' do not respond: {[embedding.model_id]!r}.",
+    ]
+    foundation.client.chat.completions.create.assert_called_once()
+    embedding.client.embeddings.create.assert_called_once()
+    assert "status_code=401" in caplog.text
+    for model in (foundation, embedding):
+        assert model.client.api_key not in error_message + caplog.text
+
+
+@pytest.mark.parametrize(
+    "payload,field",
+    [
+        ({"foundation_models": [{"model_id": "other-chat"}]}, "foundation_models"),
+        ({"embedding_models": None}, "embedding_models"),
+        ({"chunking_methods": ["semantic"]}, "chunking_methods"),
+        ({"chunk_sizes": [1]}, "chunk_sizes"),
+    ],
+)
+def test_direct_search_space_validates_constraints(payload, field, direct_models):
+    with pytest.raises(ValidationError, match=field):
+        prepare_search_space_with_models(payload, **direct_models)
+    assert all(not model.client.mock_calls for (model,) in direct_models.values())
+
+
+@pytest.mark.parametrize("with_maas", [False, True])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"foundation_models": [{"model_id": "model", "api_key": "private-key"}]},
+        {"template_ids": ["private-key"]},
+        {"chunking_methods": ["private-key"]},
+        {"chunk_sizes": ["private-key"]},
+    ],
+)
+def test_search_space_does_not_echo_rejected_constraint_values(with_maas, payload, direct_models, caplog):
+    with caplog.at_level("INFO", logger="ai4rag"):
+        with pytest.raises(ValidationError) as caught:
+            if with_maas:
+                prepare_search_space_with_maas(payload, MagicMock(spec=OpenAI))
+            else:
+                prepare_search_space_with_models(payload, **direct_models)
+
+    assert "private-key" not in caplog.text
+    assert "private-key" not in str(caught.value)
+
+
+@pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])
+def test_direct_search_space_rejects_external_http_before_any_probe(role, direct_models, caplog):
+    (model,) = direct_models[role]
+    model.client.base_url = httpx.URL("http://models.example.com/v1?token=private-key")
+
+    with pytest.raises(SearchSpaceValueError, match=rf"{role}.*HTTPS") as caught:
+        prepare_search_space_with_models({}, **direct_models)
+
+    assert "private-key" not in str(caught.value) + caplog.text
+    assert all(not model.client.mock_calls for (model,) in direct_models.values())
+
+
+@pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])
+@pytest.mark.parametrize("models", [[], ["model-id"], object()])
+def test_direct_search_space_requires_nonempty_sequences_of_model_wrappers(role, models, direct_models):
+    direct_models[role] = models
+    with pytest.raises(SearchSpaceValueError, match=rf"{role}.*non-empty sequence"):
+        prepare_search_space_with_models({}, **direct_models)
+
+
+@pytest.mark.parametrize("role", ["foundation_models", "embedding_models"])
+def test_direct_search_space_rejects_duplicate_ids_with_separate_clients(role, direct_models):
+    duplicate = copy(direct_models[role][0])
+    duplicate.client = MagicMock(spec=OpenAI)
+    direct_models[role].append(duplicate)
+
+    with pytest.raises(SearchSpaceValueError, match=rf"{role}.*unique model IDs"):
+        prepare_search_space_with_models({}, **direct_models)
+
+
+def test_direct_search_space_applies_neo4j_defaults(direct_models):
+    result = prepare_search_space_with_models({}, vector_store_type="neo4j", **direct_models)
+
+    assert result["template_id"].values == ("agentic_graph_rag",)
+    assert result["search_mode"].values == ("graph",)
+    assert "ranker_strategy" not in {param.name for param in result.params}
+
+
+def test_direct_incompatible_template_leaves_model_unchanged(direct_models):
+    (foundation,) = direct_models["foundation_models"]
+    original_language = foundation.language
+    original_prompt = "Use these sources: {reference_documents}\nQuestion: {question}"
+    foundation.user_message_text = original_prompt
+    completion = Mock()
+    completion.message.content = '{"code": "pl"}'
+    foundation.client.chat.completions.create.return_value = Mock(choices=[completion])
+
+    with pytest.raises(SearchSpaceValueError, match="incompatible"):
+        prepare_search_space_with_models(
+            {"template_ids": ["sequential_rag"]},
+            benchmark_data=pd.DataFrame({"question": ["Gdzie jest Warszawa?"]}),
+            vector_store_type="neo4j",
+            **direct_models,
+        )
+
+    assert all(not model.client.mock_calls for (model,) in direct_models.values())
+    assert foundation.language is original_language
+    assert foundation.user_message_text == original_prompt

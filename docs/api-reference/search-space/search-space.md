@@ -21,6 +21,11 @@
       show_root_heading: true
       show_source: true
 
+::: ai4rag.search_space.prepare.prepare_search_space.prepare_search_space_with_models
+    options:
+      show_root_heading: true
+      show_source: true
+
 ## Search Space Report
 
 The file-format contract exchanged between the search-space preparation,

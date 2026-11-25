@@ -6,7 +6,7 @@
 import json
 from dataclasses import dataclass, field, replace
 from threading import Lock
-from typing import Any, Callable
+from typing import Any, Callable, Never
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
@@ -194,6 +194,15 @@ def _enforce_agent_budget(
     return response
 
 
+class _DisabledAsyncClient:
+    """Reject asynchronous calls for direct OpenAI models."""
+
+    def __getattr__(self, name: str) -> Never:
+        if name.startswith("_"):
+            raise AttributeError(name)
+        raise NotImplementedError("Direct OpenAI models support synchronous chat only. Use invoke().")
+
+
 class AgenticRAG(BaseRAGTemplate):
     """Run a LangChain agent with query rewriting and retrieval tools.
 
@@ -304,28 +313,37 @@ class AgenticRAG(BaseRAGTemplate):
         return "maximum context length" in str(error).lower()
 
     def _chat_model(self) -> BaseChatModel:
-        """Build the LangChain model from the configured MaaS client."""
+        """Build the LangChain model using the configured OpenAI client."""
         if self.chat_model is not None:
             return self.chat_model
         if not isinstance(self.foundation_model, OpenAIFoundationModel):
             raise TypeError("A non-OpenAI foundation model requires a LangChain chat_model")
         client = self.foundation_model.client
-        verify = vars(client).get("_ai4rag_tls_verify")
-        tls_kwargs: dict[str, Any] = {}
-        if verify is not None:
-            tls_kwargs = {
-                "client": client.chat.completions,
-                "root_client": client,
-                "http_async_client": DefaultAsyncHttpxClient(verify=verify),
-            }
+        client_settings = vars(client)
+        direct_client = "_ai4rag_tls_verify" not in client_settings
+        verify = client_settings.get("_ai4rag_tls_verify")
+        client_kwargs: dict[str, Any] = {}
+        if direct_client or verify is not None:
+            client_kwargs.update(client=client.chat.completions, root_client=client)
+        if direct_client:
+            # Fill both async slots to prevent LangChain from creating a fallback client.
+            disabled = _DisabledAsyncClient()
+            client_kwargs.update(
+                async_client=disabled,
+                root_async_client=disabled,
+                # LangChain's global cache does not distinguish client-specific routes.
+                cache=False,
+            )
+        elif verify is not None:
+            client_kwargs["http_async_client"] = DefaultAsyncHttpxClient(verify=verify)
         self.chat_model = ChatOpenAI(
             model=self.foundation_model.model_id,
-            api_key=self.foundation_model.client.api_key,
-            base_url=str(self.foundation_model.client.base_url),
+            api_key=client.api_key,
+            base_url=str(client.base_url),
             temperature=self.foundation_model.params.temperature,
             max_completion_tokens=self.foundation_model.params.max_completion_tokens,
             use_responses_api=False,
-            **tls_kwargs,
+            **client_kwargs,
         )
         return self.chat_model
 

@@ -8,7 +8,10 @@ from ai4rag.search_space.prepare.models import (
     get_foundation_models,
     serialize_model,
 )
-from ai4rag.search_space.prepare.prepare_search_space import prepare_search_space_with_maas
+from ai4rag.search_space.prepare.prepare_search_space import (
+    prepare_search_space_with_maas,
+    prepare_search_space_with_models,
+)
 from ai4rag.search_space.prepare.report import SearchSpaceReport, build_search_space_report
 
 __all__ = [
@@ -16,6 +19,7 @@ __all__ = [
     "get_embedding_models",
     "get_foundation_models",
     "prepare_search_space_with_maas",
+    "prepare_search_space_with_models",
     "SearchSpaceReport",
     "serialize_model",
 ]

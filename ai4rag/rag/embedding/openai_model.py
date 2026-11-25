@@ -49,7 +49,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
     Parameters
     ----------
     client : OpenAI
-        Shared synchronous client. Request-specific options leave its settings
+        Synchronous client. Request-specific options leave its settings
         unchanged; the model does not close the client or its HTTP transport.
     model_id : str
         Model identifier sent to the embedding endpoint.
@@ -202,9 +202,8 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         timeout : httpx.Timeout
             Per-phase timeout limits for this attempt.
         truncate_prompt_tokens : int | None
-            Provider-specific truncation option forwarded unchanged. On
-            compatible backends, -1 requests truncation to the model limit and
-            None disables truncation for capability probes.
+            Provider-specific truncation option. On compatible backends, -1 requests truncation to the
+            model limit and None disables truncation for capability probes.
 
         Returns
         -------
@@ -278,8 +277,8 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel[OpenAI, OpenAIEmbeddingParams]):
         policy : RequestPolicy, default=QUERY_POLICY
             Recovery settings for the new executor.
         truncate_prompt_tokens : int | None, default=-1
-            Provider-specific truncation option forwarded to every attempt;
-            capability probes pass None to disable server truncation.
+            Provider-specific truncation option forwarded to every attempt.
+            Capability probes pass None to disable server truncation.
 
         Returns
         -------

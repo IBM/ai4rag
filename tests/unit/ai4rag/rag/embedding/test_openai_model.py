@@ -435,4 +435,5 @@ def test_real_sdk_makes_exact_attempts_without_nested_retries(failures, no_wait)
         assert sdk.max_retries == 8
     assert len(requests) == min(failures + 1, 3)
     assert all(request["encoding_format"] == "base64" for request in requests)
+    assert all(request["truncate_prompt_tokens"] == -1 for request in requests)
     assert [call.args[0] for call in no_wait.call_args_list] == [30.0, 60.0][:failures]

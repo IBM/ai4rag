@@ -244,13 +244,18 @@ class TestGetEmbeddingModelsDiscovery:
         assert result[0].client is client
         assert result[0].params.embedding_dimension == 1024
 
-    def test_auto_detection_failure_treated_as_not_responding(self):
-        """A failure during auto-detection is surfaced as a non-responding model."""
+    def test_reports_auto_detection_and_probe_failures_together(self):
+        """Both failure stages contribute to a single list of non-responding models."""
         client = _serving_client([_EM_ID])
         client.embeddings.create.side_effect = Exception("Cannot connect")
+        spec = {"model_id": "restored-embedding", "params": {"embedding_dimension": 768, "context_length": 1024}}
 
-        with pytest.raises(SearchSpaceValueError, match=r"do not respond"):
-            get_embedding_models(client, [_EM_ID])
+        with pytest.raises(SearchSpaceValueError) as caught:
+            get_embedding_models(client, [_EM_ID, spec])
+
+        failed_ids = [_EM_ID, spec["model_id"]]
+        assert str(caught.value) == f"Provided models of type 'embedding' do not respond: {failed_ids!r}."
+        assert [call.kwargs["model"] for call in client.embeddings.create.call_args_list] == failed_ids
 
 
 # ---------------------------------------------------------------------------

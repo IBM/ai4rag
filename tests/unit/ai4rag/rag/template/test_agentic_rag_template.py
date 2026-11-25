@@ -3,6 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 
+import asyncio
 import json
 import warnings
 from concurrent.futures import ThreadPoolExecutor
@@ -11,10 +12,13 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from langchain.agents.middleware import ModelRequest, ModelResponse, wrap_model_call
+from langchain_core.caches import InMemoryCache
+from langchain_core.globals import get_llm_cache, set_llm_cache
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage
 from langchain_openai import ChatOpenAI
 from openai import BadRequestError, OpenAI
+from pydantic import BaseModel
 
 from ai4rag.rag.chunking.chunk import AI4RAGChunk
 from ai4rag.rag.foundation_models.openai_model import OpenAIFoundationModel
@@ -76,11 +80,10 @@ def _http_completion(content="", calls=None):
 def _http_agent(mocker, respond, supplied=True, budget=2):
     client = OpenAI(
         api_key="test",
-        base_url="https://maas.example/v1",
+        base_url="https://gateway.example/v1",
+        default_headers={"X-Gateway-Route": "rag"},
         http_client=httpx.Client(transport=httpx.MockTransport(respond)),
     )
-    # The internal model uses this same client when MaaS configures TLS trust.
-    client._ai4rag_tls_verify = True
     foundation = OpenAIFoundationModel(
         client=client,
         model_id="model",
@@ -104,6 +107,78 @@ def _http_agent(mocker, respond, supplied=True, budget=2):
     return AgenticRAG(foundation, retriever, budget, model)
 
 
+def test_direct_chat_model_keeps_routed_answers_out_of_global_cache(mocker):
+    requests = []
+
+    def respond(request):
+        route = request.headers["X-Gateway-Route"]
+        requests.append(route)
+        return _http_completion(route)
+
+    old_cache = get_llm_cache()
+    set_llm_cache(InMemoryCache())
+    try:
+        for route in ("first", "second"):
+            with OpenAI(
+                api_key="test",
+                base_url="https://gateway.example/v1",
+                default_headers={"X-Gateway-Route": route},
+                http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+            ) as client:
+                foundation = OpenAIFoundationModel(client, "model")
+                model = AgenticRAG(foundation, mocker.MagicMock()).chat_model
+                assert model.invoke("same question").text == route
+    finally:
+        set_llm_cache(old_cache)
+    assert requests == ["first", "second"]
+
+
+@pytest.mark.parametrize("structured", [False, True], ids=["plain", "structured"])
+def test_direct_chat_model_rejects_async_calls(mocker, monkeypatch, structured):
+    monkeypatch.setenv("OPENAI_PROXY", "http://proxy.example:3128")
+    mocker.patch("openai.AsyncOpenAI", side_effect=AssertionError("Unexpected fallback async client"))
+    requests = []
+
+    class Answer(BaseModel):
+        answer: str
+
+    def respond(request):
+        requests.append(request)
+        return _http_completion("answer")
+
+    async def check_async_calls(model):
+        message = "Direct OpenAI models support synchronous chat only"
+        with pytest.raises(NotImplementedError, match=message):
+            await model.ainvoke("test")
+        with pytest.raises(NotImplementedError, match=message):
+            async for _ in model.astream("test"):
+                pytest.fail("Async streaming unexpectedly yielded a chunk")
+
+    with OpenAI(
+        api_key="test",
+        base_url="https://gateway.example/v1",
+        default_headers={"X-Gateway-Route": "rag"},
+        timeout=17.0,
+        max_retries=0,
+        http_client=httpx.Client(transport=httpx.MockTransport(respond)),
+    ) as client:
+        foundation = OpenAIFoundationModel(client, "gpt-4o-mini")
+        retriever = mocker.MagicMock()
+        retriever.retrieve.return_value = []
+        rag = AgenticRAG(foundation, retriever)
+        model = rag.chat_model
+        async_model = model.with_structured_output(Answer, method="json_schema") if structured else model
+
+        asyncio.run(check_async_calls(async_model))
+        assert requests == []
+        assert model.root_client is client
+        assert rag.generate("test")["answer"] == "answer"
+
+    assert len(requests) == 1
+    assert requests[0].headers["X-Gateway-Route"] == "rag"
+    assert requests[0].extensions["timeout"]["read"] == 17.0
+
+
 @pytest.mark.parametrize("supplied", [True, False])
 @pytest.mark.parametrize("batch", ["rewrite_first", "retriever_first", "same_tool", "malformed", "unknown", "no_id"])
 def test_http_agent_serializes_only_the_first_eligible_tool(mocker, caplog, supplied, batch):
@@ -123,6 +198,7 @@ def test_http_agent_serializes_only_the_first_eligible_tool(mocker, caplog, supp
     }
 
     def respond(request):
+        assert request.headers["X-Gateway-Route"] == "rag"
         payload = json.loads(request.content)
         requests.append(payload)
         for message in payload["messages"]:
