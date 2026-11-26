@@ -377,6 +377,28 @@ class TestExperimentResultsCollectionExists:
 
         assert collection is None
 
+    def test_registered_collection_is_reusable_without_an_evaluation(self):
+        """A built index stays reusable when its pattern fails before evaluation."""
+        results = ExperimentResults()
+        indexing_params = {"chunking": {"chunking_method": "hybrid", "chunk_size": 1024, "chunk_overlap": 0}}
+
+        results.register_collection(indexing_params=indexing_params, collection_name="ai4rag_hybrid")
+
+        assert results.get_existing_collection(indexing_params) == "ai4rag_hybrid"
+        assert results.collection_names == ["ai4rag_hybrid"]
+        assert len(results) == 0
+
+    def test_register_collection_is_idempotent(self):
+        """Registering the same indexing parameters twice keeps the first collection."""
+        results = ExperimentResults()
+        indexing_params = {"chunking": {"chunking_method": "recursive", "chunk_size": 1024, "chunk_overlap": 64}}
+
+        results.register_collection(indexing_params=indexing_params, collection_name="ai4rag_first")
+        results.register_collection(indexing_params=indexing_params, collection_name="ai4rag_second")
+
+        assert results.get_existing_collection(indexing_params) == "ai4rag_first"
+        assert results.collection_names == ["ai4rag_first"]
+
 
 class TestExperimentResultsProperties:
     """Test suite for ExperimentResults properties."""

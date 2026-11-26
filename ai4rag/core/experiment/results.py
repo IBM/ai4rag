@@ -89,6 +89,12 @@ class ExperimentResults:
     def __init__(self):
         self.evaluations: list[EvaluationResult] = []
         self.evaluation_data: list[list[EvaluationData]] = []
+        # Indexing parameters are recorded as soon as an index is built, before
+        # retrieval or evaluation can fail. A pattern that fails afterwards
+        # therefore still advertises its collection for reuse, instead of
+        # forcing the next candidate with identical indexing parameters to
+        # rebuild the index from scratch.
+        self._collections: list[tuple[dict[str, Any], str]] = []
 
     def __len__(self) -> int:
         return len(self.evaluations)
@@ -119,6 +125,25 @@ class ExperimentResults:
         logger.info("Adding evaluation results and evaluation data to training results.")
         self.evaluations.append(evaluation_result)
         self.evaluation_data.append(evaluation_data)
+        self.register_collection(
+            indexing_params=evaluation_result.indexing_params,
+            collection_name=evaluation_result.collection,
+        )
+
+    def register_collection(self, indexing_params: dict[str, Any], collection_name: str) -> None:
+        """Record a built index so it can be reused even if its evaluation fails.
+
+        Parameters
+        ----------
+        indexing_params : dict[str, Any]
+            Indexing settings that produced the collection.
+
+        collection_name : str
+            Name of the collection/index in the vector store.
+        """
+        if any(known_params == indexing_params for known_params, _collection in self._collections):
+            return
+        self._collections.append((indexing_params, collection_name))
 
     def evaluation_explored_or_cached(
         self, indexing_params: dict[str, Any], rag_params: dict[str, Any]
@@ -162,6 +187,9 @@ class ExperimentResults:
         str | None
             The collection name of the index if it exists, otherwise None.
         """
+        for known_params, collection_name in self._collections:
+            if known_params == indexing_params:
+                return collection_name
         for evaluation in self.evaluations:
             if evaluation.indexing_params == indexing_params:
                 return evaluation.collection
@@ -180,6 +208,8 @@ class ExperimentResults:
         ret = set()
         for ev in self.evaluations:
             ret.add(ev.collection)
+        for _, collection_name in self._collections:
+            ret.add(collection_name)
         return list(ret)
 
     def get_best_evaluations(self, k: int | None = None) -> tuple[EvaluationResult]:
