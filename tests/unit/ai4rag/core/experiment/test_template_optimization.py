@@ -106,27 +106,29 @@ def test_non_categorical_template_parameter_is_rejected_at_construction():
         AI4RAGSearchSpace(params=params, vector_store_type=space.vector_store_type)
 
 
-def mock_execution(mocker, experiment):
+def mock_execution(mocker, experiment, *, score=0.7):
     store = MagicMock(collection_name="collection")
-    mocker.patch("ai4rag.core.experiment.experiment.get_vector_store", return_value=store)
+    store_factory = mocker.patch("ai4rag.core.experiment.experiment.get_vector_store", return_value=store)
     mocker.patch("ai4rag.core.experiment.experiment.LangChainChunker")
     mocker.patch("ai4rag.core.experiment.experiment.DoclingChunker")
     retriever = mocker.patch("ai4rag.core.experiment.experiment.Retriever")
     query = mocker.patch("ai4rag.core.experiment.experiment.query_rag", return_value=[])
     mocker.patch.object(
-        experiment, "_evaluate_response", return_value=(_make_result("faithfulness", "unitxt", 0.7, {}), [])
+        experiment, "_evaluate_response", return_value=(_make_result("faithfulness", "unitxt", score, {}), [])
     )
     mocker.patch.object(AgenticRAG, "__init__", return_value=None)
     mocker.patch.object(SequentialRAG, "__init__", return_value=None)
-    return store, retriever, query
+    return store, store_factory, retriever, query
 
 
-def test_templates_have_distinct_cache_entries_and_reuse_index(mocker):
+@pytest.mark.parametrize("score", [0.0, 0.7])
+def test_templates_have_distinct_cache_entries_and_reuse_index(mocker, score):
     experiment = make_experiment(make_space(templates=("agentic_rag", "sequential_rag")))
-    store, _, query = mock_execution(mocker, experiment)
+    store, store_factory, _, query = mock_execution(mocker, experiment, score=score)
     candidate = experiment.search_space.combinations[0]
     for template in ("agentic_rag", "sequential_rag", "agentic_rag"):
-        assert experiment.run_single_evaluation({**candidate, "template_id": template}) == 0.7
+        assert experiment.run_single_evaluation({**candidate, "template_id": template}) == score
+    assert [call.kwargs["collection_name"] for call in store_factory.call_args_list] == [None, store.collection_name]
     assert query.call_count == 2
     assert isinstance(query.call_args_list[0].kwargs["rag"], AgenticRAG)
     assert isinstance(query.call_args_list[1].kwargs["rag"], SequentialRAG)
@@ -140,7 +142,7 @@ def test_templates_have_distinct_cache_entries_and_reuse_index(mocker):
 def test_failed_indexing_never_constructs_or_invokes_agent(mocker):
     """An exhausted embedding failure stays an indexing error before generation."""
     experiment = make_experiment(make_space())
-    store, retriever, query = mock_execution(mocker, experiment)
+    store, _, retriever, query = mock_execution(mocker, experiment)
     agent_init = mocker.patch.object(AgenticRAG, "__init__", return_value=None)
     failure = InternalServerError(
         "Embedding service unavailable",
@@ -153,15 +155,19 @@ def test_failed_indexing_never_constructs_or_invokes_agent(mocker):
         experiment.run_single_evaluation(experiment.search_space.combinations[0])
 
     assert error.value.__cause__ is failure
+    store.__exit__.assert_called_once()
+    assert store.__exit__.call_args.args[1] is error.value
     agent_init.assert_not_called()
     retriever.assert_not_called()
     query.assert_not_called()
+    assert not experiment.results
+    experiment.event_handler.on_pattern_creation.assert_not_called()
 
 
 @pytest.mark.parametrize("config", [None, {"route_k": 4, "include_entity_neighbors": False}])
 def test_graph_execution_persists_effective_settings(mocker, config):
     experiment = make_experiment(make_space("neo4j"), graph_retrieval_config=config)
-    _, retriever, query = mock_execution(mocker, experiment)
+    _, _, retriever, query = mock_execution(mocker, experiment)
     experiment.run_single_evaluation(experiment.search_space.combinations[0])
     expected = Neo4jGraphRetrievalConfig.from_mapping(config or {}).to_search_kwargs()
     assert retriever.call_args.kwargs["search_kwargs"] == expected
