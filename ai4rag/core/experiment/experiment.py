@@ -19,6 +19,7 @@ from ai4rag.core.experiment.exception_handler import (
     IndexingError,
     VectorStoreInitializationError,
 )
+from ai4rag.core.experiment.pattern_payload import build_pattern_payload
 from ai4rag.core.experiment.results import EvaluationResult, ExperimentResults
 from ai4rag.core.experiment.utils import (
     RAGChunkingParamsType,
@@ -32,11 +33,11 @@ from ai4rag.core.experiment.utils import (
 )
 from ai4rag.core.hpo.base_optimizer import (
     BaseOptimizer,
+    FailedIterationError,
     OptimizationError,
     OptimizerSettings,
 )
 from ai4rag.core.hpo.gam_opt import GAMOptimizer
-from ai4rag.core.hpo.random_opt import FailedIterationError
 from ai4rag.evaluator.base_evaluator import (
     BaseEvaluator,
     EvaluationData,
@@ -82,8 +83,9 @@ class AI4RAGExperiment:
     documents : list[DoclingDocument]
         List of parsed docling documents to embed in vector db and use as context in RAG.
 
-    benchmark_data : pd.DataFrame | BenchmarkData
-        Structure with 3 columns: 'question', 'correct_answers' and 'correct_answer_document_keys'.
+    benchmark_data : pd.DataFrame
+        DataFrame with the ``question``, ``correct_answers``, and
+        ``correct_answer_document_keys`` columns.
 
     search_space : AI4RAGSearchSpace
         Grid of parameters used during hyperparameter optimization.
@@ -131,12 +133,14 @@ class AI4RAGExperiment:
 
     Attributes
     ----------
+    benchmark_data : BenchmarkData
+        Validated benchmark used during the experiment.
+
     results : ExperimentResults
         Instance holding information about each iteration during the experiment.
         It consists of statuses, RAG pattern objects, scores and settings.
     """
 
-    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(
         self,
         documents: list[DoclingDocument],
@@ -239,16 +243,6 @@ class AI4RAGExperiment:
             )
 
         self._optimization_metric = val
-
-    @property
-    def benchmark_data(self) -> BenchmarkData:
-        """Get benchmark data."""
-        return self._benchmark_data
-
-    @benchmark_data.setter
-    def benchmark_data(self, val: BenchmarkData) -> None:
-        """Check and set benchmark data based on the executed scenario."""
-        self._benchmark_data = val
 
     @property
     def evaluators(self) -> list[BaseEvaluator]:
@@ -442,7 +436,7 @@ class AI4RAGExperiment:
 
         foundation_model = rag_params.get(AI4RAGParamNames.FOUNDATION_MODEL)
         embedding_model = rag_params.get(AI4RAGParamNames.EMBEDDING_MODEL)
-        search_mode = retrieval_params.get(AI4RAGParamNames.SEARCH_MODE, "vector")
+        search_mode = retrieval_params[AI4RAGParamNames.SEARCH_MODE]
 
         embedding_params_dict = (
             asdict(embedding_model.params) if is_dataclass(embedding_model.params) else embedding_model.params
@@ -620,11 +614,11 @@ class AI4RAGExperiment:
 
         logger.info(
             "Evaluation scores: %s",
-            {el.get("question"): el.get("metrics") for el in evaluation_results_json if isinstance(el, dict)},
+            {row["question"]: row["metrics"] for row in evaluation_results_json},
         )
 
-        iteration = len(self.results) + (len(self.known_observations) if self.known_observations else 0)
         if publish_pattern:
+            iteration = len(self.results) + (len(self.known_observations) if self.known_observations else 0)
             try:
                 self._stream_finished_pattern(
                     evaluation_result=evaluation_result,
@@ -765,7 +759,7 @@ class AI4RAGExperiment:
         )
 
         try:
-            _ = optimizer.search()
+            optimizer.search()
         except OptimizationError as err:
             final_error_msg = self._exception_handler.get_final_error_msg()
             raise RAGExperimentError(final_error_msg) from err
@@ -835,77 +829,19 @@ class AI4RAGExperiment:
         self,
         evaluation_result: EvaluationResult,
         evaluation_results_json: list,
+        *,
+        iteration: int,
         pattern_name: str | None = None,
-        iteration: int | None = None,
     ) -> None:
         """Stream a finished pattern to the configured event handler."""
-        retrieval_payload = {
-            "method": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.RETRIEVAL_METHOD],
-            "number_of_chunks": evaluation_result.rag_params["retrieval"][AI4RAGParamNames.NUMBER_OF_CHUNKS],
-            "search_mode": evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.SEARCH_MODE, "vector"),
-        }
-        if evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]:
-            retrieval_payload["window_size"] = evaluation_result.rag_params["retrieval"][AI4RAGParamNames.WINDOW_SIZE]
-        if retrieval_payload["search_mode"] == "hybrid":
-            ranker_strategy = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_STRATEGY)
-            retrieval_payload["ranker_strategy"] = ranker_strategy
-            if ranker_strategy == "rrf":
-                retrieval_payload["ranker_k"] = evaluation_result.rag_params["retrieval"].get(AI4RAGParamNames.RANKER_K)
-            if ranker_strategy == "weighted":
-                retrieval_payload["ranker_alpha"] = evaluation_result.rag_params["retrieval"].get(
-                    AI4RAGParamNames.RANKER_ALPHA
-                )
-        elif retrieval_payload["search_mode"] == "graph":
-            for key in Neo4jGraphRetrievalConfig.keys():
-                if key in evaluation_result.rag_params["retrieval"]:
-                    retrieval_payload[key] = evaluation_result.rag_params["retrieval"][key]
-        vector_store_payload = {
-            "provider_type": self.vector_store_config.provider,
-            "collection_name": evaluation_result.collection,
-        }
-        indexing_payload = {
-            "chunking": {
-                "method": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNKING_METHOD],
-                "chunk_size": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_SIZE],
-                "chunk_overlap": evaluation_result.indexing_params["chunking"][AI4RAGParamNames.CHUNK_OVERLAP],
-                "include_metadata": evaluation_result.indexing_params["chunking"]["include_metadata"],
-            },
-            "embedding": evaluation_result.indexing_params.get("embedding"),
-        }
-        if (
-            self.vector_store_config.provider == "neo4j"
-            and evaluation_result.indexing_params.get("knowledge_graph") is not None
-        ):
-            indexing_payload["graph_extraction"] = evaluation_result.indexing_params["knowledge_graph"][
-                "extraction_config"
-            ]
-        generation_payload = evaluation_result.rag_params.get("generation")
-        n_known = len(self.known_observations) if self.known_observations else 0
-
-        # Match on name and evaluator so a colliding metric name (e.g. unitxt vs
-        # ragas "faithfulness") only flags the actual optimization target.
-        metrics_payload = [
-            (
-                {**m, "optimization_metric": True}
-                if m["name"] == self.optimization_metric.name and m["evaluator"] == self.optimization_metric.evaluator
-                else m
-            )
-            for m in evaluation_result.scores["metrics"]
-        ]
-        payload = {
-            "name": pattern_name or evaluation_result.pattern_name,
-            "template_id": evaluation_result.rag_params["template_id"],
-            "max_combinations": self.search_space.max_combinations,
-            "evaluation": {"metrics": metrics_payload},
-            "duration_seconds": int(evaluation_result.execution_time),
-            "settings": {
-                "store_binding": vector_store_payload,
-                **indexing_payload,
-                "retrieval": retrieval_payload,
-                "generation": generation_payload,
-            },
-            "iteration": iteration if iteration is not None else len(self.results) + n_known,
-        }
+        payload = build_pattern_payload(
+            evaluation_result,
+            vector_store_provider=self.vector_store_config.provider,
+            optimization_metric=self.optimization_metric,
+            max_combinations=self.search_space.max_combinations,
+            pattern_name=pattern_name or evaluation_result.pattern_name,
+            iteration=iteration,
+        )
         self.event_handler.on_pattern_creation(
             payload=payload,
             evaluation_results=evaluation_results_json,
@@ -997,7 +933,7 @@ class AI4RAGExperiment:
     ) -> None:
         """Populate the open store unless the experiment already recorded its collection."""
         collection_name = vector_store.collection_name
-        if self._collection_exists(collection_name=collection_name):
+        if collection_name in self.results.collection_names:
             self.event_handler.on_status_change(
                 level=LogLevel.INFO,
                 message=f"Using index {collection_name}.",
@@ -1034,10 +970,6 @@ class AI4RAGExperiment:
         except Exception as exc:
             raise IndexingError(exc, collection_name, embedding_model_id) from exc
 
-    def _collection_exists(self, collection_name: str) -> bool:
-        """Check this run's collection bookkeeping for a reusable collection."""
-        return collection_name in self.results.collection_names
-
     def _get_reusable_collection_name(self, indexing_params: dict[str, Any]) -> str | None:
         """
         Return the name of an existing collection with matching indexing parameters.
@@ -1054,10 +986,8 @@ class AI4RAGExperiment:
         """
         collection = self.results.get_existing_collection(indexing_params=indexing_params)
         if collection is not None:
-            collection_name = collection
-            logger.info("Reusing existing collection: '%s'", collection_name)
-            return collection_name
-        return None
+            logger.info("Reusing existing collection: '%s'", collection)
+        return collection
 
     def _create_pattern_name(self) -> str:
         """

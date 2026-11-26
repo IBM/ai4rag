@@ -337,10 +337,7 @@ def query_rag(
 ) -> list[dict]:
 
     with ThreadPoolExecutor(max_workers=max_threads) as executor:
-        responses = list(executor.map(
-            partial(_generate_response, rag=rag),
-            questions
-        ))
+        responses = list(executor.map(rag.generate, questions))
     return responses
 ```
 

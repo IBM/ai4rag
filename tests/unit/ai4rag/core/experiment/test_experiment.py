@@ -211,7 +211,7 @@ class TestGraphCollectionReuse:
             final_score=0.5,
         )
 
-        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+        experiment._stream_finished_pattern(result, evaluation_results_json=[], iteration=0)
 
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
         assert payload["template_id"] == "sequential_rag"
@@ -256,7 +256,7 @@ class TestGraphCollectionReuse:
             final_score=0.5,
         )
 
-        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+        experiment._stream_finished_pattern(result, evaluation_results_json=[], iteration=0)
 
         assert experiment.event_handler.payload["name"] == "Pattern1"
         assert experiment.event_handler.evaluation_results == []
@@ -292,7 +292,7 @@ class TestGraphCollectionReuse:
             conversations=[{"conversation_id": "case-0000", "messages": []}],
         )
 
-        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+        experiment._stream_finished_pattern(result, evaluation_results_json=[], iteration=0)
 
         assert experiment.event_handler.on_pattern_creation.call_args.kwargs["conversations"] == result.conversations
 
@@ -339,7 +339,7 @@ class TestGraphCollectionReuse:
             final_score=0.5,
         )
 
-        experiment._stream_finished_pattern(result, evaluation_results_json=[])
+        experiment._stream_finished_pattern(result, evaluation_results_json=[], iteration=0)
 
         payload = experiment.event_handler.on_pattern_creation.call_args.kwargs["payload"]
         assert payload["template_id"] == "sequential_rag"
