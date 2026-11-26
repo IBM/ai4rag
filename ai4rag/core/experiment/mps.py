@@ -25,7 +25,6 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.retrieval.retriever import Retriever
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
-from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 from ai4rag.rag.vector_store.local_store import temporary_milvus_lite_store
 from ai4rag.utils.constants import AI4RAGParamNames, PreSelectorConstants
 
@@ -132,21 +131,12 @@ class ModelsPreSelector:
         self._unitxt_metrics = tuple(m for m in Metrics if m.evaluator == "unitxt")
         self.metrics = (*self._unitxt_metrics, Metrics.OVERALL_SCORE)
 
-    def evaluate_patterns(self):
-        """
-        Evaluate RAG pattern per each foundation model provided. All settings
-        of the patterns are configured and remain the same for each evaluation.
+    def evaluate_patterns(self) -> None:
+        """Evaluate model pairs using the documents referenced by the benchmark.
 
-        If knowledge base references were provided, the retriever is created once and reused.
-        Otherwise, a separate vector store is built for each embedding model, and the best-performing ones are selected.
-
-        For evaluation only a sample of the documents is used, embedded and added
-        to a throwaway, file-backed Milvus Lite vector store that is torn down as
-        soon as the embedding model's evaluation finishes.
-
-        This method does not return anything, but in the end changes attributes
-        of the instance: self.evaluation_results is a mapping holding results
-        for each pattern.
+        Chunk those documents once and build a temporary Milvus Lite store for
+        each embedding model. Append each successful evaluation to
+        ``evaluation_results``.
         """
         logger.debug("MPS: Sampling documents")
         benchmark_keys = set()
@@ -161,7 +151,9 @@ class ModelsPreSelector:
             try:
                 with temporary_milvus_lite_store(embedding_model, collection_name=collection_name) as vector_store:
                     try:
-                        self._index_documents(vector_store, chunked_documents)
+                        logger.debug("MPS: Embedding documents ...")
+                        vector_store.add_documents(chunked_documents)
+                        logger.debug("MPS: Embedding documents finished!")
                     except Exception as exc:
                         raise IndexingError(exc, collection_name, embedding_model.model_id) from exc
 
@@ -219,30 +211,6 @@ class ModelsPreSelector:
                 self._exception_handler.handle_exception(exc)
                 logger.warning("Pre-evaluation of '%s' has failed.", foundation_model.model_id)
                 continue
-
-    @staticmethod
-    def _index_documents(vector_store: BaseVectorStore, chunked_documents: list[AI4RAGChunk]) -> None:
-        """Embed and add the chunked documents to *vector_store*.
-
-        Any exception propagates so the caller can wrap it in an
-        :class:`IndexingError` and skip this embedding model.
-
-        Parameters
-        ----------
-        vector_store : BaseVectorStore
-            Store the chunks are embedded into.
-
-        chunked_documents : list[AI4RAGChunk]
-            Chunked documents for the embedding process.
-
-        Raises
-        ------
-        Exception
-            Propagates any failure while embedding and adding the documents.
-        """
-        logger.debug("MPS: Embedding documents ...")
-        vector_store.add_documents(chunked_documents)
-        logger.debug("MPS: Embedding documents finished!")
 
     def _evaluate_single_pattern(
         self, foundation_model: BaseFoundationModel, retriever: Retriever

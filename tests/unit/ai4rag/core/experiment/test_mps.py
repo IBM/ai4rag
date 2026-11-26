@@ -9,11 +9,10 @@ import pytest
 from docling_core.types.doc import DoclingDocument
 from docling_core.types.doc.labels import DocItemLabel
 
+from ai4rag.core.experiment.exception_handler import IndexingError
 from ai4rag.core.experiment.mps import (
-    AI4RAGChunk,
     BaseEmbeddingModel,
     BaseFoundationModel,
-    BaseVectorStore,
     BenchmarkData,
     GenerationError,
     ModelsPreSelector,
@@ -21,6 +20,7 @@ from ai4rag.core.experiment.mps import (
 )
 from ai4rag.evaluator.metric import Metrics
 from ai4rag.rag.template.agentic_rag_template import AgenticRAG
+from ai4rag.rag.vector_store.base_vector_store import BaseVectorStore
 
 
 def _patch_temporary_store(mocker, store):
@@ -334,10 +334,11 @@ class TestModelsPreSelector:
             expected_log = f"Pre-evaluation of '{model.model_id}' has failed."
             assert expected_log in caplog.text
 
-    def test_evaluate_pattern_with_failing_embedding(self, mocker, fully_mocked_selector, caplog):
-        vs = mocker.MagicMock(spec=BaseVectorStore)
-        vs.add_documents.side_effect = ValueError("Fake error in embeddings")
-        _patch_temporary_store(mocker, vs)
+    def test_evaluate_pattern_with_failing_embedding(self, mocker, fully_mocked_selector):
+        vector_store = mocker.MagicMock(spec=BaseVectorStore)
+        failure = ValueError("Fake error in embeddings")
+        vector_store.add_documents.side_effect = failure
+        _patch_temporary_store(mocker, vector_store)
 
         with pytest.raises(PreSelectorError) as err:
             fully_mocked_selector.evaluate_patterns()
@@ -347,19 +348,13 @@ class TestModelsPreSelector:
         )
 
         assert expected_msg in str(err.value)
-        assert vs.add_documents.call_count == len(fully_mocked_selector.embedding_models)
-
-    def test_index_documents_propagates_without_retry(self, mocker, fully_mocked_selector):
-        vs = mocker.MagicMock(spec=BaseVectorStore)
-        document = mocker.MagicMock(AI4RAGChunk)
-        val_err = ValueError("Fake embeddings error")
-        vs.add_documents.side_effect = val_err
-
-        with pytest.raises(ValueError) as err:
-            fully_mocked_selector._index_documents(vs, [document])
-
-        vs.add_documents.assert_called_once_with([document])
-        assert err.value is val_err
+        model_count = len(fully_mocked_selector.embedding_models)
+        assert vector_store.add_documents.call_count == model_count
+        errors = fully_mocked_selector._exception_handler.errors
+        assert len(errors) == model_count
+        for error in errors:
+            assert isinstance(error, IndexingError)
+            assert error.__cause__ is failure
 
     def test_mean_based_scoring(self, pre_selector):
         top_models_with_scores = pre_selector._mean_based_scoring()

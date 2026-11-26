@@ -67,20 +67,14 @@ class GenerationError(AI4RAGError):
 
 
 class EvaluationError(AI4RAGError):
-    """Exception representing error during evaluating generated pattern"""
-
-    def __init__(self, exception):
-        super().__init__(exception)
+    """Failure while evaluating a generated pattern."""
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}: Unable to evaluate generated pattern due to: {repr(self.exception)}"
 
 
 class AssetSaveError(AI4RAGError):
-    """Exception representing error during writing finished pattern to COS instance."""
-
-    def __init__(self, exception):
-        super().__init__(exception)
+    """Failure while publishing an evaluated pattern through the event handler."""
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}: Unable to save assets for evaluated pattern due to: {repr(self.exception)}"
