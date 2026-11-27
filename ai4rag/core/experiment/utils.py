@@ -3,8 +3,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # -----------------------------------------------------------------------------
 from concurrent.futures import ThreadPoolExecutor
-from functools import partial
-from typing import Any, Literal, TypeAlias, TypedDict, TypeVar
+from typing import Any, Literal, TypeAlias, TypedDict
 
 from ai4rag import logger
 from ai4rag.core.experiment.benchmark_data import BenchmarkData
@@ -14,8 +13,6 @@ from ai4rag.rag.embedding.base_model import BaseEmbeddingModel
 from ai4rag.rag.foundation_models.base_model import BaseFoundationModel
 from ai4rag.rag.template.base_template import BaseRAGTemplate
 from ai4rag.utils.constants import AI4RAGParamNames
-
-T = TypeVar("T")
 
 __all__ = [
     "VectorStoreType",
@@ -28,8 +25,6 @@ __all__ = [
     "get_chunking_params",
     "RAGRetrievalParamsType",
 ]
-
-_semantic_chunker_cache = {}
 
 VectorStoreType: TypeAlias = Literal["milvus", "milvus_lite", "pgvector"]
 
@@ -65,20 +60,20 @@ class RAGChunkingParamsType(TypedDict):
 
 
 class RAGRetrievalParamsType(TypedDict):
-    """Required retrieval parameters."""
+    """Resolved retrieval parameters for one candidate."""
 
-    retrieval_window_size: int
-    number_of_retrieved_chunks: int
+    window_size: int
+    number_of_chunks: int
     retrieval_method: Literal["simple", "window"]
     search_mode: Literal["vector", "hybrid", "graph"]
-    ranker_strategy: str
-    ranker_k: int
-    ranker_alpha: int | float
+    ranker_strategy: str | None
+    ranker_k: int | None
+    ranker_alpha: int | float | None
 
 
 def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10) -> list[dict[str, Any]]:
     """
-    Function to perform parallel queries on RAG inference service.
+    Generate responses to benchmark questions concurrently.
 
     Parameters
     ----------
@@ -94,7 +89,9 @@ def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10)
     Returns
     -------
     list[dict[str, Any]]
-        List of dicts as in the _generate_response.
+        Template responses in question order. Built-in templates return the
+        question, answer, and retrieved ``AI4RAGChunk`` objects under
+        ``reference_documents``. Agentic templates also return a conversation.
     """
     logger.debug(
         "Starting concurrent RAG execution. Limit of concurrent executions: %s for %s calls. Model: %s",
@@ -104,10 +101,8 @@ def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10)
     )
 
     try:
-        _generate_function = partial(_generate_response, rag=rag)
-
         with ThreadPoolExecutor(max_workers=max_threads) as executor:
-            responses = list(executor.map(_generate_function, questions))
+            responses = list(executor.map(rag.generate, questions))
 
     except Exception as exc:
         raise GenerationError(exc, model_id=rag.foundation_model.model_id) from exc
@@ -115,37 +110,6 @@ def query_rag(rag: BaseRAGTemplate, questions: list[str], max_threads: int = 10)
     logger.debug("Finished concurrent RAG execution!")
 
     return responses
-
-
-def _generate_response(question: str, rag: BaseRAGTemplate) -> dict[str, Any]:
-    """
-    Make a single call to the RAG instance.
-    Notice that question parameter should remain first to be easily
-    utilized by concurrent executor.
-
-    Parameters
-    ----------
-    question : str
-        Question for the RAG.
-
-    rag : BaseRAGTemplate
-        Instance capable of performing Retrieval-Augmented Generation.
-
-    Returns
-    -------
-    dict[str, Any]
-        Example result:
-        {
-            "question": "What is the meaning of life?",
-            "answer": "Being good to other people."
-            "reference_documents": [
-                {"page_content": "Document content 1", "metadata": {"document_id": "doc_id_1", ...}},
-                {"page_content": "Document content 2", "metadata": {"document_id": "doc_id_2", ...}},
-                ...,
-            ]
-        }
-    """
-    return rag.generate(question)
 
 
 def build_evaluation_data(
@@ -212,7 +176,7 @@ def _get_chunk_overlap(chunk_size: int, chunk_overlap: int | float) -> int:
         number of characters/tokens used as overlap between chunks
     """
     if isinstance(chunk_overlap, float):
-        if chunk_overlap is None or (chunk_overlap < 0 or chunk_overlap > 1):
+        if chunk_overlap < 0 or chunk_overlap > 1:
             raise ValueError(
                 "chunk_overlap is expected to be an integer >= 0 or a floating-point number between 0 and 1."
             )
@@ -222,19 +186,18 @@ def _get_chunk_overlap(chunk_size: int, chunk_overlap: int | float) -> int:
 
 def get_chunking_params(rag_params: RAGParamsType) -> RAGChunkingParamsType:
     """
-    Extracts chunking parameters from the provided rag parameters.
-    All three configurations are mandatory as part of single `chunking` setting:
-        `method`, `chunk_size`, `chunk_overlap`
+    Extract chunking settings and normalize fractional overlap to an integer.
 
     Parameters
     ----------
     rag_params : RAGParamsType
-        Dictionary with chunking setting for single evaluation run.
+        Candidate settings containing ``chunking_method``, ``chunk_size``, and
+        ``chunk_overlap``.
 
     Returns
     -------
-    dict
-        Dictionary with chunking parameters: chunking_method, chunk_size, chunk_overlap.
+    RAGChunkingParamsType
+        The three chunking settings with normalized overlap.
 
     Raises
     ------
@@ -256,19 +219,18 @@ def get_chunking_params(rag_params: RAGParamsType) -> RAGChunkingParamsType:
 
 def get_retrieval_params(rag_params: RAGParamsType) -> RAGRetrievalParamsType:
     """
-    Extracts retrieval parameters from the provided rag parameters.
-    All three setting's configurations are mandatory under `retrieval` key:
-        `method`, `window_size`, `number_of_chunks`
+    Extract retrieval settings from a candidate.
 
     Parameters
     ----------
     rag_params : RAGParamsType
-        Dictionary with retrieval setting for single evaluation run.
+        Candidate settings containing ``retrieval_method``, ``window_size``,
+        ``number_of_chunks``, and ``search_mode``.
 
     Returns
     -------
     RAGRetrievalParamsType
-        retrieval_method, retrieval_window_size, number_of_retrieved_chunks, search_mode.
+        The four required retrieval settings and nullable ranker settings.
 
     Raises
     ------

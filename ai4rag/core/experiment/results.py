@@ -20,9 +20,8 @@ class EvaluationResult:
         Name of the RAG pattern created. Next names should be
         i.e. PatternA, PatternB, ..., PatternZ, PatternAA
 
-    collection : list[str]
-        Name of the indexes/collections in the VectorStores for single
-        configuration.
+    collection : str
+        Name of the vector-store collection used for this evaluation.
 
     indexing_params : dict[str, Any] | None
         Subspace of hyperparameters used during indexing stage in the
@@ -38,8 +37,8 @@ class EvaluationResult:
     execution_time : float
         Time in seconds how long did experiment take to run.
 
-    final_score : float
-        Single score calculated for optimization process as the value to be minimized or maximized.
+    final_score : float | None
+        Optimization score, or ``None`` when the candidate could not be scored.
 
     conversations : list[dict[str, Any]] | None, default=None
         Agent trajectories for the evaluated cases. Full trajectories are kept
@@ -53,7 +52,7 @@ class EvaluationResult:
     rag_params: dict[str, Any]
     scores: EvaluationMetricsResult
     execution_time: float
-    final_score: float
+    final_score: float | None
     conversations: list[dict[str, Any]] | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -78,9 +77,6 @@ class ExperimentResults:
     add_evaluation()
         Extend space with another evaluation step from the objective function.
 
-    sorted_(reverse=False)
-        Return sorted version of the evaluations.
-
     get_best_evaluations(k=None)
         Return k-best evaluations.
         If k is None all evaluations are returned sorted based on optimization metric score.
@@ -95,9 +91,6 @@ class ExperimentResults:
 
     def __iter__(self) -> Generator[EvaluationResult, None, None]:
         yield from self.evaluations
-
-    def __bool__(self) -> bool:
-        return bool(self.evaluations)
 
     def add_evaluation(
         self,
@@ -182,29 +175,26 @@ class ExperimentResults:
             ret.add(ev.collection)
         return list(ret)
 
-    def get_best_evaluations(self, k: int | None = None) -> tuple[EvaluationResult]:
+    def get_best_evaluations(self, k: int | None = None) -> tuple[EvaluationResult, ...]:
         """
         Return k-best evaluations.
 
         Parameters
         ----------
-        k : int
-            how many evaluations to return
+        k : int | None, default=None
+            Number of top-ranked evaluations to return. ``None`` returns all evaluations.
 
         Returns
         -------
-        tuple[EvaluationResult]
-            the best evaluations from the AutoRAG experiment
+        tuple[EvaluationResult, ...]
+            Evaluations in descending order of optimization score.
         """
-        evaluations = list(self.evaluations)
-        sorted_evs = tuple(
-            sorted(
-                evaluations,
-                key=lambda x: float("-inf") if x.final_score is None else x.final_score,
-                reverse=True,
-            )
+        ranked = sorted(
+            self.evaluations,
+            key=lambda evaluation: float("-inf") if evaluation.final_score is None else evaluation.final_score,
+            reverse=True,
         )
-        return sorted_evs[:k]
+        return tuple(ranked[:k])
 
     @staticmethod
     def create_evaluation_results_json(

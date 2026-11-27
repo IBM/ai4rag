@@ -417,31 +417,6 @@ class TestExperimentResultsProperties:
         assert results.collection_names == []
 
 
-class TestExperimentResultsSorted:
-    """Test suite for ExperimentResults.sorted_ method."""
-
-    @pytest.fixture
-    def unsorted_results(self, mocker):
-        """Create ExperimentResults with unsorted evaluations."""
-        mocker.patch("ai4rag.core.experiment.results.logger")
-        results = ExperimentResults()
-
-        scores = [0.5, 0.8, 0.3, 0.9, 0.6]
-        for i, score in enumerate(scores):
-            eval_result = EvaluationResult(
-                pattern_name=f"Pattern{i}",
-                collection=f"collection_{i}",
-                indexing_params={"chunk_size": 512},
-                rag_params={"retrieval_method": "simple", "number_of_chunks": 5},
-                scores={"scores": {}, "question_scores": {}},
-                execution_time=10.0,
-                final_score=score,
-            )
-            results.add_evaluation([], eval_result)
-
-        return results
-
-
 class TestExperimentResultsGetBestEvaluations:
     """Test suite for ExperimentResults.get_best_evaluations method."""
 
